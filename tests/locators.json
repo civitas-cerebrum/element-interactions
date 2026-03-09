@@ -1,0 +1,17 @@
+{
+  "pages": [
+    {
+      "name": "ExamplePage",
+      "elements": [
+        {
+          "elementName": "main-heading",
+          "selector": { "css": "h1" }
+        },
+        {
+          "elementName": "more-info-link",
+          "selector": { "css": "p a[href]" }
+        }
+      ]
+    }
+  ]
+}
