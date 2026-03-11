@@ -8,15 +8,15 @@ test.describe('E2E Form Submission Suite', () => {
   let repo: ElementRepository;
 
   test.beforeAll(() => {
-    // Initialize the repository once per worker to save JSON read operations
+    // Load the element repository json
     repo = new ElementRepository("tests/data/page-repository.json");
   });
 
   test('TC_001: Complete Form Submission', async ({ page }) => {
-    // Initialize the unified Steps Facade
+    // instantiate the Step facade
     const steps = new Steps(page, repo);
     
-    // 💡 Dictionary to track our expected values for the final modal verification
+    // Context dictionary to track the expected values for the final modal verification
     const entries: Record<string, string> = {};
 
     await test.step('🧭 Navigate to the website and open Forms', async () => {
@@ -32,13 +32,12 @@ test.describe('E2E Form Submission Suite', () => {
     });
 
     await test.step('📝 Fill Standard Inputs', async () => {
-      // Store expected values
+
       entries['Name'] = 'Automated Tester';
       entries['Email'] = 'AutomatedTester@email.com';
       entries['Mobile'] = '0000000000';
       entries['Current Address'] = 'Prinsenstraat, 1015 DB Amsterdam';
 
-      // Replaced manual get + fill with single steps
       await steps.fill('FormsPage', 'nameInput', entries['Name']);
       await steps.fill('FormsPage', 'emailInput', entries['Email']);
       await steps.fill('FormsPage', 'mobileInput', entries['Mobile']);
@@ -55,7 +54,6 @@ test.describe('E2E Form Submission Suite', () => {
       await steps.verifyPresence('FormsPage', 'todayCell');
       await steps.click('FormsPage', 'todayCell');
 
-      // Drop down to repo for textContent extraction
       const spSelectionPreview = await repo.get(page, 'FormsPage', 'spSelectionPreview');
       let dobValue = await spSelectionPreview.textContent();
       
@@ -65,8 +63,6 @@ test.describe('E2E Form Submission Suite', () => {
       await steps.verifyPresence('FormsPage', 'datePickerSubmitButton');
       await steps.click('FormsPage', 'datePickerSubmitButton');
 
-      // Note: If you want to use `clickWithoutScrolling` here, you might want to 
-      // add that method to your `Steps` class too! 
       await steps.click('FormsPage', 'hobbiesInput'); 
     });
 
@@ -74,13 +70,12 @@ test.describe('E2E Form Submission Suite', () => {
       await steps.click('FormsPage', 'submitButton');
       await steps.verifyPresence('FormsPage', 'table');
 
-      // Drop down to raw Playwright for complex, dynamic row filtering
+
       const modal = await repo.get(page, 'FormsPage', 'table');
       for (const [key, expectedValue] of Object.entries(entries)) {
         const row = modal.locator('tr').filter({ hasText: key });
         const actualValueElement = row.locator('td').nth(1);   
 
-        // We can reuse the verifications engine directly if needed, or Playwright's expect
         await steps['verify'].text(actualValueElement, expectedValue); 
       }
     });
