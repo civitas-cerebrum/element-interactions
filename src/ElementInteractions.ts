@@ -5,12 +5,12 @@ import { Verifications } from './interactions/Verification';
 
 export class ElementInteractions {
     public navigate: Navigation;
-    public interactions: Interactions;
+    public interact: Interactions;
     public verify: Verifications;
 
     constructor(page: Page) {
         this.navigate = new Navigation(page);
-        this.interactions = new Interactions(page);
+        this.interact = new Interactions(page);
         this.verify = new Verifications(page);
     }
 }
