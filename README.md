@@ -7,6 +7,7 @@ A robust set of Playwright steps for readable interaction and assertions.
 `pw-element-interactions` pairs perfectly with `pw-element-repository` to achieve a fully decoupled test automation architecture. By separating **Element Acquisition** from **Element Interaction**, your test scripts become highly readable, easily maintainable, and completely free of raw locators.
 
 ### ✨ The Unified Steps API
+
 With the introduction of the `Steps` class, you can now combine your element repository and interactions into a single, flattened Facade. This eliminates repetitive locator fetching and transforms your tests into clean, plain-English steps.
 
 ---
@@ -15,7 +16,7 @@ With the introduction of the `Steps` class, you can now combine your element rep
 
 Install the package via your preferred package manager:
 
-``` bash
+```bash
 npm i pw-element-interactions
 ```
 
@@ -36,11 +37,11 @@ This package requires `@playwright/test` to be installed in your project. If you
 
 ## 💻 Usage: The `Steps` API (Recommended)
 
-Initialize the `Steps` class by passing the current Playwright `page` object and your `ElementRepository` instance. 
+Initialize the `Steps` class by passing the current Playwright `page` object and your `ElementRepository` instance.
 
 ### Example Scenario
 
-``` ts
+```ts
 import { test } from '@playwright/test';
 import { ElementRepository } from 'pw-element-repository';
 import { Steps } from 'pw-element-interactions';
@@ -75,34 +76,40 @@ test('Add random product and verify image gallery', async ({ page }) => {
 
 The `Steps` class automatically handles fetching the Playwright `Locator` using your `pageName` and `elementName` keys from the repository.
 
-### 🧭 Navigation Steps
-* **`MapsTo(url)`**: Navigates the browser to the specified URL.
+### 🧭 Navigation
+
+* **`MapsTo(url: string)`**: Navigates the browser to the specified absolute or relative URL.
 * **`refresh()`**: Reloads the current page.
 
-### 🖱️ Interaction Steps
-* **`click(pageName, elementName)`**: Standard click. Automatically waits for actionability.
-* **`clickRandom(pageName, elementName)`**: Resolves a list of elements and clicks a random one.
-* **`clickIfPresent(pageName, elementName)`**: Safely clicks an element only if it is visible. Prevents failures on optional UI elements like cookie banners.
-* **`fill(pageName, elementName, text)`**: Clears the input and types the provided text.
-* **`uploadFile(pageName, elementName, filePath)`**: Uploads a local file to a specific `<input type="file">`.
-* **`selectDropdown(pageName, elementName, options?)`**: Interacts with `<select>` elements. Returns the selected value. Accepts:
-  * `{ type: 'random' }` *(Default)* - Selects a random, non-disabled option with a valid value.
-  * `{ type: 'value', value: 'string' }` - Selects by exact value.
-  * `{ type: 'index', index: 1 }` - Selects by index.
+### 🖱️ Interaction
 
-### ✅ Verification Steps
-* **`verifyPresence(pageName, elementName)`**: Asserts the element is visible in the DOM.
-* **`verifyAbsence(pageName, elementName)`**: Asserts the element is hidden or detached.
-* **`verifyText(pageName, elementName, expectedText)`**: Asserts exact text match.
-* **`verifyImages(pageName, elementName, scroll?)`**: Robust image verification. Scrolls into view, checks visibility, asserts `src`, checks `naturalWidth > 0`, and evaluates the native `HTMLImageElement.decode()` promise.
-* **`verifyUrlContains(text)`**: Asserts the active browser URL contains a specific substring.
+* **`click(pageName: string, elementName: string)`**: Retrieves an element from the repository and performs a standard click. Automatically waits for actionability.
+* **`clickRandom(pageName: string, elementName: string)`**: Retrieves a random element from a resolved list of locators and clicks it. Useful for clicking random items in a list or grid.
+* **`clickIfPresent(pageName: string, elementName: string)`**: Retrieves an element and clicks it only if it is visible. Prevents test failures on optional UI elements like cookie banners or promotional pop-ups.
+* **`fill(pageName: string, elementName: string, text: string)`**: Retrieves an input field and fills it with the provided text, replacing any existing value.
+* **`uploadFile(pageName: string, elementName: string, filePath: string)`**: Retrieves an `<input type="file">` and uploads the file from the provided local `filePath`.
+* **`selectDropdown(pageName: string, elementName: string, options?: DropdownSelectOptions)`**: Interacts with `<select>` dropdown elements. Returns the exact `value` attribute of the selected option. Accepts:
+* `{ type: 'random' }` *(Default)* - Selects a random, non-disabled option with a valid value.
+* `{ type: 'value', value: 'string' }` - Selects by exact value.
+* `{ type: 'index', index: 1 }` - Selects by index.
+
+
+
+### ✅ Verification
+
+* **`verifyPresence(pageName: string, elementName: string)`**: Asserts that a specified element is attached to the DOM and is visible.
+* **`verifyAbsence(pageName: string, elementName: string)`**: Asserts that a specified element is hidden or completely detached from the DOM.
+* **`verifyText(pageName: string, elementName: string, expectedText: string)`**: Asserts that the specified element exactly matches the expected text.
+* **`verifyImages(pageName: string, elementName: string, scroll?: boolean)`**: Performs a rigorous verification of one or more images. Asserts visibility, checks for a valid `src` attribute, ensures `naturalWidth > 0`, and evaluates the native browser `decode()` promise. Smoothly scrolls into view by default (`scroll: true`).
+* **`verifyUrlContains(text: string)`**: Asserts that the active browser URL contains the expected substring.
 
 ---
 
 ## 🧱 Advanced Usage: Raw Interactions API
 
 If you need to bypass the repository or interact with custom locators dynamically generated in your tests, you can use the underlying `ElementInteractions` class directly.
-``` ts
+
+```ts
 import { ElementInteractions } from 'pw-element-interactions';
 
 // Initialize
@@ -113,4 +120,5 @@ const customLocator = page.locator('button.dynamic-class');
 await interactions.interact.clickWithoutScrolling(customLocator);
 await interactions.verify.state(customLocator, 'enabled');
 ```
-*Note: All core interaction (`interact`), verification (`verify`), and navigation (`Maps`) methods are available when using `ElementInteractions` directly.*
+
+*Note: All core interaction (`interact`), verification (`verify`), and navigation (`Maps`) methods are also available when using `ElementInteractions` directly.*
