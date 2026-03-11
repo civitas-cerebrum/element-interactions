@@ -1,7 +1,14 @@
 import { Page, Locator } from '@playwright/test';
 
+// 1. Define the Enumerator
+export enum DropdownSelectType {
+    RANDOM = 'random',
+    INDEX = 'index',
+    VALUE = 'value'
+}
+
 export interface DropdownSelectOptions {
-    type?: 'random' | 'index' | 'value';
+    type?: DropdownSelectType;
     value?: string;
     index?: number;
 }
@@ -34,38 +41,35 @@ export class Interactions {
         await locator.setInputFiles(filePath);
     }
 
-    // --- Unified Dropdown Interaction ---
-
     /**
-     * Selects an option from a dropdown based on the specified type: 'random', 'index', or 'value'.
-     * Defaults to 'random' if no options are provided.
+     * Selects an option from a dropdown based on the specified DropdownSelectType enum.
+     * Defaults to RANDOM if no options are provided.
      * Returns the selected value.
      */
     async selectDropdown(
         locator: Locator, 
-        options: DropdownSelectOptions = { type: 'random' }
+        options: DropdownSelectOptions = { type: DropdownSelectType.RANDOM }
     ): Promise<string> {
-        const type = options.type || 'random';
+        const type = options.type ?? DropdownSelectType.RANDOM;
 
-        if (type === 'value') {
+        if (type === DropdownSelectType.VALUE) {
             if (options.value === undefined) {
-                throw new Error('[Action] Error -> "value" must be provided when type is "value".');
+                throw new Error('[Action] Error -> "value" must be provided when using DropdownSelectType.VALUE.');
             }
             console.log(`[Action] -> Selecting option by value: "${options.value}"`);
             const selected = await locator.selectOption({ value: options.value });
             return selected[0];
         }
 
-        if (type === 'index') {
+        if (type === DropdownSelectType.INDEX) {
             if (options.index === undefined) {
-                throw new Error('[Action] Error -> "index" must be provided when type is "index".');
+                throw new Error('[Action] Error -> "index" must be provided when using DropdownSelectType.INDEX.');
             }
             console.log(`[Action] -> Selecting option by index: ${options.index}`);
             const selected = await locator.selectOption({ index: options.index });
             return selected[0];
         }
 
-        // Fallback to 'random' logic
         console.log(`[Action] -> Fetching enabled options for random selection...`);
         const enabledOptions = locator.locator('option:not([disabled]):not([value=""])');
         const count = await enabledOptions.count();
