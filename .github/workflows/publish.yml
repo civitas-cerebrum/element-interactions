@@ -32,6 +32,10 @@ jobs:
       - name: 🌍  Install Playwright Browsers
         run: npx playwright install chromium --with-deps
 
+      - name: 🐳 Start Unit Test Website
+        run: |
+          docker compose up --build -d
+
       - name: 🧪  Run Tests
         run: npm test  
 

@@ -1,0 +1,171 @@
+{
+  "pages": [
+    {
+      "name": "DropDownPage",
+      "elements": [
+        {
+          "elementName": "title",
+          "selector": { "css": "[id='title']" }
+        },
+        {
+          "elementName": "countriesDropDown",
+          "selector": { "className": "vs__search" }
+        },
+        {
+          "elementName": "countriesContainer",
+          "selector": { "css": "[role='listbox']" }
+        },
+        {
+          "elementName": "countriesList",
+          "selector": { "css": "#vs1__listbox .vs__dropdown-option" }
+        },
+        {
+          "elementName": "selection",
+          "selector": { "css": "#countriesDropDown .vs__selected" }
+        }
+      ]
+    },
+    {
+      "name": "ElementsPage",
+      "elements": [
+        {
+          "elementName": "questionBoxTitle",
+          "selector": { "css": ".question-box h2" }
+        },
+        {
+          "elementName": "checkMarkMessage",
+          "selector": { "css": ".question-box form p" }
+        },
+        {
+          "elementName": "checkMarks",
+          "selector": { "css": ".radio-group label" }
+        }
+      ]
+    },
+    {
+      "name": "HomePage",
+      "elements": [
+        {
+          "elementName": "categories",
+          "selector": { "css": "#category-card" }
+        }
+      ]
+    },
+    {
+      "name": "FormsPage",
+      "elements": [
+        {
+          "elementName": "title",
+          "selector": { "css": "[id='title']" }
+        },
+        {
+          "elementName": "nameInput",
+          "selector": { "css": "[id='name']" }
+        },
+        {
+          "elementName": "emailInput",
+          "selector": { "css": "[id='email']" }
+        },
+        {
+          "elementName": "genderDropdown",
+          "selector": { "css": "#gender" }
+        },
+        {
+          "elementName": "genderOptions",
+          "selector": { "css": "#gender" }
+        },
+        {
+          "elementName": "mobileInput",
+          "selector": { "css": "[id='mobile']" }
+        },
+        {
+          "elementName": "dateOfBirthInput",
+          "selector": { "css": "#dob" }
+        },
+        {
+          "elementName": "hobbiesInput",
+          "selector": { "css": "#hobbies" }
+        },
+        {
+          "elementName": "addressInput",
+          "selector": { "css": "#currentAddress" }
+        },
+        {
+          "elementName": "cityInput",
+          "selector": { "css": "#city" }
+        },
+        {
+          "elementName": "submitButton",
+          "selector": { "css": "#submit" }
+        },
+        {
+          "elementName": "submissionEntries",
+          "selector": { "css": ".submitted-info-table tr" }
+        },
+        {
+          "elementName": "table",
+          "selector": { "css": ".submitted-info-table" }
+        },
+        {
+          "elementName": "datePickerYearsButton",
+          "selector": { "css": "[aria-label='Open years overlay']" }
+        },
+        {
+          "elementName": "datePickerMonthsButton",
+          "selector": { "css": "[aria-label='Open months overlay']" }
+        },
+        {
+          "elementName": "datePickerSubmitButton",
+          "selector": { "css": ".dp__action_row .dp__action_select" }
+        },
+        {
+          "elementName": "todayCell",
+          "selector": { "css": ".dp__today" }
+        },
+        {
+          "elementName": "spSelectionPreview",
+          "selector": { "css": ".dp__selection_preview" }
+        },
+        {
+          "elementName": "datePickerCells",
+          "selector": { "css": "[role='gridcell']" }
+        }
+      ]
+    },
+    {
+      "name": "AlertAndWindowsPage",
+      "elements": [
+        {
+          "elementName": "buttons",
+          "selector": { "css": ".button" }
+        }
+      ]
+    },
+    {
+      "name": "InteractionsPage",
+      "elements": [
+        {
+          "elementName": "title",
+          "selector": { "id": "title" }
+        },
+        {
+          "elementName": "tools",
+          "selector": { "id": "tool" }
+        }
+      ]
+    },
+    {
+      "name": "TallPage",
+      "elements": [
+        {
+          "elementName": "title",
+          "selector": { "id": "title" }
+        },
+        {
+          "elementName": "logo",
+          "selector": { "id": "logo" }
+        }
+      ]
+    }
+  ]
+}

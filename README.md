@@ -1,126 +1,92 @@
-# Playwright Element Repository
+# Playwright Element Interactions
 
-[![NPM Version](https://img.shields.io/npm/v/pw-element-repository?color=rgb(88%2C%20171%2C%2070))](https://www.npmjs.com/package/pw-element-repository)
+[![NPM Version](https://img.shields.io/npm/v/pw-element-interactions?color=rgb(88%2C%20171%2C%2070))](https://www.npmjs.com/package/pw-element-interactions)
 
-A lightweight, robust package that decouples your Playwright UI selectors from your test code. By externalizing locators into a central JSON repository, you make your test automation framework cleaner, easier to maintain, and accessible to non-developers.
+A robust, readable interaction and assertion wrapper for Playwright. 
+
+`pw-element-interactions` pairs perfectly with `pw-element-repository` to achieve a fully decoupled test automation architecture. By separating **Element Acquisition** from **Element Interaction**, your test scripts become highly readable, easily maintainable, and completely free of raw locators.
 
 ## 📦 Installation
 
 Install the package via your preferred package manager:
 
 ```bash
-npm i pw-element-repository
+npm i pw-element-interactions
 ```
 
 **Peer Dependencies:**
-This package requires `@playwright/test` or `playwright` to be installed in your project.
+This package requires `@playwright/test` to be installed in your project.
 
 ## 🚀 What is it good for?
 
-* **Zero Hardcoded Selectors:** Keep your Page Objects and Step Definitions completely free of complex DOM queries.
-* **Dynamic Parsing:** Automatically converts your JSON configuration into native Playwright CSS, XPath, ID, or Text selectors.
-* **Smart Locators:** Built-in methods for handling arrays, randomized element selection (great for catalog/PLP testing), and text-filtering.
-* **Soft Waiting:** Seamlessly waits for elements to attach and become visible before returning a locator to prevent flake.
-
-## 🏗️ Configuration
-
-Create a JSON file in your project to hold your selectors. The file must adhere to the standard schema:
-
-**`locators.json`**
-
-```json
-{
-  "pages": [
-    {
-      "name": "HomePage",
-      "elements": [
-        {
-          "elementName": "search-input",
-          "selector": { "css": "input[name='search']" }
-        },
-        {
-          "elementName": "submit-button",
-          "selector": { "id": "btn-submit" }
-        }
-      ]
-    },
-    {
-      "name": "ProductList",
-      "elements": [
-        {
-          "elementName": "product-cards",
-          "selector": { "xpath": "//article[@class='product']" }
-        }
-      ]
-    }
-  ]
-}
-
-```
+* **Separation of Concerns:** Keep your interaction logic and assertions entirely detached from how elements are found on the page.
+* **Readable Tests:** Abstract away Playwright boilerplate into semantic, English-like methods (`click`, `verifyPresence`, `fill`).
+* **Advanced Visual Checks:** Includes a highly reliable `verifyImages` method that evaluates actual browser decoding and `naturalWidth` to ensure images aren't just in the DOM, but are properly rendered.
+* **Safe Interactions:** Built-in methods like `clickIfPresent` and `clickWithoutScrolling` (using native `dispatchEvent`) to bypass common UI flakiness like sticky headers or overlapping modals.
 
 ## 💻 Usage
 
-You can initialize the `ElementRepository` either by passing the **file path** to your JSON, or by passing the **parsed JSON object** directly.
+Initialize the `ElementInteractions` class by passing the current Playwright `page` object. Use it in tandem with your locator strategy (like `pw-element-repository`) to orchestrate your tests.
 
-### Initialization
+### Example Scenario
 
 ```typescript
 import { test } from '@playwright/test';
+import { ElementInteractions } from 'pw-element-interactions';
 import { ElementRepository } from 'pw-element-repository';
 
-// Option A: Pass the path to your JSON (relative to your project root)
-const repo = new ElementRepository('tests/data/locators.json', 15000);
+test('Add random product and verify image gallery', async ({ page }) => {
+  // 1. Initialize Interactions
+  const actions = new ElementInteractions(page);
+  const repo = new ElementRepository('tests/data/locators.json', 15000);
 
-// Option B: Import the JSON directly (requires resolveJsonModule in tsconfig)
-import locatorData from '../data/locators.json';
-const repo = new ElementRepository(locatorData, 15000);
+  // 2. Navigate
+  await actions.navigateToUrl('/');
 
-```
+  // 3. Acquire & Interact
+  const categoryLink = await repo.get(page, 'HomePage', 'category-accessories');
+  await actions.click(categoryLink);
 
-### Retrieving Elements
+  // 4. Randomized Acquisition & Safe Interaction
+  const randomProduct = await repo.getRandom(page, 'AccessoriesPage', 'product-cards');
+  await actions.click(randomProduct);
 
-The repository exposes clean, asynchronous methods that return Playwright `Locator` objects, ready for interaction.
+  await actions.verifyUrlContains('/product/');
 
-```typescript
-test('Search and select random product', async ({ page }) => {
-  await page.goto('/');
-
-  // 1. Get a standard element
-  const searchInput = await repo.get(page, 'HomePage', 'search-input');
-  await searchInput.fill('Trousers');
-
-  const submitBtn = await repo.get(page, 'HomePage', 'submit-button');
-  await submitBtn.click();
-
-  // 2. Select a random element from a list
-  const randomProduct = await repo.getRandom(page, 'ProductList', 'product-cards');
-  await randomProduct?.click();
-  
-  // 3. Find a specific element by text within a list
-  const specificProduct = await repo.getByText(page, 'ProductList', 'product-cards', 'Blue Chinos');
-  await specificProduct?.click();
+  // 5. Advanced Image Verification
+  const productGallery = await repo.get(page, 'ProductDetailsPage', 'gallery-images');
+  await actions.verifyImages(productGallery, 'Product PDP Gallery', true);
 });
-
 ```
 
 ## 🛠️ API Reference
 
-### `get(page, pageName, elementName)`
+### 🧭 Navigation & Browser Management
 
-Returns a single Playwright Locator. Waits for the selector to attach to the DOM based on your configured timeout.
+* **`MapsToUrl(url)`**: Navigates the browser to the specified URL.
+* **`refreshPage()`**: Reloads the current page.
+* **`MapsBrowser(direction)`**: Navigates history (`'BACKWARDS'` or `'FORWARDS'`).
+* **`setWindowSize(width, height)`**: Sets the browser viewport dimensions.
 
-### `getAll(page, pageName, elementName)`
+### 🖱️ Element Interactions
 
-Returns an array of resolved Locator handles (`Locator[]`). Useful when you need to iterate over multiple elements.
+All interaction methods accept a Playwright `Locator` object.
 
-### `getRandom(page, pageName, elementName, strict?)`
+* **`click(locator)`**: Standard click. Automatically waits for actionability.
+* **`clickWithoutScrolling(locator)`**: Dispatches a native `'click'` event. Bypasses intersection observers and sticky headers.
+* **`clickIfPresent(locator)`**: Safely clicks an element only if it is visible, preventing failures on optional elements (like cookie banners).
+* **`fill(locator, text)`**: Clears the input and types the provided text.
+* **`uploadFile(locator, filePath)`**: Uploads a file to a specific `<input type="file">`.
 
-Counts the matching elements and randomly selects one. Safely waits for the specific randomized element to become visible.
+### ✅ Verifications & Assertions
 
-### `getByText(page, pageName, elementName, desiredText, strict?)`
+All verification methods automatically utilize Playwright's auto-retrying `expect` under the hood.
 
-Returns the first Locator matching the mapped selector that also contains the `desiredText`.
-
-### `getSelector(pageName, elementName)`
-
-Returns the raw string selector mapped to the given element (e.g., "css=input[name='search']" or "xpath=//div"). This is a synchronous method primarily useful for debugging, custom logging, or passing raw selector strings directly into native Playwright APIs that require strings instead of Locator objects.
+* **`verifyText(locator, expectedText)`**: Asserts exact text match.
+* **`verifyTextContains(locator, expectedText)`**: Asserts the element contains a substring.
+* **`verifyPresence(locator)`**: Asserts the element is visible in the DOM.
+* **`verifyAbsence(locator)`**: Asserts the element is hidden or detached.
+* **`verifyElementState(locator, state)`**: Asserts whether an element is `'enabled'` or `'disabled'`.
+* **`verifyAttribute(locator, attributeName, expectedValue)`**: Asserts the value of an HTML attribute (e.g., `href`, `class`).
+* **`verifyUrlContains(text)`**: Asserts the active browser URL contains a specific substring.
+* **`verifyImages(imagesLocator, contextName?, scroll?)`**: Robust image verification. Scrolls into view, checks visibility, asserts the `src` is populated, checks `naturalWidth > 0`, and evaluates the native `HTMLImageElement.decode()` promise to guarantee the image is not a broken 404 link.
