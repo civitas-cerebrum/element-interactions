@@ -12,6 +12,7 @@ Install the package via your preferred package manager:
 
 ```bash
 npm i pw-element-interactions
+
 ```
 
 **Peer Dependencies:**
@@ -23,6 +24,7 @@ This package requires `@playwright/test` to be installed in your project.
 * **Readable Tests:** Abstract away Playwright boilerplate into semantic, English-like methods (`click`, `verifyPresence`, `fill`).
 * **Advanced Visual Checks:** Includes a highly reliable `verifyImages` method that evaluates actual browser decoding and `naturalWidth` to ensure images aren't just in the DOM, but are properly rendered.
 * **Safe Interactions:** Built-in methods like `clickIfPresent` and `clickWithoutScrolling` (using native `dispatchEvent`) to bypass common UI flakiness like sticky headers or overlapping modals.
+* **Smart Dropdowns:** Easily select dropdown options by value, index, or completely randomly (skipping disabled or empty options automatically).
 
 ## 💻 Usage
 
@@ -32,31 +34,37 @@ Initialize the `ElementInteractions` class by passing the current Playwright `pa
 
 ```typescript
 import { test } from '@playwright/test';
-import { ElementInteractions } from 'pw-element-interactions';
+import { Interactions } from 'pw-element-interactions';
 import { ElementRepository } from 'pw-element-repository';
 
 test('Add random product and verify image gallery', async ({ page }) => {
   // 1. Initialize Interactions
-  const actions = new ElementInteractions(page);
+  const interactions = new ElementInteractions(page);
   const repo = new ElementRepository('tests/data/locators.json', 15000);
 
   // 2. Navigate
-  await actions.navigateToUrl('/');
+  await interactions.navigate.navigateToUrl('/');
 
   // 3. Acquire & Interact
   const categoryLink = await repo.get(page, 'HomePage', 'category-accessories');
-  await actions.click(categoryLink);
+  await interactions.interact.click(categoryLink);
 
   // 4. Randomized Acquisition & Safe Interaction
   const randomProduct = await repo.getRandom(page, 'AccessoriesPage', 'product-cards');
-  await actions.click(randomProduct);
+  await interactions.interact.click(randomProduct);
 
-  await actions.verifyUrlContains('/product/');
+  await interactions.verify.verifyUrlContains('/product/');
 
-  // 5. Advanced Image Verification
+  // 5. Smart Dropdown Interaction
+  const sizeDropdown = await repo.get(page, 'ProductDetailsPage', 'size-selector');
+  const selectedSize = await interactions.interact.selectDropdown(sizeDropdown, { type: 'random' });
+  console.log(`Selected size: ${selectedSize}`);
+
+  // 6. Advanced Image Verification
   const productGallery = await repo.get(page, 'ProductDetailsPage', 'gallery-images');
-  await actions.verifyImages(productGallery, 'Product PDP Gallery', true);
+  await interactions.verify.verifyImages(productGallery, 'Product PDP Gallery', true);
 });
+
 ```
 
 ## 🛠️ API Reference
@@ -77,6 +85,12 @@ All interaction methods accept a Playwright `Locator` object.
 * **`clickIfPresent(locator)`**: Safely clicks an element only if it is visible, preventing failures on optional elements (like cookie banners).
 * **`fill(locator, text)`**: Clears the input and types the provided text.
 * **`uploadFile(locator, filePath)`**: Uploads a file to a specific `<input type="file">`.
+* **`selectDropdown(locator, options?)`**: Unified method to interact with `<select>` elements. Returns the selected value. Accepts an options object (`DropdownSelectOptions`):
+* `{ type: 'random' }` (Default) - Selects a random, non-disabled option with a valid value.
+* `{ type: 'value', value: 'string' }` - Selects by exact value.
+* `{ type: 'index', index: 1 }` - Selects by index.
+
+
 
 ### ✅ Verifications & Assertions
 
