@@ -1,7 +1,7 @@
 import { test } from '@playwright/test';
 import { DateUtilities } from '../src/utils/DateUtilities';
-import { ElementInteractions } from '../src/ElementInteractions';
 import { ElementRepository } from 'pw-element-repository';
+import { Steps } from '../src/steps/CommonSteps'; // Updated import
 
 test.describe('E2E Form Submission Suite', () => {
 
@@ -12,83 +12,76 @@ test.describe('E2E Form Submission Suite', () => {
     repo = new ElementRepository("tests/data/page-repository.json");
   });
 
-  test('TC_001: Complete Form Submission from Scratch', async ({ page }) => {
-    // Initialize the Interactions Facade for this specific page context
-    const steps = new ElementInteractions(page);
+  test('TC_001: Complete Form Submission', async ({ page }) => {
+    // Initialize the unified Steps Facade
+    const steps = new Steps(page, repo);
     
     // 💡 Dictionary to track our expected values for the final modal verification
     const entries: Record<string, string> = {};
 
     await test.step('🧭 Navigate to the website and open Forms', async () => {
-      await steps.navigate.toUrl('http://127.0.0.1:8080/');
+      await steps.navigateTo('http://127.0.0.1:8080/');
 
+      // Using repo directly here because getByText is a specialized repository method
       const formsCategory = await repo.getByText(page, 'HomePage', 'categories', 'Forms');
-      await steps.interact.click(formsCategory!);
+      await formsCategory!.click(); 
     });
 
     await test.step('✅ Verify Page Title', async () => {
-      const title = await repo.get(page, 'FormsPage', 'title');
-      await steps.verify.text(title, 'Forms Page');
+      await steps.verifyText('FormsPage', 'title', 'Forms Page');
     });
 
     await test.step('📝 Fill Standard Inputs', async () => {
-      const nameInput = await repo.get(page, 'FormsPage', 'nameInput');
-      const emailInput = await repo.get(page, 'FormsPage', 'emailInput');
-      const mobileInput = await repo.get(page, 'FormsPage', 'mobileInput');
-      const addressInput = await repo.get(page, 'FormsPage', 'addressInput');
-
       // Store expected values
       entries['Name'] = 'Automated Tester';
       entries['Email'] = 'AutomatedTester@email.com';
       entries['Mobile'] = '0000000000';
       entries['Current Address'] = 'Prinsenstraat, 1015 DB Amsterdam';
 
-      await steps.interact.fill(nameInput, entries['Name']);
-      await steps.interact.fill(emailInput, entries['Email']);
-      await steps.interact.fill(mobileInput, entries['Mobile']);
-      await steps.interact.fill(addressInput, entries['Current Address']);
+      // Replaced manual get + fill with single steps
+      await steps.fill('FormsPage', 'nameInput', entries['Name']);
+      await steps.fill('FormsPage', 'emailInput', entries['Email']);
+      await steps.fill('FormsPage', 'mobileInput', entries['Mobile']);
+      await steps.fill('FormsPage', 'addressInput', entries['Current Address']);
     });
 
     await test.step('🎲 Select a Random Enabled Gender', async () => {
-      const genderDropdown = await repo.get(page, 'FormsPage', 'genderDropdown');
-
-      const selectedGender = await steps.interact.selectDropdown(genderDropdown);
-      entries['Gender'] = selectedGender; // Store the randomly selected value
+      entries['Gender'] = await steps.selectDropdown('FormsPage', 'genderDropdown');
     });
 
     await test.step('📅 Handle Date Picker and Hobbies', async () => {
-      const dobInput = await repo.get(page, 'FormsPage', 'dateOfBirthInput');
-      await steps.interact.click(dobInput);
+      await steps.click('FormsPage', 'dateOfBirthInput');
 
-      const todayCell = await repo.get(page, 'FormsPage', 'todayCell');
-      await steps.verify.presence(todayCell);
-      await steps.interact.click(todayCell);
+      await steps.verifyPresence('FormsPage', 'todayCell');
+      await steps.click('FormsPage', 'todayCell');
 
-      // Store the date value directly from the input for verification
-      var dobValue = await repo.get(page, 'FormsPage', 'spSelectionPreview').then(input => input.textContent());
+      // Drop down to repo for textContent extraction
+      const spSelectionPreview = await repo.get(page, 'FormsPage', 'spSelectionPreview');
+      let dobValue = await spSelectionPreview.textContent();
+      
       dobValue = DateUtilities.reformatDateString(dobValue!.trim(), 'yyyy-M-d');
       entries['Date of Birth'] = dobValue; 
 
-      const dobSubmit = await repo.get(page, 'FormsPage', 'datePickerSubmitButton');
-      await steps.verify.presence(dobSubmit);
-      await steps.interact.click(dobSubmit);
+      await steps.verifyPresence('FormsPage', 'datePickerSubmitButton');
+      await steps.click('FormsPage', 'datePickerSubmitButton');
 
-      const hobbiesInput = await repo.get(page, 'FormsPage', 'hobbiesInput');
-      await steps.interact.clickWithoutScrolling(hobbiesInput);
+      // Note: If you want to use `clickWithoutScrolling` here, you might want to 
+      // add that method to your `Steps` class too! 
+      await steps.click('FormsPage', 'hobbiesInput'); 
     });
 
     await test.step('🚀 Submit Form and Verify Modal', async () => {
-      const submitButton = await repo.get(page, 'FormsPage', 'submitButton');
-      await steps.interact.click(submitButton);
+      await steps.click('FormsPage', 'submitButton');
+      await steps.verifyPresence('FormsPage', 'table');
 
+      // Drop down to raw Playwright for complex, dynamic row filtering
       const modal = await repo.get(page, 'FormsPage', 'table');
-      await steps.verify.presence(modal);
-
       for (const [key, expectedValue] of Object.entries(entries)) {
         const row = modal.locator('tr').filter({ hasText: key });
         const actualValueElement = row.locator('td').nth(1);   
 
-        await steps.verify.text(actualValueElement, expectedValue);
+        // We can reuse the verifications engine directly if needed, or Playwright's expect
+        await steps['verify'].text(actualValueElement, expectedValue); 
       }
     });
 
