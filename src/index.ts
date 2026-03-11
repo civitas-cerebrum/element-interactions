@@ -2,7 +2,6 @@
 export { ElementInteractions } from './ElementInteractions';
 
 // Interaction logic and associated Types/Enums
-// This ensures users can use DropdownSelectType.RANDOM in their tests
 export { 
     Interactions, 
     DropdownSelectType, 
