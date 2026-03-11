@@ -23,7 +23,7 @@ test.describe('E2E Form Submission Suite', () => {
       await steps.navigate.toUrl('http://127.0.0.1:8080/');
 
       const formsCategory = await repo.getByText(page, 'HomePage', 'categories', 'Forms');
-      await steps.interactions.click(formsCategory!);
+      await steps.interact.click(formsCategory!);
     });
 
     await test.step('✅ Verify Page Title', async () => {
@@ -43,26 +43,26 @@ test.describe('E2E Form Submission Suite', () => {
       entries['Mobile'] = '0000000000';
       entries['Current Address'] = 'Prinsenstraat, 1015 DB Amsterdam';
 
-      await steps.interactions.fill(nameInput, entries['Name']);
-      await steps.interactions.fill(emailInput, entries['Email']);
-      await steps.interactions.fill(mobileInput, entries['Mobile']);
-      await steps.interactions.fill(addressInput, entries['Current Address']);
+      await steps.interact.fill(nameInput, entries['Name']);
+      await steps.interact.fill(emailInput, entries['Email']);
+      await steps.interact.fill(mobileInput, entries['Mobile']);
+      await steps.interact.fill(addressInput, entries['Current Address']);
     });
 
     await test.step('🎲 Select a Random Enabled Gender', async () => {
       const genderDropdown = await repo.get(page, 'FormsPage', 'genderDropdown');
 
-      const selectedGender = await steps.interactions.selectDropdown(genderDropdown);
+      const selectedGender = await steps.interact.selectDropdown(genderDropdown);
       entries['Gender'] = selectedGender; // Store the randomly selected value
     });
 
     await test.step('📅 Handle Date Picker and Hobbies', async () => {
       const dobInput = await repo.get(page, 'FormsPage', 'dateOfBirthInput');
-      await steps.interactions.click(dobInput);
+      await steps.interact.click(dobInput);
 
       const todayCell = await repo.get(page, 'FormsPage', 'todayCell');
       await steps.verify.presence(todayCell);
-      await steps.interactions.click(todayCell);
+      await steps.interact.click(todayCell);
 
       // Store the date value directly from the input for verification
       var dobValue = await repo.get(page, 'FormsPage', 'spSelectionPreview').then(input => input.textContent());
@@ -71,15 +71,15 @@ test.describe('E2E Form Submission Suite', () => {
 
       const dobSubmit = await repo.get(page, 'FormsPage', 'datePickerSubmitButton');
       await steps.verify.presence(dobSubmit);
-      await steps.interactions.click(dobSubmit);
+      await steps.interact.click(dobSubmit);
 
       const hobbiesInput = await repo.get(page, 'FormsPage', 'hobbiesInput');
-      await steps.interactions.clickWithoutScrolling(hobbiesInput);
+      await steps.interact.clickWithoutScrolling(hobbiesInput);
     });
 
     await test.step('🚀 Submit Form and Verify Modal', async () => {
       const submitButton = await repo.get(page, 'FormsPage', 'submitButton');
-      await steps.interactions.click(submitButton);
+      await steps.interact.click(submitButton);
 
       const modal = await repo.get(page, 'FormsPage', 'table');
       await steps.verify.presence(modal);
