@@ -2,7 +2,7 @@
 
 [![NPM Version](https://img.shields.io/npm/v/pw-element-interactions?color=rgb(88%2C%20171%2C%2070))](https://www.npmjs.com/package/pw-element-interactions)
 
-A robust, readable interaction and assertion wrapper for Playwright. 
+A robust set of Playwright steps for readable interaction and assertions.
 
 `pw-element-interactions` pairs perfectly with `pw-element-repository` to achieve a fully decoupled test automation architecture. By separating **Element Acquisition** from **Element Interaction**, your test scripts become highly readable, easily maintainable, and completely free of raw locators.
 
