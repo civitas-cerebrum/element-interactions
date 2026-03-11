@@ -2,3 +2,4 @@
 /node_modules
 *.tgz
 /test-results
+.DS_Store
