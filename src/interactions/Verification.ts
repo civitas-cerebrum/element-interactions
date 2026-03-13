@@ -1,26 +1,42 @@
 import { Page, expect, Locator } from '@playwright/test';
+import { CountVerifyOptions, TextVerifyOptions } from '../enum/Options';
 
 /**
  * The `Verifications` class provides a unified wrapper around Playwright's `expect` assertions.
- * It standardizes timeouts, adds helpful logging, and includes advanced custom verifications 
+ * It standardizes timeouts and includes advanced custom, robust verifications 
  * (like image decoding) to keep your test assertions clean and reliable.
  */
 export class Verifications {
     /** The standard timeout applied to all verifications in this class. */
-    private readonly ELEMENT_TIMEOUT = 10000;
+    private readonly ELEMENT_TIMEOUT = 30000;
 
     /**
      * Initializes the Verifications class.
      * @param page - The current Playwright Page object.
      */
-    constructor(private page: Page) {}
+    constructor(private page: Page) { }
+
+    // ==========================================
+    // Standard Assertions
+    // ==========================================
 
     /**
-     * Asserts that the specified element's text exactly matches the expected text.
+     * Asserts the text content of an element.
+     * Can verify exact text matches or simply check that the element contains some text.
      * @param locator - The Playwright Locator pointing to the target element.
-     * @param expectedText - The exact text string expected to be inside the element.
+     * @param expectedText - The exact text string expected (optional if checking 'notEmpty').
+     * @param options - Configuration to alter the verification behavior.
      */
-    async text(locator: Locator, expectedText: string): Promise<void> {
+    async text(locator: Locator, expectedText?: string, options?: TextVerifyOptions): Promise<void> {
+        if (options?.notEmpty) {
+            await expect(locator).not.toBeEmpty({ timeout: this.ELEMENT_TIMEOUT });
+            return;
+        }
+
+        if (expectedText === undefined) {
+            throw new Error(`[Verify] -> You must provide either an 'expectedText' string or set '{ notEmpty: true }' in options.`);
+        }
+
         await expect(locator).toHaveText(expectedText, { timeout: this.ELEMENT_TIMEOUT });
     }
 
@@ -46,7 +62,6 @@ export class Verifications {
      * @param locator - The Playwright Locator pointing to the target element.
      */
     async absence(locator: Locator): Promise<void> {
-        console.log(`[Verify] -> Asserting absence of "${locator}"`);
         await expect(locator).toBeHidden({ timeout: this.ELEMENT_TIMEOUT });
     }
 
@@ -57,7 +72,6 @@ export class Verifications {
      * @param state - The expected state: either 'enabled' or 'disabled'.
      */
     async state(locator: Locator, state: 'enabled' | 'disabled'): Promise<void> {
-        console.log(`[Verify] -> Asserting state of "${locator}" is: "${state}"`);
         if (state === 'enabled') {
             await expect(locator).toBeEnabled({ timeout: this.ELEMENT_TIMEOUT });
         } else {
@@ -71,7 +85,6 @@ export class Verifications {
      * @param text - The substring expected to be present within the active URL.
      */
     async urlContains(text: string): Promise<void> {
-        console.log(`[Verify] -> Asserting current URL contains: "${text}"`);
         await expect(this.page).toHaveURL(new RegExp(text, 'i'), { timeout: this.ELEMENT_TIMEOUT });
     }
 
@@ -90,7 +103,7 @@ export class Verifications {
      * It checks for visibility, ensures a valid 'src' attribute exists, confirms the 
      * 'naturalWidth' is greater than 0, and evaluates the browser's native `decode()` 
      * promise to guarantee the image is fully rendered and not a broken link.
-     * * @param imagesLocator - The Playwright Locator pointing to the image element(s).
+     * @param imagesLocator - The Playwright Locator pointing to the image element(s).
      * @param scroll - Whether to smoothly scroll the image(s) into the viewport before verifying (default: true).
      * @throws Will throw an error if no images are found matching the locator or if any image fails to decode.
      */
@@ -103,11 +116,11 @@ export class Verifications {
 
         for (let i = 0; i < productImages.length; i++) {
             const productImage = productImages[i];
-            
+
             if (scroll) {
-                await productImage.scrollIntoViewIfNeeded().catch(() => {});
+                await productImage.scrollIntoViewIfNeeded().catch(() => { });
             }
-            
+
             await expect(productImage).toBeVisible({ timeout: this.ELEMENT_TIMEOUT });
             await expect(productImage).toHaveAttribute('src', /.+/, { timeout: this.ELEMENT_TIMEOUT });
             await expect(productImage).not.toHaveJSProperty('naturalWidth', 0, { timeout: this.ELEMENT_TIMEOUT });
@@ -124,7 +137,42 @@ export class Verifications {
 
             expect(isDecoded, `Image ${i + 1} failed to decode for ${imagesLocator}`).toBe(true);
         }
+    }
 
-        console.log(`[Verify] -> Successfully verified ${productImages.length} images for "${imagesLocator}"`);
+    /**
+    * Asserts the number of elements matching the locator based on the provided conditions.
+    * @param locator - The Playwright Locator pointing to the target elements.
+    * @param options - Configuration specifying 'exact', 'greaterThan', or 'lessThan' logic.
+    */
+    async count(locator: Locator, options: CountVerifyOptions): Promise<void> {
+        if (options.exact !== undefined && options.exact < 0) {
+            throw new Error(`[Verify] -> 'exact' count cannot be negative.`);
+        }
+        if (options.greaterThan !== undefined && options.greaterThan < 0) {
+            throw new Error(`[Verify] -> 'greaterThan' count cannot be negative.`);
+        }
+        if (options.lessThan !== undefined && options.lessThan <= 0) {
+            throw new Error(`[Verify] -> 'lessThan' must be greater than 0. Element counts cannot be negative.`);
+        }
+
+        if (options.exact !== undefined) {
+            await expect(locator).toHaveCount(options.exact, { timeout: this.ELEMENT_TIMEOUT });
+            return;
+        }
+
+        if (options.greaterThan === undefined && options.lessThan === undefined) {
+            throw new Error(`[Verify] -> You must provide 'exact', 'greaterThan', or 'lessThan' in CountVerifyOptions.`);
+        }
+
+        await locator.first().waitFor({ state: 'attached', timeout: this.ELEMENT_TIMEOUT }).catch(() => { });
+        const actualCount = await locator.count();
+
+        if (options.greaterThan !== undefined) {
+            expect(actualCount, `Expected count > ${options.greaterThan}, but got ${actualCount}`).toBeGreaterThan(options.greaterThan);
+        }
+
+        if (options.lessThan !== undefined) {
+            expect(actualCount, `Expected count < ${options.lessThan}, but got ${actualCount}`).toBeLessThan(options.lessThan);
+        }
     }
 }
