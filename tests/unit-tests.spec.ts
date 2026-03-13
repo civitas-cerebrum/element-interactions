@@ -58,12 +58,13 @@ test.describe('E2E Facade Implementation Suite', () => {
     await test.step('📅 Handle Date Picker and Data Extraction', async () => {
       await steps.click('FormsPage', 'dateOfBirthInput');
 
+      await steps.waitForState('FormsPage', 'todayCell', 'visible');
       await steps.verifyPresence('FormsPage', 'todayCell');
       await steps.click('FormsPage', 'todayCell');
 
       let dobValue = await steps.getText('FormsPage', 'spSelectionPreview');
 
-      dobValue = DateUtilities.reformatDateString(dobValue, 'yyyy-M-d');
+      dobValue = DateUtilities.reformatDateString(dobValue!, 'yyyy-M-d');
       entries['Date of Birth'] = dobValue;
 
       await steps.verifyPresence('FormsPage', 'datePickerSubmitButton');
