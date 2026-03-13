@@ -2,7 +2,7 @@
 export { ElementInteractions } from './ElementInteractions';
 
 // Enums
-export { DropdownSelectOptions, DropdownSelectType } from './enum/Dropdown';
+export * from './enum/Options';
 
 // Supporting Action Classes
 export { Navigation } from './interactions/Navigation';
