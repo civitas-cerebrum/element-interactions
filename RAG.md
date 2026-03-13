@@ -1,71 +1,102 @@
-# pw-element-interactions (RAG Context)
+# pw-element-interactions — AI Reference
 
-**Purpose:** A Playwright wrapper that decouples element acquisition from interaction. When paired with `pw-element-repository`, it eliminates locator boilerplate by allowing interactions using plain-text `pageName` and `elementName` keys via a unified `Steps` API.
-
-## Setup & Initialization
-
-**Install:** `npm i pw-element-interactions`
-**Peer Dependencies:** `@playwright/test`, `pw-element-repository`
-
-**Initialization:**
-
+## Setup
 ```ts
-import { ElementRepository } from 'pw-element-repository';
-import { Steps } from 'pw-element-interactions';
-
-// Inside test:
-const repo = new ElementRepository('path/to/locators.json');
-const steps = new Steps(page, repo);
+npm i pw-element-interactions  // peer deps: @playwright/test, pw-element-repository
 ```
 
-## `Steps` API Reference
+```ts
+const repo = new ElementRepository('tests/data/locators.json');
+const steps = new Steps(page, repo);
+// All steps resolve elements via (pageName: string, elementName: string)
+```
 
-All methods automatically fetch the locator, wait for readiness, and perform the action using the `pageName` and `elementName` string keys from the repository.
+## Steps API
 
 ### Navigation
-
-* `MapsTo(url: string)`: Navigates to absolute or relative URL.
-* `refresh()`: Reloads current page.
+- `navigateTo(url: string)`
+- `refresh()`
+- `backOrForward(direction: 'BACKWARDS' | 'FORWARDS')`
+- `setViewport(width: number, height: number)`
 
 ### Interaction
-
-* `click(pageName, elementName)`: Standard click; waits for attached, visible, stable, actionable.
-* `clickWithoutScrolling(pageName, elementName)`: Native event dispatch; bypasses Playwright's scrolling/intersection checks (good for obscured elements).
-* `clickIfPresent(pageName, elementName)`: Safe click; skips without failing if hidden.
-* `clickRandom(pageName, elementName)`: Clicks a random element from a resolved list.
-* `hover(pageName, elementName)`: Triggers hover state.
-* `scrollIntoView(pageName, elementName)`: Smoothly scrolls element into viewport.
-* `fill(pageName, elementName, text: string)`: Clears and types text.
-* `uploadFile(pageName, elementName, filePath: string)`: Uploads local file to `<input type="file">`.
-* `selectDropdown(pageName, elementName, options?: DropdownSelectOptions)`: Selects `<select>` option. Options: `{ type: DropdownSelectType.RANDOM | VALUE | INDEX, value?: string, index?: number }`.
-* `dragAndDrop(pageName, elementName, options: DragAndDropOptions)`: Drags to target locator or `{ xOffset, yOffset }`.
-* `dragAndDropListedElement(pageName, elementName, elementText: string, options: DragAndDropOptions)`: Finds specific element in list by text, then drags.
+- `click(pageName, elementName)`
+- `clickWithoutScrolling(pageName, elementName)` — bypasses scroll/overlay checks
+- `clickIfPresent(pageName, elementName)` — no-op if hidden
+- `clickRandom(pageName, elementName)` — picks random from matched list
+- `hover(pageName, elementName)`
+- `scrollIntoView(pageName, elementName)`
+- `fill(pageName, elementName, text: string)` — clears then types
+- `uploadFile(pageName, elementName, filePath: string)`
+- `dragAndDrop(pageName, elementName, options: DragAndDropOptions)` — `{ target: Locator }` or `{ xOffset, yOffset }`
+- `dragAndDropListedElement(pageName, elementName, elementText: string, options: DragAndDropOptions)` — find by text then drag
+- `selectDropdown(pageName, elementName, options?: DropdownSelectOptions)` — returns selected value
+  - `{ type: DropdownSelectType.RANDOM }` (default)
+  - `{ type: DropdownSelectType.VALUE, value: string }`
+  - `{ type: DropdownSelectType.INDEX, index: number }`
 
 ### Data Extraction
-
-* `getText(pageName, elementName)`: Returns trimmed text content (or empty string).
-* `getAttribute(pageName, elementName, attributeName: string)`: Returns attribute value or `null`.
+- `getText(pageName, elementName)` — returns trimmed string or `''`
+- `getAttribute(pageName, elementName, attributeName: string)` — returns string or `null`
 
 ### Verification
-
-* `verifyPresence(pageName, elementName)`: Asserts attached and visible.
-* `verifyAbsence(pageName, elementName)`: Asserts hidden or detached.
-* `verifyText(pageName, elementName, expectedText?: string, options?: { notEmpty: true })`: Asserts exact text or non-blank dynamically generated text.
-* `verifyCount(pageName, elementName, options: { exact?: number, greaterThan?: number, lessThan?: number })`: Asserts element list length.
-* `verifyImages(pageName, elementName, scroll?: boolean)`: Deep assertion (scrolls default true): checks visibility, valid `src`, `naturalWidth > 0`, and native browser `decode()` promise.
-* `verifyUrlContains(text: string)`: Asserts substring in active URL.
+- `verifyPresence(pageName, elementName)`
+- `verifyAbsence(pageName, elementName)`
+- `verifyText(pageName, elementName, expectedText?: string, options?: { notEmpty: true })`
+- `verifyCount(pageName, elementName, options: { exact: number } | { greaterThan: number } | { lessThan: number })`
+- `verifyImages(pageName, elementName, scroll?: boolean)` — checks src, naturalWidth, decode()
+- `verifyUrlContains(text: string)`
 
 ### Wait
+- `waitForState(pageName, elementName, state?: 'visible' | 'attached' | 'hidden' | 'detached')` — default: `'visible'`
 
-* `waitForState(pageName, elementName, state?: 'visible' | 'attached' | 'hidden' | 'detached')`: Explicit wait (defaults to 'visible').
+---
 
-## Raw Interactions API (Fallback)
+## Raw API (no repo)
+```ts
+const interactions = new ElementInteractions(page);
+const loc = page.locator('button.dynamic-class');
+await interactions.interact.clickWithoutScrolling(loc);
+await interactions.verify.count(loc, { greaterThan: 2 });
+// namespaces: interact, verify, navigate
+```
 
-To bypass the repository and use raw Playwright Locators dynamically, use the `ElementInteractions` class.
+### Example Scenario
 
 ```ts
-import { ElementInteractions } from 'pw-element-interactions';
-const interactions = new ElementInteractions(page);
-// Exposes custom locator methods via: interactions.interact, interactions.verify, interactions.Maps
-await interactions.interact.clickWithoutScrolling(page.locator('.dynamic'));
+import { test } from '@playwright/test';
+import { ElementRepository } from 'pw-element-repository';
+import { Steps, DropdownSelectType } from 'pw-element-interactions';
+
+test('Add random product and verify image gallery', async ({ page }) => {
+  // 1. Initialize Repository & Steps
+  const repo = new ElementRepository('tests/data/locators.json');
+  const steps = new Steps(page, repo);
+
+  // 2. Navigate
+  await steps.navigateTo('/');
+
+  // 3. Direct Interaction (Fetches and clicks in one line)
+  await steps.click('HomePage', 'category-accessories');
+
+  // 4. Randomized Acquisition & Action
+  await steps.clickRandom('AccessoriesPage', 'product-cards');
+  await steps.verifyUrlContains('/product/');
+
+  // 5. Smart Dropdown Interaction
+  const selectedSize = await steps.selectDropdown('ProductDetailsPage', 'size-selector', { 
+    type: DropdownSelectType.RANDOM 
+  });
+  console.log(`Selected size: ${selectedSize}`);
+
+  // 6. Flexible Assertions & Data Extraction
+  await steps.verifyCount('ProductDetailsPage', 'gallery-images', { greaterThan: 0 });
+  await steps.verifyText('ProductDetailsPage', 'product-title', undefined, { notEmpty: true });
+  
+  // 7. Advanced Image Verification
+  await steps.verifyImages('ProductDetailsPage', 'gallery-images');
+  
+  // 8. Explicit Waits
+  await steps.waitForState('CheckoutPage', 'confirmation-modal', 'visible');
+});
 ```
