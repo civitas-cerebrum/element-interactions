@@ -8,13 +8,16 @@ import { CountVerifyOptions, TextVerifyOptions } from '../enum/Options';
  */
 export class Verifications {
     /** The standard timeout applied to all verifications in this class. */
-    private readonly ELEMENT_TIMEOUT = 30000;
+    private ELEMENT_TIMEOUT : number;
 
     /**
      * Initializes the Verifications class.
      * @param page - The current Playwright Page object.
+     * @param timeout - Optional override for the default element timeout.
      */
-    constructor(private page: Page) { }
+    constructor(private page: Page, timeout: number = 30000) { 
+        this.ELEMENT_TIMEOUT = timeout;
+    }
 
     // ==========================================
     // Standard Assertions
