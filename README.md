@@ -62,7 +62,7 @@ test('Add random product and verify image gallery', async ({ page }) => {
   await steps.verifyUrlContains('/product/');
 
   // 5. Smart Dropdown Interaction
-  const selectedSize = await steps.selectDropdown('ProductDetailsPage', 'size-selector', { type: 'random' });
+  const selectedSize = await steps.selectDropdown('ProductDetailsPage', 'size-selector');
   console.log(`Selected size: ${selectedSize}`);
 
   // 6. Advanced Image Verification
