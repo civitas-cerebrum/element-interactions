@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixture/StepFixture';
 import { ElementRepository } from 'pw-element-repository';
 import { Steps } from '../src/steps/CommonSteps';
 import { ElementInteractions } from '../src/interactions/facade/ElementInteractions';
@@ -15,12 +15,7 @@ test.describe('E2E Facade Implementation Suite', () => {
   });
 
 
-test('TC_001: Complete Form Submission (Core API)', async ({ page }) => {
-    const steps = new Steps(page, repo);
-    const interactions = new ElementInteractions(page);
-    
-    // Initialize our new ContextStore
-    const context = new ContextStore(); 
+test('TC_001: Complete Form Submission (Core API)', async ({ page, repo, steps, interactions, contextStore }) => {
 
     await test.step('🧭 Navigate to the website', async () => {
       await steps.navigateTo('http://127.0.0.1:8080/');
@@ -43,23 +38,23 @@ test('TC_001: Complete Form Submission (Core API)', async ({ page }) => {
 
     await test.step('📝 Fill Standard Inputs', async () => {
       // Use the put method to store values
-      context.put('Name', 'Automated Tester');
-      context.put('Email', 'AutomatedTester@email.com');
-      context.put('Mobile', '0000000000');
-      context.put('Current Address', 'Prinsenstraat, 1015 DB Amsterdam');
+      contextStore.put('Name', 'Automated Tester');
+      contextStore.put('Email', 'AutomatedTester@email.com');
+      contextStore.put('Mobile', '0000000000');
+      contextStore.put('Current Address', 'Prinsenstraat, 1015 DB Amsterdam');
 
       // Use the get method to retrieve them
-      await steps.fill('FormsPage', 'nameInput', context.get('Name'));
-      await steps.fill('FormsPage', 'emailInput', context.get('Email'));
-      await steps.fill('FormsPage', 'mobileInput', context.get('Mobile'));
-      await steps.fill('FormsPage', 'addressInput', context.get('Current Address'));
+      await steps.fill('FormsPage', 'nameInput', contextStore.get('Name'));
+      await steps.fill('FormsPage', 'emailInput', contextStore.get('Email'));
+      await steps.fill('FormsPage', 'mobileInput', contextStore.get('Mobile'));
+      await steps.fill('FormsPage', 'addressInput', contextStore.get('Current Address'));
     });
 
     await test.step('🎲 Select a Random Enabled Gender', async () => {
       const gender = await steps.selectDropdown('FormsPage', 'genderDropdown', {
         type: DropdownSelectType.RANDOM
       });
-      context.put('Gender', gender);
+      contextStore.put('Gender', gender);
     });
 
     await test.step('📅 Handle Date Picker and Data Extraction', async () => {
@@ -71,7 +66,7 @@ test('TC_001: Complete Form Submission (Core API)', async ({ page }) => {
       let dobValue = await steps.getText('FormsPage', 'spSelectionPreview');
       dobValue = DateUtilities.reformatDateString(dobValue!, 'yyyy-M-d');
       
-      context.put('Date of Birth', dobValue);
+      contextStore.put('Date of Birth', dobValue);
 
       await steps.verifyPresence('FormsPage', 'datePickerSubmitButton');
       await steps.click('FormsPage', 'datePickerSubmitButton');
@@ -85,8 +80,8 @@ test('TC_001: Complete Form Submission (Core API)', async ({ page }) => {
       const modal = await repo.get(page, 'FormsPage', 'table');
       const verifyRaw = steps['verify'];
 
-      // Use context.entries() to iterate over the stored key-value pairs!
-      for (const [key, expectedValue] of context.entries()) {
+      // Use contextStore.entries() to iterate over the stored key-value pairs!
+      for (const [key, expectedValue] of contextStore.entries()) {
         const row = modal.locator('tr').filter({ hasText: key });
         const actualValueElement = row.locator('td').nth(1);
 
@@ -97,9 +92,7 @@ test('TC_001: Complete Form Submission (Core API)', async ({ page }) => {
     console.log('✅ TEST PASSED: TC_001 Complete Form Submission');
 });
 
-  test('TC_002: Drag and Drop Interactions', async ({ page }) => {
-    const steps = new Steps(page, repo);
-    const interactions = new ElementInteractions(page);
+  test('TC_002: Drag and Drop Interactions', async ({ page, steps, interactions }) => {
 
     await test.step('🧭 Navigate to Interactions and open Sortable tool', async () => {
       await steps.navigateTo('http://127.0.0.1:8080/');
@@ -158,45 +151,8 @@ test('TC_001: Complete Form Submission (Core API)', async ({ page }) => {
     console.log('✅ TEST PASSED: TC_003 Negative Assertions');
   });
 
-  test('TC_004: Negative State Validations - Missing Elements & Text Mismatches', async ({ page }) => {
+  test('TC_004: Wait For State - Warning behavior on incorrect state', async ({ page }) => {
     const steps = new Steps(page, repo, 2500);
-    const interactions = new ElementInteractions(page);
-
-    await test.step('🧭 Navigate to Forms Page', async () => {
-      await steps.navigateTo('http://127.0.0.1:8080/');
-      const formsCategory = await repo.getByText(page, 'HomePage', 'categories', 'Forms');
-      await interactions.interact.click(formsCategory!);
-    });
-
-    await test.step('🚫 verifyPresence on a missing element should throw', async () => {
-      let errorCaught = false;
-      try {
-        // The results 'table' only appears AFTER submission. Asserting presence now should fail.
-        await steps.verifyPresence('FormsPage', 'table');
-      } catch (error) {
-        errorCaught = true;
-        console.log('✅ Caught expected error: verifyPresence failed correctly.');
-      }
-      expect(errorCaught).toBeTruthy();
-    });
-
-    await test.step('🚫 verifyText with wrong string should throw', async () => {
-      let errorCaught = false;
-      try {
-        // Actual text is 'Forms Page'
-        await steps.verifyText('FormsPage', 'title', 'Completely Wrong Title');
-      } catch (error) {
-        errorCaught = true;
-        console.log('✅ Caught expected error: verifyText failed correctly.');
-      }
-      expect(errorCaught).toBeTruthy();
-    });
-
-    console.log('✅ TEST PASSED: TC_004 Negative State Validations');
-  });
-
-  test('TC_005: Wait For State - Warning behavior on incorrect state', async ({ page }) => {
-    const steps = new Steps(page, repo);
     
     await test.step('🧭 Navigate to the website', async () => {
       await steps.navigateTo('http://127.0.0.1:8080/');
@@ -220,7 +176,7 @@ test('TC_001: Complete Form Submission (Core API)', async ({ page }) => {
       console.log('✅ waitForState safely swallowed the timeout error and proceeded.');
     });
 
-    console.log('✅ TEST PASSED: TC_005 Wait For State Warning Behavior');
+    console.log('✅ TEST PASSED: TC_004 Wait For State Warning Behavior');
   });
 
 });

@@ -110,6 +110,108 @@ test('Add random product and verify image gallery', async ({ page }) => {
 
 ---
 
+## 🔧 Fixtures: Zero-Setup Tests (Recommended)
+
+For larger projects, manually initializing `repo` and `steps` inside every test quickly becomes repetitive. `pw-element-interactions` ships a `baseFixture` factory that injects all core dependencies automatically via Playwright's fixture system.
+
+### What's included
+
+| Fixture | Type | Description |
+|---|---|---|
+| `steps` | `Steps` | The full Steps API, ready to use |
+| `repo` | `ElementRepository` | Direct repository access for advanced locator queries |
+| `interactions` | `ElementInteractions` | Raw interactions API for custom locators |
+| `contextStore` | `ContextStore` | Shared in-memory store for passing data between steps |
+
+### 1. Create your fixture file
+
+Call `baseFixture` once, passing your own `test` base and the path to your locator repository:
+
+```ts
+// tests/fixtures/base.ts
+import { test as base, expect } from '@playwright/test';
+import { baseFixture } from 'pw-element-interactions';
+
+export const test = baseFixture(base, 'tests/data/page-repository.json');
+export { expect };
+```
+
+### 2. Use fixtures in your tests
+
+Import `test` from your fixture file. All four fixtures are available as named parameters — no setup code required:
+
+```ts
+// tests/checkout.spec.ts
+import { test, expect } from '../fixtures/base';
+import { DropdownSelectType } from 'pw-element-interactions';
+
+test('Complete checkout flow', async ({ steps }) => {
+  await steps.navigateTo('/');
+  await steps.click('HomePage', 'category-accessories');
+  await steps.clickRandom('AccessoriesPage', 'product-cards');
+  await steps.verifyUrlContains('/product/');
+
+  const selectedSize = await steps.selectDropdown('ProductDetailsPage', 'size-selector', {
+    type: DropdownSelectType.RANDOM,
+  });
+
+  await steps.verifyImages('ProductDetailsPage', 'gallery-images');
+  await steps.click('ProductDetailsPage', 'add-to-cart-button');
+  await steps.waitForState('CheckoutPage', 'confirmation-modal', 'visible');
+});
+```
+
+### 3. Access `repo` directly when needed
+
+For advanced queries like resolving a locator by visible text, destructure `repo` alongside `steps`:
+
+```ts
+test('Navigate to Forms category', async ({ page, repo, steps }) => {
+  await steps.navigateTo('/');
+
+  const formsLink = await repo.getByText(page, 'HomePage', 'categories', 'Forms');
+  await formsLink?.click();
+
+  await steps.verifyAbsence('HomePage', 'categories');
+});
+```
+
+### 4. Extend with your own fixtures
+
+Because `baseFixture` returns a standard Playwright `test` object, you can chain your own fixtures on top of it cleanly:
+
+```ts
+// tests/fixtures/base.ts
+import { test as base } from '@playwright/test';
+import { baseFixture } from 'pw-element-interactions';
+import { AuthService } from '../services/AuthService';
+
+type MyFixtures = {
+  authService: AuthService;
+};
+
+const testWithBase = baseFixture(base, 'tests/data/page-repository.json');
+
+export const test = testWithBase.extend<MyFixtures>({
+  authService: async ({ page }, use) => {
+    await use(new AuthService(page));
+  },
+});
+
+export { expect } from '@playwright/test';
+```
+
+All fixtures are then available together in any test:
+
+```ts
+test('Authenticated flow', async ({ steps, authService }) => {
+  await authService.login('user@test.com', 'secret');
+  await steps.verifyUrlContains('/dashboard');
+});
+```
+
+---
+
 ## 🛠️ API Reference: `Steps`
 
 The `Steps` class automatically handles fetching the Playwright `Locator` using your `pageName` and `elementName` keys from the repository.
