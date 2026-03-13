@@ -5,11 +5,11 @@
       "elements": [
         {
           "elementName": "title",
-          "selector": { "css": "[id='title']" }
+          "selector": { "id": "title" }
         },
         {
           "elementName": "countriesDropDown",
-          "selector": { "className": "vs__search" }
+          "selector": { "css": ".vs__search" }
         },
         {
           "elementName": "countriesContainer",
