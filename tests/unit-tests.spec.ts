@@ -106,7 +106,7 @@ test.describe('E2E Facade Implementation Suite', () => {
 
     await test.step('🔄 Drag Item A to the Second List', async () => {
       const dropZone = await repo.getByText(page, 'SortablePage', 'dropZones', 'Second List');
-      
+
       await steps.dragAndDropListedElement('SortablePage', 'sortableItems', 'Item A', { target: dropZone! });
 
       await steps['verify'].textContains(dropZone!, 'Item A');

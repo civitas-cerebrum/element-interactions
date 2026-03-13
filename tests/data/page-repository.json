@@ -5,23 +5,33 @@
       "elements": [
         {
           "elementName": "title",
-          "selector": { "id": "title" }
+          "selector": {
+            "id": "title"
+          }
         },
         {
           "elementName": "countriesDropDown",
-          "selector": { "css": ".vs__search" }
+          "selector": {
+            "css": ".vs__search"
+          }
         },
         {
           "elementName": "countriesContainer",
-          "selector": { "css": "[role='listbox']" }
+          "selector": {
+            "css": "[role='listbox']"
+          }
         },
         {
           "elementName": "countriesList",
-          "selector": { "css": "#vs1__listbox .vs__dropdown-option" }
+          "selector": {
+            "css": "#vs1__listbox .vs__dropdown-option"
+          }
         },
         {
           "elementName": "selection",
-          "selector": { "css": "#countriesDropDown .vs__selected" }
+          "selector": {
+            "css": "#countriesDropDown .vs__selected"
+          }
         }
       ]
     },
@@ -30,15 +40,21 @@
       "elements": [
         {
           "elementName": "questionBoxTitle",
-          "selector": { "css": ".question-box h2" }
+          "selector": {
+            "css": ".question-box h2"
+          }
         },
         {
           "elementName": "checkMarkMessage",
-          "selector": { "css": ".question-box form p" }
+          "selector": {
+            "css": ".question-box form p"
+          }
         },
         {
           "elementName": "checkMarks",
-          "selector": { "css": ".radio-group label" }
+          "selector": {
+            "css": ".radio-group label"
+          }
         }
       ]
     },
@@ -47,7 +63,9 @@
       "elements": [
         {
           "elementName": "categories",
-          "selector": { "css": "#category-card" }
+          "selector": {
+            "css": "#category-card"
+          }
         }
       ]
     },
@@ -56,79 +74,117 @@
       "elements": [
         {
           "elementName": "title",
-          "selector": { "css": "[id='title']" }
+          "selector": {
+            "css": "[id='title']"
+          }
         },
         {
           "elementName": "nameInput",
-          "selector": { "css": "[id='name']" }
+          "selector": {
+            "css": "[id='name']"
+          }
         },
         {
           "elementName": "emailInput",
-          "selector": { "css": "[id='email']" }
+          "selector": {
+            "css": "[id='email']"
+          }
         },
         {
           "elementName": "genderDropdown",
-          "selector": { "css": "#gender" }
+          "selector": {
+            "css": "#gender"
+          }
         },
         {
           "elementName": "genderOptions",
-          "selector": { "css": "#gender" }
+          "selector": {
+            "css": "#gender"
+          }
         },
         {
           "elementName": "mobileInput",
-          "selector": { "css": "[id='mobile']" }
+          "selector": {
+            "css": "[id='mobile']"
+          }
         },
         {
           "elementName": "dateOfBirthInput",
-          "selector": { "css": "#dob" }
+          "selector": {
+            "css": "#dob"
+          }
         },
         {
           "elementName": "hobbiesInput",
-          "selector": { "css": "#hobbies" }
+          "selector": {
+            "css": "#hobbies"
+          }
         },
         {
           "elementName": "addressInput",
-          "selector": { "css": "#currentAddress" }
+          "selector": {
+            "css": "#currentAddress"
+          }
         },
         {
           "elementName": "cityInput",
-          "selector": { "css": "#city" }
+          "selector": {
+            "css": "#city"
+          }
         },
         {
           "elementName": "submitButton",
-          "selector": { "css": "#submit" }
+          "selector": {
+            "css": "#submit"
+          }
         },
         {
           "elementName": "submissionEntries",
-          "selector": { "css": ".submitted-info-table tr" }
+          "selector": {
+            "css": ".submitted-info-table tr"
+          }
         },
         {
           "elementName": "table",
-          "selector": { "css": ".submitted-info-table" }
+          "selector": {
+            "css": ".submitted-info-table"
+          }
         },
         {
           "elementName": "datePickerYearsButton",
-          "selector": { "css": "[aria-label='Open years overlay']" }
+          "selector": {
+            "css": "[aria-label='Open years overlay']"
+          }
         },
         {
           "elementName": "datePickerMonthsButton",
-          "selector": { "css": "[aria-label='Open months overlay']" }
+          "selector": {
+            "css": "[aria-label='Open months overlay']"
+          }
         },
         {
           "elementName": "datePickerSubmitButton",
-          "selector": { "css": ".dp__action_row .dp__action_select" }
+          "selector": {
+            "css": ".dp__action_row .dp__action_select"
+          }
         },
         {
           "elementName": "todayCell",
-          "selector": { "css": ".dp__today" }
+          "selector": {
+            "css": ".dp__today"
+          }
         },
         {
           "elementName": "spSelectionPreview",
-          "selector": { "css": ".dp__selection_preview" }
+          "selector": {
+            "css": ".dp__selection_preview"
+          }
         },
         {
           "elementName": "datePickerCells",
-          "selector": { "css": "[role='gridcell']" }
+          "selector": {
+            "css": "[role='gridcell']"
+          }
         }
       ]
     },
@@ -137,7 +193,9 @@
       "elements": [
         {
           "elementName": "buttons",
-          "selector": { "css": ".button" }
+          "selector": {
+            "css": ".button"
+          }
         }
       ]
     },
@@ -146,11 +204,15 @@
       "elements": [
         {
           "elementName": "title",
-          "selector": { "id": "title" }
+          "selector": {
+            "id": "title"
+          }
         },
         {
           "elementName": "tools",
-          "selector": { "id": "tool" }
+          "selector": {
+            "id": "tool"
+          }
         }
       ]
     },
@@ -159,11 +221,15 @@
       "elements": [
         {
           "elementName": "sortableItems",
-          "selector": { "css": "div[draggable]" }
+          "selector": {
+            "css": "div[draggable]"
+          }
         },
         {
           "elementName": "dropZones",
-          "selector": { "css": ".drop-zone" }
+          "selector": {
+            "css": ".drop-zone"
+          }
         }
       ]
     },
@@ -172,11 +238,15 @@
       "elements": [
         {
           "elementName": "title",
-          "selector": { "id": "title" }
+          "selector": {
+            "id": "title"
+          }
         },
         {
           "elementName": "logo",
-          "selector": { "id": "logo" }
+          "selector": {
+            "id": "logo"
+          }
         }
       ]
     }
