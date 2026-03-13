@@ -156,8 +156,8 @@ export class Steps {
      * @returns The exact value attribute of the selected option.
      */
     async selectDropdown(
-        pageName: string, 
-        elementName: string, 
+        pageName: string,
+        elementName: string,
         options?: DropdownSelectOptions
     ): Promise<string> {
         const optLog = options ? JSON.stringify(options) : 'default (random)';
