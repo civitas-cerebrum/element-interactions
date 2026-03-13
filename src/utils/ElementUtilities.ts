@@ -23,16 +23,28 @@ export class Utils {
     /**
      * Standardized wait logic for element states.
      * Does not fail the test on timeout; logs a warning instead.
-     * @param locator - The Playwright Locator.
-     * @param state - The state to wait for.
+     * If the locator resolves to multiple elements (strict mode violation),
+     * the wait is retried automatically on the first matched element.
+     * @param locator - The Playwright Locator to wait on.
+     * @param state - The DOM state to wait for. Defaults to `'visible'`.
+     * @returns A Promise that resolves when the element reaches the desired state,
+     * or silently continues if the timeout is exceeded.
      */
     async waitForState(
         locator: Locator,
         state: 'visible' | 'attached' | 'hidden' | 'detached' = 'visible'
     ): Promise<void> {
-        try {
-            await locator.waitFor({ state, timeout: this.timeout });
-        } catch (error) {
+        try { await locator.waitFor({ state, timeout: this.timeout }); }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+
+            if (message.includes('strict mode violation')) {
+                console.warn(`[Warning] -> Locator resolved to multiple elements. Waiting on first element instead.`);
+                try { await locator.first().waitFor({ state, timeout: this.timeout }); }
+                catch { console.warn(`[Warning] -> First element failed to reach state '${state}' within ${this.timeout}ms. Proceeding...`); }
+                return;
+            }
+
             console.warn(`[Warning] -> Element failed to reach state '${state}' within ${this.timeout}ms. Proceeding...`);
         }
     }
