@@ -116,7 +116,7 @@ export class Steps {
     /**
      * Retrieves a `<select>` dropdown element and selects an option based on the provided strategy.
      * Defaults to selecting a random, non-disabled option if no strategy is specified.
-     * * @param pageName - The page or component grouping name in your repository.
+     * @param pageName - The page or component grouping name in your repository.
      * @param elementName - The specific element name in your repository.
      * @param options - Configuration specifying whether to select by 'random', 'index', or 'value'.
      * @returns The exact value attribute of the selected option.
