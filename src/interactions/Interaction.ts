@@ -1,5 +1,6 @@
 import { Page, Locator } from '@playwright/test';
 import { DropdownSelectOptions, DropdownSelectType, DragAndDropOptions } from '../enum/Options';
+import { Utils } from '../utils/ElementUtilities';
 
 /**
  * The `Interactions` class provides a robust set of methods for interacting 
@@ -7,13 +8,18 @@ import { DropdownSelectOptions, DropdownSelectType, DragAndDropOptions } from '.
  * and handles edge cases like overlapping elements or optional UI components.
  */
 export class Interactions {
-    private readonly ELEMENT_TIMEOUT = 30000;
+    private ELEMENT_TIMEOUT : number;
+    private utils: Utils;
 
     /**
      * Initializes the Interactions class.
      * @param page - The current Playwright Page object.
+     * @param timeout - Optional override for the default element timeout.
      */
-    constructor(private page: Page) { }
+    constructor(private page: Page, timeout: number = 30000) { 
+        this.ELEMENT_TIMEOUT = timeout;
+        this.utils = new Utils(this.ELEMENT_TIMEOUT);
+    }
 
     /**
      * Performs a standard Playwright click on the given locator.
@@ -21,7 +27,7 @@ export class Interactions {
      * @param locator - The Playwright Locator pointing to the target element.
      */
     async click(locator: Locator): Promise<void> {
-        await locator.waitFor({ state: 'visible', timeout: this.ELEMENT_TIMEOUT });
+        await this.utils.waitForState(locator, 'visible');
         await locator.click({ timeout: this.ELEMENT_TIMEOUT });
     }
 
@@ -32,7 +38,7 @@ export class Interactions {
      * @param locator - The Playwright Locator pointing to the target element.
      */
     async clickWithoutScrolling(locator: Locator): Promise<void> {
-        await locator.waitFor({ state: 'attached', timeout: this.ELEMENT_TIMEOUT });
+        await this.utils.waitForState(locator, 'attached');
         await locator.dispatchEvent('click');
     }
 
@@ -56,7 +62,7 @@ export class Interactions {
      * @param text - The string to type into the input field.
      */
     async fill(locator: Locator, text: string): Promise<void> {
-        await locator.waitFor({ state: 'visible', timeout: this.ELEMENT_TIMEOUT });
+        await this.utils.waitForState(locator, 'visible');
         await locator.fill(text, { timeout: this.ELEMENT_TIMEOUT });
     }
 
@@ -66,7 +72,7 @@ export class Interactions {
      * @param filePath - The local file system path to the file you want to upload.
      */
     async uploadFile(locator: Locator, filePath: string): Promise<void> {
-        await locator.waitFor({ state: 'attached', timeout: this.ELEMENT_TIMEOUT });
+        await this.utils.waitForState(locator, 'attached');
         console.log(`[Action] -> Uploading file from path "${filePath}"`);
         await locator.setInputFiles(filePath, { timeout: this.ELEMENT_TIMEOUT });
     }
@@ -83,7 +89,7 @@ export class Interactions {
         locator: Locator,
         options: DropdownSelectOptions = { type: DropdownSelectType.RANDOM }
     ): Promise<string> {
-        await locator.waitFor({ state: 'visible', timeout: this.ELEMENT_TIMEOUT });
+        await this.utils.waitForState(locator, 'visible');
         const type = options.type ?? DropdownSelectType.RANDOM;
 
         if (type === DropdownSelectType.VALUE) {
@@ -104,7 +110,7 @@ export class Interactions {
 
         const enabledOptions = locator.locator('option:not([disabled]):not([value=""])');
 
-        await enabledOptions.first().waitFor({ state: 'attached', timeout: this.ELEMENT_TIMEOUT }).catch(() => { });
+        await this.utils.waitForState(enabledOptions.first(), 'attached').catch(() => { });
 
         const count = await enabledOptions.count();
 
@@ -129,7 +135,7 @@ export class Interactions {
      * @param locator - The Playwright Locator pointing to the target element.
      */
     async hover(locator: Locator): Promise<void> {
-        await locator.waitFor({ state: 'visible', timeout: this.ELEMENT_TIMEOUT });
+        await this.utils.waitForState(locator, 'visible');
         await locator.hover({ timeout: this.ELEMENT_TIMEOUT });
     }
 
@@ -138,19 +144,20 @@ export class Interactions {
      * @param locator - The Playwright Locator pointing to the target element.
      */
     async scrollIntoView(locator: Locator): Promise<void> {
-        await locator.waitFor({ state: 'attached', timeout: this.ELEMENT_TIMEOUT });
+        await this.utils.waitForState(locator, 'attached');
         await locator.scrollIntoViewIfNeeded({ timeout: this.ELEMENT_TIMEOUT });
     }
+
     /**
     * Drags an element either to a specified target element, a target element with an offset, or by a coordinate offset.
     * @param locator - The Playwright Locator pointing to the element to drag.
     * @param options - Configuration specifying a 'targetLocator', offsets, or both.
     */
     async dragAndDrop(locator: Locator, options: DragAndDropOptions): Promise<void> {
-        await locator.waitFor({ state: 'visible', timeout: this.ELEMENT_TIMEOUT });
+        await this.utils.waitForState(locator, 'visible');
 
         if (options.target) {
-            await options.target.waitFor({ state: 'visible', timeout: this.ELEMENT_TIMEOUT });
+            await this.utils.waitForState(options.target, 'visible');
 
             if (options.xOffset !== undefined && options.yOffset !== undefined) {
                 const targetBox = await options.target.boundingBox();
@@ -158,8 +165,6 @@ export class Interactions {
                     throw new Error(`[Action] Error -> Unable to get bounding box for target element.`);
                 }
 
-                // Playwright's targetPosition is relative to the top-left of the padding box.
-                // We calculate it relative to the center to keep behavior consistent.
                 const targetPosition = {
                     x: (targetBox.width / 2) + options.xOffset,
                     y: (targetBox.height / 2) + options.yOffset
@@ -197,31 +202,9 @@ export class Interactions {
     }
 
     /**
-     * Safely retrieves and trims the text content of an element.
-     * @param locator - The Playwright Locator pointing to the target element.
-     * @returns The trimmed string, or an empty string if null.
-     */
-    async getText(locator: Locator): Promise<string> {
-        await locator.waitFor({ state: 'attached', timeout: this.ELEMENT_TIMEOUT });
-        const text = await locator.textContent({ timeout: this.ELEMENT_TIMEOUT });
-        return text?.trim() ?? '';
-    }
-
-    /**
-     * Retrieves the value of a specified attribute (e.g., 'href', 'aria-pressed').
-     * @param locator - The Playwright Locator pointing to the target element.
-     * @param attributeName - The name of the attribute to retrieve.
-     * @returns The attribute value as a string, or null if it doesn't exist.
-     */
-    async getAttribute(locator: Locator, attributeName: string): Promise<string | null> {
-        await locator.waitFor({ state: 'attached', timeout: this.ELEMENT_TIMEOUT });
-        return await locator.getAttribute(attributeName, { timeout: this.ELEMENT_TIMEOUT });
-    }
-
-    /**
        * Filters a locator list and returns the first element that contains the specified text.
        * If the element is not found, it prints the available text contents of the base locator for debugging.
-       * @param page The Playwright Page instance.
+       * @param baseLocator The base Playwright Locator.
        * @param pageName The name of the page block in the JSON repository.
        * @param elementName The specific element name to look up.
        * @param desiredText The string of text to search for within the elements.
@@ -238,10 +221,8 @@ export class Interactions {
         const locator = baseLocator.filter({ hasText: desiredText }).first();
 
         if ((await locator.count()) === 0) {
-            // Fetch all text contents from the base locator for debugging
             const rawTexts = await baseLocator.allInnerTexts();
 
-            // Explicitly type 'text' as string to resolve ts(7006)
             const availableTexts = rawTexts
                 .map((text: string) => text.trim())
                 .filter((text: string) => text.length > 0);

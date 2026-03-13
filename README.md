@@ -56,6 +56,7 @@ This package requires `@playwright/test` to be installed in your project. If you
 * **Zero Locator Boilerplate:** The new `Steps` API fetches elements and interacts with them in a single method call.
 * **Separation of Concerns:** Keep your interaction logic entirely detached from how elements are found on the page.
 * **Readable Tests:** Abstract away Playwright boilerplate into semantic methods (`clickIfPresent`, `verifyPresence`, `selectDropdown`).
+* **Standardized Waiting:** Easily wait for elements to reach specific DOM states (visible, hidden, attached, detached) with built-in utility methods.
 * **Advanced Visual Checks:** Includes a highly reliable `verifyImages` method that evaluates actual browser decoding and `naturalWidth` to ensure images aren't just in the DOM, but are properly rendered.
 * **Smart Dropdowns:** Easily select dropdown options by value, index, or completely randomly (skipping disabled or empty options automatically).
 * **Flexible Verifications:** Easily verify exact text, non-empty text, or dynamic element counts (greater than, less than, or exact).
@@ -101,6 +102,9 @@ test('Add random product and verify image gallery', async ({ page }) => {
   
   // 7. Advanced Image Verification
   await steps.verifyImages('ProductDetailsPage', 'gallery-images');
+  
+  // 8. Explicit Waits
+  await steps.waitForState('CheckoutPage', 'confirmation-modal', 'visible');
 });
 ```
 
@@ -124,6 +128,7 @@ The `Steps` class automatically handles fetching the Playwright `Locator` using 
 * **`hover(pageName: string, elementName: string)`**: Retrieves an element and hovers over it. Useful for triggering dropdowns or tooltips.
 * **`scrollIntoView(pageName: string, elementName: string)`**: Retrieves an element and smoothly scrolls it into the viewport if it is not already visible.
 * **`dragAndDrop(pageName: string, elementName: string, options: DragAndDropOptions)`**: Drags an element to a specified destination. Supports dropping onto another element (`{ target: Locator }`), dragging by coordinates (`{ xOffset: number, yOffset: number }`), or dropping onto a target at a specific offset.
+* **`dragAndDropListedElement(pageName: string, elementName: string, elementText: string, options: DragAndDropOptions)`**: Finds a specific element by its text from a list of elements and drags it to a specified destination based on the provided options.
 * **`fill(pageName: string, elementName: string, text: string)`**: Clears any existing value in the target input field and types the provided text.
 * **`uploadFile(pageName: string, elementName: string, filePath: string)`**: Uploads a local file from the provided `filePath` to an `<input type="file">` element.
 * **`selectDropdown(pageName: string, elementName: string, options?: DropdownSelectOptions)`**: Selects an option from a `<select>` element and returns its `value`. Defaults to a random, non-disabled option (`{ type: DropdownSelectType.RANDOM }`). Alternatively, select by exact value (`{ type: DropdownSelectType.VALUE, value: '...' }`) or zero-based index (`{ type: DropdownSelectType.INDEX, index: 1 }`).
@@ -141,6 +146,10 @@ The `Steps` class automatically handles fetching the Playwright `Locator` using 
 * **`verifyCount(pageName: string, elementName: string, options: CountVerifyOptions)`**: Asserts the number of elements matching the locator. Accepts a configuration object to evaluate: `{ exact: number }`, `{ greaterThan: number }`, or `{ lessThan: number }`.
 * **`verifyImages(pageName: string, elementName: string, scroll?: boolean)`**: Performs a rigorous verification of one or more images. Asserts visibility, checks for a valid `src` attribute, ensures `naturalWidth > 0`, and evaluates the native browser `decode()` promise. Smoothly scrolls into view by default (`scroll: true`).
 * **`verifyUrlContains(text: string)`**: Asserts that the active browser URL contains the expected substring.
+
+### ⏳ Wait
+
+* **`waitForState(pageName: string, elementName: string, state?: 'visible' | 'attached' | 'hidden' | 'detached')`**: Waits for an element to reach a specific state in the DOM. Defaults to `'visible'`.
 
 ---
 
