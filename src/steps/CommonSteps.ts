@@ -1,7 +1,7 @@
 import { Page } from '@playwright/test';
 import { ElementRepository } from 'pw-element-repository';
-import { ElementInteractions } from '../ElementInteractions';
-import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions } from '../enum/Options';
+import { ElementInteractions } from '../interactions/facade/ElementInteractions';
+import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions } from '../enum/Options';
 
 /**
  * The `Steps` class serves as a unified Facade for test orchestration.
@@ -164,6 +164,18 @@ export class Steps {
         console.log(`[Step] -> Selecting dropdown option for '${elementName}' in '${pageName}' using options: ${optLog}`);
         const locator = await this.repo.get(this.page, pageName, elementName);
         return await this.interact.selectDropdown(locator, options);
+    }
+
+    /**
+     * Drags an element either to a specified target element, a target element with an offset, or by a coordinate offset.
+     * @param pageName - The page or component grouping name in your repository.
+     * @param elementName - The specific element name in your repository (the element to drag).
+     * @param options - Configuration specifying a 'targetLocator', offsets, or both.
+     */
+    async dragAndDrop(pageName: string, elementName: string, options: DragAndDropOptions): Promise<void> {
+        console.log(`[Step] -> Dragging and dropping '${elementName}' in '${pageName}'`);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        await this.interact.dragAndDrop(locator, options);
     }
 
     // ==========================================
