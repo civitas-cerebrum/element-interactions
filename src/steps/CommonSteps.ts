@@ -56,6 +56,27 @@ export class Steps {
         await this.navigate.reload();
     }
 
+    /**
+     * Navigates the browser history stack either backwards or forwards.
+     * Mirrors the behavior of the browser's native Back and Forward buttons.
+     * @param direction - The direction to move in history: either 'BACKWARDS' or 'FORWARDS'.
+     */
+    async backOrForward(direction: 'BACKWARDS' | 'FORWARDS'): Promise<void> {
+        console.log(`[Step] -> Navigating browser: "${direction}"`);
+        await this.navigate.backOrForward(direction);
+    }
+
+    /**
+     * Resizes the browser viewport to the specified dimensions.
+     * Useful for simulating different device screen sizes or responsive breakpoints.
+     * @param width - The desired width of the viewport in pixels.
+     * @param height - The desired height of the viewport in pixels.
+     */
+    async setViewport(width: number, height: number): Promise<void> {
+        console.log(`[Step] -> Setting viewport to ${width}x${height}`);
+        await this.navigate.setViewport(width, height);
+    }
+
     // ==========================================
     // 🖱️ INTERACTION STEPS
     // ==========================================
