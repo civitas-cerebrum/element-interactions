@@ -1,5 +1,5 @@
 import { Page, Locator } from '@playwright/test';
-import { DropdownSelectOptions, DropdownSelectType } from '../enum/Options';
+import { DropdownSelectOptions, DropdownSelectType, DragAndDropOptions } from '../enum/Options';
 
 /**
  * The `Interactions` class provides a robust set of methods for interacting 
@@ -141,6 +141,60 @@ export class Interactions {
         await locator.waitFor({ state: 'attached', timeout: this.ELEMENT_TIMEOUT });
         await locator.scrollIntoViewIfNeeded({ timeout: this.ELEMENT_TIMEOUT });
     }
+    /**
+    * Drags an element either to a specified target element, a target element with an offset, or by a coordinate offset.
+    * @param locator - The Playwright Locator pointing to the element to drag.
+    * @param options - Configuration specifying a 'targetLocator', offsets, or both.
+    */
+    async dragAndDrop(locator: Locator, options: DragAndDropOptions): Promise<void> {
+        await locator.waitFor({ state: 'visible', timeout: this.ELEMENT_TIMEOUT });
+
+        if (options.target) {
+            await options.target.waitFor({ state: 'visible', timeout: this.ELEMENT_TIMEOUT });
+
+            if (options.xOffset !== undefined && options.yOffset !== undefined) {
+                const targetBox = await options.target.boundingBox();
+                if (!targetBox) {
+                    throw new Error(`[Action] Error -> Unable to get bounding box for target element.`);
+                }
+
+                // Playwright's targetPosition is relative to the top-left of the padding box.
+                // We calculate it relative to the center to keep behavior consistent.
+                const targetPosition = {
+                    x: (targetBox.width / 2) + options.xOffset,
+                    y: (targetBox.height / 2) + options.yOffset
+                };
+
+                await locator.dragTo(options.target, {
+                    targetPosition,
+                    timeout: this.ELEMENT_TIMEOUT
+                });
+                return;
+            }
+
+            await locator.dragTo(options.target, { timeout: this.ELEMENT_TIMEOUT });
+            return;
+        }
+
+        if (options.xOffset !== undefined && options.yOffset !== undefined) {
+            const box = await locator.boundingBox();
+            if (!box) {
+                throw new Error(`[Action] Error -> Unable to get bounding box for element to perform drag action.`);
+            }
+
+            const startX = box.x + box.width / 2;
+            const startY = box.y + box.height / 2;
+
+            await this.page.mouse.move(startX, startY);
+            await this.page.mouse.down();
+
+            await this.page.mouse.move(startX + options.xOffset, startY + options.yOffset, { steps: 10 });
+            await this.page.mouse.up();
+            return;
+        }
+
+        throw new Error(`[Action] Error -> You must provide either 'targetLocator', or both 'xOffset' and 'yOffset' in DragAndDropOptions.`);
+    }
 
     /**
      * Safely retrieves and trims the text content of an element.
@@ -163,4 +217,42 @@ export class Interactions {
         await locator.waitFor({ state: 'attached', timeout: this.ELEMENT_TIMEOUT });
         return await locator.getAttribute(attributeName, { timeout: this.ELEMENT_TIMEOUT });
     }
+
+/**
+   * Filters a locator list and returns the first element that contains the specified text.
+   * If the element is not found, it prints the available text contents of the base locator for debugging.
+   * @param page The Playwright Page instance.
+   * @param pageName The name of the page block in the JSON repository.
+   * @param elementName The specific element name to look up.
+   * @param desiredText The string of text to search for within the elements.
+   * @param strict If true, throws an error if the element is not found. Defaults to false.
+   * @returns A promise that resolves to the matched Playwright Locator, or null if not found.
+   */
+  public async getByText(
+    baseLocator: Locator,
+    pageName: string, 
+    elementName: string, 
+    desiredText: string, 
+    strict: boolean = false
+  ): Promise<ReturnType<Page['locator']> | null> {
+    const locator = baseLocator.filter({ hasText: desiredText }).first();
+
+    if ((await locator.count()) === 0) {
+      // Fetch all text contents from the base locator for debugging
+      const rawTexts = await baseLocator.allInnerTexts();
+      
+      // Explicitly type 'text' as string to resolve ts(7006)
+      const availableTexts = rawTexts
+        .map((text: string) => text.trim()) 
+        .filter((text: string) => text.length > 0);
+
+      const msg = `Element '${elementName}' on '${pageName}' with text "${desiredText}" not found.\nAvailable texts found in locator: ${availableTexts.length > 0 ? `\n- ${availableTexts.join('\n- ')}` : 'None (Base locator found no elements or elements had no text)'}`;
+      
+      if (strict) throw new Error(msg);
+      console.warn(msg);
+      return null;
+    }
+
+    return locator;
+  }
 }
