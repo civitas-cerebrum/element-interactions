@@ -18,7 +18,6 @@ export class Navigation {
      * @param url - The absolute or relative URL to navigate to.
      */
     async toUrl(url: string): Promise<void> {
-        console.log(`[Navigate] -> Navigating to URL: ${url}`);
         await this.page.goto(url);
     }
 
@@ -27,7 +26,6 @@ export class Navigation {
      * Useful for resetting application state or checking data persistence.
      */
     async reload(): Promise<void> {
-        console.log(`[Navigate] -> Refreshing the current page`);
         await this.page.reload();
     }
 
@@ -37,7 +35,6 @@ export class Navigation {
      * @param direction - The direction to move in history: either 'BACKWARDS' or 'FORWARDS'.
      */
     async backOrForward(direction: 'BACKWARDS' | 'FORWARDS'): Promise<void> {
-        console.log(`[Navigate] -> Moving browser history ${direction.toLowerCase()}`);
         if (direction === 'BACKWARDS') {
             await this.page.goBack();
         } else {
@@ -52,7 +49,6 @@ export class Navigation {
      * @param height - The desired height of the viewport in pixels.
      */
     async setViewport(width: number, height: number): Promise<void> {
-        console.log(`[Navigate] -> Setting viewport size to ${width}x${height}`);
         await this.page.setViewportSize({ width, height });
     }
 }
