@@ -155,6 +155,19 @@
       ]
     },
     {
+      "name": "SortablePage",
+      "elements": [
+        {
+          "elementName": "sortableItems",
+          "selector": { "css": "div[draggable]" }
+        },
+        {
+          "elementName": "dropZones",
+          "selector": { "css": ".drop-zone" }
+        }
+      ]
+    },
+    {
       "name": "TallPage",
       "elements": [
         {
