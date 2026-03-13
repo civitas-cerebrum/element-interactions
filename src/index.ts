@@ -1,6 +1,3 @@
-// Main Entry Point (The Facade)
-export { ElementInteractions } from './ElementInteractions';
-
 // Enums
 export * from './enum/Options';
 
@@ -11,6 +8,9 @@ export { Interactions } from './interactions/Interaction';
 
 // Utilities
 export { DateUtilities } from './utils/DateUtilities';
+
+// Element Interactions Facade
+export { ElementInteractions } from './interactions/facade/ElementInteractions';
 
 // Test Steps Facade
 export { Steps } from './steps/CommonSteps';
