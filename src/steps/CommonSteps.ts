@@ -12,21 +12,27 @@ import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDr
 export class Steps {
     private interact;
     private navigate;
+    private extract;
     private verify;
+    private utils;
 
     /**
      * Initializes the Steps class with the required Playwright page and element repository.
      * @param page - The current Playwright Page object.
      * @param repo - An initialized instance of `ElementRepository` containing your locators.
+     * @param timeout - Optional global timeout override (in milliseconds).
      */
     constructor(
         private page: Page,
-        private repo: ElementRepository
+        private repo: ElementRepository,
+        timeout?: number
     ) {
-        const interactions = new ElementInteractions(page);
+        const interactions = new ElementInteractions(page, timeout);
         this.interact = interactions.interact;
         this.navigate = interactions.navigate;
+        this.extract = interactions.extract;
         this.verify = interactions.verify;
+        this.utils = interactions.utils;
     }
 
     // ==========================================
@@ -200,10 +206,10 @@ export class Steps {
      * @param elementName - The specific element name in your repository.
      * @returns The trimmed string, or an empty string if null.
      */
-    async getText(pageName: string, elementName: string): Promise<string> {
+    async getText(pageName: string, elementName: string): Promise<string | null> {
         console.log(`[Step] -> Getting text from '${elementName}' in '${pageName}'`);
         const locator = await this.repo.get(this.page, pageName, elementName);
-        return await this.interact.getText(locator);
+        return await this.extract.getText(locator);
     }
 
     /**
@@ -216,7 +222,7 @@ export class Steps {
     async getAttribute(pageName: string, elementName: string, attributeName: string): Promise<string | null> {
         console.log(`[Step] -> Getting attribute '${attributeName}' from '${elementName}' in '${pageName}'`);
         const locator = await this.repo.get(this.page, pageName, elementName);
-        return await this.interact.getAttribute(locator, attributeName);
+        return await this.extract.getAttribute(locator, attributeName);
     }
 
     // ==========================================
@@ -292,5 +298,21 @@ export class Steps {
     async verifyUrlContains(text: string): Promise<void> {
         console.log(`[Step] -> Verifying current URL contains: "${text}"`);
         await this.verify.urlContains(text);
+    }
+
+    /**
+     * Waits for an element to reach a specific state in the DOM.
+     * @param pageName - The page or component grouping name in your repository.
+     * @param elementName - The specific element name in your repository.
+     * @param state - The state to wait for: 'visible' | 'attached' | 'hidden' | 'detached'. Defaults to 'visible'.
+     */
+    async waitForState(
+        pageName: string, 
+        elementName: string, 
+        state: 'visible' | 'attached' | 'hidden' | 'detached' = 'visible'
+    ): Promise<void> {
+        console.log(`[Step] -> Waiting for '${elementName}' in '${pageName}' to be '${state}'`);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        await this.utils.waitForState(locator, state);
     }
 }
