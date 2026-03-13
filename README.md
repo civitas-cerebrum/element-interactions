@@ -116,8 +116,10 @@ The `Steps` class automatically handles fetching the Playwright `Locator` using 
 
 ### 🧭 Navigation
 
-* **`MapsTo(url: string)`**: Navigates the browser to the specified absolute or relative URL.
+* **`navigateTo(url: string)`**: Navigates the browser to the specified absolute or relative URL.
 * **`refresh()`**: Reloads the current page.
+* **`backOrForward(direction: 'BACKWARDS' | 'FORWARDS')`**: Navigates the browser history stack either backwards or forwards. Mirrors the behavior of the browser's native Back and Forward buttons.
+* **`setViewport(width: number, height: number)`**: Resizes the browser viewport to the specified pixel dimensions. Useful for simulating different device screen sizes or responsive breakpoints.
 
 ### 🖱️ Interaction
 
@@ -169,4 +171,4 @@ await interactions.interact.clickWithoutScrolling(customLocator);
 await interactions.verify.count(customLocator, { greaterThan: 2 });
 ```
 
-*Note: All core interaction (`interact`), verification (`verify`), and navigation (`Maps`) methods are also available when using `ElementInteractions` directly.*
+*Note: All core interaction (`interact`), verification (`verify`), and navigation (`navigate`) methods are also available when using `ElementInteractions` directly.*
