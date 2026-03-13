@@ -1,28 +1,5 @@
 import { Page, Locator } from '@playwright/test';
-
-/**
- * Defines the strategy for selecting an option from a dropdown element.
- */
-export enum DropdownSelectType {
-    /** Selects a completely random, non-disabled option with a valid value. */
-    RANDOM = 'random',
-    /** Selects an option based on its zero-based index in the dropdown. */
-    INDEX = 'index',
-    /** Selects an option based on its exact 'value' attribute. */
-    VALUE = 'value'
-}
-
-/**
- * Configuration options for the `selectDropdown` method.
- */
-export interface DropdownSelectOptions {
-    /** The selection strategy to use. Defaults to RANDOM. */
-    type?: DropdownSelectType;
-    /** The specific value attribute to select (Required if type is VALUE). */
-    value?: string;
-    /** The index of the option to select (Required if type is INDEX). */
-    index?: number;
-}
+import { DropdownSelectOptions, DropdownSelectType } from '../enum/Dropdown';
 
 /**
  * The `Interactions` class provides a robust set of methods for interacting 
@@ -92,7 +69,7 @@ export class Interactions {
     /**
      * Unified method to interact with `<select>` dropdown elements based on the specified `DropdownSelectType`.
      * If no options are provided, it safely defaults to randomly selecting an enabled, non-empty option.
-     * * @param locator - The Playwright Locator pointing to the `<select>` element.
+     * @param locator - The Playwright Locator pointing to the `<select>` element.
      * @param options - Configuration specifying whether to select by 'random', 'index', or 'value'.
      * @returns A promise that resolves to the exact 'value' attribute of the newly selected option.
      * @throws Error if 'value' or 'index' is missing when their respective types are chosen, or if no enabled options exist.
