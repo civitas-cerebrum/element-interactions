@@ -14,6 +14,7 @@
     "dist"
   ],
   "peerDependencies": {
+    "@civitas-cerebrum/context-store": ">=0.0.2",
     "@playwright/test": ">=1.0.0",
     "pw-element-repository": ">=0.0.3"
   },
