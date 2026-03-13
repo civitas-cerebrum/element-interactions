@@ -18,6 +18,7 @@
     "pw-element-repository": ">=0.0.3"
   },
   "devDependencies": {
+    "@civitas-cerebrum/context-store": "^0.0.2",
     "@playwright/test": "^1.58.2",
     "@types/node": "^20.0.0",
     "pw-element-repository": "^0.0.3",
