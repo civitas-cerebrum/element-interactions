@@ -59,9 +59,14 @@ export class Verifications {
 
     /**
      * Asserts that the specified element is either hidden or completely detached from the DOM.
-     * @param locator - The Playwright Locator pointing to the target element.
+     * Accepts a Locator or a raw selector string to prevent unnecessary repository waits.
+     * @param selectorOrLocator - The Playwright Locator or raw selector string.
      */
-    async absence(locator: Locator): Promise<void> {
+    async absence(selectorOrLocator: Locator | string): Promise<void> {
+        const locator = typeof selectorOrLocator === 'string'
+            ? this.page.locator(selectorOrLocator)
+            : selectorOrLocator;
+
         await expect(locator).toBeHidden({ timeout: this.ELEMENT_TIMEOUT });
     }
 
@@ -145,7 +150,7 @@ export class Verifications {
     * @param options - Configuration specifying 'exact', 'greaterThan', or 'lessThan' logic.
     */
     async count(locator: Locator, options: CountVerifyOptions): Promise<void> {
-        if (options.exact !== undefined && options.exact < 0) {
+        if (options.exactly !== undefined && options.exactly < 0) {
             throw new Error(`[Verify] -> 'exact' count cannot be negative.`);
         }
         if (options.greaterThan !== undefined && options.greaterThan < 0) {
@@ -155,8 +160,8 @@ export class Verifications {
             throw new Error(`[Verify] -> 'lessThan' must be greater than 0. Element counts cannot be negative.`);
         }
 
-        if (options.exact !== undefined) {
-            await expect(locator).toHaveCount(options.exact, { timeout: this.ELEMENT_TIMEOUT });
+        if (options.exactly !== undefined) {
+            await expect(locator).toHaveCount(options.exactly, { timeout: this.ELEMENT_TIMEOUT });
             return;
         }
 
