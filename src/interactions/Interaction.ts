@@ -7,12 +7,13 @@ import { DropdownSelectOptions, DropdownSelectType } from '../enum/Dropdown';
  * and handles edge cases like overlapping elements or optional UI components.
  */
 export class Interactions {
-    
+    private readonly ELEMENT_TIMEOUT = 30000;
+
     /**
      * Initializes the Interactions class.
      * @param page - The current Playwright Page object.
      */
-    constructor(private page: Page) {}
+    constructor(private page: Page) { }
 
     /**
      * Performs a standard Playwright click on the given locator.
@@ -20,7 +21,8 @@ export class Interactions {
      * @param locator - The Playwright Locator pointing to the target element.
      */
     async click(locator: Locator): Promise<void> {
-        await locator.click();
+        await locator.waitFor({ state: 'visible', timeout: this.ELEMENT_TIMEOUT });
+        await locator.click({ timeout: this.ELEMENT_TIMEOUT });
     }
 
     /**
@@ -30,6 +32,7 @@ export class Interactions {
      * @param locator - The Playwright Locator pointing to the target element.
      */
     async clickWithoutScrolling(locator: Locator): Promise<void> {
+        await locator.waitFor({ state: 'attached', timeout: this.ELEMENT_TIMEOUT });
         await locator.dispatchEvent('click');
     }
 
@@ -41,7 +44,7 @@ export class Interactions {
      */
     async clickIfPresent(locator: Locator): Promise<void> {
         if (await locator.isVisible()) {
-            await locator.click();
+            await locator.click({ timeout: this.ELEMENT_TIMEOUT });
         } else {
             console.log(`[Action] -> Locator was not visible. Skipping click.`);
         }
@@ -53,7 +56,8 @@ export class Interactions {
      * @param text - The string to type into the input field.
      */
     async fill(locator: Locator, text: string): Promise<void> {
-        await locator.fill(text);
+        await locator.waitFor({ state: 'visible', timeout: this.ELEMENT_TIMEOUT });
+        await locator.fill(text, { timeout: this.ELEMENT_TIMEOUT });
     }
 
     /**
@@ -62,8 +66,9 @@ export class Interactions {
      * @param filePath - The local file system path to the file you want to upload.
      */
     async uploadFile(locator: Locator, filePath: string): Promise<void> {
+        await locator.waitFor({ state: 'attached', timeout: this.ELEMENT_TIMEOUT });
         console.log(`[Action] -> Uploading file from path "${filePath}"`);
-        await locator.setInputFiles(filePath);
+        await locator.setInputFiles(filePath, { timeout: this.ELEMENT_TIMEOUT });
     }
 
     /**
@@ -75,16 +80,17 @@ export class Interactions {
      * @throws Error if 'value' or 'index' is missing when their respective types are chosen, or if no enabled options exist.
      */
     async selectDropdown(
-        locator: Locator, 
+        locator: Locator,
         options: DropdownSelectOptions = { type: DropdownSelectType.RANDOM }
     ): Promise<string> {
+        await locator.waitFor({ state: 'visible', timeout: this.ELEMENT_TIMEOUT });
         const type = options.type ?? DropdownSelectType.RANDOM;
 
         if (type === DropdownSelectType.VALUE) {
             if (options.value === undefined) {
                 throw new Error('[Action] Error -> "value" must be provided when using DropdownSelectType.VALUE.');
             }
-            const selected = await locator.selectOption({ value: options.value });
+            const selected = await locator.selectOption({ value: options.value }, { timeout: this.ELEMENT_TIMEOUT });
             return selected[0];
         }
 
@@ -92,11 +98,14 @@ export class Interactions {
             if (options.index === undefined) {
                 throw new Error('[Action] Error -> "index" must be provided when using DropdownSelectType.INDEX.');
             }
-            const selected = await locator.selectOption({ index: options.index });
+            const selected = await locator.selectOption({ index: options.index }, { timeout: this.ELEMENT_TIMEOUT });
             return selected[0];
         }
 
         const enabledOptions = locator.locator('option:not([disabled]):not([value=""])');
+
+        await enabledOptions.first().waitFor({ state: 'attached', timeout: this.ELEMENT_TIMEOUT }).catch(() => { });
+
         const count = await enabledOptions.count();
 
         if (count === 0) {
@@ -104,14 +113,54 @@ export class Interactions {
         }
 
         const randomIndex = Math.floor(Math.random() * count);
-        const valueToSelect = await enabledOptions.nth(randomIndex).getAttribute('value');
+        const valueToSelect = await enabledOptions.nth(randomIndex).getAttribute('value', { timeout: this.ELEMENT_TIMEOUT });
 
         if (valueToSelect === null) {
             throw new Error(`[Action] Error -> Option at index ${randomIndex} is missing a "value" attribute.`);
         }
 
-        const selected = await locator.selectOption({ value: valueToSelect });
-        
+        const selected = await locator.selectOption({ value: valueToSelect }, { timeout: this.ELEMENT_TIMEOUT });
+
         return selected[0];
+    }
+
+    /**
+     * Hovers over the specified element. Useful for triggering dropdowns or tooltips.
+     * @param locator - The Playwright Locator pointing to the target element.
+     */
+    async hover(locator: Locator): Promise<void> {
+        await locator.waitFor({ state: 'visible', timeout: this.ELEMENT_TIMEOUT });
+        await locator.hover({ timeout: this.ELEMENT_TIMEOUT });
+    }
+
+    /**
+     * Scrolls the element into view if it is not already visible in the viewport.
+     * @param locator - The Playwright Locator pointing to the target element.
+     */
+    async scrollIntoView(locator: Locator): Promise<void> {
+        await locator.waitFor({ state: 'attached', timeout: this.ELEMENT_TIMEOUT });
+        await locator.scrollIntoViewIfNeeded({ timeout: this.ELEMENT_TIMEOUT });
+    }
+
+    /**
+     * Safely retrieves and trims the text content of an element.
+     * @param locator - The Playwright Locator pointing to the target element.
+     * @returns The trimmed string, or an empty string if null.
+     */
+    async getText(locator: Locator): Promise<string> {
+        await locator.waitFor({ state: 'attached', timeout: this.ELEMENT_TIMEOUT });
+        const text = await locator.textContent({ timeout: this.ELEMENT_TIMEOUT });
+        return text?.trim() ?? '';
+    }
+
+    /**
+     * Retrieves the value of a specified attribute (e.g., 'href', 'aria-pressed').
+     * @param locator - The Playwright Locator pointing to the target element.
+     * @param attributeName - The name of the attribute to retrieve.
+     * @returns The attribute value as a string, or null if it doesn't exist.
+     */
+    async getAttribute(locator: Locator, attributeName: string): Promise<string | null> {
+        await locator.waitFor({ state: 'attached', timeout: this.ELEMENT_TIMEOUT });
+        return await locator.getAttribute(attributeName, { timeout: this.ELEMENT_TIMEOUT });
     }
 }
