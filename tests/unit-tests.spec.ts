@@ -1,9 +1,9 @@
 import { test } from '@playwright/test';
 import { ElementRepository } from 'pw-element-repository';
-import { Steps } from '../src/steps/CommonSteps'; 
-import { ElementInteractions } from '../src/interactions/facade/ElementInteractions'; 
-import { DropdownSelectType } from '../src/enum/Options'; 
-import { DateUtilities } from '../src/utils/DateUtilities'; 
+import { Steps } from '../src/steps/CommonSteps';
+import { ElementInteractions } from '../src/interactions/facade/ElementInteractions';
+import { DropdownSelectType } from '../src/enum/Options';
+import { DateUtilities } from '../src/utils/DateUtilities';
 
 test.describe('E2E Facade Implementation Suite', () => {
 
@@ -18,12 +18,19 @@ test.describe('E2E Facade Implementation Suite', () => {
     const interactions = new ElementInteractions(page);
     const entries: Record<string, string> = {}; //TODO create a node package for streamlining contextual data storage in tests like this instead of using a plain object
 
-    await test.step('🧭 Navigate to the website and open Forms', async () => {
+    await test.step('🧭 Navigate to the website', async () => {
       await steps.navigateTo('http://127.0.0.1:8080/');
+    });
 
+    await test.step('✅ Verify Category Count', async () => {
+      await steps.verifyCount('HomePage', 'categories', { exactly: 5 });
+    });
+
+    await test.step('✅ Open Forms Page and verify navigation', async () => {
       // Using repo directly here because getByText is a specialized repository method
       const formsCategory = await repo.getByText(page, 'HomePage', 'categories', 'Forms');
       await interactions.interact.click(formsCategory!);
+      await steps.verifyAbsence('HomePage', 'categories');
     });
 
     await test.step('✅ Verify Page Title', async () => {
@@ -43,8 +50,8 @@ test.describe('E2E Facade Implementation Suite', () => {
     });
 
     await test.step('🎲 Select a Random Enabled Gender', async () => {
-      entries['Gender'] = await steps.selectDropdown('FormsPage', 'genderDropdown', { 
-        type: DropdownSelectType.RANDOM 
+      entries['Gender'] = await steps.selectDropdown('FormsPage', 'genderDropdown', {
+        type: DropdownSelectType.RANDOM
       });
     });
 
@@ -55,14 +62,14 @@ test.describe('E2E Facade Implementation Suite', () => {
       await steps.click('FormsPage', 'todayCell');
 
       let dobValue = await steps.getText('FormsPage', 'spSelectionPreview');
-      
+
       dobValue = DateUtilities.reformatDateString(dobValue, 'yyyy-M-d');
-      entries['Date of Birth'] = dobValue; 
+      entries['Date of Birth'] = dobValue;
 
       await steps.verifyPresence('FormsPage', 'datePickerSubmitButton');
       await steps.click('FormsPage', 'datePickerSubmitButton');
 
-      await steps.click('FormsPage', 'hobbiesInput'); 
+      await steps.click('FormsPage', 'hobbiesInput');
     });
 
     await test.step('🚀 Submit Form and Verify Modal', async () => {
@@ -70,13 +77,13 @@ test.describe('E2E Facade Implementation Suite', () => {
       await steps.verifyPresence('FormsPage', 'table');
 
       const modal = await repo.get(page, 'FormsPage', 'table');
-      const verifyRaw = steps['verify']; 
+      const verifyRaw = steps['verify'];
 
       for (const [key, expectedValue] of Object.entries(entries)) {
         const row = modal.locator('tr').filter({ hasText: key });
-        const actualValueElement = row.locator('td').nth(1);   
+        const actualValueElement = row.locator('td').nth(1);
 
-        await verifyRaw.text(actualValueElement, expectedValue); 
+        await verifyRaw.text(actualValueElement, expectedValue);
       }
     });
 
@@ -98,18 +105,11 @@ test.describe('E2E Facade Implementation Suite', () => {
     });
 
     await test.step('🔄 Drag Item A to the Second List', async () => {
-      // Find "Item A" dynamically from the sortableItems elements
-      const itemA = await repo.getByText(page, 'SortablePage', 'sortableItems', 'Item A');
+      const dropZone = await repo.getByText(page, 'SortablePage', 'dropZones', 'Second List');
       
-      // Get all drop zones, then target the second list (index 1)
-      const dropZones = await repo.get(page, 'SortablePage', 'dropZones');
-      const secondDropZone = dropZones.nth(1); 
+      await steps.dragAndDropListedElement('SortablePage', 'sortableItems', 'Item A', { target: dropZone! });
 
-      // Perform the drag and drop using the underlying interaction class
-      await interactions.interact.dragAndDrop(itemA!, { target: secondDropZone });
-      
-      // Verify that Item A successfully moved into the second drop zone
-      await steps['verify'].textContains(secondDropZone, 'Item A'); 
+      await steps['verify'].textContains(dropZone!, 'Item A');
     });
 
     console.log('✅ TEST PASSED: TC_002 Drag and Drop Interactions');
