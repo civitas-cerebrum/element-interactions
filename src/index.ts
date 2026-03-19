@@ -16,3 +16,6 @@ export { ElementInteractions } from './interactions/facade/ElementInteractions';
 
 // Test Steps Facade
 export { Steps } from './steps/CommonSteps';
+
+// Test Fixture
+export { baseFixture }  from './fixture/BaseFixture';
