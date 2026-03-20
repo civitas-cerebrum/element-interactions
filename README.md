@@ -282,7 +282,41 @@ await interactions.verify.count(customLocator, { greaterThan: 2 });
 
 Contributions are welcome! Please read the rules below carefully before opening a PR — they exist to keep the architecture clean, the test suite reliable, and the codebase consistent.
 
+<<<<<<< Updated upstream
 ### Framework Design
+=======
+### 🧪 Testing Locally Before Opening a PR
+
+Before pushing changes, verify your implementation works end-to-end in a real consumer project using [`yalc`](https://github.com/wclr/yalc) — a local package publishing tool that mirrors the npm install flow without actually publishing.
+
+```bash
+# 1. Install yalc globally (one-time setup)
+npm i -g yalc
+
+# 2. In the pw-element-interactions folder — publish to the local yalc store
+yalc publish
+
+# 3. In your consumer project — add the locally published package
+yalc add pw-element-interactions
+```
+
+After making further changes, push updates to the consumer project without re-adding:
+
+```bash
+# In pw-element-interactions
+yalc publish --push
+```
+
+To restore the original npm version when you're done:
+
+```bash
+# In your consumer project
+yalc remove pw-element-interactions
+npm install
+```
+
+### 📋 PR Guidelines
+>>>>>>> Stashed changes
 
 PRs must respect the layered architecture of this library. Every new capability follows a strict implementation order:
 
@@ -291,14 +325,14 @@ PRs must respect the layered architecture of this library. Every new capability 
 
 PRs that skip step 1 and add convenience methods without a properly placed underlying implementation will not be merged.
 
-### Logging
+### 🪵 Logging
 
 The logging responsibility is clearly divided and must be respected:
 
 * **Interaction methods must not contain any logs.** Keep them focused purely on the mechanics of the action.
 * **`Steps` methods are responsible for logging.** Every `Steps` wrapper should log what action is being performed, providing observability at the right level of abstraction.
 
-### Unit Tests
+### 🧬 Unit Tests
 
 Every new interaction method must be accompanied by a unit test.
 
@@ -312,6 +346,6 @@ If the component or UI element needed to test a new interaction does not exist i
 
 PRs that require a missing component but do not have a corresponding merged `vue-test-app` PR will not be merged.
 
-### Documentation
+### 📝 Documentation
 
 Every new `Steps` method must be documented in the [API Reference](#️-api-reference-steps) section of this README. Add your method to the appropriate group (Navigation, Interaction, Data Extraction, Verification, or Wait) following the existing format: method signature, a plain-English description of what it does, and any relevant parameter or return value notes. PRs that add a public method without a corresponding README entry will not be merged.
