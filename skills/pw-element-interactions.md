@@ -1,5 +1,5 @@
 ---
-name: skills
+name: pw-element-interactions
 description: >
   Use this skill whenever writing or generating Playwright tests in a project that uses
   pw-element-interactions and pw-element-repository. Triggers on any request to write a
