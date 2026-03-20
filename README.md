@@ -282,6 +282,36 @@ await interactions.verify.count(customLocator, { greaterThan: 2 });
 
 Contributions are welcome! Please read the rules below carefully before opening a PR — they exist to keep the architecture clean, the test suite reliable, and the codebase consistent.
 
+### Testing Locally Before Opening a PR
+
+Before pushing changes, verify your implementation works end-to-end in a real consumer project using [`yalc`](https://github.com/wclr/yalc) — a local package publishing tool that mirrors the npm install flow without actually publishing.
+
+```bash
+# 1. Install yalc globally (one-time setup)
+npm i -g yalc
+
+# 2. In the pw-element-interactions folder — publish to the local yalc store
+yalc publish
+
+# 3. In your consumer project — add the locally published package
+yalc add pw-element-interactions
+```
+
+After making further changes, push updates to the consumer project without re-adding:
+
+```bash
+# In pw-element-interactions
+yalc publish --push
+```
+
+To restore the original npm version when you're done:
+
+```bash
+# In your consumer project
+yalc remove pw-element-interactions
+npm install
+```
+
 ### Framework Design
 
 PRs must respect the layered architecture of this library. Every new capability follows a strict implementation order:
