@@ -1,6 +1,6 @@
 {
   "name": "pw-element-interactions",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "A robust, readable interaction and assertion Facade for Playwright. Abstract away boilerplate into semantic, English-like methods, making your test automation framework cleaner, easier to maintain, and accessible to non-developers.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -8,10 +8,13 @@
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc",
     "test": "npx playwright test",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "postinstall": "node scripts/postinstall.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "skills",
+    "scripts/postinstall.js"
   ],
   "peerDependencies": {
     "@civitas-cerebrum/context-store": ">=0.0.2",
