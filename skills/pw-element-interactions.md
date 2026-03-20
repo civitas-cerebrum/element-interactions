@@ -1,8 +1,8 @@
 ---
-name: pw-element-interactions
+name: skills
 description: >
   Use this skill whenever writing or generating Playwright tests in a project that uses
-  pw-element-interactions. Triggers on any request to write a
+  pw-element-interactions and pw-element-repository. Triggers on any request to write a
   test, add a locator, create a page object, use the Steps API, or interact with elements
   using this stack. Also use when asked to add entries to a page-repository JSON file,
   use fixtures, select dropdowns, verify elements, wait for states, or perform any
@@ -13,6 +13,19 @@ description: >
 # pw-element-interactions — Test Authoring Reference
 
 This framework separates **where elements are defined** from **how they are used**. Selectors live in a JSON file; tests reference elements by readable string keys. No raw CSS or XPath ever appears in test code.
+
+---
+
+## ⚠️ Important: Test Scenarios
+
+**Never invent or assume test scenarios.** Always ask the user what they want to test before writing a single test. Do not infer scenarios from the page structure, existing tests, or common patterns — even if they seem obvious.
+
+When asked to write tests, always start with:
+> "What scenarios would you like me to cover?"
+
+Wait for an explicit answer before proceeding. Only write exactly what the user describes.
+
+**Never add, edit, or delete entries in `page-repository.json` without explicit user permission.** If new locators are needed to implement a requested scenario, show the user what you intend to add and wait for approval before touching the file.
 
 ---
 
