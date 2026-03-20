@@ -282,9 +282,6 @@ await interactions.verify.count(customLocator, { greaterThan: 2 });
 
 Contributions are welcome! Please read the rules below carefully before opening a PR — they exist to keep the architecture clean, the test suite reliable, and the codebase consistent.
 
-<<<<<<< Updated upstream
-### Framework Design
-=======
 ### 🧪 Testing Locally Before Opening a PR
 
 Before pushing changes, verify your implementation works end-to-end in a real consumer project using [`yalc`](https://github.com/wclr/yalc) — a local package publishing tool that mirrors the npm install flow without actually publishing.
@@ -316,7 +313,6 @@ npm install
 ```
 
 ### 📋 PR Guidelines
->>>>>>> Stashed changes
 
 PRs must respect the layered architecture of this library. Every new capability follows a strict implementation order:
 
