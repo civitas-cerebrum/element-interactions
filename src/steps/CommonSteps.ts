@@ -336,4 +336,25 @@ export class Steps {
         const locator = await this.repo.get(this.page, pageName, elementName);
         await this.utils.waitForState(locator, state);
     }
+
+    /**
+     * Types text into a specific element character by character with a delay.
+     * Ideal for OTP inputs, search bars, or fields with sensitive 'keyup' listeners.
+     * @param pageName - The page or component grouping name in your repository.
+     * @param elementName - The specific element name in your repository.
+     * @param text - The string to type sequentially.
+     * @param delay - Optional delay between key presses in milliseconds (defaults to 100).
+     */
+    async typeSequentially(
+        pageName: string, 
+        elementName: string, 
+        text: string, 
+        delay: number = 100
+    ): Promise<void> {
+        console.log(`[Step] -> Typing "${text}" sequentially into '${elementName}' in '${pageName}' (Delay: ${delay}ms)`);
+        
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        
+        await this.interact.typeSequentially(locator, text, delay);
+    }
 }
