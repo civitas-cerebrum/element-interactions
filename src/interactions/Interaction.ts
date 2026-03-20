@@ -247,7 +247,6 @@ export class Interactions {
      */
     async typeSequentially(locator: Locator, text: string, delay: number = 100): Promise<void> {
         await this.utils.waitForState(locator, 'visible');
-        console.log(`[Action] -> Typing "${text}" sequentially with a ${delay}ms delay.`);
         await locator.pressSequentially(text, { 
             delay, 
             timeout: this.ELEMENT_TIMEOUT 
