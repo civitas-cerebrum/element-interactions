@@ -236,6 +236,7 @@ The `Steps` class automatically handles fetching the Playwright `Locator` using 
 * **`fill(pageName: string, elementName: string, text: string)`**: Clears any existing value in the target input field and types the provided text.
 * **`uploadFile(pageName: string, elementName: string, filePath: string)`**: Uploads a local file from the provided `filePath` to an `<input type="file">` element.
 * **`selectDropdown(pageName: string, elementName: string, options?: DropdownSelectOptions)`**: Selects an option from a `<select>` element and returns its `value`. Defaults to a random, non-disabled option (`{ type: DropdownSelectType.RANDOM }`). Alternatively, select by exact value (`{ type: DropdownSelectType.VALUE, value: '...' }`) or zero-based index (`{ type: DropdownSelectType.INDEX, index: 1 }`).
+* **`typeSequentially(pageName: string, elementName: string, text: string, delay?: number)`**: Types the provided text into an element character by character with a configurable delay between key presses (defaults to `100ms`). Ideal for OTP inputs, search bars, or any field with `keyup` listeners that do not respond correctly to bulk `fill()` operations.
 
 ### 📊 Data Extraction
 
@@ -310,3 +311,7 @@ If the component or UI element needed to test a new interaction does not exist i
 3. Only then open or update the PR in this repository that adds the interaction and its test.
 
 PRs that require a missing component but do not have a corresponding merged `vue-test-app` PR will not be merged.
+
+### Documentation
+
+Every new `Steps` method must be documented in the [API Reference](#️-api-reference-steps) section of this README. Add your method to the appropriate group (Navigation, Interaction, Data Extraction, Verification, or Wait) following the existing format: method signature, a plain-English description of what it does, and any relevant parameter or return value notes. PRs that add a public method without a corresponding README entry will not be merged.
