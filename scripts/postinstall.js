@@ -7,7 +7,7 @@ const path = require('path');
 // node_modules/pw-element-interactions/scripts/postinstall.js)
 const projectRoot = path.resolve(__dirname, '..', '..', '..');
 
-const src  = path.join(__dirname, '..', 'skills', 'SKILL.md');
+const src  = path.join(__dirname, '..', 'skills', 'pw-element-interactions.md');
 const dest = path.join(projectRoot, '.claude', 'skills', 'pw-element-interactions', 'SKILL.md');
 
 try {
