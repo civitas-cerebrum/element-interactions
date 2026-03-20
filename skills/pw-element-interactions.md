@@ -16,6 +16,21 @@ This framework separates **where elements are defined** from **how they are used
 
 ---
 
+## ⚠️ Important: Test Scenarios
+
+**Never invent or assume test scenarios.** Always ask the user what they want to test before writing a single test. Do not infer scenarios from the page structure, existing tests, or common patterns — even if they seem obvious.
+
+When asked to write tests, always start with:
+> "What scenarios would you like me to cover?"
+
+Wait for an explicit answer before proceeding. Only write exactly what the user describes.
+
+**Never add, edit, or delete entries in `page-repository.json` without explicit user permission.** If new locators are needed to implement a requested scenario, show the user what you intend to add and wait for approval before touching the file.
+
+**Commit after every successful outcome.** Whenever a fix, feature, or test is confirmed working — run a `git commit` with a clear, descriptive message as a checkpoint before moving on. Do not batch multiple successes into a single commit.
+
+---
+
 ## 0. Understanding the Website Structure
 
 Before writing tests or adding locators for an unfamiliar page or component, use the **Playwright MCP** to inspect the live site. This is the only reliable way to discover real selectors, element hierarchy, and page behaviour — do not guess or invent selectors from memory.
