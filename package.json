@@ -8,10 +8,13 @@
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc",
     "test": "npx playwright test",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "postinstall": "node scripts/postinstall.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "skills",
+    "scripts/postinstall.js"
   ],
   "peerDependencies": {
     "@civitas-cerebrum/context-store": ">=0.0.2",
