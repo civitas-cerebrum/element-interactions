@@ -27,6 +27,8 @@ Wait for an explicit answer before proceeding. Only write exactly what the user 
 
 **Never add, edit, or delete entries in `page-repository.json` without explicit user permission.** If new locators are needed to implement a requested scenario, show the user what you intend to add and wait for approval before touching the file.
 
+**Commit after every successful outcome.** Whenever a fix, feature, or test is confirmed working — run a `git commit` with a clear, descriptive message as a checkpoint before moving on. Do not batch multiple successes into a single commit.
+
 ---
 
 ## 0. Understanding the Website Structure
