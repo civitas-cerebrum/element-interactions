@@ -274,3 +274,39 @@ await interactions.verify.count(customLocator, { greaterThan: 2 });
 ```
 
 *Note: All core interaction (`interact`), verification (`verify`), and navigation (`navigate`) methods are also available when using `ElementInteractions` directly.*
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please read the rules below carefully before opening a PR — they exist to keep the architecture clean, the test suite reliable, and the codebase consistent.
+
+### Framework Design
+
+PRs must respect the layered architecture of this library. Every new capability follows a strict implementation order:
+
+1. **Implement in the appropriate class first.** The core method must be added to the correct underlying class (`interact`, `verify`, `navigate`, or similar) before it is exposed anywhere else. Do not add a method only to `Steps` or `ElementInteractions` without first placing the logic in the right domain class.
+2. **Then expose it via `Steps`.** Once the core method exists in its proper class, add the corresponding wrapper to the `Steps` (CommonSteps) class so it is accessible through the unified API.
+
+PRs that skip step 1 and add convenience methods without a properly placed underlying implementation will not be merged.
+
+### Logging
+
+The logging responsibility is clearly divided and must be respected:
+
+* **Interaction methods must not contain any logs.** Keep them focused purely on the mechanics of the action.
+* **`Steps` methods are responsible for logging.** Every `Steps` wrapper should log what action is being performed, providing observability at the right level of abstraction.
+
+### Unit Tests
+
+Every new interaction method must be accompanied by a unit test.
+
+Unit tests are run against the proprietary Vue test application at [https://github.com/Umutayb/vue-test-app](https://github.com/Umutayb/vue-test-app). This app is built from its Docker image during the CI pipeline to serve as the test target. All new tests must use this app.
+
+If the component or UI element needed to test a new interaction does not exist in the Vue test app, **you must add it there first**:
+
+1. Open a PR against `vue-test-app` to add the required component.
+2. Wait for that PR to be merged.
+3. Only then open or update the PR in this repository that adds the interaction and its test.
+
+PRs that require a missing component but do not have a corresponding merged `vue-test-app` PR will not be merged.
