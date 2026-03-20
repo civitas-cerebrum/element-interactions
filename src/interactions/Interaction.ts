@@ -236,4 +236,21 @@ export class Interactions {
 
         return locator;
     }
+
+    /**
+     * Types into the target element character by character with a specified delay.
+     * Use this for OTP inputs, search-as-you-type fields, or when `fill()` 
+     * doesn't trigger necessary keyboard events (like 'keyup' or 'keydown').
+     * @param locator - The Playwright Locator pointing to the input element.
+     * @param text - The string of text to type sequentially.
+     * @param delay - Time in milliseconds to wait between key presses. Defaults to 100ms.
+     */
+    async typeSequentially(locator: Locator, text: string, delay: number = 100): Promise<void> {
+        await this.utils.waitForState(locator, 'visible');
+        console.log(`[Action] -> Typing "${text}" sequentially with a ${delay}ms delay.`);
+        await locator.pressSequentially(text, { 
+            delay, 
+            timeout: this.ELEMENT_TIMEOUT 
+        });
+    }
 }
