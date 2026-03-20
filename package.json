@@ -1,6 +1,6 @@
 {
   "name": "pw-element-interactions",
-  "version": "0.0.10",
+  "version": "0.1.0",
   "description": "A robust, readable interaction and assertion Facade for Playwright. Abstract away boilerplate into semantic, English-like methods, making your test automation framework cleaner, easier to maintain, and accessible to non-developers.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
