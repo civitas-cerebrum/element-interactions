@@ -117,7 +117,7 @@ test.describe('E2E Facade Implementation Suite', () => {
   });
 
   test('TC_003: Negative Assertions - Expecting Verifications to Fail', async ({ page }) => {
-    const steps = new Steps(page, repo, 2500);
+    const steps = new Steps(page, repo, 500);
 
     await test.step('Navigate to the website', async () => {
       await steps.navigateTo('http://127.0.0.1:8080/');
@@ -149,7 +149,7 @@ test.describe('E2E Facade Implementation Suite', () => {
   });
 
   test('TC_004: Wait For State - Warning behavior on incorrect state', async ({ page }) => {
-    const steps = new Steps(page, repo, 2500);
+    const steps = new Steps(page, repo, 500);
 
     await test.step('Navigate to the website', async () => {
       await steps.navigateTo('http://127.0.0.1:8080/');
@@ -172,4 +172,20 @@ test.describe('E2E Facade Implementation Suite', () => {
     log('TC_004 Wait For State Warning Behavior — passed');
   });
 
+});
+
+test.describe('TC_005: navigateTo resolves relative URLs via Playwright baseURL', () => {
+  test.use({ baseURL: 'http://127.0.0.1:8080/' });
+
+  test('navigates with a relative URL', async ({ steps }) => {
+    await test.step('Navigate using a relative URL', async () => {
+      await steps.navigateTo('/');
+    });
+
+    await test.step('Verify the home page loaded', async () => {
+      await steps.verifyCount('HomePage', 'categories', { exactly: 5 });
+    });
+
+    log('TC_005 navigateTo relative URL — passed');
+  });
 });
