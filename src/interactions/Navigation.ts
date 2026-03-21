@@ -22,14 +22,16 @@ export class Navigation {
     * Prefer fully qualified URLs to avoid ambiguity.
     */
     async toUrl(url: string): Promise<void> {
-        let resolved = url;
-        if (!url.startsWith('http')) {
-            const baseURL = (this.page.context() as any)._options?.baseURL;
-            if (!baseURL) {
-                throw new Error(`Cannot resolve relative URL "${url}" — no baseURL is configured in playwright.config.ts.`);
-            }
-            resolved = new URL(url, baseURL).href;
+        if (url.startsWith('http') || url.startsWith('//')) {
+            await this.page.goto(url);
+            return;
         }
+        const baseURL = (this.page.context() as any)._options?.baseURL;
+        if (!baseURL) {
+            throw new Error(`Cannot resolve relative URL "${url}" — no baseURL is configured in playwright.config.ts.`);
+        }
+        const base = baseURL.replace(/\/$/, '');
+        const resolved = base + (url.startsWith('/') ? url : '/' + url);
         await this.page.goto(resolved);
     }
 
