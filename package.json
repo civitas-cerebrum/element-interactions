@@ -8,6 +8,7 @@
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc",
     "test": "npx playwright test",
+    "test:ui": "npx playwright test --headed",
     "prepublishOnly": "npm run build",
     "postinstall": "node scripts/postinstall.js",
     "test:quiet": "TESTER_DEBUG=false npx playwright test"
