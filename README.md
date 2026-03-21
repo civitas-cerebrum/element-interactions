@@ -10,7 +10,7 @@ A robust set of Playwright steps for readable interaction and assertions.
 
 With the introduction of the `Steps` class, you can now combine your element repository and interactions into a single, flattened facade. This eliminates repetitive locator fetching and transforms your tests into clean, plain-English steps.
 
-### 🤖 AI-Friendly Test Development & Boilerplate Reduction
+### 🧠 AI-Friendly Test Development & Boilerplate Reduction
 
 Stop writing the same three lines of code for every single interaction. This library handles the fetching, waiting, and acting automatically.
 
@@ -47,6 +47,55 @@ npm i pw-element-interactions
 ```
 
 **Peer dependencies:** `@playwright/test` is required. The `Steps` API additionally requires `pw-element-repository`.
+
+---
+
+## 🤖 Claude Code Integration
+
+`pw-element-interactions` ships with a built-in **Claude Code skill** — an agent instruction file that teaches Claude how to use the framework correctly. The skill is included in the npm package, so there's nothing extra to install. When Claude Code detects it in your `node_modules`, it can write, debug, and maintain your Playwright tests using the Steps API, inspect live pages via the Playwright MCP, and manage your page repository — all with guardrails that prevent common AI mistakes like inventing selectors or overwriting config files.
+
+### Quick Start with Claude Code
+
+**1. Initialize a new Playwright project** (skip if you already have one):
+
+```bash
+npm init playwright@latest playwright-project
+cd playwright-project
+```
+
+**2. Install the packages:**
+
+```bash
+npm i pw-element-interactions pw-element-repository
+```
+
+That's it — the skill is now available to Claude Code. When you ask it to write tests, it will automatically scaffold the fixture file, page repository, and config if they don't exist yet.
+
+**3. Connect the Playwright MCP** so Claude Code can inspect live pages and verify selectors against the real DOM. Add it to your Claude Code MCP settings:
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@anthropic-ai/mcp-server-playwright"]
+    }
+  }
+}
+```
+
+### What the Skill Enables
+
+Once loaded, Claude Code will:
+
+- **Scaffold your project** — creating the fixture file, page repository, and Playwright config on first use.
+- **Write tests using the Steps API** — generating clean, readable test flows with `steps.click()`, `steps.verifyText()`, etc.
+- **Inspect the live DOM before adding locators** — using the Playwright MCP to verify selectors instead of guessing.
+- **Ask before modifying `page-repository.json`** — showing you the exact changes it wants to make.
+- **Inspect failure screenshots** — using the HTML report to diagnose test failures visually before proposing fixes.
+- **Follow project conventions** — PascalCase page names, camelCase element names, no raw selectors in test code.
+
+> **Tip:** For the best experience, ensure `reporter: 'html'` is set in your `playwright.config.ts` so failure screenshots are captured and viewable in the report.
 
 ---
 
