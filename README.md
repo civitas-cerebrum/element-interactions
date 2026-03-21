@@ -235,7 +235,7 @@ test('Authenticated flow', async ({ steps, authService }) => {
 
 ## 🗂️ Adding Locators
 
-All selectors live in `tests/data/page-repository.json`.
+When using the `Steps` API, all selectors must be defined in a page repository JSON. This file is the single source of truth for all element locations — no raw selectors should appear in your test code.
 
 ```json
 {
