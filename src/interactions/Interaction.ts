@@ -1,6 +1,9 @@
 import { Page, Locator } from '@playwright/test';
 import { DropdownSelectOptions, DropdownSelectType, DragAndDropOptions } from '../enum/Options';
 import { Utils } from '../utils/ElementUtilities';
+import { createLogger } from '../logger/Logger';
+
+const log = createLogger('interactions');
 
 /**
  * The `Interactions` class provides a robust set of methods for interacting 
@@ -52,7 +55,7 @@ export class Interactions {
         if (await locator.isVisible()) {
             await locator.click({ timeout: this.ELEMENT_TIMEOUT });
         } else {
-            console.log(`[Action] -> Locator was not visible. Skipping click.`);
+            log('Locator was not visible, skipping click');
         }
     }
 
@@ -73,7 +76,7 @@ export class Interactions {
      */
     async uploadFile(locator: Locator, filePath: string): Promise<void> {
         await this.utils.waitForState(locator, 'attached');
-        console.log(`[Action] -> Uploading file from path "${filePath}"`);
+        log('Uploading file from path "%s"', filePath);
         await locator.setInputFiles(filePath, { timeout: this.ELEMENT_TIMEOUT });
     }
 
@@ -230,7 +233,7 @@ export class Interactions {
             const msg = `Element '${elementName}' on '${pageName}' with text "${desiredText}" not found.\nAvailable texts found in locator: ${availableTexts.length > 0 ? `\n- ${availableTexts.join('\n- ')}` : 'None (Base locator found no elements or elements had no text)'}`;
 
             if (strict) throw new Error(msg);
-            console.warn(msg);
+            log('⚠ %s', msg);
             return null;
         }
 
