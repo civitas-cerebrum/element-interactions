@@ -26,9 +26,7 @@ export class Navigation {
         if (!url.startsWith('http')) {
             const baseURL = (this.page.context() as any)._options?.baseURL;
             if (!baseURL) {
-                throw new Error(
-                    `[toUrl] Cannot resolve relative URL "${url}" — no baseURL is configured in playwright.config.ts.`
-                );
+                throw new Error(`Cannot resolve relative URL "${url}" — no baseURL is configured in playwright.config.ts.`);
             }
             resolved = new URL(url, baseURL).href;
         }

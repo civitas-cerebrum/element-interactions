@@ -37,7 +37,7 @@ export class Verifications {
         }
 
         if (expectedText === undefined) {
-            throw new Error(`[Verify] -> You must provide either an 'expectedText' string or set '{ notEmpty: true }' in options.`);
+            throw new Error(`You must provide either an 'expectedText' string or set '{ notEmpty: true }' in options.`);
         }
 
         await expect(locator).toHaveText(expectedText, { timeout: this.ELEMENT_TIMEOUT });
@@ -119,7 +119,7 @@ export class Verifications {
         const productImages = await imagesLocator.all();
 
         if (productImages.length === 0) {
-            throw new Error(`[Verify] -> No images found for '${imagesLocator}'.`);
+            throw new Error(`No images found for '${imagesLocator}'.`);
         }
 
         for (let i = 0; i < productImages.length; i++) {
@@ -154,13 +154,13 @@ export class Verifications {
     */
     async count(locator: Locator, options: CountVerifyOptions): Promise<void> {
         if (options.exactly !== undefined && options.exactly < 0) {
-            throw new Error(`[Verify] -> 'exact' count cannot be negative.`);
+            throw new Error(`'exact' count cannot be negative.`);
         }
         if (options.greaterThan !== undefined && options.greaterThan < 0) {
-            throw new Error(`[Verify] -> 'greaterThan' count cannot be negative.`);
+            throw new Error(`'greaterThan' count cannot be negative.`);
         }
         if (options.lessThan !== undefined && options.lessThan <= 0) {
-            throw new Error(`[Verify] -> 'lessThan' must be greater than 0. Element counts cannot be negative.`);
+            throw new Error(`'lessThan' must be greater than 0. Element counts cannot be negative.`);
         }
 
         if (options.exactly !== undefined) {
@@ -169,7 +169,7 @@ export class Verifications {
         }
 
         if (options.greaterThan === undefined && options.lessThan === undefined) {
-            throw new Error(`[Verify] -> You must provide 'exact', 'greaterThan', or 'lessThan' in CountVerifyOptions.`);
+            throw new Error(`You must provide 'exact', 'greaterThan', or 'lessThan' in CountVerifyOptions.`);
         }
 
         await locator.first().waitFor({ state: 'attached', timeout: this.ELEMENT_TIMEOUT }).catch(() => { });
