@@ -16,22 +16,20 @@ export class Navigation {
     * Navigates the active browser page to the specified URL.
     * Automatically waits for the page to reach the default 'load' state.
     * @param url - The absolute or relative URL to navigate to.
-    * Relative URLs (e.g. '/path') are resolved against `baseURL` from playwright.config.ts.
-    * Protocol-relative URLs (e.g. '//example.com') are passed directly to the browser.
-    * ⚠️ If a relative URL is passed and no baseURL is configured, an error will be thrown.
-    * Prefer fully qualified URLs to avoid ambiguity.
+    * Absolute URLs are used as-is. Relative URLs are resolved against
+    * `baseURL` from playwright.config.ts, preserving the base path.
     */
     async toUrl(url: string): Promise<void> {
-        if (url.startsWith('http') || url.startsWith('//')) {
+        if (url.startsWith('http://') || url.startsWith('https://')) {
             await this.page.goto(url);
             return;
         }
         const baseURL = (this.page.context() as any)._options?.baseURL;
         if (!baseURL) {
-            throw new Error(`Cannot resolve relative URL "${url}" — no baseURL is configured in playwright.config.ts.`);
+            await this.page.goto(url);
+            return;
         }
-        const base = baseURL.replace(/\/$/, '');
-        const resolved = base + (url.startsWith('/') ? url : '/' + url);
+        const resolved = new URL('.' + (url.startsWith('/') ? url : '/' + url), baseURL).href;
         await this.page.goto(resolved);
     }
 

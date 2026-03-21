@@ -76,13 +76,12 @@ test.describe('E2E Facade Implementation Suite', () => {
       await steps.verifyPresence('FormsPage', 'table');
 
       const modal = await repo.get(page, 'FormsPage', 'table');
-      const verifyRaw = steps['verify'];
 
       for (const [key, expectedValue] of contextStore.entries()) {
         const row = modal.locator('tr').filter({ hasText: key });
         const actualValueElement = row.locator('td').nth(1);
 
-        await verifyRaw.text(actualValueElement, expectedValue);
+        await interactions.verify.text(actualValueElement, expectedValue);
       }
     });
 
@@ -110,7 +109,7 @@ test.describe('E2E Facade Implementation Suite', () => {
 
       await steps.dragAndDropListedElement('SortablePage', 'sortableItems', 'Item A', { target: dropZone! });
 
-      await steps['verify'].textContains(dropZone!, 'Item A');
+      await interactions.verify.textContains(dropZone!, 'Item A');
     });
 
     log('TC_002 Drag and Drop Interactions — passed');
@@ -172,10 +171,123 @@ test.describe('E2E Facade Implementation Suite', () => {
     log('TC_004 Wait For State Warning Behavior — passed');
   });
 
+  test('TC_005: Click Random - Category Navigation', async ({ steps }) => {
+
+    await test.step('Navigate to the website', async () => {
+      await steps.navigateTo('http://127.0.0.1:8080/');
+    });
+
+    await test.step('Click a random category and verify navigation', async () => {
+      await steps.clickRandom('HomePage', 'categories');
+      await steps.verifyAbsence('HomePage', 'categories');
+    });
+
+    log('TC_005 Click Random — passed');
+  });
+
+  test('TC_006: Verify Count - greaterThan and lessThan', async ({ page }) => {
+    const steps = new Steps(page, repo, 3000);
+
+    await test.step('Navigate to the website', async () => {
+      await steps.navigateTo('http://127.0.0.1:8080/');
+    });
+
+    await test.step('verifyCount with greaterThan (positive)', async () => {
+      await steps.verifyCount('HomePage', 'categories', { greaterThan: 3 });
+    });
+
+    await test.step('verifyCount with lessThan (positive)', async () => {
+      await steps.verifyCount('HomePage', 'categories', { lessThan: 10 });
+    });
+
+    await test.step('verifyCount with greaterThan polls until timeout (negative)', async () => {
+      const start = Date.now();
+      let errorCaught = false;
+      try {
+        await steps.verifyCount('HomePage', 'categories', { greaterThan: 5 });
+      } catch {
+        errorCaught = true;
+      }
+      const elapsed = Date.now() - start;
+      expect(errorCaught).toBeTruthy();
+      expect(elapsed).toBeGreaterThan(2500);
+      log('greaterThan polling confirmed: timed out after %dms', elapsed);
+    });
+
+    log('TC_006 Verify Count greaterThan/lessThan — passed');
+  });
+
 });
 
-test.describe('TC_005: navigateTo resolves relative URLs via Playwright baseURL', () => {
-  test.use({ baseURL: 'http://127.0.0.1:8080/' });
+test.describe('TC_007: verifyState - All Playwright element states', () => {
+
+  test('positive state assertions', async ({ page, repo, interactions }) => {
+    const steps = new Steps(page, repo, 1000);
+
+    await test.step('Navigate to Forms page', async () => {
+      await steps.navigateTo('http://127.0.0.1:8080/');
+      const formsCategory = await interactions.interact.getByText(
+        await page.locator('#category-card'),
+        'HomePage', 'categories', 'Forms'
+      );
+      await formsCategory!.click();
+    });
+
+    await test.step('visible: title is visible', async () => {
+      await steps.verifyState('FormsPage', 'title', 'visible');
+    });
+
+    await test.step('attached: title is attached to the DOM', async () => {
+      await steps.verifyState('FormsPage', 'title', 'attached');
+    });
+
+    await test.step('inViewport: title is in viewport', async () => {
+      await steps.verifyState('FormsPage', 'title', 'inViewport');
+    });
+
+    await test.step('enabled: submit button is enabled', async () => {
+      await steps.verifyState('FormsPage', 'submitButton', 'enabled');
+    });
+
+    await test.step('editable: name input is editable', async () => {
+      await steps.verifyState('FormsPage', 'nameInput', 'editable');
+    });
+
+    await test.step('focused: name input is focused after clicking', async () => {
+      await steps.click('FormsPage', 'nameInput');
+      await steps.verifyState('FormsPage', 'nameInput', 'focused');
+    });
+
+    await test.step('Navigate to Radio Buttons page', async () => {
+      await steps.navigateTo('http://127.0.0.1:8080/');
+      const elementsCategory = await repo.getByText(page, 'HomePage', 'categories', 'Elements');
+      await interactions.interact.click(elementsCategory!);
+      await steps.verifyUrlContains('/elements');
+
+      const radioButtonsTool = await repo.getByText(page, 'ElementsPage', 'tools', 'Radio Buttons');
+      await interactions.interact.click(radioButtonsTool!);
+      await steps.verifyUrlContains('/radiobuttons');
+    });
+
+    await test.step('disabled: the No radio button is disabled', async () => {
+      await steps.verifyState('RadioButtonsPage', 'disabledRadio', 'disabled');
+    });
+
+    await test.step('checked: Yes radio is checked after clicking', async () => {
+      await steps.click('RadioButtonsPage', 'yesRadio');
+      await steps.verifyState('RadioButtonsPage', 'yesRadio', 'checked');
+    });
+
+    await test.step('hidden: FormsPage title is hidden on a different page', async () => {
+      await steps.verifyState('FormsPage', 'title', 'hidden');
+    });
+
+    log('TC_007 verifyState — passed');
+  });
+});
+
+test.describe('TC_006: navigateTo resolves relative URLs via Playwright baseURL', () => {
+  test.use({ baseURL: 'https://umutayb.github.io/vue-test-app/' });
 
   test('navigates with a relative URL', async ({ steps }) => {
     await test.step('Navigate using a relative URL', async () => {
@@ -186,6 +298,10 @@ test.describe('TC_005: navigateTo resolves relative URLs via Playwright baseURL'
       await steps.verifyCount('HomePage', 'categories', { exactly: 5 });
     });
 
-    log('TC_005 navigateTo relative URL — passed');
+    await test.step('verifyUrlContains escapes regex metacharacters', async () => {
+      await steps.verifyUrlContains('vue-test-app/');
+    });
+
+    log('TC_006 navigateTo relative URL — passed');
   });
 });

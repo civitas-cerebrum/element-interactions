@@ -74,16 +74,22 @@ export class Verifications {
     }
 
     /**
-     * Asserts the interactive state of an element (whether it is enabled or disabled).
-     * Useful for checking buttons or input fields.
+     * Asserts the state of an element using Playwright's built-in locator assertions.
      * @param locator - The Playwright Locator pointing to the target element.
-     * @param state - The expected state: either 'enabled' or 'disabled'.
+     * @param state - The expected state to verify.
      */
-    async state(locator: Locator, state: 'enabled' | 'disabled'): Promise<void> {
-        if (state === 'enabled') {
-            await expect(locator).toBeEnabled({ timeout: this.ELEMENT_TIMEOUT });
-        } else {
-            await expect(locator).toBeDisabled({ timeout: this.ELEMENT_TIMEOUT });
+    async state(locator: Locator, state: 'enabled' | 'disabled' | 'editable' | 'checked' | 'focused' | 'visible' | 'hidden' | 'attached' | 'inViewport'): Promise<void> {
+        const timeout = this.ELEMENT_TIMEOUT;
+        switch (state) {
+            case 'enabled':    await expect(locator).toBeEnabled({ timeout }); break;
+            case 'disabled':   await expect(locator).toBeDisabled({ timeout }); break;
+            case 'editable':   await expect(locator).toBeEditable({ timeout }); break;
+            case 'checked':    await expect(locator).toBeChecked({ timeout }); break;
+            case 'focused':    await expect(locator).toBeFocused({ timeout }); break;
+            case 'visible':    await expect(locator).toBeVisible({ timeout }); break;
+            case 'hidden':     await expect(locator).toBeHidden({ timeout }); break;
+            case 'attached':   await expect(locator).toBeAttached({ timeout }); break;
+            case 'inViewport': await expect(locator).toBeInViewport({ timeout }); break;
         }
     }
 
@@ -93,7 +99,8 @@ export class Verifications {
      * @param text - The substring expected to be present within the active URL.
      */
     async urlContains(text: string): Promise<void> {
-        await expect(this.page).toHaveURL(new RegExp(text, 'i'), { timeout: this.ELEMENT_TIMEOUT });
+        const escaped = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        await expect(this.page).toHaveURL(new RegExp(escaped, 'i'), { timeout: this.ELEMENT_TIMEOUT });
     }
 
     /**
@@ -172,15 +179,11 @@ export class Verifications {
             throw new Error(`You must provide 'exact', 'greaterThan', or 'lessThan' in CountVerifyOptions.`);
         }
 
-        await locator.first().waitFor({ state: 'attached', timeout: this.ELEMENT_TIMEOUT }).catch(() => { });
-        const actualCount = await locator.count();
-
-        if (options.greaterThan !== undefined) {
-            expect(actualCount, `Expected count > ${options.greaterThan}, but got ${actualCount}`).toBeGreaterThan(options.greaterThan);
-        }
-
-        if (options.lessThan !== undefined) {
-            expect(actualCount, `Expected count < ${options.lessThan}, but got ${actualCount}`).toBeLessThan(options.lessThan);
-        }
+        await expect.poll(async () => {
+            const actualCount = await locator.count();
+            if (options.greaterThan !== undefined && actualCount <= options.greaterThan) return false;
+            if (options.lessThan !== undefined && actualCount >= options.lessThan) return false;
+            return true;
+        }, { timeout: this.ELEMENT_TIMEOUT, message: `Expected count${options.greaterThan !== undefined ? ` > ${options.greaterThan}` : ''}${options.lessThan !== undefined ? ` < ${options.lessThan}` : ''}` }).toBe(true);
     }
 }

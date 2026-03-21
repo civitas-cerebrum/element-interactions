@@ -47,6 +47,14 @@ These rules are non-negotiable and override any perceived helpfulness or initiat
 
 ### 6. Before creating or modifying `playwright.config.ts`, read the existing file first — do not overwrite it.
 
+
+### 7. NEVER use navigateTo() for in-app page transitions.
+- navigateTo() is ONLY for the initial entry point of a test (e.g. opening the home page or a landing URL).
+- All subsequent page transitions MUST happen through UI interactions — clicks, form submissions, link taps, etc. — just like a real user.
+- If reaching a page through the UI requires too many steps, ask the user whether a shortcut is acceptable before using navigateTo().
+
+### 8. Run the tests to validate them.
+
 ---
 
 ## 1. Adding Locators
@@ -167,11 +175,14 @@ await steps.verifyPresence('PageName', 'elementName');
 await steps.verifyAbsence('PageName', 'elementName');
 await steps.verifyText('PageName', 'elementName', 'Expected text');
 await steps.verifyText('PageName', 'elementName', undefined, { notEmpty: true });
-await steps.verifyCount('PageName', 'elementName', { exact: 3 });
+await steps.verifyCount('PageName', 'elementName', { exactly: 3 });
 await steps.verifyCount('PageName', 'elementName', { greaterThan: 0 });
 await steps.verifyCount('PageName', 'elementName', { lessThan: 10 });
 await steps.verifyImages('PageName', 'elementName');
 await steps.verifyImages('PageName', 'elementName', false); // skip scroll-into-view
+await steps.verifyTextContains('PageName', 'elementName', 'partial text');
+await steps.verifyState('PageName', 'elementName', 'enabled');  // 'disabled', 'editable', 'checked', 'focused', 'visible', 'hidden', 'attached', 'inViewport'
+await steps.verifyAttribute('PageName', 'elementName', 'href', '/expected-path');
 await steps.verifyUrlContains('/dashboard');
 ```
 

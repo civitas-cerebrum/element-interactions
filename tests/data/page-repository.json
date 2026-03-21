@@ -55,6 +55,12 @@
           "selector": {
             "css": ".radio-group label"
           }
+        },
+        {
+          "elementName": "tools",
+          "selector": {
+            "id": "tool"
+          }
         }
       ]
     },
@@ -229,6 +235,23 @@
           "elementName": "dropZones",
           "selector": {
             "css": ".drop-zone"
+          }
+        }
+      ]
+    },
+    {
+      "name": "RadioButtonsPage",
+      "elements": [
+        {
+          "elementName": "yesRadio",
+          "selector": {
+            "css": "input[type='radio'][value='yes']"
+          }
+        },
+        {
+          "elementName": "disabledRadio",
+          "selector": {
+            "css": "input[type='radio']#no"
           }
         }
       ]

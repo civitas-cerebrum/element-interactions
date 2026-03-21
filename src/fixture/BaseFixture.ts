@@ -19,8 +19,7 @@ export function baseFixture<T extends {}>(
         repo: async ({ }, use) => {
             await use(new ElementRepository(locatorPath));
         },
-        steps: async ({ page }, use) => {
-            const repo = new ElementRepository(locatorPath);
+        steps: async ({ page, repo }, use) => {
             await use(new Steps(page, repo));
         },
         interactions: async ({ page }, use) => {

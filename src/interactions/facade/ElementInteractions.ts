@@ -4,6 +4,7 @@ import { Navigation } from '../Navigation';
 import { Verifications } from '../Verification';
 import { Extractions } from '../Extraction';
 import { Utils } from '../../utils/ElementUtilities';
+import { logger } from '../../logger/Logger';
 
 /**
  * A facade class that centralizes package capabilities.
@@ -16,6 +17,7 @@ export class ElementInteractions {
     public extract: Extractions;
     public navigate: Navigation;
     public utils: Utils;
+    public log;
 
     /**
      * Initializes the ElementInteractions facade.
@@ -26,7 +28,14 @@ export class ElementInteractions {
         this.interact = new Interactions(page, timeout);
         this.verify = new Verifications(page, timeout);
         this.navigate = new Navigation(page);
-        this.extract = new Extractions(page);
+        this.extract = new Extractions(page, timeout);
         this.utils = new Utils(timeout);
+        this.log = {
+            info: logger('info'),
+            warn: logger('warn'),
+            error: logger('error'),
+            success: logger('success'),
+            important: logger('important'),
+        };
     }
 }
