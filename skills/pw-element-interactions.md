@@ -1,70 +1,53 @@
 ---
 name: pw-element-interactions
 description: >
-  Use this skill whenever writing or generating Playwright tests in a project that uses
-  pw-element-interactions and pw-element-repository. Triggers on any request to write a
-  test, add a locator, create a page object, use the Steps API, or interact with elements
-  using this stack. Also use when asked to add entries to a page-repository JSON file,
-  use fixtures, select dropdowns, verify elements, wait for states, or perform any
-  browser interaction through this framework. Always consult this skill before generating
-  test code or locator JSON — do not guess API shapes or invent method signatures.
+  Use this skill whenever writing, editing, or generating Playwright tests that use the
+  pw-element-interactions or pw-element-repository packages. Triggers on any mention of
+  these packages, the Steps API, ElementRepository, ElementInteractions, baseFixture,
+  ContextStore, page-repository.json, or any request to write, fix, or add to a
+  Playwright test in this project.
 ---
 
-# pw-element-interactions — Test Authoring Reference
+## 🚨 ABSOLUTE RULES — READ BEFORE DOING ANYTHING ELSE
 
-This framework separates **where elements are defined** from **how they are used**. Selectors live in a JSON file; tests reference elements by readable string keys. No raw CSS or XPath ever appears in test code.
+These rules are non-negotiable and override any perceived helpfulness or initiative:
 
----
+### 1. NEVER write tests unless explicitly asked
+- NEVER create, write, or scaffold a test file unless the user has directly asked for it in this conversation.
+- NEVER infer that tests are needed from context, file structure, or prior messages.
+- If unsure whether the user wants a test written, **ask first. Do not write first.**
+- When asked to write tests, ALWAYS start by producing a brief plan — test file(s), scenarios, and locators needed — and wait for the user to approve it before writing anything.
+- If the plan covers more than one test file, suggest splitting into separate sessions (one per file) before proceeding.
 
-## ⚠️ Important: Test Scenarios
+### 2. NEVER edit `page-repository.json` without explicit permission
+- NEVER add, modify, or delete entries in `page-repository.json` (or any locator JSON file) without the user explicitly approving the change.
+- If new locators are needed, **show the user exactly what you intend to add** and wait for a clear "yes" before touching the file.
 
-**Never invent or assume test scenarios.** Always ask the user what they want to test before writing a single test. Do not infer scenarios from the page structure, existing tests, or common patterns — even if they seem obvious.
+### 3. NEVER invent selectors — use Playwright MCP to inspect the live site
+- NEVER guess or invent CSS selectors, XPath, IDs, or text values.
+- ALWAYS use the Playwright MCP to navigate to the page and inspect the real DOM before adding any locator.
+- If the Playwright MCP is not connected, stop and tell the user: *"I need the Playwright MCP to inspect the site. Please add it to your Claude Code MCP settings and restart."* Do not proceed until it is available.
 
-When asked to write tests, always start with:
-> "What scenarios would you like me to cover?"
+### 4. NEVER invent type definitions or API shapes
+- NEVER create `.d.ts` stubs or type shims for `pw-element-interactions` or `pw-element-repository`.
+- If a type is missing, report the problem to the user and ask how to proceed. Do not work around it silently.
 
-Wait for an explicit answer before proceeding. Only write exactly what the user describes.
+### 5. ALWAYS inspect a screenshot when a test fails
+- The base fixture automatically captures a `failure-screenshot` on every failed test — run `npx playwright show-report` and open the report in a browser using Playwright MCP or a browser MCP to view it.
+- Ensure `reporter: 'html'` is set in `playwright.config.ts` — this is required for `failure-screenshot` attachments to appear in the report.
+- If the report is not accessible, use the Playwright MCP to take a screenshot of the current page state manually.
+- NEVER attempt to fix a failing test based solely on the error message or stack trace — always verify visually first.
+- Describe what you see in the screenshot to the user, then propose a fix based on the visual evidence.
+- If the screenshot suggests a selector problem, re-inspect the live DOM via Playwright MCP before touching `page-repository.json`.
+- After a fully passing run, do NOT open the report unless the user asks.
 
-**Never add, edit, or delete entries in `page-repository.json` without explicit user permission.** If new locators are needed to implement a requested scenario, show the user what you intend to add and wait for approval before touching the file.
-
-**Commit after every successful outcome.** Whenever a fix, feature, or test is confirmed working — run a `git commit` with a clear, descriptive message as a checkpoint before moving on. Do not batch multiple successes into a single commit.
-
----
-
-## 0. Understanding the Website Structure
-
-Before writing tests or adding locators for an unfamiliar page or component, use the **Playwright MCP** to inspect the live site. This is the only reliable way to discover real selectors, element hierarchy, and page behaviour — do not guess or invent selectors from memory.
-
-Typical uses:
-- Navigating to a page and reading its DOM to find the right CSS selector or text for a new locator entry
-- Verifying that an element is actually present and visible before writing an assertion
-- Understanding the flow between pages before writing a multi-step test
-
-If the Playwright MCP is not connected, ask the user to install it before proceeding:
-
-```
-I need the Playwright MCP to inspect the site and find accurate selectors.
-Please install it by adding the following to your Claude Code MCP settings:
-
-{
-  "mcpServers": {
-    "playwright": {
-      "command": "npx",
-      "args": ["@playwright/mcp@latest"]
-    }
-  }
-}
-
-Then restart Claude Code and try again.
-```
-
-Do not attempt to write locators or test steps for unknown pages without first using the Playwright MCP to confirm the structure.
+### 6. Before creating or modifying `playwright.config.ts`, read the existing file first — do not overwrite it.
 
 ---
 
 ## 1. Adding Locators
 
-All selectors are stored in a single JSON file (commonly `tests/data/page-repository.json`). Each page groups its elements by name. Provide as many selector strategies as you like — the repository uses the first one that resolves:
+All selectors live in `tests/data/page-repository.json`.
 
 ```json
 {
@@ -89,15 +72,13 @@ All selectors are stored in a single JSON file (commonly `tests/data/page-reposi
 
 **Naming conventions:**
 - `name` — PascalCase page identifier, e.g. `CheckoutPage`, `ProductDetailsPage`
-- `elementName` — camelCase element identifier, e.g. `submitButton`, `gallery-images`
+- `elementName` — camelCase element identifier, e.g. `submitButton`, `galleryImages`
 
 ---
 
-## 2. Setup
+## 2. Setup — Fixtures
 
-### Option A — Fixtures (recommended)
-
-Define once in a fixture file; every test gets `steps`, `repo`, `interactions`, and `contextStore` for free:
+Before writing `tests/fixtures/base.ts`, **read it first if it already exists** — do not overwrite it without checking. The `baseFixture` automatically includes screenshot-on-failure capture, so no extension is needed:
 
 ```ts
 // tests/fixtures/base.ts
@@ -109,23 +90,13 @@ export { expect } from '@playwright/test';
 ```
 
 ```ts
-// tests/checkout.spec.ts
+// tests/example.spec.ts
 import { test } from '../fixtures/base';
 
-test('complete checkout', async ({ steps }) => {
-  await steps.navigateTo('/checkout');
-  await steps.click('CheckoutPage', 'submitButton');
+test('example', async ({ steps }) => {
+  await steps.navigateTo('https://example.com/');
+  await steps.click('HomePage', 'submitButton');
 });
-```
-
-### Option B — Manual initialisation
-
-```ts
-import { ElementRepository } from 'pw-element-repository';
-import { Steps } from 'pw-element-interactions';
-
-const repo  = new ElementRepository('tests/data/page-repository.json', 15000);
-const steps = new Steps(page, repo);
 ```
 
 ---
@@ -136,8 +107,10 @@ Every method takes `pageName` and `elementName` as its first two arguments, matc
 
 ### 🧭 Navigation
 
+Relative URLs are resolved against `baseURL` from `playwright.config.ts`. If a relative URL is passed and `baseURL` is not configured, an error will be thrown.
+
 ```ts
-await steps.navigateTo('/path');
+await steps.navigateTo('https://example.com/path');
 await steps.refresh();
 await steps.backOrForward('BACKWARDS'); // or 'FORWARDS'
 await steps.setViewport(1280, 720);
@@ -146,85 +119,62 @@ await steps.setViewport(1280, 720);
 ### 🖱️ Interaction
 
 ```ts
-// Standard click — waits for visible, stable, actionable
 await steps.click('PageName', 'elementName');
-
-// Click without scrolling — use for elements behind sticky headers or overlays
 await steps.clickWithoutScrolling('PageName', 'elementName');
-
-// Click only if the element is visible — silently skips if not (e.g. cookie banners)
 await steps.clickIfPresent('PageName', 'elementName');
-
-// Click a random element from a matched list (e.g. product cards)
 await steps.clickRandom('PageName', 'elementName');
-
-// Hover to trigger a tooltip or dropdown
 await steps.hover('PageName', 'elementName');
-
-// Scroll element into view
 await steps.scrollIntoView('PageName', 'elementName');
-
-// Clear and type text
 await steps.fill('PageName', 'elementName', 'my input');
-
-// Type character by character — use for OTP inputs or fields with keyup listeners
 await steps.typeSequentially('PageName', 'elementName', 'my input');
 await steps.typeSequentially('PageName', 'elementName', 'my input', 50); // custom delay ms
-
-// Upload a file
 await steps.uploadFile('PageName', 'elementName', 'tests/fixtures/file.pdf');
-
-// Select from a <select> dropdown — returns the selected value
-import { DropdownSelectType } from 'pw-element-interactions';
-
-const value = await steps.selectDropdown('PageName', 'elementName');                                         // random (default)
-const value = await steps.selectDropdown('PageName', 'elementName', { type: DropdownSelectType.RANDOM });
-const value = await steps.selectDropdown('PageName', 'elementName', { type: DropdownSelectType.VALUE, value: 'xl' });
-const value = await steps.selectDropdown('PageName', 'elementName', { type: DropdownSelectType.INDEX, index: 2 });
-
-// Drag and drop
 await steps.dragAndDrop('PageName', 'elementName', { target: otherLocator });
 await steps.dragAndDrop('PageName', 'elementName', { xOffset: 100, yOffset: 0 });
-
-// Drag a specific listed item by its text
 await steps.dragAndDropListedElement('PageName', 'elementName', 'Item Label', { target: otherLocator });
+```
+
+For dropdown selection, import `DropdownSelectType` at the top of your test file:
+
+```ts
+import { DropdownSelectType } from 'pw-element-interactions';
+```
+
+Then use it in your test:
+
+```ts
+const value1 = await steps.selectDropdown('PageName', 'elementName');                                                          // random (default)
+const value2 = await steps.selectDropdown('PageName', 'elementName', { type: DropdownSelectType.RANDOM });                     // explicit random
+const value3 = await steps.selectDropdown('PageName', 'elementName', { type: DropdownSelectType.VALUE, value: 'xl' });         // by value
+const value4 = await steps.selectDropdown('PageName', 'elementName', { type: DropdownSelectType.INDEX, index: 2 });            // by index
 ```
 
 ### 📊 Data Extraction
 
 ```ts
-const text = await steps.getText('PageName', 'elementName');        // trimmed text; '' if null
-const href  = await steps.getAttribute('PageName', 'elementName', 'href'); // null if absent
+const text = await steps.getText('PageName', 'elementName');
+const href  = await steps.getAttribute('PageName', 'elementName', 'href');
 ```
 
 ### ✅ Verification
 
 ```ts
-// Presence / absence
 await steps.verifyPresence('PageName', 'elementName');
 await steps.verifyAbsence('PageName', 'elementName');
-
-// Text — exact match or non-empty check
 await steps.verifyText('PageName', 'elementName', 'Expected text');
 await steps.verifyText('PageName', 'elementName', undefined, { notEmpty: true });
-
-// Count
 await steps.verifyCount('PageName', 'elementName', { exact: 3 });
 await steps.verifyCount('PageName', 'elementName', { greaterThan: 0 });
 await steps.verifyCount('PageName', 'elementName', { lessThan: 10 });
-
-// Images — checks visibility, valid src, naturalWidth > 0, and browser decode()
 await steps.verifyImages('PageName', 'elementName');
 await steps.verifyImages('PageName', 'elementName', false); // skip scroll-into-view
-
-// URL
 await steps.verifyUrlContains('/dashboard');
 ```
 
 ### ⏳ Waiting
 
 ```ts
-await steps.waitForState('PageName', 'elementName');               // default: 'visible'
+await steps.waitForState('PageName', 'elementName');           // default: 'visible'
 await steps.waitForState('PageName', 'elementName', 'hidden');
 await steps.waitForState('PageName', 'elementName', 'attached');
 await steps.waitForState('PageName', 'elementName', 'detached');
@@ -234,16 +184,13 @@ await steps.waitForState('PageName', 'elementName', 'detached');
 
 ## 4. Accessing the Repository Directly
 
-When you need more than a simple locator lookup — filtering by visible text, iterating all matches, or picking a random item — use `repo` directly alongside `steps`:
+Use `repo` when you need to filter by visible text, iterate all matches, or pick a random item:
 
 ```ts
 test('navigate to Forms', async ({ page, repo, steps }) => {
-  await steps.navigateTo('/');
-
-  // Resolve a locator by the visible text it contains
+  await steps.navigateTo('https://example.com/');
   const formsLink = await repo.getByText(page, 'HomePage', 'categories', 'Forms');
   await formsLink?.click();
-
   await steps.verifyAbsence('HomePage', 'categories');
 });
 ```
@@ -251,87 +198,34 @@ test('navigate to Forms', async ({ page, repo, steps }) => {
 ### Repository API
 
 ```ts
-// Single locator — waits for DOM attachment
 await repo.get(page, 'PageName', 'elementName');
-
-// All matching locators — use for iteration
 await repo.getAll(page, 'PageName', 'elementName');
-
-// A random locator from the matched set — waits for visibility
 await repo.getRandom(page, 'PageName', 'elementName');
-
-// First locator whose visible text contains the given string
 await repo.getByText(page, 'PageName', 'elementName', 'Desired Text');
-
-// Sync — returns the raw selector string, e.g. "css=.btn"
-repo.getSelector('PageName', 'elementName');
+repo.getSelector('PageName', 'elementName'); // sync, returns raw selector string
 ```
 
 ---
 
-## 5. Complete Test Example
+### ⚠️ NEVER use index-based element access — always target by context
+
+NEVER access elements by hardcoded index (e.g. `elements[1]`, `elements[3]`). Order can change and will silently break tests. Always identify elements by visible text, labels, attributes, or sibling content:
 
 ```ts
-import { test } from '../fixtures/base';
-import { DropdownSelectType } from 'pw-element-interactions';
+// ❌ Fragile — breaks if order changes
+const nameCell = tableRows[1]?.locator('td:first-child');
 
-test('add product to cart and verify', async ({ page, repo, steps }) => {
-  await steps.navigateTo('/');
-
-  // Click a category by its visible label
-  const accessories = await repo.getByText(page, 'HomePage', 'categories', 'Accessories');
-  await accessories?.click();
-
-  // Pick a random product
-  await steps.clickRandom('AccessoriesPage', 'productCards');
-  await steps.verifyUrlContains('/product/');
-
-  // Select a size from the dropdown
-  const size = await steps.selectDropdown('ProductPage', 'sizeSelector', {
-    type: DropdownSelectType.RANDOM,
-  });
-  console.log(`Selected size: ${size}`);
-
-  // Verify the image gallery loaded correctly
-  await steps.verifyCount('ProductPage', 'galleryImages', { greaterThan: 0 });
-  await steps.verifyImages('ProductPage', 'galleryImages');
-
-  // Verify product title is not blank
-  await steps.verifyText('ProductPage', 'productTitle', undefined, { notEmpty: true });
-
-  // Add to cart and wait for confirmation
-  await steps.click('ProductPage', 'addToCartButton');
-  await steps.waitForState('ProductPage', 'confirmationModal', 'visible');
-});
+// ✅ Robust — finds the element by its meaningful label
+const nameRow = await repo.getByText(page, 'FormsPage', 'submissionEntries', 'Name');
+const nameValue = await nameRow?.locator('td:nth-child(2)').textContent();
+expect(nameValue?.trim()).toBe(testData.name);
 ```
+
+Before writing any verification logic against a list or table, inspect the live page via Playwright MCP to understand the structure and identify the most stable way to target each element. If no meaningful context exists to distinguish elements, stop and ask the user how to proceed.
 
 ---
 
-## 6. Extending Fixtures
+## 5. Workflow
 
-Add your own fixtures on top of the base without losing `steps`, `repo`, or `contextStore`:
-
-```ts
-// tests/fixtures/base.ts
-import { test as base } from '@playwright/test';
-import { baseFixture } from 'pw-element-interactions';
-import { AuthService } from '../services/AuthService';
-
-type MyFixtures = { authService: AuthService };
-
-export const test = baseFixture(base, 'tests/data/page-repository.json')
-  .extend<MyFixtures>({
-    authService: async ({ page }, use) => {
-      await use(new AuthService(page));
-    },
-  });
-
-export { expect } from '@playwright/test';
-```
-
-```ts
-test('authenticated flow', async ({ steps, authService }) => {
-  await authService.login('user@test.com', 'secret');
-  await steps.verifyUrlContains('/dashboard');
-});
-```
+- After any fix, feature, or test is confirmed working, run a `git commit` with a clear message before moving on.
+- Do not batch multiple successes into a single commit.
