@@ -123,6 +123,8 @@ For larger projects, manually initializing `repo` and `steps` inside every test 
 | `interactions` | `ElementInteractions` | Raw interactions API for custom locators |
 | `contextStore` | `ContextStore` | Shared in-memory store for passing data between steps |
 
+`baseFixture` also automatically attaches a full-page `failure-screenshot` to the Playwright HTML report on every failed test — no additional configuration required. Run `npx playwright show-report` after a failed run to inspect it.
+
 ### 1. Create your fixture file
 
 Call `baseFixture` once, passing your own `test` base and the path to your locator repository:
