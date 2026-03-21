@@ -74,16 +74,22 @@ export class Verifications {
     }
 
     /**
-     * Asserts the interactive state of an element (whether it is enabled or disabled).
-     * Useful for checking buttons or input fields.
+     * Asserts the state of an element using Playwright's built-in locator assertions.
      * @param locator - The Playwright Locator pointing to the target element.
-     * @param state - The expected state: either 'enabled' or 'disabled'.
+     * @param state - The expected state to verify.
      */
-    async state(locator: Locator, state: 'enabled' | 'disabled'): Promise<void> {
-        if (state === 'enabled') {
-            await expect(locator).toBeEnabled({ timeout: this.ELEMENT_TIMEOUT });
-        } else {
-            await expect(locator).toBeDisabled({ timeout: this.ELEMENT_TIMEOUT });
+    async state(locator: Locator, state: 'enabled' | 'disabled' | 'editable' | 'checked' | 'focused' | 'visible' | 'hidden' | 'attached' | 'inViewport'): Promise<void> {
+        const timeout = this.ELEMENT_TIMEOUT;
+        switch (state) {
+            case 'enabled':    await expect(locator).toBeEnabled({ timeout }); break;
+            case 'disabled':   await expect(locator).toBeDisabled({ timeout }); break;
+            case 'editable':   await expect(locator).toBeEditable({ timeout }); break;
+            case 'checked':    await expect(locator).toBeChecked({ timeout }); break;
+            case 'focused':    await expect(locator).toBeFocused({ timeout }); break;
+            case 'visible':    await expect(locator).toBeVisible({ timeout }); break;
+            case 'hidden':     await expect(locator).toBeHidden({ timeout }); break;
+            case 'attached':   await expect(locator).toBeAttached({ timeout }); break;
+            case 'inViewport': await expect(locator).toBeInViewport({ timeout }); break;
         }
     }
 
