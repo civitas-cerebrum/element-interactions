@@ -40,9 +40,13 @@ export class Steps {
     // ==========================================
 
     /**
-     * Navigates the browser to the specified URL.
-     * @param url - The absolute or relative URL to navigate to.
-     */
+    * Navigates the browser to the specified URL.
+    * @param url - The absolute or relative URL to navigate to.
+    * Relative URLs are resolved against `baseURL` from playwright.config.ts via toUrl().
+    * Protocol-relative URLs (e.g. '//example.com') are passed directly to the browser.
+    * ⚠️ If a relative URL is passed and no baseURL is configured, an error will be thrown.
+    * Prefer fully qualified URLs to avoid ambiguity.
+    */
     async navigateTo(url: string): Promise<void> {
         console.log(`[Step] -> Navigating to URL: "${url}"`);
         await this.navigate.toUrl(url);
@@ -328,8 +332,8 @@ export class Steps {
      * @param state - The state to wait for: 'visible' | 'attached' | 'hidden' | 'detached'. Defaults to 'visible'.
      */
     async waitForState(
-        pageName: string, 
-        elementName: string, 
+        pageName: string,
+        elementName: string,
         state: 'visible' | 'attached' | 'hidden' | 'detached' = 'visible'
     ): Promise<void> {
         console.log(`[Step] -> Waiting for '${elementName}' in '${pageName}' to be '${state}'`);
@@ -346,15 +350,15 @@ export class Steps {
      * @param delay - Optional delay between key presses in milliseconds (defaults to 100).
      */
     async typeSequentially(
-        pageName: string, 
-        elementName: string, 
-        text: string, 
+        pageName: string,
+        elementName: string,
+        text: string,
         delay: number = 100
     ): Promise<void> {
         console.log(`[Step] -> Typing "${text}" sequentially into '${elementName}' in '${pageName}' (Delay: ${delay}ms)`);
-        
+
         const locator = await this.repo.get(this.page, pageName, elementName);
-        
+
         await this.interact.typeSequentially(locator, text, delay);
     }
 }
