@@ -71,18 +71,15 @@ npm i pw-element-interactions pw-element-repository
 
 That's it — the skill is now available to Claude Code. When you ask it to write tests, it will automatically scaffold the fixture file, page repository, and config if they don't exist yet.
 
-**3. Connect the Playwright MCP** so Claude Code can inspect live pages and verify selectors against the real DOM. Add it to your Claude Code MCP settings:
+**3. Ask Claude to discover your app and automate a scenario:**
 
-```json
-{
-  "mcpServers": {
-    "playwright": {
-      "command": "npx",
-      "args": ["@anthropic-ai/mcp-server-playwright"]
-    }
-  }
-}
-```
+Open Claude Code in your project directory and prompt it with something like:
+
+> *"Explore https://your-app-url.com and automate an example end-to-end scenario."*
+
+Claude will navigate to your site, identify key pages and interactions, scaffold the fixture file and page repository, and write a working test — all in one shot.
+
+> **Tip:** For the best results, connect the Playwright MCP first so Claude can inspect the live DOM and verify selectors against the real page before writing any locators. Run `/plugins` in Claude Code and enable Playwright from the list.
 
 ### What the Skill Enables
 
