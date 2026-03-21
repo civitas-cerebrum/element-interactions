@@ -1,11 +1,15 @@
 ---
 name: pw-element-interactions
 description: >
-  Use this skill whenever writing, editing, or generating Playwright tests that use the
-  pw-element-interactions or pw-element-repository packages. Triggers on any mention of
-  these packages, the Steps API, ElementRepository, ElementInteractions, baseFixture,
-  ContextStore, page-repository.json, or any request to write, fix, or add to a
-  Playwright test in this project.
+  Use this skill whenever writing, editing, or generating Playwright tests! Triggers on any mention of
+  Playwright tests, pw-element-interactions or pw-element-repository packages, the Steps API, ElementRepository, ElementInteractions, baseFixture,
+  ContextStore, page-repository.json, or any request to write, fix, or add to a Playwright test in this project.
+---
+
+# pw-element-interactions — Agent Skill
+
+A two-package Playwright framework that fully decouples **element acquisition** (`pw-element-repository`) from **element interaction** (`pw-element-interactions`). Tests reference elements by plain strings (`'HomePage'`, `'submitButton'`); raw selectors never appear in test code.
+
 ---
 
 ## 🚨 ABSOLUTE RULES — READ BEFORE DOING ANYTHING ELSE
