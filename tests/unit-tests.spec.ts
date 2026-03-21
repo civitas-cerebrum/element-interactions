@@ -76,13 +76,12 @@ test.describe('E2E Facade Implementation Suite', () => {
       await steps.verifyPresence('FormsPage', 'table');
 
       const modal = await repo.get(page, 'FormsPage', 'table');
-      const verifyRaw = steps['verify'];
 
       for (const [key, expectedValue] of contextStore.entries()) {
         const row = modal.locator('tr').filter({ hasText: key });
         const actualValueElement = row.locator('td').nth(1);
 
-        await verifyRaw.text(actualValueElement, expectedValue);
+        await interactions.verify.text(actualValueElement, expectedValue);
       }
     });
 
@@ -110,7 +109,7 @@ test.describe('E2E Facade Implementation Suite', () => {
 
       await steps.dragAndDropListedElement('SortablePage', 'sortableItems', 'Item A', { target: dropZone! });
 
-      await steps['verify'].textContains(dropZone!, 'Item A');
+      await interactions.verify.textContains(dropZone!, 'Item A');
     });
 
     log('TC_002 Drag and Drop Interactions — passed');
@@ -218,6 +217,73 @@ test.describe('E2E Facade Implementation Suite', () => {
     log('TC_006 Verify Count greaterThan/lessThan — passed');
   });
 
+});
+
+test.describe('TC_007: verifyState - All Playwright element states', () => {
+
+  test('positive state assertions', async ({ page, repo, interactions }) => {
+    const steps = new Steps(page, repo, 1000);
+
+    await test.step('Navigate to Forms page', async () => {
+      await steps.navigateTo('http://127.0.0.1:8080/');
+      const formsCategory = await interactions.interact.getByText(
+        await page.locator('#category-card'),
+        'HomePage', 'categories', 'Forms'
+      );
+      await formsCategory!.click();
+    });
+
+    await test.step('visible: title is visible', async () => {
+      await steps.verifyState('FormsPage', 'title', 'visible');
+    });
+
+    await test.step('attached: title is attached to the DOM', async () => {
+      await steps.verifyState('FormsPage', 'title', 'attached');
+    });
+
+    await test.step('inViewport: title is in viewport', async () => {
+      await steps.verifyState('FormsPage', 'title', 'inViewport');
+    });
+
+    await test.step('enabled: submit button is enabled', async () => {
+      await steps.verifyState('FormsPage', 'submitButton', 'enabled');
+    });
+
+    await test.step('editable: name input is editable', async () => {
+      await steps.verifyState('FormsPage', 'nameInput', 'editable');
+    });
+
+    await test.step('focused: name input is focused after clicking', async () => {
+      await steps.click('FormsPage', 'nameInput');
+      await steps.verifyState('FormsPage', 'nameInput', 'focused');
+    });
+
+    await test.step('Navigate to Radio Buttons page', async () => {
+      await steps.navigateTo('http://127.0.0.1:8080/');
+      const elementsCategory = await repo.getByText(page, 'HomePage', 'categories', 'Elements');
+      await interactions.interact.click(elementsCategory!);
+      await steps.verifyUrlContains('/elements');
+
+      const radioButtonsTool = await repo.getByText(page, 'ElementsPage', 'tools', 'Radio Buttons');
+      await interactions.interact.click(radioButtonsTool!);
+      await steps.verifyUrlContains('/radiobuttons');
+    });
+
+    await test.step('disabled: the No radio button is disabled', async () => {
+      await steps.verifyState('RadioButtonsPage', 'disabledRadio', 'disabled');
+    });
+
+    await test.step('checked: Yes radio is checked after clicking', async () => {
+      await steps.click('RadioButtonsPage', 'yesRadio');
+      await steps.verifyState('RadioButtonsPage', 'yesRadio', 'checked');
+    });
+
+    await test.step('hidden: FormsPage title is hidden on a different page', async () => {
+      await steps.verifyState('FormsPage', 'title', 'hidden');
+    });
+
+    log('TC_007 verifyState — passed');
+  });
 });
 
 test.describe('TC_006: navigateTo resolves relative URLs via Playwright baseURL', () => {
