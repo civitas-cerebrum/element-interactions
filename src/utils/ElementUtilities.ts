@@ -39,13 +39,13 @@ export class Utils {
             const message = error instanceof Error ? error.message : String(error);
 
             if (message.includes('strict mode violation')) {
-                console.warn(`[Warning] -> Locator resolved to multiple elements. Waiting on first element instead.`);
+                console.warn(`Locator resolved to multiple elements. Waiting on first element instead.`);
                 try { await locator.first().waitFor({ state, timeout: this.timeout }); }
-                catch { console.warn(`[Warning] -> First element failed to reach state '${state}' within ${this.timeout}ms. Proceeding...`); }
+                catch { console.warn(`First element failed to reach state '${state}' within ${this.timeout}ms. Proceeding...`); }
                 return;
             }
 
-            console.warn(`[Warning] -> Element failed to reach state '${state}' within ${this.timeout}ms. Proceeding...`);
+            console.warn(`Element failed to reach state '${state}' within ${this.timeout}ms. Proceeding...`);
         }
     }
 }

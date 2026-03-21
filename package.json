@@ -9,7 +9,8 @@
     "build": "npm run clean && tsc",
     "test": "npx playwright test",
     "prepublishOnly": "npm run build",
-    "postinstall": "node scripts/postinstall.js"
+    "postinstall": "node scripts/postinstall.js",
+    "test:quiet": "TESTER_DEBUG=false npx playwright test"
   },
   "files": [
     "dist",
@@ -24,6 +25,7 @@
   "devDependencies": {
     "@civitas-cerebrum/context-store": "^0.0.2",
     "@playwright/test": "^1.58.2",
+    "@types/debug": "^4.1.13",
     "@types/node": "^20.0.0",
     "pw-element-repository": "^0.0.3",
     "typescript": "^5.0.0"
@@ -47,5 +49,8 @@
     "url": "git+https://github.com/Umutayb/pw-element-interactions.git"
   },
   "author": "Umut Ay Bora",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "debug": "^4.4.3"
+  }
 }
