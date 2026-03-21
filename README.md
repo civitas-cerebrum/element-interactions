@@ -321,8 +321,11 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 * **`verifyPresence(pageName, elementName)`** — Asserts that an element is attached to the DOM and visible.
 * **`verifyAbsence(pageName, elementName)`** — Asserts that an element is hidden or detached from the DOM.
 * **`verifyText(pageName, elementName, expectedText?, options?: TextVerifyOptions)`** — Asserts element text. Provide `expectedText` for an exact match, or `{ notEmpty: true }` to assert the text is not blank.
-* **`verifyCount(pageName, elementName, options: CountVerifyOptions)`** — Asserts element count. Accepts `{ exact: number }`, `{ greaterThan: number }`, or `{ lessThan: number }`.
+* **`verifyCount(pageName, elementName, options: CountVerifyOptions)`** — Asserts element count. Accepts `{ exactly: number }`, `{ greaterThan: number }`, or `{ lessThan: number }`.
 * **`verifyImages(pageName, elementName, scroll?: boolean)`** — Verifies image rendering: checks visibility, valid `src`, `naturalWidth > 0`, and the browser's native `decode()` promise. Scrolls into view by default.
+* **`verifyTextContains(pageName, elementName, expectedText: string)`** — Asserts that an element's text contains the expected substring.
+* **`verifyState(pageName, elementName, state)`** — Asserts the state of an element. Supported states: `'enabled'`, `'disabled'`, `'editable'`, `'checked'`, `'focused'`, `'visible'`, `'hidden'`, `'attached'`, `'inViewport'`.
+* **`verifyAttribute(pageName, elementName, attributeName: string, expectedValue: string)`** — Asserts that an element has a specific HTML attribute with an exact value.
 * **`verifyUrlContains(text: string)`** — Asserts that the current URL contains the expected substring.
 
 ### ⏳ Wait

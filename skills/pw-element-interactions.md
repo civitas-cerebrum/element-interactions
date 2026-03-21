@@ -175,11 +175,14 @@ await steps.verifyPresence('PageName', 'elementName');
 await steps.verifyAbsence('PageName', 'elementName');
 await steps.verifyText('PageName', 'elementName', 'Expected text');
 await steps.verifyText('PageName', 'elementName', undefined, { notEmpty: true });
-await steps.verifyCount('PageName', 'elementName', { exact: 3 });
+await steps.verifyCount('PageName', 'elementName', { exactly: 3 });
 await steps.verifyCount('PageName', 'elementName', { greaterThan: 0 });
 await steps.verifyCount('PageName', 'elementName', { lessThan: 10 });
 await steps.verifyImages('PageName', 'elementName');
 await steps.verifyImages('PageName', 'elementName', false); // skip scroll-into-view
+await steps.verifyTextContains('PageName', 'elementName', 'partial text');
+await steps.verifyState('PageName', 'elementName', 'enabled');  // 'disabled', 'editable', 'checked', 'focused', 'visible', 'hidden', 'attached', 'inViewport'
+await steps.verifyAttribute('PageName', 'elementName', 'href', '/expected-path');
 await steps.verifyUrlContains('/dashboard');
 ```
 
