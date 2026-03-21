@@ -222,7 +222,7 @@ test.describe('E2E Facade Implementation Suite', () => {
 test.describe('TC_007: verifyState - All Playwright element states', () => {
 
   test('positive state assertions', async ({ page, repo, interactions }) => {
-    const steps = new Steps(page, repo, 1000);
+    const steps = new Steps(page, repo, 500);
 
     await test.step('Navigate to Forms page', async () => {
       await steps.navigateTo('http://127.0.0.1:8080/');
