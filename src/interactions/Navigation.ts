@@ -5,20 +5,34 @@ import { Page } from '@playwright/test';
  * navigation, history, and viewport settings within Playwright.
  */
 export class Navigation {
-    
+
     /**
      * Initializes the Navigation class.
      * @param page - The current Playwright Page object.
      */
-    constructor(private page: Page) {}
+    constructor(private page: Page) { }
 
     /**
-     * Navigates the active browser page to the specified URL.
-     * Automatically waits for the page to reach the default 'load' state.
-     * @param url - The absolute or relative URL to navigate to.
-     */
+    * Navigates the active browser page to the specified URL.
+    * Automatically waits for the page to reach the default 'load' state.
+    * @param url - The absolute or relative URL to navigate to.
+    * Relative URLs (e.g. '/path') are resolved against `baseURL` from playwright.config.ts.
+    * Protocol-relative URLs (e.g. '//example.com') are passed directly to the browser.
+    * ⚠️ If a relative URL is passed and no baseURL is configured, an error will be thrown.
+    * Prefer fully qualified URLs to avoid ambiguity.
+    */
     async toUrl(url: string): Promise<void> {
-        await this.page.goto(url);
+        let resolved = url;
+        if (!url.startsWith('http')) {
+            const baseURL = (this.page.context() as any)._options?.baseURL;
+            if (!baseURL) {
+                throw new Error(
+                    `[toUrl] Cannot resolve relative URL "${url}" — no baseURL is configured in playwright.config.ts.`
+                );
+            }
+            resolved = new URL(url, baseURL).href;
+        }
+        await this.page.goto(resolved);
     }
 
     /**
