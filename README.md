@@ -8,7 +8,7 @@ A robust set of Playwright steps for readable interaction and assertions.
 
 ### ✨ The Unified Steps API
 
-With the introduction of the `Steps` class, you can now combine your element repository and interactions into a single, flattened Facade. This eliminates repetitive locator fetching and transforms your tests into clean, plain-English steps.
+The `Steps` class combines your element repository and interactions into a single, flattened facade. This eliminates repetitive locator fetching and transforms your tests into clean, plain-English steps.
 
 ### 🤖 AI-Friendly Test Development & Boilerplate Reduction
 
@@ -19,20 +19,14 @@ Because the API is highly semantic and completely decoupled from the DOM, it is 
 **Before (Raw Playwright):**
 
 ```ts
-// 1. Hardcode or manage raw locators inside your test
 const submitBtn = page.locator('button[data-test="submit-order"]');
-
-// 2. Explicitly wait for DOM stability and visibility
 await submitBtn.waitFor({ state: 'visible', timeout: 30000 });
-
-// 3. Perform the interaction
 await submitBtn.click();
 ```
 
 **Now (with pw-element-interactions):**
 
 ```ts
-// 1. Locate, wait, and interact in a single, readable, AI-friendly line
 await steps.click('CheckoutPage', 'submitButton');
 ```
 
@@ -40,27 +34,25 @@ await steps.click('CheckoutPage', 'submitButton');
 
 ## 📦 Installation
 
-Install the package via your preferred package manager:
-
 ```bash
 npm i pw-element-interactions
 ```
 
-**Peer Dependencies:**
-This package requires `@playwright/test` to be installed in your project. If you are using the `Steps` API, you will also need `pw-element-repository`.
+**Peer Dependencies:** `@playwright/test` is required. If you are using the `Steps` API, you will also need `pw-element-repository`.
 
 ---
 
 ## 🚀 What is it good for?
 
-* **Zero Locator Boilerplate:** The new `Steps` API fetches elements and interacts with them in a single method call.
-* **Separation of Concerns:** Keep your interaction logic entirely detached from how elements are found on the page.
+* **Zero Locator Boilerplate:** The `Steps` API fetches elements and interacts with them in a single method call.
+* **Separation of Concerns:** Keep interaction logic entirely detached from how elements are found on the page.
 * **Readable Tests:** Abstract away Playwright boilerplate into semantic methods (`clickIfPresent`, `verifyPresence`, `selectDropdown`).
-* **Standardized Waiting:** Easily wait for elements to reach specific DOM states (visible, hidden, attached, detached) with built-in utility methods.
-* **Advanced Visual Checks:** Includes a highly reliable `verifyImages` method that evaluates actual browser decoding and `naturalWidth` to ensure images aren't just in the DOM, but are properly rendered.
-* **Smart Dropdowns:** Easily select dropdown options by value, index, or completely randomly (skipping disabled or empty options automatically).
-* **Flexible Verifications:** Easily verify exact text, non-empty text, or dynamic element counts (greater than, less than, or exact).
-* **Advanced Drag & Drop:** Seamlessly drag elements to other elements, drop them at specific coordinate offsets, or combine both strategies natively.
+* **Automatic Failure Screenshots:** `baseFixture` captures a full-page screenshot on every failed test and attaches it to the HTML report — no configuration required.
+* **Standardized Waiting:** Wait for elements to reach specific DOM states (visible, hidden, attached, detached) with built-in utility methods.
+* **Advanced Visual Checks:** `verifyImages` evaluates actual browser decoding and `naturalWidth` to ensure images aren't just in the DOM, but are properly rendered.
+* **Smart Dropdowns:** Select dropdown options by value, index, or randomly — skipping disabled or empty options automatically.
+* **Flexible Verifications:** Verify exact text, non-empty text, or dynamic element counts (greater than, less than, or exact).
+* **Advanced Drag & Drop:** Drag elements to other elements, drop them at specific coordinate offsets, or combine both strategies.
 
 ---
 
@@ -68,42 +60,28 @@ This package requires `@playwright/test` to be installed in your project. If you
 
 Initialize the `Steps` class by passing the current Playwright `page` object and your `ElementRepository` instance.
 
-### Example Scenario
-
 ```ts
 import { test } from '@playwright/test';
 import { ElementRepository } from 'pw-element-repository';
 import { Steps, DropdownSelectType } from 'pw-element-interactions';
 
 test('Add random product and verify image gallery', async ({ page }) => {
-  // 1. Initialize Repository & Steps
   const repo = new ElementRepository('tests/data/locators.json');
   const steps = new Steps(page, repo);
 
-  // 2. Navigate
   await steps.navigateTo('/');
-
-  // 3. Direct Interaction (Fetches and clicks in one line)
   await steps.click('HomePage', 'category-accessories');
-
-  // 4. Randomized Acquisition & Action
   await steps.clickRandom('AccessoriesPage', 'product-cards');
   await steps.verifyUrlContains('/product/');
 
-  // 5. Smart Dropdown Interaction
-  const selectedSize = await steps.selectDropdown('ProductDetailsPage', 'size-selector', { 
-    type: DropdownSelectType.RANDOM 
+  const selectedSize = await steps.selectDropdown('ProductDetailsPage', 'size-selector', {
+    type: DropdownSelectType.RANDOM,
   });
   console.log(`Selected size: ${selectedSize}`);
 
-  // 6. Flexible Assertions & Data Extraction
   await steps.verifyCount('ProductDetailsPage', 'gallery-images', { greaterThan: 0 });
   await steps.verifyText('ProductDetailsPage', 'product-title', undefined, { notEmpty: true });
-  
-  // 7. Advanced Image Verification
   await steps.verifyImages('ProductDetailsPage', 'gallery-images');
-  
-  // 8. Explicit Waits
   await steps.waitForState('CheckoutPage', 'confirmation-modal', 'visible');
 });
 ```
@@ -123,24 +101,38 @@ For larger projects, manually initializing `repo` and `steps` inside every test 
 | `interactions` | `ElementInteractions` | Raw interactions API for custom locators |
 | `contextStore` | `ContextStore` | Shared in-memory store for passing data between steps |
 
-`baseFixture` also automatically attaches a full-page `failure-screenshot` to the Playwright HTML report on every failed test — no additional configuration required. Run `npx playwright show-report` after a failed run to inspect it.
+`baseFixture` also automatically attaches a full-page `failure-screenshot` to the Playwright HTML report on every failed test — no additional configuration required.
 
-### 1. Create your fixture file
+> **Note:** `reporter: 'html'` must be set in `playwright.config.ts` for the `failure-screenshot` attachment to appear in the report. Run `npx playwright show-report` after a failed run to inspect it.
 
-Call `baseFixture` once, passing your own `test` base and the path to your locator repository:
+### 1. Playwright Config
+
+```ts
+// playwright.config.ts
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './tests',
+  reporter: 'html',
+  use: {
+    baseURL: 'https://your-project-url.com',
+    headless: true,
+  },
+});
+```
+
+### 2. Create your fixture file
 
 ```ts
 // tests/fixtures/base.ts
-import { test as base, expect } from '@playwright/test';
+import { test as base } from '@playwright/test';
 import { baseFixture } from 'pw-element-interactions';
 
 export const test = baseFixture(base, 'tests/data/page-repository.json');
-export { expect };
+export { expect } from '@playwright/test';
 ```
 
-### 2. Use fixtures in your tests
-
-Import `test` from your fixture file. All four fixtures are available as named parameters — no setup code required:
+### 3. Use fixtures in your tests
 
 ```ts
 // tests/checkout.spec.ts
@@ -163,7 +155,7 @@ test('Complete checkout flow', async ({ steps }) => {
 });
 ```
 
-### 3. Access `repo` directly when needed
+### 4. Access `repo` directly when needed
 
 For advanced queries like resolving a locator by visible text, destructure `repo` alongside `steps`:
 
@@ -178,9 +170,9 @@ test('Navigate to Forms category', async ({ page, repo, steps }) => {
 });
 ```
 
-### 4. Extend with your own fixtures
+### 5. Extend with your own fixtures
 
-Because `baseFixture` returns a standard Playwright `test` object, you can chain your own fixtures on top of it cleanly:
+Because `baseFixture` returns a standard Playwright `test` object, you can chain your own fixtures on top of it:
 
 ```ts
 // tests/fixtures/base.ts
@@ -203,14 +195,44 @@ export const test = testWithBase.extend<MyFixtures>({
 export { expect } from '@playwright/test';
 ```
 
-All fixtures are then available together in any test:
-
 ```ts
 test('Authenticated flow', async ({ steps, authService }) => {
   await authService.login('user@test.com', 'secret');
   await steps.verifyUrlContains('/dashboard');
 });
 ```
+
+---
+
+## 🗂️ Adding Locators
+
+All selectors live in `tests/data/page-repository.json`.
+
+```json
+{
+  "pages": [
+    {
+      "name": "HomePage",
+      "elements": [
+        {
+          "elementName": "submitButton",
+          "selector": {
+            "css": "button[data-test='submit']"
+            //or;
+            //"xpath": "//button[@data-test='submit']",
+            //"id": "submit-btn",
+            //"text": "Submit"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Naming conventions:**
+- `name` — PascalCase page identifier, e.g. `CheckoutPage`, `ProductDetailsPage`
+- `elementName` — camelCase element identifier, e.g. `submitButton`, `galleryImages`
 
 ---
 
@@ -262,31 +284,29 @@ The `Steps` class automatically handles fetching the Playwright `Locator` using 
 
 ## 🧱 Advanced Usage: Raw Interactions API
 
-If you need to bypass the repository or interact with custom locators dynamically generated in your tests, you can use the underlying `ElementInteractions` class directly.
+If you need to bypass the repository or interact with custom locators generated dynamically in your tests, use the underlying `ElementInteractions` class directly.
 
 ```ts
 import { ElementInteractions } from 'pw-element-interactions';
 
-// Initialize
 const interactions = new ElementInteractions(page);
 
-// Pass Playwright Locators directly
 const customLocator = page.locator('button.dynamic-class');
 await interactions.interact.clickWithoutScrolling(customLocator);
 await interactions.verify.count(customLocator, { greaterThan: 2 });
 ```
 
-*Note: All core interaction (`interact`), verification (`verify`), and navigation (`navigate`) methods are also available when using `ElementInteractions` directly.*
+All core interaction (`interact`), verification (`verify`), and navigation (`navigate`) methods are available when using `ElementInteractions` directly.
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please read the rules below carefully before opening a PR — they exist to keep the architecture clean, the test suite reliable, and the codebase consistent.
+Contributions are welcome. Please read the rules below carefully before opening a PR — they exist to keep the architecture clean, the test suite reliable, and the codebase consistent.
 
 ### 🧪 Testing Locally Before Opening a PR
 
-Before pushing changes, verify your implementation works end-to-end in a real consumer project using [`yalc`](https://github.com/wclr/yalc) — a local package publishing tool that mirrors the npm install flow without actually publishing.
+Verify your implementation works end-to-end using [`yalc`](https://github.com/wclr/yalc) — a local package publishing tool that mirrors the npm install flow without actually publishing.
 
 ```bash
 # 1. Install yalc globally (one-time setup)
@@ -299,14 +319,14 @@ yalc publish
 yalc add pw-element-interactions
 ```
 
-After making further changes, push updates to the consumer project without re-adding:
+After making further changes, push updates without re-adding:
 
 ```bash
 # In pw-element-interactions
 yalc publish --push
 ```
 
-To restore the original npm version when you're done:
+To restore the original npm version when done:
 
 ```bash
 # In your consumer project
@@ -319,31 +339,27 @@ npm install
 PRs must respect the layered architecture of this library. Every new capability follows a strict implementation order:
 
 1. **Implement in the appropriate class first.** The core method must be added to the correct underlying class (`interact`, `verify`, `navigate`, or similar) before it is exposed anywhere else. Do not add a method only to `Steps` or `ElementInteractions` without first placing the logic in the right domain class.
-2. **Then expose it via `Steps`.** Once the core method exists in its proper class, add the corresponding wrapper to the `Steps` (CommonSteps) class so it is accessible through the unified API.
+2. **Then expose it via `Steps`.** Once the core method exists in its proper class, add the corresponding wrapper to the `Steps` class so it is accessible through the unified API.
 
 PRs that skip step 1 and add convenience methods without a properly placed underlying implementation will not be merged.
 
 ### 🪵 Logging
 
-The logging responsibility is clearly divided and must be respected:
-
 * **Interaction methods must not contain any logs.** Keep them focused purely on the mechanics of the action.
-* **`Steps` methods are responsible for logging.** Every `Steps` wrapper should log what action is being performed, providing observability at the right level of abstraction.
+* **`Steps` methods are responsible for logging.** Every `Steps` wrapper should log what action is being performed.
 
 ### 🧬 Unit Tests
 
-Every new interaction method must be accompanied by a unit test.
+Every new interaction method must be accompanied by a unit test. Tests run against the proprietary Vue test application at [https://github.com/Umutayb/vue-test-app](https://github.com/Umutayb/vue-test-app), which is built from its Docker image during the CI pipeline. All new tests must use this app.
 
-Unit tests are run against the proprietary Vue test application at [https://github.com/Umutayb/vue-test-app](https://github.com/Umutayb/vue-test-app). This app is built from its Docker image during the CI pipeline to serve as the test target. All new tests must use this app.
-
-If the component or UI element needed to test a new interaction does not exist in the Vue test app, **you must add it there first**:
+If the component or UI element needed to test a new interaction does not exist in the Vue test app, you must add it there first:
 
 1. Open a PR against `vue-test-app` to add the required component.
 2. Wait for that PR to be merged.
-3. Only then open or update the PR in this repository that adds the interaction and its test.
+3. Only then open or update the PR in this repository.
 
 PRs that require a missing component but do not have a corresponding merged `vue-test-app` PR will not be merged.
 
 ### 📝 Documentation
 
-Every new `Steps` method must be documented in the [API Reference](#️-api-reference-steps) section of this README. Add your method to the appropriate group (Navigation, Interaction, Data Extraction, Verification, or Wait) following the existing format: method signature, a plain-English description of what it does, and any relevant parameter or return value notes. PRs that add a public method without a corresponding README entry will not be merged.
+Every new `Steps` method must be documented in the [API Reference](#️-api-reference-steps) section of this README. Add your method to the appropriate group following the existing format: method signature, a plain-English description, and any relevant parameter or return value notes. PRs that add a public method without a corresponding README entry will not be merged.
