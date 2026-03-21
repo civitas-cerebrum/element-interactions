@@ -75,7 +75,7 @@ That's it — the skill is now available to Claude Code. When you ask it to writ
 
 Open Claude Code in your project directory and prompt it with something like:
 
-> *"Explore https://your-app-url.com and automate an example end-to-end scenario."*
+> *"Inspect the repo & explore https://your-app-url.com and automate an example end-to-end scenario."*
 
 Claude will navigate to your site, identify key pages and interactions, scaffold the fixture file and page repository, and write a working test — all in one shot.
 
