@@ -55,7 +55,7 @@ test.describe('Vue Test App v2 - Forms Tests', () => {
 
     await test.step('Verify page title', async () => {
       const title = await steps.getText('FormsPage', 'formTitle');
-      expect(title).toBe('Full Form');
+      expect(title).toBe('Submission Form');
       log('Form title: %s', title);
     });
 

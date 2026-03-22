@@ -5,3 +5,4 @@
 .DS_Store
 /playwright-report
 /.playwright-mcp
+api-coverage-report.txt

@@ -25,7 +25,7 @@ test.describe('E2E Facade Implementation Suite', () => {
 
     await test.step('Verify Page Title', async () => {
       await steps.verifyUrlContains('/forms');
-      await steps.verifyText('FormsPage', 'title', 'Full Form');
+      await steps.verifyText('FormsPage', 'title', 'Submission Form');
     });
 
     await test.step('Fill Standard Inputs', async () => {
