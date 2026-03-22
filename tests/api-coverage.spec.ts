@@ -9,7 +9,7 @@
  * View: cat api-coverage-report.txt
  */
 
-import { test } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Steps } from '../src/steps/CommonSteps';
@@ -184,4 +184,12 @@ test('API Coverage Report', async () => {
     body: report,
     contentType: 'text/plain',
   });
+
+  // ── Enforce 100% Coverage ──
+  const uncoveredTotal = apis.filter((a) => !a.covered);
+
+  expect(
+    uncoveredTotal.length,
+    `Test failed because API coverage is not 100%. Uncovered methods: ${uncoveredTotal.map(m => m.name).join(', ')}`
+  ).toBe(0);
 });
