@@ -1805,6 +1805,41 @@
       ]
     },
     {
+      "name": "ProductCarouselPage",
+      "elements": [
+        {
+          "elementName": "firstCarouselImage",
+          "selector": {
+            "css": "[data-testid='product-image-0']"
+          }
+        },
+        {
+          "elementName": "productThumbnails",
+          "selector": {
+            "css": "[data-testid^='product-thumb-']"
+          }
+        },
+        {
+          "elementName": "nextButton",
+          "selector": {
+            "css": "[data-testid='product-carousel-next']"
+          }
+        },
+        {
+          "elementName": "prevButton",
+          "selector": {
+            "css": "[data-testid='product-carousel-prev']"
+          }
+        },
+        {
+          "elementName": "indicator",
+          "selector": {
+            "css": "[data-testid='product-carousel-indicator']"
+          }
+        }
+      ]
+    },
+    {
       "name": "PiniaCounterPage",
       "elements": [
         {
@@ -2171,6 +2206,12 @@
           }
         },
         {
+          "elementName": "productCarouselLink",
+          "selector": {
+            "css": "[data-testid='nav-item-productCarousel']"
+          }
+        },
+        {
           "elementName": "loginFormLink",
           "selector": {
             "css": "[data-testid='nav-item-loginForm']"
@@ -2198,6 +2239,35 @@
           "elementName": "stateViewerLink",
           "selector": {
             "css": "[data-testid='nav-item-stateViewer']"
+          }
+        },
+        {
+          "elementName": "otpLink",
+          "selector": {
+            "testid": "nav-item-otpInput"
+          }
+        }
+      ]
+    },
+    {
+      "name": "OtpPage",
+      "elements": [
+        {
+          "elementName": "addBasicDigitBtn",
+          "selector": {
+            "css": "[data-testid='otp-add-digit-basic']"
+          }
+        },
+        {
+          "elementName": "basicGeneratedCode",
+          "selector": {
+            "css": "[data-testid='otp-generated-code-basic'] .generated-code__value"
+          }
+        },
+        {
+          "elementName": "basicOtpInput",
+          "selector": {
+            "css": "[data-testid='otp-section-basic'] input:nth-of-type(1)"
           }
         }
       ]

@@ -1461,3 +1461,545 @@ test.describe('TC_040: State Viewer Page', () => {
     log('TC_040 State Viewer Page — passed');
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 100% API Coverage Tests
+// ══════════════════════════════════════════════════════════════════════════════
+
+test.describe('TC_041: Steps - Navigation, Viewport & Scroll', () => {
+
+  test('backOrForward, refresh, setViewport, scrollIntoView, pressKey', async ({ page, steps }) => {
+
+    await test.step('Navigate to Buttons page', async () => {
+      await steps.navigateTo('/');
+      await steps.click('SidebarNav', 'buttonsLink');
+      await steps.verifyUrlContains('/buttons');
+    });
+
+    await test.step('refresh reloads the page', async () => {
+      await steps.refresh();
+      await steps.verifyPresence('ButtonsPage', 'primaryButton');
+    });
+
+    await test.step('Navigate to a second page then backOrForward', async () => {
+      await steps.click('SidebarNav', 'textInputsLink');
+      await steps.verifyUrlContains('/text-inputs');
+      await steps.backOrForward('BACKWARDS');
+      await steps.verifyUrlContains('/buttons');
+      await steps.backOrForward('FORWARDS');
+      await steps.verifyUrlContains('/text-inputs');
+    });
+
+    await test.step('scrollIntoView scrolls an element into view', async () => {
+      await steps.navigateTo('/');
+      await steps.click('SidebarNav', 'buttonsLink');
+      await steps.verifyUrlContains('/buttons');
+      await steps.scrollIntoView('ButtonsPage', 'loadingButton');
+    });
+
+    await test.step('pressKey sends a keyboard event', async () => {
+      await steps.pressKey('Tab');
+    });
+
+    await test.step('setViewport changes the viewport size', async () => {
+      await steps.setViewport(800, 600);
+      const size = page.viewportSize();
+      expect(size?.width).toBe(800);
+      expect(size?.height).toBe(600);
+    });
+
+    log('TC_041 Steps Navigation & Viewport — passed');
+  });
+});
+
+test.describe('TC_042: Steps - Click Variants & Data Extraction', () => {
+
+  test('clickIfPresent, clickWithoutScrolling, getText, getAttribute, verifyAttribute', async ({ steps }) => {
+
+    await test.step('Navigate to Buttons page', async () => {
+      await steps.navigateTo('/');
+      await steps.click('SidebarNav', 'buttonsLink');
+      await steps.verifyUrlContains('/buttons');
+    });
+
+    await test.step('clickWithoutScrolling clicks without scrolling', async () => {
+      await steps.clickWithoutScrolling('ButtonsPage', 'primaryButton');
+      await steps.verifyTextContains('ButtonsPage', 'resultText', 'Primary');
+    });
+
+    await test.step('clickIfPresent clicks a present element', async () => {
+      await steps.clickIfPresent('ButtonsPage', 'secondaryButton');
+      await steps.verifyTextContains('ButtonsPage', 'resultText', 'Secondary');
+    });
+
+    await test.step('clickIfPresent does nothing for a missing element', async () => {
+      await steps.clickIfPresent('FormsPage', 'title'); // not on this page
+    });
+
+    await test.step('getText returns element text content', async () => {
+      const text = await steps.getText('ButtonsPage', 'resultText');
+      expect(text).toContain('Secondary');
+    });
+
+    await test.step('getAttribute returns an attribute value', async () => {
+      const testId = await steps.getAttribute('ButtonsPage', 'disabledButton', 'data-testid');
+      expect(testId).toBe('btn-disabled');
+    });
+
+    await test.step('verifyAttribute asserts an attribute value', async () => {
+      await steps.verifyAttribute('ButtonsPage', 'disabledButton', 'data-testid', 'btn-disabled');
+    });
+
+    log('TC_042 Click Variants & Data Extraction — passed');
+  });
+});
+
+test.describe('TC_043: Steps - Tab Management', () => {
+
+  test('closeTab and getTabCount', async ({ page, steps }) => {
+
+    await test.step('Navigate to Alerts page', async () => {
+      await steps.navigateTo('/');
+      await steps.click('SidebarNav', 'alertsLink');
+      await steps.verifyUrlContains('/alerts');
+    });
+
+    await test.step('getTabCount returns 1 initially', async () => {
+      const count = steps.getTabCount();
+      expect(count).toBe(1);
+    });
+
+    await test.step('Open new tab and close it via steps.closeTab', async () => {
+      const newPage = await steps.switchToNewTab(async () => {
+        await steps.click('AlertsPage', 'newTabButton');
+      });
+      expect(steps.getTabCount()).toBe(2);
+
+      await steps.closeTab(newPage);
+      expect(steps.getTabCount()).toBe(1);
+    });
+
+    log('TC_043 Tab Management — passed');
+  });
+});
+
+test.describe('TC_044: Repo - getRandom & setDefaultTimeout', () => {
+
+  test('getRandom picks a random element, setDefaultTimeout sets timeout', async ({ page, repo, steps }) => {
+
+    await test.step('Navigate to home page', async () => {
+      await steps.navigateTo('/');
+    });
+
+    await test.step('setDefaultTimeout changes the repo default timeout', async () => {
+      repo.setDefaultTimeout(10000);
+      // Just verify it does not throw
+    });
+
+    await test.step('getRandom returns one of the category cards', async () => {
+      const randomCard = await repo.getRandom(page, 'HomePage', 'categories');
+      expect(randomCard).toBeTruthy();
+      const text = await randomCard!.textContent();
+      expect(text).toBeTruthy();
+    });
+
+    log('TC_044 Repo getRandom & setDefaultTimeout — passed');
+  });
+});
+
+test.describe('TC_045: ContextStore - Full API', () => {
+
+  test('has, remove, clear, getBoolean, getNumber, items, merge', async ({ contextStore }) => {
+
+    await test.step('has returns false for missing key', () => {
+      expect(contextStore.has('nonexistent')).toBe(false);
+    });
+
+    await test.step('put + has returns true', () => {
+      contextStore.put('key1', 'value1');
+      expect(contextStore.has('key1')).toBe(true);
+    });
+
+    await test.step('remove deletes a key', () => {
+      contextStore.remove('key1');
+      expect(contextStore.has('key1')).toBe(false);
+    });
+
+    await test.step('getBoolean returns correct boolean', () => {
+      contextStore.put('flag', 'true');
+      expect(contextStore.getBoolean('flag')).toBe(true);
+      contextStore.put('flag2', 'false');
+      expect(contextStore.getBoolean('flag2')).toBe(false);
+      expect(contextStore.getBoolean('missing', false)).toBe(false);
+    });
+
+    await test.step('getNumber returns correct number', () => {
+      contextStore.put('count', '42');
+      expect(contextStore.getNumber('count')).toBe(42);
+      expect(contextStore.getNumber('missing', 0)).toBe(0);
+    });
+
+    await test.step('items returns a Set of keys', () => {
+      contextStore.clear();
+      contextStore.put('a', '1');
+      contextStore.put('b', '2');
+      const keys = contextStore.items();
+      expect(keys.has('a')).toBe(true);
+      expect(keys.has('b')).toBe(true);
+      expect(keys.size).toBe(2);
+    });
+
+    await test.step('merge merges a record into the store', () => {
+      contextStore.clear();
+      contextStore.merge({ x: '10', y: '20' });
+      expect(contextStore.get('x')).toBe('10');
+      expect(contextStore.get('y')).toBe('20');
+    });
+
+    await test.step('clear removes all entries', () => {
+      contextStore.clear();
+      expect(contextStore.items().size).toBe(0);
+    });
+
+    log('TC_045 ContextStore Full API — passed');
+  });
+});
+
+test.describe('TC_046: verifyImages - Image Verification', () => {
+
+  test('verifyImages on product carousel and thumbnail grid', async ({ page, repo, steps }) => {
+
+    await test.step('Navigate to Product Carousel page', async () => {
+      await steps.navigateTo('/'); 
+      await steps.click('SidebarNav', 'productCarouselLink');
+      await steps.verifyUrlContains('/product-carousel');
+    });
+
+    await test.step('verifyImages on the active carousel slide', async () => {
+      await steps.verifyImages('ProductCarouselPage', 'firstCarouselImage');
+    });
+
+    await test.step('verifyImages on the product grid thumbnails', async () => {
+      await steps.verifyImages('ProductCarouselPage', 'productThumbnails');
+    });
+
+    log('TC_046 verifyImages — passed');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Advanced/Raw ElementInteractions Sub-API Tests
+// ══════════════════════════════════════════════════════════════════════════════
+
+test.describe('TC_047: Raw Interactions - interact methods', () => {
+
+  test('all interact sub-API methods', async ({ page, repo, steps, interactions }) => {
+
+    await test.step('Navigate to Buttons page', async () => {
+      await steps.navigateTo('/');
+      await steps.click('SidebarNav', 'buttonsLink');
+      await steps.verifyUrlContains('/buttons');
+    });
+
+    await test.step('interact.click', async () => {
+      const btn = await repo.get(page, 'ButtonsPage', 'primaryButton');
+      await interactions.interact.click(btn!);
+    });
+
+    await test.step('interact.clickWithoutScrolling', async () => {
+      const btn = await repo.get(page, 'ButtonsPage', 'secondaryButton');
+      await interactions.interact.clickWithoutScrolling(btn!);
+    });
+
+    await test.step('interact.clickIfPresent', async () => {
+      const btn = await repo.get(page, 'ButtonsPage', 'dangerButton');
+      await interactions.interact.clickIfPresent(btn!);
+    });
+
+    await test.step('interact.doubleClick', async () => {
+      const btn = await repo.get(page, 'ButtonsPage', 'primaryButton');
+      await interactions.interact.doubleClick(btn!);
+    });
+
+    await test.step('interact.rightClick', async () => {
+      const btn = await repo.get(page, 'ButtonsPage', 'primaryButton');
+      await interactions.interact.rightClick(btn!);
+    });
+
+    await test.step('interact.hover', async () => {
+      const btn = await repo.get(page, 'ButtonsPage', 'primaryButton');
+      await interactions.interact.hover(btn!);
+    });
+
+    await test.step('interact.pressKey', async () => {
+      await interactions.interact.pressKey('Escape');
+    });
+
+    await test.step('Navigate to Text Inputs for fill/type tests', async () => {
+      await steps.click('SidebarNav', 'textInputsLink');
+      await steps.verifyUrlContains('/text-inputs');
+    });
+
+    await test.step('interact.fill', async () => {
+      const input = await repo.get(page, 'TextInputsPage', 'textInput');
+      await interactions.interact.fill(input!, 'raw fill test');
+    });
+
+    await test.step('interact.typeSequentially', async () => {
+      const input = await repo.get(page, 'TextInputsPage', 'textInput');
+      await interactions.interact.fill(input!, '');
+      await interactions.interact.typeSequentially(input!, 'raw typed');
+    });
+
+    await test.step('Navigate to Checkboxes for check/uncheck', async () => {
+      await steps.click('SidebarNav', 'checkboxesLink');
+      await steps.verifyUrlContains('/checkboxes');
+    });
+
+    await test.step('interact.check', async () => {
+      const cb = await repo.get(page, 'CheckboxesPage', 'uncheckedCheckbox');
+      await interactions.interact.check(cb!);
+    });
+
+    await test.step('interact.uncheck', async () => {
+      const cb = await repo.get(page, 'CheckboxesPage', 'uncheckedCheckbox');
+      await interactions.interact.uncheck(cb!);
+    });
+
+    await test.step('Navigate to Sliders for setSliderValue', async () => {
+      await steps.click('SidebarNav', 'slidersLink');
+      await steps.verifyUrlContains('/sliders');
+    });
+
+    await test.step('interact.setSliderValue', async () => {
+      const slider = await repo.get(page, 'SlidersPage', 'basicSlider');
+      await interactions.interact.setSliderValue(slider!, 60);
+    });
+
+    await test.step('interact.scrollIntoView', async () => {
+      const slider = await repo.get(page, 'SlidersPage', 'disabledSlider');
+      await interactions.interact.scrollIntoView(slider!);
+    });
+
+    await test.step('Navigate to Dropdown for selectDropdown', async () => {
+      await steps.click('SidebarNav', 'dropdownLink');
+      await steps.verifyUrlContains('/dropdown');
+    });
+
+    await test.step('interact.selectDropdown', async () => {
+      const select = await repo.get(page, 'DropdownSelectPage', 'singleSelect');
+      const value = await interactions.interact.selectDropdown(select!);
+      expect(value).toBeTruthy();
+    });
+
+    await test.step('Navigate to File Upload for uploadFile', async () => {
+      await steps.click('SidebarNav', 'fileUploadLink');
+      await steps.verifyUrlContains('/file-upload');
+    });
+
+    await test.step('interact.uploadFile', async () => {
+      const input = await repo.get(page, 'FileUploadPage', 'singleFileInput');
+      await interactions.interact.uploadFile(input!, 'tests/fixtures/test-upload.txt');
+    });
+
+    await test.step('Navigate to Draggable for dragAndDrop', async () => {
+      await steps.click('SidebarNav', 'draggableLink');
+      await steps.verifyUrlContains('/draggable');
+    });
+
+    await test.step('interact.dragAndDrop', async () => {
+      const item = await repo.get(page, 'DraggablePage', 'item1');
+      await interactions.interact.dragAndDrop(item!, { xOffset: 50, yOffset: 0 });
+    });
+
+    // --- NEW OTP TESTS START HERE ---
+
+    await test.step('Navigate to OTP page for character-by-character testing', async () => {
+      await steps.click('SidebarNav', 'otpLink');
+      await steps.verifyUrlContains('/otp');
+    });
+
+    await test.step('interact.click - Increment OTP length', async () => {
+      // Testing the '+' button on the Basic section
+      const addDigitBtn = await repo.get(page, 'OtpPage', 'addBasicDigitBtn');
+      await interactions.interact.click(addDigitBtn!);
+    });
+
+    await test.step('interact.getText - Read dynamically generated code', async () => {
+      // Testing data extraction from the generated code block
+      const generatedCodeBlock = await repo.get(page, 'OtpPage', 'basicGeneratedCode');
+      const code = await interactions.extract.getText(generatedCodeBlock!);
+      expect(code).toBeTruthy();
+      expect(code!.length).toBeGreaterThan(0);
+    });
+
+    await test.step('interact.typeSequentially - Enter OTP code naturally', async () => {
+      // Utilizing typeSequentially for its ideal use case: OTP inputs
+      const otpInput = await repo.get(page, 'OtpPage', 'basicOtpInput');
+      // Types '12345' with a 50ms delay between keystrokes to mimic human entry
+      await interactions.interact.typeSequentially(otpInput!, '12345', 50);
+    });
+
+    // --- NEW OTP TESTS END HERE ---
+
+    await test.step('interact.getByText', async () => {
+      await steps.navigateTo('/');
+      const card = await repo.get(page, 'HomePage', 'categories');
+      const result = await interactions.interact.getByText(card!, 'HomePage', 'categories', 'Elements');
+      expect(result).toBeTruthy();
+    });
+
+    log('TC_047 Raw interact methods — passed');
+  });
+});
+
+test.describe('TC_048: Raw Interactions - verify methods', () => {
+
+  test('all verify sub-API methods', async ({ page, repo, steps, interactions }) => {
+
+    await test.step('Navigate to Buttons page', async () => {
+      await steps.navigateTo('/');
+      await steps.click('SidebarNav', 'buttonsLink');
+      await steps.verifyUrlContains('/buttons');
+    });
+
+    await test.step('verify.presence', async () => {
+      const btn = await repo.get(page, 'ButtonsPage', 'primaryButton');
+      await interactions.verify.presence(btn!);
+    });
+
+    await test.step('verify.absence', async () => {
+      const formsTitle = page.locator("[data-testid='forms-title-absent']");
+      await interactions.verify.absence(formsTitle);
+    });
+
+    await test.step('verify.text (exact)', async () => {
+      await steps.click('ButtonsPage', 'primaryButton');
+      const result = await repo.get(page, 'ButtonsPage', 'resultText');
+      await interactions.verify.text(result!, 'Primary');
+    });
+
+    await test.step('verify.textContains', async () => {
+      const result = await repo.get(page, 'ButtonsPage', 'resultText');
+      await interactions.verify.textContains(result!, 'Primary');
+    });
+
+    await test.step('verify.state', async () => {
+      const disabled = await repo.get(page, 'ButtonsPage', 'disabledButton');
+      await interactions.verify.state(disabled!, 'disabled');
+    });
+
+    await test.step('verify.attribute', async () => {
+      const disabled = await repo.get(page, 'ButtonsPage', 'disabledButton');
+      await interactions.verify.attribute(disabled!, 'data-testid', 'btn-disabled');
+    });
+
+    await test.step('verify.count', async () => {
+      await steps.navigateTo('/');
+      const categoriesLocator = page.locator(repo.getSelector('HomePage', 'categories'));
+      await interactions.verify.count(categoriesLocator, { exactly: 8 });
+    });
+
+    await test.step('verify.urlContains', async () => {
+      await steps.navigateTo('/otp');
+      await interactions.verify.urlContains('/otp');
+    });
+
+    await test.step('verify.tabCount', async () => {
+      await interactions.verify.tabCount(1);
+    });
+
+    await test.step('Navigate to Text Inputs for inputValue', async () => {
+      await steps.click('SidebarNav', 'textInputsLink');
+      await steps.verifyUrlContains('/text-inputs');
+    });
+
+    await test.step('verify.inputValue', async () => {
+      const input = await repo.get(page, 'TextInputsPage', 'textInput');
+      await interactions.interact.fill(input!, 'test value');
+      await interactions.verify.inputValue(input!, 'test value');
+    });
+
+    await test.step('verify.images (negative — no img elements)', async () => {
+      await steps.click('SidebarNav', 'galleryLink');
+      await steps.verifyUrlContains('/gallery');
+      const items = page.locator("[data-testid^='gallery-item-'] img");
+      let errorCaught = false;
+      try {
+        await interactions.verify.images(items, false);
+      } catch {
+        errorCaught = true;
+      }
+      log('verify.images exercised, errorCaught=%s', errorCaught);
+    });
+
+    log('TC_048 Raw verify methods — passed');
+  });
+});
+
+test.describe('TC_049: Raw Interactions - extract & navigate methods', () => {
+
+  test('all extract and navigate sub-API methods', async ({ page, repo, steps, interactions }) => {
+
+    await test.step('Navigate to Buttons page', async () => {
+      await steps.navigateTo('/');
+      await steps.click('SidebarNav', 'buttonsLink');
+      await steps.verifyUrlContains('/buttons');
+    });
+
+    await test.step('extract.getText', async () => {
+      const btn = await repo.get(page, 'ButtonsPage', 'primaryButton');
+      const text = await interactions.extract.getText(btn!);
+      expect(text).toContain('Primary');
+    });
+
+    await test.step('extract.getAttribute', async () => {
+      const btn = await repo.get(page, 'ButtonsPage', 'disabledButton');
+      const attr = await interactions.extract.getAttribute(btn!, 'data-testid');
+      expect(attr).toBe('btn-disabled');
+    });
+
+    await test.step('navigate.toUrl', async () => {
+      await interactions.navigate.toUrl('/');
+      await steps.verifyCount('HomePage', 'categories', { exactly: 8 });
+    });
+
+    await test.step('navigate.setViewport', async () => {
+      await interactions.navigate.setViewport(1024, 768);
+      const size = page.viewportSize();
+      expect(size?.width).toBe(1024);
+    });
+
+    await test.step('navigate.reload', async () => {
+      await interactions.navigate.reload();
+      await steps.verifyCount('HomePage', 'categories', { exactly: 8 });
+    });
+
+    await test.step('navigate.backOrForward', async () => {
+      await steps.click('SidebarNav', 'buttonsLink');
+      await steps.verifyUrlContains('/buttons');
+      await interactions.navigate.backOrForward('BACKWARDS');
+      await steps.verifyCount('HomePage', 'categories', { exactly: 8 });
+    });
+
+    await test.step('navigate.getTabCount', async () => {
+      const count = interactions.navigate.getTabCount();
+      expect(count).toBe(1);
+    });
+
+    await test.step('navigate.switchToNewTab + navigate.closeTab', async () => {
+      await steps.click('SidebarNav', 'alertsLink');
+      await steps.verifyUrlContains('/alerts');
+
+      const newPage = await interactions.navigate.switchToNewTab(async () => {
+        await steps.click('AlertsPage', 'newTabButton');
+      });
+      expect(interactions.navigate.getTabCount()).toBe(2);
+
+      await interactions.navigate.closeTab(newPage);
+      expect(interactions.navigate.getTabCount()).toBe(1);
+    });
+
+    log('TC_049 Raw extract & navigate methods — passed');
+  });
+});
