@@ -171,6 +171,27 @@ export class Verifications {
     }
 
     /**
+     * Asserts that an input, textarea, or select element has the expected value.
+     * Unlike `text()` which checks `textContent`, this checks the `value` property.
+     * @param locator - The Playwright Locator pointing to the input element.
+     * @param expectedValue - The expected value of the input.
+     */
+    async inputValue(locator: Locator, expectedValue: string): Promise<void> {
+        await expect(locator).toHaveValue(expectedValue, { timeout: this.ELEMENT_TIMEOUT });
+    }
+
+    /**
+     * Asserts the number of open browser tabs/pages matches the expected count.
+     * @param expectedCount - The expected number of open tabs.
+     */
+    async tabCount(expectedCount: number): Promise<void> {
+        await expect.poll(
+            () => this.page.context().pages().length,
+            { timeout: this.ELEMENT_TIMEOUT, message: `Expected ${expectedCount} tabs` }
+        ).toBe(expectedCount);
+    }
+
+    /**
     * Asserts the number of elements matching the locator based on the provided conditions.
     * @param locator - The Playwright Locator pointing to the target elements.
     * @param options - Configuration specifying 'exact', 'greaterThan', or 'lessThan' logic.

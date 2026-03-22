@@ -235,7 +235,7 @@ export class Interactions {
 
     /**
      * Types into the target element character by character with a specified delay.
-     * Use this for OTP inputs, search-as-you-type fields, or when `fill()` 
+     * Use this for OTP inputs, search-as-you-type fields, or when `fill()`
      * doesn't trigger necessary keyboard events (like 'keyup' or 'keydown').
      * @param locator - The Playwright Locator pointing to the input element.
      * @param text - The string of text to type sequentially.
@@ -243,9 +243,64 @@ export class Interactions {
      */
     async typeSequentially(locator: Locator, text: string, delay: number = 100): Promise<void> {
         await this.utils.waitForState(locator, 'visible');
-        await locator.pressSequentially(text, { 
-            delay, 
-            timeout: this.ELEMENT_TIMEOUT 
+        await locator.pressSequentially(text, {
+            delay,
+            timeout: this.ELEMENT_TIMEOUT
         });
+    }
+
+    /**
+     * Performs a right-click (context menu) on the given locator.
+     * @param locator - The Playwright Locator pointing to the target element.
+     */
+    async rightClick(locator: Locator): Promise<void> {
+        await this.utils.waitForState(locator, 'visible');
+        await locator.click({ button: 'right', timeout: this.ELEMENT_TIMEOUT });
+    }
+
+    /**
+     * Performs a double-click on the given locator.
+     * @param locator - The Playwright Locator pointing to the target element.
+     */
+    async doubleClick(locator: Locator): Promise<void> {
+        await this.utils.waitForState(locator, 'visible');
+        await locator.dblclick({ timeout: this.ELEMENT_TIMEOUT });
+    }
+
+    /**
+     * Checks a checkbox or radio button. This is idempotent — if already checked, it does nothing.
+     * @param locator - The Playwright Locator pointing to the checkbox/radio element.
+     */
+    async check(locator: Locator): Promise<void> {
+        await this.utils.waitForState(locator, 'visible');
+        await locator.check({ timeout: this.ELEMENT_TIMEOUT });
+    }
+
+    /**
+     * Unchecks a checkbox. This is idempotent — if already unchecked, it does nothing.
+     * @param locator - The Playwright Locator pointing to the checkbox element.
+     */
+    async uncheck(locator: Locator): Promise<void> {
+        await this.utils.waitForState(locator, 'visible');
+        await locator.uncheck({ timeout: this.ELEMENT_TIMEOUT });
+    }
+
+    /**
+     * Sets the value of a range/slider input element.
+     * @param locator - The Playwright Locator pointing to the range input element.
+     * @param value - The numeric value to set.
+     */
+    async setSliderValue(locator: Locator, value: number): Promise<void> {
+        await this.utils.waitForState(locator, 'visible');
+        await locator.fill(String(value), { timeout: this.ELEMENT_TIMEOUT });
+    }
+
+    /**
+     * Presses a keyboard key at the page level.
+     * Useful for shortcuts like Escape, Enter, Tab, or modifier combos like 'Control+A'.
+     * @param key - The key to press (e.g. 'Escape', 'Enter', 'Tab', 'Control+A').
+     */
+    async pressKey(key: string): Promise<void> {
+        await this.page.keyboard.press(key);
     }
 }

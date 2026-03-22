@@ -84,6 +84,36 @@ export class Steps {
         await this.navigate.setViewport(width, height);
     }
 
+    /**
+     * Executes an action that opens a new browser tab/window, waits for it to load,
+     * and returns the new Page object.
+     * @param action - An async function that triggers the new tab (e.g. a click).
+     * @returns The newly opened Page object.
+     */
+    async switchToNewTab(action: () => Promise<void>): Promise<Page> {
+        log.navigate('Switching to new tab...');
+        return await this.navigate.switchToNewTab(action);
+    }
+
+    /**
+     * Closes the specified tab (or the current page's tab) and returns the remaining page.
+     * @param targetPage - The page to close. Defaults to the current page.
+     * @returns The page that received focus after closing.
+     */
+    async closeTab(targetPage?: Page): Promise<Page> {
+        log.navigate('Closing tab...');
+        return await this.navigate.closeTab(targetPage);
+    }
+
+    /**
+     * Returns the number of open tabs/pages in the current browser context.
+     * @returns The count of open pages.
+     */
+    getTabCount(): number {
+        log.navigate('Getting tab count');
+        return this.navigate.getTabCount();
+    }
+
     // ==========================================
     // 🖱️ INTERACTION STEPS
     // ==========================================
@@ -137,6 +167,51 @@ export class Steps {
         log.interact('Clicking on "%s" in "%s" (if present)', elementName, pageName);
         const locator = await this.repo.get(this.page, pageName, elementName);
         await this.interact.clickIfPresent(locator);
+    }
+
+    /**
+     * Right-clicks on an element identified by page and element name from the repository.
+     * Triggers the browser's context menu event on the element.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     */
+    async rightClick(pageName: string, elementName: string): Promise<void> {
+        log.interact('Right-clicking on "%s" in "%s"', elementName, pageName);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        await this.interact.rightClick(locator);
+    }
+
+    /**
+     * Double-clicks on an element identified by page and element name from the repository.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     */
+    async doubleClick(pageName: string, elementName: string): Promise<void> {
+        log.interact('Double-clicking on "%s" in "%s"', elementName, pageName);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        await this.interact.doubleClick(locator);
+    }
+
+    /**
+     * Checks a checkbox or radio button. Idempotent — does nothing if already checked.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     */
+    async check(pageName: string, elementName: string): Promise<void> {
+        log.interact('Checking "%s" in "%s"', elementName, pageName);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        await this.interact.check(locator);
+    }
+
+    /**
+     * Unchecks a checkbox. Idempotent — does nothing if already unchecked.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     */
+    async uncheck(pageName: string, elementName: string): Promise<void> {
+        log.interact('Unchecking "%s" in "%s"', elementName, pageName);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        await this.interact.uncheck(locator);
     }
 
     /**
@@ -231,6 +306,28 @@ export class Steps {
         const locator = await this.repo.getByText(this.page, pageName, elementName, elementText);
         if (!locator) throw new Error(`No element with text "${elementText}" found for "${elementName}" in "${pageName}"`);
         await this.interact.dragAndDrop(locator, options);
+    }
+
+    /**
+     * Sets the value of a range/slider input element.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     * @param value - The numeric value to set on the slider.
+     */
+    async setSliderValue(pageName: string, elementName: string, value: number): Promise<void> {
+        log.interact('Setting slider "%s" in "%s" to value: %d', elementName, pageName, value);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        await this.interact.setSliderValue(locator, value);
+    }
+
+    /**
+     * Presses a keyboard key at the page level (not bound to a specific element).
+     * Useful for keyboard shortcuts like Escape, Enter, Tab, or combos like 'Control+A'.
+     * @param key - The key to press (e.g. `'Escape'`, `'Enter'`, `'Tab'`, `'Control+A'`).
+     */
+    async pressKey(key: string): Promise<void> {
+        log.interact('Pressing key: "%s"', key);
+        await this.interact.pressKey(key);
     }
 
     // ==========================================
@@ -382,6 +479,28 @@ export class Steps {
     async verifyUrlContains(text: string): Promise<void> {
         log.verify('Verifying current URL contains: "%s"', text);
         await this.verify.urlContains(text);
+    }
+
+    /**
+     * Asserts that an input, textarea, or select element has the expected value.
+     * Unlike `verifyText` which checks `textContent`, this checks the `value` property.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     * @param expectedValue - The expected value of the input.
+     */
+    async verifyInputValue(pageName: string, elementName: string, expectedValue: string): Promise<void> {
+        log.verify('Verifying input value of "%s" in "%s" matches: "%s"', elementName, pageName, expectedValue);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        await this.verify.inputValue(locator, expectedValue);
+    }
+
+    /**
+     * Asserts the number of open browser tabs/pages matches the expected count.
+     * @param expectedCount - The expected number of open tabs.
+     */
+    async verifyTabCount(expectedCount: number): Promise<void> {
+        log.verify('Verifying tab count is %d', expectedCount);
+        await this.verify.tabCount(expectedCount);
     }
 
     // ==========================================

@@ -1,7 +1,10 @@
 import { Page } from '@playwright/test';
+import { logger } from '../logger/Logger';
+
+const log = logger('navigate');
 
 /**
- * The `Navigation` class provides a streamlined interface for managing browser 
+ * The `Navigation` class provides a streamlined interface for managing browser
  * navigation, history, and viewport settings within Playwright.
  */
 export class Navigation {
@@ -62,5 +65,44 @@ export class Navigation {
      */
     async setViewport(width: number, height: number): Promise<void> {
         await this.page.setViewportSize({ width, height });
+    }
+
+    /**
+     * Executes an action that opens a new tab/window, waits for the new page,
+     * and returns it. The caller is responsible for interacting with the returned page.
+     * @param action - An async function that triggers the new tab (e.g. a click).
+     * @returns The newly opened Page object.
+     */
+    async switchToNewTab(action: () => Promise<void>): Promise<Page> {
+        const [newPage] = await Promise.all([
+            this.page.context().waitForEvent('page'),
+            action(),
+        ]);
+        await newPage.waitForLoadState();
+        log('Switched to new tab: %s', newPage.url());
+        return newPage;
+    }
+
+    /**
+     * Closes the specified page (or the current page) and returns focus
+     * to the most recent remaining page in the context.
+     * @param targetPage - The page to close. Defaults to the current page.
+     * @returns The page that received focus after closing.
+     */
+    async closeTab(targetPage?: Page): Promise<Page> {
+        const pageToClose = targetPage ?? this.page;
+        await pageToClose.close();
+        const pages = this.page.context().pages();
+        const remainingPage = pages[pages.length - 1];
+        log('Closed tab, returning to: %s', remainingPage.url());
+        return remainingPage;
+    }
+
+    /**
+     * Returns the number of open tabs/pages in the current browser context.
+     * @returns The count of open pages.
+     */
+    getTabCount(): number {
+        return this.page.context().pages().length;
     }
 }
