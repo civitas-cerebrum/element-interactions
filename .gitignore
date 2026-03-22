@@ -3,3 +3,5 @@
 *.tgz
 /test-results
 .DS_Store
+/playwright-report
+/.playwright-mcp
