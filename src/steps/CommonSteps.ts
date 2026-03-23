@@ -16,7 +16,7 @@ const log = {
 
 /**
  * The `Steps` class serves as a unified Facade for test orchestration.
- * It combines element acquisition (via `pw-element-repository`) with
+ * It combines element acquisition (via `@civitas-cerebrum/element-repository`) with
  * Playwright interactions, navigation, and verifications to keep test files clean,
  * readable, and free of raw locators.
  */
