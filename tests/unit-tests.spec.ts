@@ -2533,7 +2533,7 @@ test.describe('TC_065: verifyListOrder — assert sort direction', () => {
     });
 
     await test.step('Default name order is ascending — verify with verifyListOrder', async () => {
-      await steps.verifyListOrder('TablePage', 'nameCells', 'asc');
+      await steps.verifyListOrder('TablePage', 'nameCell', 'asc');
     });
 
     await test.step('Click Name header twice to sort descending', async () => {
@@ -2542,7 +2542,7 @@ test.describe('TC_065: verifyListOrder — assert sort direction', () => {
     });
 
     await test.step('Verify descending order with verifyListOrder', async () => {
-      await steps.verifyListOrder('TablePage', 'nameCells', 'desc');
+      await steps.verifyListOrder('TablePage', 'nameCell', 'desc');
     });
 
     log('TC_065 verifyListOrder — passed');
@@ -2634,7 +2634,7 @@ test.describe('TC_069: verifyOrder — assert exact element text order', () => {
     });
 
     await test.step('Verify exact order of names using verifyOrder', async () => {
-      await steps.verifyOrder('TablePage', 'nameCells', ['Alice Martin', 'Bob Chen', 'Carol White', 'David Kim', 'Eve Torres']);
+      await steps.verifyOrder('TablePage', 'nameCell', ['Alice Martin', 'Bob Chen', 'Carol White', 'David Kim', 'Eve Torres']);
     });
 
     log('TC_069 verifyOrder — passed');
