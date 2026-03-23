@@ -1,4 +1,5 @@
-import { Page } from '@playwright/test';
+import { Page, Locator, Response } from '@playwright/test';
+import { ScreenshotOptions } from '../enum/Options';
 import { logger } from '../logger/Logger';
 
 const log = logger('navigate');
@@ -104,5 +105,44 @@ export class Navigation {
      */
     getTabCount(): number {
         return this.page.context().pages().length;
+    }
+
+    /**
+     * Waits until there are no in-flight network requests for at least 500ms.
+     * Useful after actions that trigger background API calls, lazy loading, or analytics.
+     */
+    async waitForNetworkIdle(): Promise<void> {
+        await this.page.waitForLoadState('networkidle');
+    }
+
+    /**
+     * Executes an action and waits for a matching network response to complete.
+     * The response is captured concurrently with the action to avoid race conditions.
+     * @param urlPattern - A string substring or RegExp to match against the response URL.
+     * @param action - An async function that triggers the network request (e.g. a form submit or click).
+     * @returns The captured Playwright Response object.
+     */
+    async waitForResponse(urlPattern: string | RegExp, action: () => Promise<void>): Promise<Response> {
+        const [response] = await Promise.all([
+            this.page.waitForResponse(urlPattern),
+            action(),
+        ]);
+        return response;
+    }
+
+    /**
+     * Captures a screenshot of the full page or a specific element.
+     * @param locator - If provided, screenshots only this element. If omitted, screenshots the full page.
+     * @param options - Optional configuration: `fullPage` for scrollable capture, `path` to save to disk.
+     * @returns The screenshot image as a Buffer.
+     */
+    async screenshot(locator?: Locator, options?: ScreenshotOptions): Promise<Buffer> {
+        if (locator) {
+            return await locator.screenshot({ path: options?.path }) as Buffer;
+        }
+        return await this.page.screenshot({
+            fullPage: options?.fullPage,
+            path: options?.path,
+        }) as Buffer;
     }
 }

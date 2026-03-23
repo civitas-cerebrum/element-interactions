@@ -401,6 +401,36 @@ const href = await steps.getListedElementData('UsersPage', 'tableRows', {
 ### ⏳ Wait
 
 * **`waitForState(pageName, elementName, state?: 'visible' | 'attached' | 'hidden' | 'detached')`** — Waits for an element to reach a specific DOM state. Defaults to `'visible'`.
+* **`waitForNetworkIdle()`** — Waits until there are no in-flight network requests for at least 500ms.
+* **`waitForResponse(urlPattern: string | RegExp, action: () => Promise<void>)`** — Executes an action and waits for a matching network response. Returns the `Response` object.
+* **`waitAndClick(pageName, elementName, state?: string)`** — Waits for an element to reach a state (default `'visible'`), then clicks it.
+
+### 🧩 Composite / Workflow
+
+* **`fillForm(pageName, fields: Record<string, FillFormValue>)`** — Fills multiple form fields in one call. String values fill text inputs; `DropdownSelectOptions` values trigger dropdown selection.
+* **`retryUntil(action, verification, maxRetries?, delayMs?)`** — Retries an action until a verification passes, or until the max attempts (default `3`) are reached.
+* **`clearInput(pageName, elementName)`** — Clears the value of an input or textarea without filling new text.
+* **`selectMultiple(pageName, elementName, values: string[])`** — Selects multiple options from a `<select multiple>` element by their value attributes.
+* **`clickNth(pageName, elementName, index: number)`** — Clicks the element at a specific zero-based index from all matches.
+
+### 📊 Additional Data Extraction
+
+* **`getAll(pageName, elementName, options?: GetAllOptions)`** — Extracts text (or attributes) from all matching elements. Supports `{ child }` and `{ extractAttribute }`.
+* **`getCount(pageName, elementName)`** — Returns the number of DOM elements matching the locator.
+* **`getInputValue(pageName, elementName)`** — Returns the current `value` property of an input, textarea, or select element.
+* **`getCssProperty(pageName, elementName, property: string)`** — Returns a computed CSS property value (e.g. `'rgb(255, 0, 0)'`).
+
+### ✅ Additional Verification
+
+* **`verifyOrder(pageName, elementName, expectedTexts: string[])`** — Asserts that elements' text contents appear in the exact order specified.
+* **`verifyCssProperty(pageName, elementName, property: string, expectedValue: string)`** — Asserts that a computed CSS property matches the expected value.
+* **`verifySnapshot(pageName, elementName, name?: string)`** — Visual regression comparison using Playwright's screenshot diffing.
+* **`verifyListOrder(pageName, elementName, direction: 'asc' | 'desc')`** — Asserts that elements' text contents are sorted in the specified direction.
+
+### 📸 Screenshot
+
+* **`screenshot()`** — Captures a page screenshot. Pass `{ fullPage: true }` for scrollable capture, `{ path: 'file.png' }` to save to disk.
+* **`screenshot(pageName, elementName, options?)`** — Captures a screenshot of a specific element.
 
 ---
 

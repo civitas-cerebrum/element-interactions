@@ -1420,6 +1420,12 @@
           "selector": {
             "css": "[data-testid='table-header-status']"
           }
+        },
+        {
+          "elementName": "nameCell",
+          "selector": {
+            "css": "td:nth-child(2)"
+          }
         }
       ]
     },

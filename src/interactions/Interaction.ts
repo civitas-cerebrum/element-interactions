@@ -305,6 +305,29 @@ export class Interactions {
     }
 
     /**
+     * Clears the value of an input or textarea element without filling it with new text.
+     * @param locator - The Playwright Locator pointing to the input element.
+     */
+    async clearInput(locator: Locator): Promise<void> {
+        await this.utils.waitForState(locator, 'visible');
+        await locator.clear({ timeout: this.ELEMENT_TIMEOUT });
+    }
+
+    /**
+     * Selects multiple options from a `<select multiple>` element by their `value` attributes.
+     * @param locator - The Playwright Locator pointing to the multi-select element.
+     * @param values - An array of `value` attribute strings to select.
+     * @returns An array of the actually selected `value` strings.
+     */
+    async selectMultiple(locator: Locator, values: string[]): Promise<string[]> {
+        await this.utils.waitForState(locator, 'visible');
+        return await locator.selectOption(
+            values.map(v => ({ value: v })),
+            { timeout: this.ELEMENT_TIMEOUT }
+        );
+    }
+
+    /**
      * Resolves a specific element from a list by matching its visible text or an HTML attribute.
      * Optionally drills into a child element within the matched item.
      *

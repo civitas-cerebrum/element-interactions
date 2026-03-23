@@ -89,3 +89,37 @@ export interface ListedElementOptions {
     /** Extract a specific attribute value instead of text content. Used by `getListedElementData`. */
     extractAttribute?: string;
 }
+
+/**
+ * Describes a value for a single field in a `fillForm` call.
+ * Use a plain string for text inputs, or a `DropdownSelectOptions` object for `<select>` elements.
+ */
+export type FillFormValue = string | DropdownSelectOptions;
+
+/**
+ * Options for the `getAll` bulk-extraction method.
+ *
+ * @example
+ * // Get all name-column texts from table rows
+ * { child: 'td:nth-child(2)' }
+ *
+ * @example
+ * // Get all href attributes from links inside list items
+ * { child: 'a', extractAttribute: 'href' }
+ */
+export interface GetAllOptions {
+    /** Drill into a child element within each matched element before extracting. */
+    child?: string | { pageName: string; elementName: string };
+    /** Extract a specific attribute value instead of text content. */
+    extractAttribute?: string;
+}
+
+/**
+ * Options for the `screenshot` method.
+ */
+export interface ScreenshotOptions {
+    /** Capture the full scrollable page instead of just the viewport. Only applies to page-level screenshots. */
+    fullPage?: boolean;
+    /** File path to save the screenshot to. If omitted, returns the image buffer without saving. */
+    path?: string;
+}

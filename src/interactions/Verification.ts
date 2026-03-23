@@ -196,6 +196,63 @@ export class Verifications {
     * @param locator - The Playwright Locator pointing to the target elements.
     * @param options - Configuration specifying 'exact', 'greaterThan', or 'lessThan' logic.
     */
+    /**
+     * Asserts that the text contents of all elements matching the locator appear in the exact
+     * order specified by `expectedTexts`. Each element's trimmed `textContent` is compared
+     * against the corresponding entry in the array.
+     * @param locator - The Playwright Locator resolving to the list of elements.
+     * @param expectedTexts - The expected text values in order.
+     */
+    async order(locator: Locator, expectedTexts: string[]): Promise<void> {
+        await expect(locator).toHaveText(expectedTexts, { timeout: this.ELEMENT_TIMEOUT });
+    }
+
+    /**
+     * Asserts that a computed CSS property of an element matches the expected value.
+     * Uses `getComputedStyle` under the hood, so values are in their resolved form
+     * (e.g. `'rgb(255, 0, 0)'` instead of `'red'`).
+     * @param locator - The Playwright Locator pointing to the target element.
+     * @param property - The CSS property name (e.g. `'color'`, `'font-size'`, `'display'`).
+     * @param expectedValue - The expected computed value.
+     */
+    async cssProperty(locator: Locator, property: string, expectedValue: string): Promise<void> {
+        await expect(locator).toHaveCSS(property, expectedValue, { timeout: this.ELEMENT_TIMEOUT });
+    }
+
+    /**
+     * Asserts that the text contents of all elements matching the locator are sorted
+     * in the specified direction. Each element's trimmed `textContent` is compared
+     * using locale-aware string comparison.
+     * @param locator - The Playwright Locator resolving to the list of elements.
+     * @param direction - `'asc'` for ascending (A→Z) or `'desc'` for descending (Z→A).
+     */
+    async listOrder(locator: Locator, direction: 'asc' | 'desc'): Promise<void> {
+        const texts = (await locator.allTextContents()).map(t => t.trim());
+
+        if (texts.length < 2) return;
+
+        const sorted = [...texts].sort((a, b) =>
+            direction === 'asc' ? a.localeCompare(b) : b.localeCompare(a)
+        );
+
+        expect(texts, `Expected list to be sorted ${direction}ending`).toEqual(sorted);
+    }
+
+    /**
+     * Performs a visual regression comparison using Playwright's built-in screenshot diffing.
+     * On the first run, a baseline screenshot is saved. Subsequent runs compare against it.
+     * Use `--update-snapshots` to regenerate baselines when intentional changes are made.
+     * @param locator - The Playwright Locator pointing to the element to screenshot.
+     * @param name - Optional name for the snapshot file (e.g. `'header-dark-mode.png'`).
+     */
+    async snapshot(locator: Locator, name?: string): Promise<void> {
+        if (name) {
+            await expect(locator).toHaveScreenshot(name, { timeout: this.ELEMENT_TIMEOUT });
+        } else {
+            await expect(locator).toHaveScreenshot({ timeout: this.ELEMENT_TIMEOUT });
+        }
+    }
+
     async count(locator: Locator, options: CountVerifyOptions): Promise<void> {
         if (options.exactly !== undefined && options.exactly < 0) {
             throw new Error(`'exact' count cannot be negative.`);

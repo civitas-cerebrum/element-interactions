@@ -36,4 +36,48 @@ export class Extractions {
         await this.utils.waitForState(locator, 'attached');
         return await locator.getAttribute(attributeName, { timeout: this.ELEMENT_TIMEOUT });
     }
+
+    /**
+     * Retrieves the trimmed text content of every element matching the locator.
+     * @param locator - The Playwright Locator pointing to the target elements.
+     * @returns An array of trimmed text strings, one per matching element.
+     */
+    async getAllTexts(locator: Locator): Promise<string[]> {
+        const rawTexts = await locator.allTextContents();
+        return rawTexts.map(t => t.trim());
+    }
+
+    /**
+     * Retrieves the current value of an input, textarea, or select element.
+     * Unlike `getText` which reads `textContent`, this reads the `value` property.
+     * @param locator - The Playwright Locator pointing to the input element.
+     * @returns The current value of the input.
+     */
+    async getInputValue(locator: Locator): Promise<string> {
+        await this.utils.waitForState(locator, 'attached');
+        return await locator.inputValue({ timeout: this.ELEMENT_TIMEOUT });
+    }
+
+    /**
+     * Returns the number of DOM elements matching the locator.
+     * @param locator - The Playwright Locator pointing to the target elements.
+     * @returns The count of matching elements.
+     */
+    async getCount(locator: Locator): Promise<number> {
+        return await locator.count();
+    }
+
+    /**
+     * Retrieves a computed CSS property value from an element via `getComputedStyle`.
+     * @param locator - The Playwright Locator pointing to the target element.
+     * @param property - The CSS property name (e.g. `'color'`, `'font-size'`, `'display'`).
+     * @returns The computed value of the CSS property as a string.
+     */
+    async getCssProperty(locator: Locator, property: string): Promise<string> {
+        await this.utils.waitForState(locator, 'attached');
+        return await locator.evaluate(
+            (el, prop) => window.getComputedStyle(el).getPropertyValue(prop),
+            property
+        );
+    }
 }

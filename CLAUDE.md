@@ -41,7 +41,13 @@ These rules are non-negotiable and override any perceived helpfulness or initiat
 - After any fix, feature, or test is confirmed working, run a `git commit` with a clear message before moving on.
 - Do not batch multiple successes into a single commit.
 
-### 6. ALWAYS inspect a screenshot when a test fails
+### 6. ALWAYS prefer element repository entries — NEVER use inline selectors in test code
+- NEVER write raw CSS/XPath selectors inline in tests or Steps API calls.
+- Always add selectors to `page-repository.json` and reference them via the repo.
+- Use `{ child: { pageName: 'PageName', elementName: 'elementName' } }` instead of `{ child: 'td:nth-child(2)' }`.
+- For text-based selections (dropdown values, element text matching), first use **case-sensitive** matching. If nothing is found, fall back to **case-insensitive** matching.
+
+### 7. ALWAYS inspect a screenshot when a test fails
 - The base fixture automatically captures a `failure-screenshot` on every failed test — run `npx playwright show-report` and open the report in a browser using Playwright MCP or a browser MCP to view it.
 - If the report is not accessible, use the Playwright MCP to take a screenshot of the current page state manually.
 - NEVER attempt to fix a failing test based solely on the error message or stack trace — always verify visually first.
@@ -298,6 +304,72 @@ await steps.waitForState('PageName', 'elementName');           // default: 'visi
 await steps.waitForState('PageName', 'elementName', 'hidden');
 await steps.waitForState('PageName', 'elementName', 'attached');
 await steps.waitForState('PageName', 'elementName', 'detached');
+await steps.waitForNetworkIdle();
+await steps.waitForResponse('/api/data', async () => {
+  await steps.click('PageName', 'submitButton');
+});
+await steps.waitAndClick('PageName', 'elementName');           // waits for visible, then clicks
+await steps.waitAndClick('PageName', 'elementName', 'attached');
+```
+
+### 🔄 Composite / Workflow
+
+```ts
+import { FillFormValue } from 'pw-element-interactions';
+
+// Fill multiple fields on the same page in one call
+await steps.fillForm('FormsPage', {
+  nameInput: 'John Doe',
+  emailInput: 'john@example.com',
+  countrySelect: { type: DropdownSelectType.VALUE, value: 'us' }
+});
+
+// Retry an action until a verification passes
+await steps.retryUntil(
+  async () => { await steps.click('PageName', 'refreshButton'); },
+  async () => { await steps.verifyText('PageName', 'status', 'Ready'); },
+  3,    // maxRetries (default: 3)
+  1000  // delayMs (default: 1000)
+);
+
+await steps.clearInput('PageName', 'searchField');
+await steps.selectMultiple('PageName', 'multiSelect', ['opt1', 'opt2', 'opt3']);
+await steps.clickNth('PageName', 'elementName', 2); // zero-based index
+```
+
+### 📊 Additional Data Extraction
+
+```ts
+const allTexts = await steps.getAll('PageName', 'listItems');
+const allChildTexts = await steps.getAll('PageName', 'tableRows', { child: 'td.name' });
+const allHrefs = await steps.getAll('PageName', 'links', { extractAttribute: 'href' });
+const count = await steps.getCount('PageName', 'elementName');
+const inputVal = await steps.getInputValue('PageName', 'emailInput');
+const color = await steps.getCssProperty('PageName', 'elementName', 'color');
+```
+
+### ✅ Additional Verification
+
+```ts
+await steps.verifyOrder('PageName', 'listItems', ['First', 'Second', 'Third']);
+await steps.verifyListOrder('PageName', 'listItems', 'asc');  // or 'desc'
+await steps.verifyCssProperty('PageName', 'elementName', 'color', 'rgb(255, 0, 0)');
+await steps.verifySnapshot('PageName', 'elementName');
+await steps.verifySnapshot('PageName', 'elementName', 'header-dark-mode.png');
+```
+
+### 📸 Screenshot
+
+```ts
+import { ScreenshotOptions } from 'pw-element-interactions';
+
+// Full page screenshot
+const buffer1 = await steps.screenshot();
+const buffer2 = await steps.screenshot({ fullPage: true, path: 'screenshots/full.png' });
+
+// Element screenshot
+const buffer3 = await steps.screenshot('PageName', 'elementName');
+const buffer4 = await steps.screenshot('PageName', 'elementName', { path: 'screenshots/element.png' });
 ```
 
 ---
