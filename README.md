@@ -1,10 +1,10 @@
 # Playwright Element Interactions
 
-[![NPM Version](https://img.shields.io/npm/v/pw-element-interactions?color=rgb(88%2C%20171%2C%2070))](https://www.npmjs.com/package/pw-element-interactions)
+[![NPM Version](https://img.shields.io/npm/v/@civitas-cerebrum/element-interactions?color=rgb(88%2C%20171%2C%2070))](https://www.npmjs.com/package/@civitas-cerebrum/element-interactions)
 
 A robust set of Playwright steps for readable interaction and assertions.
 
-`pw-element-interactions` pairs perfectly with `pw-element-repository` to achieve a fully decoupled test automation architecture. By separating **Element Acquisition** from **Element Interaction**, your test scripts become highly readable, easily maintainable, and completely free of raw locators.
+`@civitas-cerebrum/element-interactions` pairs perfectly with `@civitas-cerebrum/element-repository` to achieve a fully decoupled test automation architecture. By separating **Element Acquisition** from **Element Interaction**, your test scripts become highly readable, easily maintainable, and completely free of raw locators.
 
 ### ✨ The Unified Steps API
 
@@ -29,7 +29,7 @@ await submitBtn.waitFor({ state: 'visible', timeout: 30000 });
 await submitBtn.click();
 ```
 
-**After (pw-element-interactions):**
+**After (@civitas-cerebrum/element-interactions):**
 
 ```ts
 // Locate, wait, and interact — one line
@@ -43,16 +43,16 @@ Because the API is semantic and decoupled from the DOM, it also works exceptiona
 ## 📦 Installation
 
 ```bash
-npm i pw-element-interactions
+npm i @civitas-cerebrum/element-interactions
 ```
 
-**Peer dependencies:** `@playwright/test` is required. The `Steps` API additionally requires `pw-element-repository`.
+**Peer dependencies:** `@playwright/test` is required. The `Steps` API additionally requires `@civitas-cerebrum/element-repository`.
 
 ---
 
 ## 🤖 Claude Code Integration
 
-`pw-element-interactions` ships with a built-in **Claude Code skill** — an agent instruction file that teaches Claude how to use the framework correctly. The skill is included in the npm package, so there's nothing extra to install. When Claude Code detects it in your `node_modules`, it can write, debug, and maintain your Playwright tests using the Steps API, inspect live pages via the Playwright MCP, and manage your page repository — all with guardrails that prevent common AI mistakes like inventing selectors or overwriting config files.
+`@civitas-cerebrum/element-interactions` ships with a built-in **Claude Code skill** — an agent instruction file that teaches Claude how to use the framework correctly. The skill is included in the npm package, so there's nothing extra to install. When Claude Code detects it in your `node_modules`, it can write, debug, and maintain your Playwright tests using the Steps API, inspect live pages via the Playwright MCP, and manage your page repository — all with guardrails that prevent common AI mistakes like inventing selectors or overwriting config files.
 
 ### Quick Start with Claude Code
 
@@ -66,7 +66,7 @@ cd playwright-project
 **2. Install the packages:**
 
 ```bash
-npm i pw-element-interactions pw-element-repository
+npm i @civitas-cerebrum/element-interactions @civitas-cerebrum/element-repository
 ```
 
 That's it — the skill is now available to Claude Code. When you ask it to write tests, it will automatically scaffold the fixture file, page repository, and config if they don't exist yet.
@@ -144,8 +144,8 @@ Initialize `Steps` by passing the current Playwright `page` and your `ElementRep
 
 ```ts
 import { test } from '@playwright/test';
-import { ElementRepository } from 'pw-element-repository';
-import { Steps, DropdownSelectType } from 'pw-element-interactions';
+import { ElementRepository } from '@civitas-cerebrum/element-repository';
+import { Steps, DropdownSelectType } from '@civitas-cerebrum/element-interactions';
 
 test('Add random product and verify image gallery', async ({ page }) => {
   const repo = new ElementRepository('tests/data/locators.json');
@@ -209,7 +209,7 @@ export default defineConfig({
 ```ts
 // tests/fixtures/base.ts
 import { test as base, expect } from '@playwright/test';
-import { baseFixture } from 'pw-element-interactions';
+import { baseFixture } from '@civitas-cerebrum/element-interactions';
 
 export const test = baseFixture(base, 'tests/data/page-repository.json');
 export { expect };
@@ -220,7 +220,7 @@ export { expect };
 ```ts
 // tests/checkout.spec.ts
 import { test, expect } from '../fixtures/base';
-import { DropdownSelectType } from 'pw-element-interactions';
+import { DropdownSelectType } from '@civitas-cerebrum/element-interactions';
 
 test('Complete checkout flow', async ({ steps }) => {
   await steps.navigateTo('/');
@@ -274,7 +274,7 @@ Because `baseFixture` returns a standard Playwright `test` object, you can layer
 ```ts
 // tests/fixtures/base.ts
 import { test as base } from '@playwright/test';
-import { baseFixture } from 'pw-element-interactions';
+import { baseFixture } from '@civitas-cerebrum/element-interactions';
 import { AuthService } from '../services/AuthService';
 
 type MyFixtures = {
@@ -360,7 +360,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 Operate on a specific element within a list (table rows, cards, list items) by matching its visible text or an HTML attribute. Optionally drill into a child element within the matched item.
 
 ```ts
-import { ListedElementOptions } from 'pw-element-interactions';
+import { ListedElementOptions } from '@civitas-cerebrum/element-interactions';
 ```
 
 * **`clickListedElement(pageName, elementName, options: ListedElementOptions)`** — Finds and clicks a specific element from a list. Identify the target by `{ text }` or `{ attribute: { name, value } }`, and optionally drill into a child with `{ child: 'css-selector' }` or `{ child: { pageName, elementName } }`.
@@ -439,7 +439,7 @@ const href = await steps.getListedElementData('UsersPage', 'tableRows', {
 To bypass the repository or work with dynamically generated locators, use `ElementInteractions` directly:
 
 ```ts
-import { ElementInteractions } from 'pw-element-interactions';
+import { ElementInteractions } from '@civitas-cerebrum/element-interactions';
 
 const interactions = new ElementInteractions(page);
 
@@ -463,7 +463,7 @@ Pass email credentials to `baseFixture` via the options parameter:
 ```ts
 // tests/fixtures/base.ts
 import { test as base, expect } from '@playwright/test';
-import { baseFixture } from 'pw-element-interactions';
+import { baseFixture } from '@civitas-cerebrum/element-interactions';
 
 export const test = baseFixture(base, 'tests/data/page-repository.json', {
   emailCredentials: {
@@ -521,7 +521,8 @@ await steps.email.send({
 Use composable filters to search the inbox. Combine as many filters as needed — all are applied with AND logic. Filtering tries exact match first, then falls back to partial case-insensitive match (with a warning log).
 
 ```ts
-import { EmailFilterType } from 'pw-element-interactions';
+import { EmailFilterType } from '@civitas-cerebrum/element-interactions';
+// Note: EmailFilterType and other email types can also be imported from '@civitas-cerebrum/email-client'
 
 // Single filter — get the latest matching email
 const email = await steps.email.receive({
@@ -611,11 +612,11 @@ Verify your changes end-to-end in a real consumer project using [`yalc`](https:/
 # Install yalc globally (one-time)
 npm i -g yalc
 
-# In the pw-element-interactions folder
+# In the element-interactions repo folder
 yalc publish
 
 # In your consumer project
-yalc add pw-element-interactions
+yalc add @civitas-cerebrum/element-interactions
 ```
 
 Push updates without re-adding:
@@ -627,7 +628,7 @@ yalc publish --push
 Restore the original npm version when done:
 
 ```bash
-yalc remove pw-element-interactions
+yalc remove @civitas-cerebrum/element-interactions
 npm install
 ```
 

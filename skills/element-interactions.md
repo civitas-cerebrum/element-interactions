@@ -1,14 +1,14 @@
 ---
-name: pw-element-interactions
+name: element-interactions
 description: >
   Use this skill whenever writing, editing, or generating Playwright tests! Triggers on any mention of
-  Playwright tests, pw-element-interactions or pw-element-repository packages, the Steps API, ElementRepository, ElementInteractions, baseFixture,
+  Playwright tests, @civitas-cerebrum/element-interactions or @civitas-cerebrum/element-repository packages, the Steps API, ElementRepository, ElementInteractions, baseFixture,
   ContextStore, page-repository.json, or any request to write, fix, or add to a Playwright test in this project.
 ---
 
-# pw-element-interactions — Agent Skill
+# @civitas-cerebrum/element-interactions — Agent Skill
 
-A two-package Playwright framework that decouples **element acquisition** (`pw-element-repository`) from **element interaction** (`pw-element-interactions`). Tests reference elements by plain strings (`'HomePage'`, `'submitButton'`); raw selectors never appear in test code.
+A two-package Playwright framework that decouples **element acquisition** (`@civitas-cerebrum/element-repository`) from **element interaction** (`@civitas-cerebrum/element-interactions`). Tests reference elements by plain strings (`'HomePage'`, `'submitButton'`); raw selectors never appear in test code.
 
 ---
 
@@ -89,7 +89,7 @@ Read `tests/fixtures/base.ts` first if it exists — do not overwrite without ch
 ```ts
 // tests/fixtures/base.ts
 import { test as base, expect } from '@playwright/test';
-import { baseFixture } from 'pw-element-interactions';
+import { baseFixture } from '@civitas-cerebrum/element-interactions';
 
 export const test = baseFixture(base, 'tests/data/page-repository.json');
 export { expect };
@@ -114,7 +114,7 @@ Every method takes `pageName` and `elementName` as its first two arguments, matc
 
 **Imports** — add at the top of your test file as needed:
 ```ts
-import { DropdownSelectType, ListedElementOptions, FillFormValue, ScreenshotOptions } from 'pw-element-interactions';
+import { DropdownSelectType, ListedElementOptions, FillFormValue, ScreenshotOptions } from '@civitas-cerebrum/element-interactions';
 ```
 
 ### 🧭 Navigation
@@ -302,7 +302,7 @@ repo.setDefaultTimeout(10000);
 Bypass the repository for dynamically generated locators:
 
 ```ts
-import { ElementInteractions } from 'pw-element-interactions';
+import { ElementInteractions } from '@civitas-cerebrum/element-interactions';
 
 const interactions = new ElementInteractions(page);
 const locator = page.locator('button.dynamic-class');
@@ -347,7 +347,8 @@ await steps.email.send({ to: 'user@example.com', subject: 'Report', htmlFile: 'e
 Use composable filters (`EmailFilterType`) to search. Combine any number of filters (AND logic). Tries exact match first, falls back to partial case-insensitive match with a warning.
 
 ```ts
-import { EmailFilterType } from 'pw-element-interactions';
+import { EmailFilterType } from '@civitas-cerebrum/element-interactions';
+// Note: EmailFilterType and other email types can also be imported from '@civitas-cerebrum/email-client'
 
 // Get latest matching email
 const email = await steps.email.receive({

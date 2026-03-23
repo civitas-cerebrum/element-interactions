@@ -1,19 +1,19 @@
 ---
-name: pw-element-interactions
+name: element-interactions
 description: >
   Use this skill whenever writing, editing, or generating Playwright tests that use the
-  pw-element-interactions or pw-element-repository packages. Triggers on any mention of
+  @civitas-cerebrum/element-interactions or @civitas-cerebrum/element-repository packages. Triggers on any mention of
   these packages, the Steps API, ElementRepository, ElementInteractions, baseFixture,
   ContextStore, page-repository.json, or any request to write, fix, or add to a
   Playwright test in this project.
 ---
 
-# pw-element-interactions — Development Instructions
+# @civitas-cerebrum/element-interactions — Development Instructions
 
 > **This file (`CLAUDE.md`) contains development-time rules and instructions for contributors working on this codebase.**
-> It is NOT the consumer-facing skill file. The skill file at `~/.claude/skills/pw-element-interactions/SKILL.md` (or skills directory in project root) is what gets loaded when writing tests with this framework — it documents the API for consumption. Keep both files in sync when adding new methods or rules, but maintain this distinction: CLAUDE.md = how to develop, skill file = how to use.
+> It is NOT the consumer-facing skill file. The skill file at `~/.claude/skills/element-interactions/SKILL.md` (or skills directory in project root) is what gets loaded when writing tests with this framework — it documents the API for consumption. Keep both files in sync when adding new methods or rules, but maintain this distinction: CLAUDE.md = how to develop, skill file = how to use.
 
-A two-package Playwright framework that fully decouples **element acquisition** (`pw-element-repository`) from **element interaction** (`pw-element-interactions`). Tests reference elements by plain strings (`'HomePage'`, `'submitButton'`); raw selectors never appear in test code.
+A two-package Playwright framework that fully decouples **element acquisition** (`@civitas-cerebrum/element-repository`) from **element interaction** (`@civitas-cerebrum/element-interactions`). Tests reference elements by plain strings (`'HomePage'`, `'submitButton'`); raw selectors never appear in test code.
 
 ---
 
@@ -37,7 +37,7 @@ These rules are non-negotiable and override any perceived helpfulness or initiat
 - If the Playwright MCP is not connected, stop and tell the user: *"I need the Playwright MCP to inspect the site. Please add it to your Claude Code MCP settings and restart."* Do not proceed until it is available.
 
 ### 4. NEVER invent type definitions or API shapes
-- NEVER create `.d.ts` stubs or type shims for `pw-element-interactions` or `pw-element-repository`.
+- NEVER create `.d.ts` stubs or type shims for `@civitas-cerebrum/element-interactions` or `@civitas-cerebrum/element-repository`.
 - If a type is missing, report the problem to the user and ask how to proceed. Do not work around it silently.
 
 ### 5. Commit after every confirmed success
@@ -123,7 +123,7 @@ Before writing `tests/fixtures/base.ts`, **read it first if it already exists** 
 ```ts
 // tests/fixtures/base.ts
 import { test as base, expect } from '@playwright/test';
-import { baseFixture } from 'pw-element-interactions';
+import { baseFixture } from '@civitas-cerebrum/element-interactions';
 
 export const test = baseFixture(base, 'tests/data/page-repository.json');
 export { expect };
@@ -159,7 +159,7 @@ Because `baseFixture` returns a standard Playwright `test` object, you can layer
 ```ts
 // tests/fixtures/base.ts
 import { test as base } from '@playwright/test';
-import { baseFixture } from 'pw-element-interactions';
+import { baseFixture } from '@civitas-cerebrum/element-interactions';
 import { AuthService } from '../services/AuthService';
 
 type MyFixtures = {
@@ -219,7 +219,7 @@ await steps.uploadFile('PageName', 'elementName', 'tests/fixtures/file.pdf');
 await steps.setSliderValue('PageName', 'elementName', 75);
 await steps.pressKey('Enter'); // or 'Escape', 'Tab', etc.
 
-import { DropdownSelectType } from 'pw-element-interactions';
+import { DropdownSelectType } from '@civitas-cerebrum/element-interactions';
 // pick randomly (default)
 const value1 = await steps.selectDropdown('PageName', 'elementName');
 // explicit random
@@ -264,7 +264,7 @@ await steps.verifyTabCount(2);
 ### 📋 Listed Elements
 
 ```ts
-import { ListedElementOptions } from 'pw-element-interactions';
+import { ListedElementOptions } from '@civitas-cerebrum/element-interactions';
 
 // Click a listed element by text
 await steps.clickListedElement('PageName', 'tableRows', { text: 'John' });
@@ -317,7 +317,7 @@ await steps.waitAndClick('PageName', 'elementName', 'attached');
 ### 🔄 Composite / Workflow
 
 ```ts
-import { FillFormValue } from 'pw-element-interactions';
+import { FillFormValue } from '@civitas-cerebrum/element-interactions';
 
 // Fill multiple fields on the same page in one call
 await steps.fillForm('FormsPage', {
@@ -363,7 +363,7 @@ await steps.verifySnapshot('PageName', 'elementName', 'header-dark-mode.png');
 ### 📸 Screenshot
 
 ```ts
-import { ScreenshotOptions } from 'pw-element-interactions';
+import { ScreenshotOptions } from '@civitas-cerebrum/element-interactions';
 
 // Full page screenshot
 const buffer1 = await steps.screenshot();
@@ -412,7 +412,7 @@ repo.setDefaultTimeout(10000);                                  // change defaul
 To bypass the repository or work with dynamically generated locators, use `ElementInteractions` directly:
 
 ```ts
-import { ElementInteractions } from 'pw-element-interactions';
+import { ElementInteractions } from '@civitas-cerebrum/element-interactions';
 
 const interactions = new ElementInteractions(page);
 
@@ -434,7 +434,7 @@ Send and receive emails in tests. Supports plain-text, inline HTML, and HTML fil
 ```ts
 // tests/fixtures/base.ts
 import { test as base } from '@playwright/test';
-import { baseFixture } from 'pw-element-interactions';
+import { baseFixture } from '@civitas-cerebrum/element-interactions';
 
 export const test = baseFixture(base, 'tests/data/page-repository.json', {
   emailCredentials: {
@@ -463,7 +463,7 @@ steps.configureEmail({
 ### Sending Emails
 
 ```ts
-import { EmailSendOptions } from 'pw-element-interactions';
+import { EmailSendOptions } from '@civitas-cerebrum/element-interactions';
 
 // Simple text email
 await steps.email.send({ to: 'user@example.com', subject: 'Test', text: 'Hello' });
@@ -480,7 +480,8 @@ await steps.email.send({ to: 'user@example.com', subject: 'Report', htmlFile: 'e
 Use composable filters to search for emails. Combine as many filters as needed — all filters are applied with AND logic. Filtering tries exact match first, then falls back to partial case-insensitive match (with a warning log).
 
 ```ts
-import { EmailFilterType } from 'pw-element-interactions';
+import { EmailFilterType } from '@civitas-cerebrum/element-interactions';
+// Note: EmailFilterType and other email types can also be imported from '@civitas-cerebrum/email-client'
 
 // Single filter — get the latest matching email
 const email = await steps.email.receive({
