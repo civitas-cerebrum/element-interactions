@@ -8,7 +8,10 @@ description: >
   Playwright test in this project.
 ---
 
-# pw-element-interactions — Agent Skill
+# pw-element-interactions — Development Instructions
+
+> **This file (`CLAUDE.md`) contains development-time rules and instructions for contributors working on this codebase.**
+> It is NOT the consumer-facing skill file. The skill file at `~/.claude/skills/pw-element-interactions/SKILL.md` (or skills directory in project root) is what gets loaded when writing tests with this framework — it documents the API for consumption. Keep both files in sync when adding new methods or rules, but maintain this distinction: CLAUDE.md = how to develop, skill file = how to use.
 
 A two-package Playwright framework that fully decouples **element acquisition** (`pw-element-repository`) from **element interaction** (`pw-element-interactions`). Tests reference elements by plain strings (`'HomePage'`, `'submitButton'`); raw selectors never appear in test code.
 
@@ -45,7 +48,6 @@ These rules are non-negotiable and override any perceived helpfulness or initiat
 - NEVER write raw CSS/XPath selectors inline in tests or Steps API calls.
 - Always add selectors to `page-repository.json` and reference them via the repo.
 - Use `{ child: { pageName: 'PageName', elementName: 'elementName' } }` instead of `{ child: 'td:nth-child(2)' }`.
-- For text-based selections (dropdown values, element text matching), first use **case-sensitive** matching. If nothing is found, fall back to **case-insensitive** matching.
 
 ### 7. ALWAYS inspect a screenshot when a test fails
 - The base fixture automatically captures a `failure-screenshot` on every failed test — run `npx playwright show-report` and open the report in a browser using Playwright MCP or a browser MCP to view it.

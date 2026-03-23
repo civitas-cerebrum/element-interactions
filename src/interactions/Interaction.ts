@@ -215,22 +215,31 @@ export class Interactions {
         desiredText: string,
         strict: boolean = false
     ): Promise<ReturnType<Page['locator']> | null> {
-        const locator = baseLocator.filter({ hasText: desiredText }).first();
+        // Try case-sensitive match first
+        const caseSensitive = baseLocator.filter({ hasText: desiredText }).first();
 
-        if ((await locator.count()) === 0) {
-            const rawTexts = await baseLocator.allInnerTexts();
-
-            const availableTexts = rawTexts
-                .map((text: string) => text.trim())
-                .filter((text: string) => text.length > 0);
-
-            const msg = `Element '${elementName}' on '${pageName}' with text "${desiredText}" not found.\nAvailable texts found in locator: ${availableTexts.length > 0 ? `\n- ${availableTexts.join('\n- ')}` : 'None (Base locator found no elements or elements had no text)'}`;
-
-            if (strict) throw new Error(msg);
-            return null;
+        if ((await caseSensitive.count()) > 0) {
+            return caseSensitive;
         }
 
-        return locator;
+        // Fall back to case-insensitive match
+        const escaped = desiredText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const caseInsensitive = baseLocator.filter({ hasText: new RegExp(escaped, 'i') }).first();
+
+        if ((await caseInsensitive.count()) > 0) {
+            return caseInsensitive;
+        }
+
+        const rawTexts = await baseLocator.allInnerTexts();
+
+        const availableTexts = rawTexts
+            .map((text: string) => text.trim())
+            .filter((text: string) => text.length > 0);
+
+        const msg = `Element '${elementName}' on '${pageName}' with text "${desiredText}" not found.\nAvailable texts found in locator: ${availableTexts.length > 0 ? `\n- ${availableTexts.join('\n- ')}` : 'None (Base locator found no elements or elements had no text)'}`;
+
+        if (strict) throw new Error(msg);
+        return null;
     }
 
     /**
@@ -348,7 +357,14 @@ export class Interactions {
         let matched: Locator;
 
         if (options.text) {
-            matched = baseLocator.filter({ hasText: options.text }).first();
+            // Try case-sensitive match first, fall back to case-insensitive
+            const caseSensitive = baseLocator.filter({ hasText: options.text }).first();
+            if ((await caseSensitive.count()) > 0) {
+                matched = caseSensitive;
+            } else {
+                const escaped = options.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                matched = baseLocator.filter({ hasText: new RegExp(escaped, 'i') }).first();
+            }
         } else if (options.attribute) {
             matched = baseLocator.and(
                 this.page.locator(`[${options.attribute.name}="${options.attribute.value}"]`)
