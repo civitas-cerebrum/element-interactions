@@ -1,6 +1,5 @@
+import { ElementRepository } from '@civitas-cerebrum/element-repository';
 import { test, expect } from './fixture/StepFixture';
-import { ElementRepository } from 'pw-element-repository';
-import { Steps } from '../src/steps/CommonSteps';
 import { createLogger } from '../src/logger/Logger';
 
 const log = createLogger('tests');
