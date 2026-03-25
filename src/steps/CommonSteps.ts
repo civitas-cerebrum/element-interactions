@@ -905,19 +905,6 @@ export class Steps {
         await this.verify.cssProperty(locator, property, expectedValue);
     }
 
-    /**
-     * Performs a visual regression comparison using Playwright's built-in screenshot diffing.
-     * On the first run a baseline screenshot is saved. Subsequent runs compare against it.
-     * Use `--update-snapshots` to regenerate baselines after intentional visual changes.
-     * @param pageName - The page name as defined in `page-repository.json`.
-     * @param elementName - The element name as defined under the given page.
-     * @param name - Optional name for the snapshot file (e.g. `'header-dark-mode.png'`).
-     */
-    async verifySnapshot(pageName: string, elementName: string, name?: string): Promise<void> {
-        log.verify('Verifying snapshot of "%s" in "%s"', elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
-        await this.verify.snapshot(locator, name);
-    }
 
     /**
      * Asserts that the text contents of all elements matching the locator are sorted

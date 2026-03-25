@@ -238,20 +238,6 @@ export class Verifications {
         expect(texts, `Expected list to be sorted ${direction}ending`).toEqual(sorted);
     }
 
-    /**
-     * Performs a visual regression comparison using Playwright's built-in screenshot diffing.
-     * On the first run, a baseline screenshot is saved. Subsequent runs compare against it.
-     * Use `--update-snapshots` to regenerate baselines when intentional changes are made.
-     * @param locator - The Playwright Locator pointing to the element to screenshot.
-     * @param name - Optional name for the snapshot file (e.g. `'header-dark-mode.png'`).
-     */
-    async snapshot(locator: Locator, name?: string): Promise<void> {
-        if (name) {
-            await expect(locator).toHaveScreenshot(name, { timeout: this.ELEMENT_TIMEOUT });
-        } else {
-            await expect(locator).toHaveScreenshot({ timeout: this.ELEMENT_TIMEOUT });
-        }
-    }
 
     async count(locator: Locator, options: CountVerifyOptions): Promise<void> {
         if (options.exactly !== undefined && options.exactly < 0) {

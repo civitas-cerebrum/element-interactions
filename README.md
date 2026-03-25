@@ -424,7 +424,6 @@ const href = await steps.getListedElementData('UsersPage', 'tableRows', {
 
 * **`verifyOrder(pageName, elementName, expectedTexts: string[])`** — Asserts that elements' text contents appear in the exact order specified.
 * **`verifyCssProperty(pageName, elementName, property: string, expectedValue: string)`** — Asserts that a computed CSS property matches the expected value.
-* **`verifySnapshot(pageName, elementName, name?: string)`** — Visual regression comparison using Playwright's screenshot diffing.
 * **`verifyListOrder(pageName, elementName, direction: 'asc' | 'desc')`** — Asserts that elements' text contents are sorted in the specified direction.
 
 ### 📸 Screenshot

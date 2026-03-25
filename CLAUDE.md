@@ -356,8 +356,6 @@ const color = await steps.getCssProperty('PageName', 'elementName', 'color');
 await steps.verifyOrder('PageName', 'listItems', ['First', 'Second', 'Third']);
 await steps.verifyListOrder('PageName', 'listItems', 'asc');  // or 'desc'
 await steps.verifyCssProperty('PageName', 'elementName', 'color', 'rgb(255, 0, 0)');
-await steps.verifySnapshot('PageName', 'elementName');
-await steps.verifySnapshot('PageName', 'elementName', 'header-dark-mode.png');
 ```
 
 ### 📸 Screenshot
