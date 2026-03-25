@@ -1,10 +1,13 @@
-name: 🧪 Test & Verify
+name: 🧪 Test, Verify & Coverage
 
 on:
   pull_request:
     branches: [ main ]
   push:
     branches: [ main ]
+
+permissions:
+  pull-requests: write
 
 jobs:
   test:
@@ -18,7 +21,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-          cache: 'npm' # Speeds up subsequent runs by caching node_modules
+          cache: 'npm'
 
       - name: 🧩 Install dependencies
         run: npm ci
@@ -33,8 +36,8 @@ jobs:
         run: |
           docker compose up --build -d
 
-      - name: 🧪 Run Tests
-        run: npm test
+      - name: 🧪 Run Unit Tests
+        run: npm run test:unit -- --update-snapshots
 
       - name: 📝 Check Types
         run: npx tsc --noEmit

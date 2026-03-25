@@ -1,18 +1,22 @@
 {
-  "name": "pw-element-interactions",
-  "version": "0.1.0",
+  "name": "@civitas-cerebrum/element-interactions",
+  "version": "0.1.1",
   "description": "A robust, readable interaction and assertion Facade for Playwright. Abstract away boilerplate into semantic, English-like methods, making your test automation framework cleaner, easier to maintain, and accessible to non-developers.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc",
-    "test": "npx playwright test",
+    "test": "npm run test:unit",
+    "test:all": "npm run test:unit && npm run test:email",
+    "test:unit": "npx playwright test --grep-invert 'Email Integration Tests'",
+    "test:email": "npx playwright test --grep 'Email Integration Tests'",
     "test:ui": "npx playwright test --headed",
     "prepublishOnly": "npm run build",
     "postinstall": "node scripts/postinstall.js",
     "test:quiet": "TESTER_DEBUG=false npx playwright test",
-    "test:coverage": "npx playwright test tests/api-coverage.spec.ts"
+    "test:coverage": "npx test-coverage",
+    "test:with-coverage": "npx playwright test --grep-invert 'Email Integration Tests' && npx test-coverage --format github-plain"
   },
   "files": [
     "dist",
@@ -20,16 +24,13 @@
     "scripts/postinstall.js"
   ],
   "peerDependencies": {
-    "@civitas-cerebrum/context-store": ">=0.0.2",
-    "@playwright/test": ">=1.0.0",
-    "pw-element-repository": ">=0.0.4"
+    "@playwright/test": ">=1.0.0"
   },
   "devDependencies": {
-    "@civitas-cerebrum/context-store": "^0.0.2",
+    "@civitas-cerebrum/test-coverage": "^0.0.8",
     "@playwright/test": "^1.58.2",
     "@types/debug": "^4.1.13",
     "@types/node": "^20.0.0",
-    "pw-element-repository": "^0.0.4",
     "typescript": "^5.0.0"
   },
   "keywords": [
@@ -48,11 +49,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Umutayb/pw-element-interactions.git"
+    "url": "git+https://github.com/civitas-cerebrum/element-interactions.git"
   },
   "author": "Umut Ay Bora",
   "license": "MIT",
   "dependencies": {
-    "debug": "^4.4.3"
+    "@civitas-cerebrum/context-store": "^0.0.2",
+    "@civitas-cerebrum/element-repository": "^0.0.6",
+    "@civitas-cerebrum/email-client": "^0.0.4",
+    "debug": "^4.4.3",
+    "dotenv": "^17.3.1"
   }
 }

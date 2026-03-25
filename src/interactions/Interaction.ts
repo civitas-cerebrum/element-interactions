@@ -1,5 +1,5 @@
 import { Page, Locator } from '@playwright/test';
-import { DropdownSelectOptions, DropdownSelectType, DragAndDropOptions } from '../enum/Options';
+import { DropdownSelectOptions, DropdownSelectType, DragAndDropOptions, ListedElementMatch } from '../enum/Options';
 import { Utils } from '../utils/ElementUtilities';
 
 /**
@@ -44,14 +44,17 @@ export class Interactions {
 
     /**
      * Checks if an element is visible before attempting to click it.
-     * If the element is hidden or not in the DOM, it safely skips the action and logs a message 
+     * If the element is hidden or not in the DOM, it safely skips the action
      * without failing the test. Great for optional elements like cookie banners or promotional pop-ups.
      * @param locator - The Playwright Locator pointing to the target element.
+     * @returns `true` if the element was visible and clicked, `false` if it was skipped.
      */
-    async clickIfPresent(locator: Locator): Promise<void> {
+    async clickIfPresent(locator: Locator): Promise<boolean> {
         if (await locator.isVisible()) {
             await locator.click({ timeout: this.ELEMENT_TIMEOUT });
+            return true;
         }
+        return false;
     }
 
     /**
@@ -202,35 +205,40 @@ export class Interactions {
        * Filters a locator list and returns the first element that contains the specified text.
        * If the element is not found, it prints the available text contents of the base locator for debugging.
        * @param baseLocator The base Playwright Locator.
-       * @param pageName The name of the page block in the JSON repository.
-       * @param elementName The specific element name to look up.
        * @param desiredText The string of text to search for within the elements.
        * @param strict If true, throws an error if the element is not found. Defaults to false.
        * @returns A promise that resolves to the matched Playwright Locator, or null if not found.
        */
     public async getByText(
         baseLocator: Locator,
-        pageName: string,
-        elementName: string,
         desiredText: string,
         strict: boolean = false
     ): Promise<ReturnType<Page['locator']> | null> {
-        const locator = baseLocator.filter({ hasText: desiredText }).first();
+        // Try case-sensitive match first
+        const caseSensitive = baseLocator.filter({ hasText: desiredText }).first();
 
-        if ((await locator.count()) === 0) {
-            const rawTexts = await baseLocator.allInnerTexts();
-
-            const availableTexts = rawTexts
-                .map((text: string) => text.trim())
-                .filter((text: string) => text.length > 0);
-
-            const msg = `Element '${elementName}' on '${pageName}' with text "${desiredText}" not found.\nAvailable texts found in locator: ${availableTexts.length > 0 ? `\n- ${availableTexts.join('\n- ')}` : 'None (Base locator found no elements or elements had no text)'}`;
-
-            if (strict) throw new Error(msg);
-            return null;
+        if ((await caseSensitive.count()) > 0) {
+            return caseSensitive;
         }
 
-        return locator;
+        // Fall back to case-insensitive match
+        const escaped = desiredText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const caseInsensitive = baseLocator.filter({ hasText: new RegExp(escaped, 'i') }).first();
+
+        if ((await caseInsensitive.count()) > 0) {
+            return caseInsensitive;
+        }
+
+        const rawTexts = await baseLocator.allInnerTexts();
+
+        const availableTexts = rawTexts
+            .map((text: string) => text.trim())
+            .filter((text: string) => text.length > 0);
+
+        const msg = `getByText: element with text "${desiredText}" not found.\nAvailable texts: ${availableTexts.length > 0 ? `\n- ${availableTexts.join('\n- ')}` : 'None'}`;
+
+        if (strict) throw new Error(msg);
+        return null;
     }
 
     /**
@@ -302,5 +310,82 @@ export class Interactions {
      */
     async pressKey(key: string): Promise<void> {
         await this.page.keyboard.press(key);
+    }
+
+    /**
+     * Clears the value of an input or textarea element without filling it with new text.
+     * @param locator - The Playwright Locator pointing to the input element.
+     */
+    async clearInput(locator: Locator): Promise<void> {
+        await this.utils.waitForState(locator, 'visible');
+        await locator.clear({ timeout: this.ELEMENT_TIMEOUT });
+    }
+
+    /**
+     * Selects multiple options from a `<select multiple>` element by their `value` attributes.
+     * @param locator - The Playwright Locator pointing to the multi-select element.
+     * @param values - An array of `value` attribute strings to select.
+     * @returns An array of the actually selected `value` strings.
+     */
+    async selectMultiple(locator: Locator, values: string[]): Promise<string[]> {
+        await this.utils.waitForState(locator, 'visible');
+        return await locator.selectOption(
+            values.map(v => ({ value: v })),
+            { timeout: this.ELEMENT_TIMEOUT }
+        );
+    }
+
+    /**
+     * Resolves a specific element from a list by matching its visible text or an HTML attribute.
+     * Optionally drills into a child element within the matched item.
+     *
+     * This is the core utility behind `clickListedElement`, `verifyListedElement`,
+     * and `getListedElementData` in the Steps API.
+     *
+     * @param baseLocator - A Playwright Locator that resolves to the list of elements (e.g. table rows, list items).
+     * @param options - Match criteria and optional child targeting. Must include either `text` or `attribute`.
+     * @param repo - Optional ElementRepository instance, required when `options.child` is a page-repo reference.
+     * @returns The resolved Playwright Locator for the matched (and optionally child-targeted) element.
+     * @throws Error if neither `text` nor `attribute` is specified, or if no matching element is found.
+     */
+    async getListedElement(
+        baseLocator: Locator,
+        options: ListedElementMatch,
+        repo?: { getSelector(pageName: string, elementName: string): string }
+    ): Promise<Locator> {
+        let matched: Locator;
+
+        if (options.text) {
+            // Try case-sensitive match first, fall back to case-insensitive
+            const caseSensitive = baseLocator.filter({ hasText: options.text }).first();
+            if ((await caseSensitive.count()) > 0) {
+                matched = caseSensitive;
+            } else {
+                const escaped = options.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                matched = baseLocator.filter({ hasText: new RegExp(escaped, 'i') }).first();
+            }
+        } else if (options.attribute) {
+            matched = baseLocator.and(
+                this.page.locator(`[${options.attribute.name}="${options.attribute.value}"]`)
+            ).first();
+        } else {
+            throw new Error('ListedElementOptions requires either "text" or "attribute" to identify the element.');
+        }
+
+        await this.utils.waitForState(matched, 'visible');
+
+        if (!options.child) {
+            return matched;
+        }
+
+        if (typeof options.child === 'string') {
+            return matched.locator(options.child);
+        }
+
+        if (!repo) {
+            throw new Error('An ElementRepository instance is required when "child" is a page-repository reference.');
+        }
+        const childSelector = repo.getSelector(options.child.pageName, options.child.elementName);
+        return matched.locator(childSelector);
     }
 }

@@ -245,6 +245,18 @@
           "selector": {
             "css": "table"
           }
+        },
+        {
+          "elementName": "submissionRows",
+          "selector": {
+            "css": "table tr"
+          }
+        },
+        {
+          "elementName": "submissionValue",
+          "selector": {
+            "css": "td:nth-child(2)"
+          }
         }
       ]
     },
@@ -1408,6 +1420,12 @@
           "selector": {
             "css": "[data-testid='table-header-status']"
           }
+        },
+        {
+          "elementName": "nameCell",
+          "selector": {
+            "css": "td:nth-child(2)"
+          }
         }
       ]
     },
@@ -2268,6 +2286,24 @@
           "elementName": "basicOtpInput",
           "selector": {
             "css": "[data-testid='otp-section-basic'] input:nth-of-type(1)"
+          }
+        },
+        {
+          "elementName": "autocompleteGeneratedCode",
+          "selector": {
+            "css": "[data-testid='otp-generated-code-autocomplete'] .generated-code__value"
+          }
+        },
+        {
+          "elementName": "autocompleteOtpFirstInput",
+          "selector": {
+            "css": "[data-testid='otp-section-autocomplete'] input:nth-of-type(1)"
+          }
+        },
+        {
+          "elementName": "autocompleteCompleteMessage",
+          "selector": {
+            "css": "[data-testid='otp-complete-message']"
           }
         }
       ]

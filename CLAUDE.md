@@ -1,16 +1,19 @@
 ---
-name: pw-element-interactions
+name: element-interactions
 description: >
   Use this skill whenever writing, editing, or generating Playwright tests that use the
-  pw-element-interactions or pw-element-repository packages. Triggers on any mention of
+  @civitas-cerebrum/element-interactions or @civitas-cerebrum/element-repository packages. Triggers on any mention of
   these packages, the Steps API, ElementRepository, ElementInteractions, baseFixture,
   ContextStore, page-repository.json, or any request to write, fix, or add to a
   Playwright test in this project.
 ---
 
-# pw-element-interactions — Agent Skill
+# @civitas-cerebrum/element-interactions — Development Instructions
 
-A two-package Playwright framework that fully decouples **element acquisition** (`pw-element-repository`) from **element interaction** (`pw-element-interactions`). Tests reference elements by plain strings (`'HomePage'`, `'submitButton'`); raw selectors never appear in test code.
+> **This file (`CLAUDE.md`) contains development-time rules and instructions for contributors working on this codebase.**
+> It is NOT the consumer-facing skill file. The skill file at `~/.claude/skills/element-interactions/SKILL.md` (or skills directory in project root) is what gets loaded when writing tests with this framework — it documents the API for consumption. Keep both files in sync when adding new methods or rules, but maintain this distinction: CLAUDE.md = how to develop, skill file = how to use.
+
+A two-package Playwright framework that fully decouples **element acquisition** (`@civitas-cerebrum/element-repository`) from **element interaction** (`@civitas-cerebrum/element-interactions`). Tests reference elements by plain strings (`'HomePage'`, `'submitButton'`); raw selectors never appear in test code.
 
 ---
 
@@ -34,14 +37,19 @@ These rules are non-negotiable and override any perceived helpfulness or initiat
 - If the Playwright MCP is not connected, stop and tell the user: *"I need the Playwright MCP to inspect the site. Please add it to your Claude Code MCP settings and restart."* Do not proceed until it is available.
 
 ### 4. NEVER invent type definitions or API shapes
-- NEVER create `.d.ts` stubs or type shims for `pw-element-interactions` or `pw-element-repository`.
+- NEVER create `.d.ts` stubs or type shims for `@civitas-cerebrum/element-interactions` or `@civitas-cerebrum/element-repository`.
 - If a type is missing, report the problem to the user and ask how to proceed. Do not work around it silently.
 
 ### 5. Commit after every confirmed success
 - After any fix, feature, or test is confirmed working, run a `git commit` with a clear message before moving on.
 - Do not batch multiple successes into a single commit.
 
-### 6. ALWAYS inspect a screenshot when a test fails
+### 6. ALWAYS prefer element repository entries — NEVER use inline selectors in test code
+- NEVER write raw CSS/XPath selectors inline in tests or Steps API calls.
+- Always add selectors to `page-repository.json` and reference them via the repo.
+- Use `{ child: { pageName: 'PageName', elementName: 'elementName' } }` instead of `{ child: 'td:nth-child(2)' }`.
+
+### 7. ALWAYS inspect a screenshot when a test fails
 - The base fixture automatically captures a `failure-screenshot` on every failed test — run `npx playwright show-report` and open the report in a browser using Playwright MCP or a browser MCP to view it.
 - If the report is not accessible, use the Playwright MCP to take a screenshot of the current page state manually.
 - NEVER attempt to fix a failing test based solely on the error message or stack trace — always verify visually first.
@@ -115,7 +123,7 @@ Before writing `tests/fixtures/base.ts`, **read it first if it already exists** 
 ```ts
 // tests/fixtures/base.ts
 import { test as base, expect } from '@playwright/test';
-import { baseFixture } from 'pw-element-interactions';
+import { baseFixture } from '@civitas-cerebrum/element-interactions';
 
 export const test = baseFixture(base, 'tests/data/page-repository.json');
 export { expect };
@@ -151,7 +159,7 @@ Because `baseFixture` returns a standard Playwright `test` object, you can layer
 ```ts
 // tests/fixtures/base.ts
 import { test as base } from '@playwright/test';
-import { baseFixture } from 'pw-element-interactions';
+import { baseFixture } from '@civitas-cerebrum/element-interactions';
 import { AuthService } from '../services/AuthService';
 
 type MyFixtures = {
@@ -180,8 +188,15 @@ Every method takes `pageName` and `elementName` as its first two arguments, matc
 ```ts
 await steps.navigateTo('/path');
 await steps.refresh();
-await steps.backOrForward('BACKWARDS'); // or 'FORWARDS'
+await steps.backOrForward('back'); // or 'forward'
 await steps.setViewport(1280, 720);
+
+// Tab management
+const newPage = await steps.switchToNewTab(async () => {
+  await steps.click('PageName', 'newTabLink');
+});
+await steps.closeTab(newPage);
+const count = steps.getTabCount();
 ```
 
 ### 🖱️ Interaction
@@ -189,16 +204,22 @@ await steps.setViewport(1280, 720);
 ```ts
 await steps.click('PageName', 'elementName');
 await steps.clickWithoutScrolling('PageName', 'elementName');
-await steps.clickIfPresent('PageName', 'elementName');
+const clicked = await steps.clickIfPresent('PageName', 'elementName'); // returns boolean
 await steps.clickRandom('PageName', 'elementName');
+await steps.rightClick('PageName', 'elementName');
+await steps.doubleClick('PageName', 'elementName');
+await steps.check('PageName', 'elementName');
+await steps.uncheck('PageName', 'elementName');
 await steps.hover('PageName', 'elementName');
 await steps.scrollIntoView('PageName', 'elementName');
 await steps.fill('PageName', 'elementName', 'my input');
 await steps.typeSequentially('PageName', 'elementName', 'my input');
 await steps.typeSequentially('PageName', 'elementName', 'my input', 50); // custom delay ms
 await steps.uploadFile('PageName', 'elementName', 'tests/fixtures/file.pdf');
+await steps.setSliderValue('PageName', 'elementName', 75);
+await steps.pressKey('Enter'); // or 'Escape', 'Tab', etc.
 
-import { DropdownSelectType } from 'pw-element-interactions';
+import { DropdownSelectType } from '@civitas-cerebrum/element-interactions';
 // pick randomly (default)
 const value1 = await steps.selectDropdown('PageName', 'elementName');
 // explicit random
@@ -236,6 +257,46 @@ await steps.verifyTextContains('PageName', 'elementName', 'partial text');
 await steps.verifyState('PageName', 'elementName', 'enabled');  // 'disabled', 'editable', 'checked', 'focused', 'visible', 'hidden', 'attached', 'inViewport'
 await steps.verifyAttribute('PageName', 'elementName', 'href', '/expected-path');
 await steps.verifyUrlContains('/dashboard');
+await steps.verifyInputValue('PageName', 'elementName', 'expected value');
+await steps.verifyTabCount(2);
+```
+
+### 📋 Listed Elements
+
+```ts
+import { ListedElementMatch, VerifyListedOptions, GetListedDataOptions } from '@civitas-cerebrum/element-interactions';
+
+// Click a listed element by text
+await steps.clickListedElement('PageName', 'tableRows', { text: 'John' });
+
+// Click a child inside a listed element matched by attribute
+await steps.clickListedElement('PageName', 'tableRows', {
+  attribute: { name: 'data-id', value: '5' },
+  child: 'button.edit'
+});
+
+// Verify text of a child in a listed element
+await steps.verifyListedElement('PageName', 'entries', {
+  text: 'Name',
+  child: 'td:nth-child(2)',
+  expectedText: 'John Doe'
+});
+
+// Verify an attribute on a listed element
+await steps.verifyListedElement('PageName', 'tableRows', {
+  attribute: { name: 'data-id', value: '5' },
+  expected: { name: 'class', value: 'active' }
+});
+
+// Extract text from a listed element
+const text = await steps.getListedElementData('PageName', 'entries', { text: 'Name' });
+
+// Extract an attribute from a child in a listed element
+const href = await steps.getListedElementData('PageName', 'tableRows', {
+  text: 'John',
+  child: 'a.profile-link',
+  extractAttribute: 'href'
+});
 ```
 
 ### ⏳ Waiting
@@ -245,6 +306,72 @@ await steps.waitForState('PageName', 'elementName');           // default: 'visi
 await steps.waitForState('PageName', 'elementName', 'hidden');
 await steps.waitForState('PageName', 'elementName', 'attached');
 await steps.waitForState('PageName', 'elementName', 'detached');
+await steps.waitForNetworkIdle();
+await steps.waitForResponse('/api/data', async () => {
+  await steps.click('PageName', 'submitButton');
+});
+await steps.waitAndClick('PageName', 'elementName');           // waits for visible, then clicks
+await steps.waitAndClick('PageName', 'elementName', 'attached');
+```
+
+### 🔄 Composite / Workflow
+
+```ts
+import { FillFormValue } from '@civitas-cerebrum/element-interactions';
+
+// Fill multiple fields on the same page in one call
+await steps.fillForm('FormsPage', {
+  nameInput: 'John Doe',
+  emailInput: 'john@example.com',
+  countrySelect: { type: DropdownSelectType.VALUE, value: 'us' }
+});
+
+// Retry an action until a verification passes
+await steps.retryUntil(
+  async () => { await steps.click('PageName', 'refreshButton'); },
+  async () => { await steps.verifyText('PageName', 'status', 'Ready'); },
+  3,    // maxRetries (default: 3)
+  1000  // delayMs between attempts (default: 1000)
+);
+
+await steps.clearInput('PageName', 'searchField');
+await steps.selectMultiple('PageName', 'multiSelect', ['opt1', 'opt2', 'opt3']);
+await steps.clickNth('PageName', 'elementName', 2); // zero-based index
+```
+
+### 📊 Additional Data Extraction
+
+```ts
+const allTexts = await steps.getAll('PageName', 'listItems');
+const allChildTexts = await steps.getAll('PageName', 'tableRows', { child: 'td.name' });
+const allHrefs = await steps.getAll('PageName', 'links', { extractAttribute: 'href' });
+const count = await steps.getCount('PageName', 'elementName');
+const inputVal = await steps.getInputValue('PageName', 'emailInput');
+const color = await steps.getCssProperty('PageName', 'elementName', 'color');
+```
+
+### ✅ Additional Verification
+
+```ts
+await steps.verifyOrder('PageName', 'listItems', ['First', 'Second', 'Third']);
+await steps.verifyListOrder('PageName', 'listItems', 'asc');  // or 'desc'
+await steps.verifyCssProperty('PageName', 'elementName', 'color', 'rgb(255, 0, 0)');
+await steps.verifySnapshot('PageName', 'elementName');
+await steps.verifySnapshot('PageName', 'elementName', 'header-dark-mode.png');
+```
+
+### 📸 Screenshot
+
+```ts
+import { ScreenshotOptions } from '@civitas-cerebrum/element-interactions';
+
+// Full page screenshot
+const buffer1 = await steps.screenshot();
+const buffer2 = await steps.screenshot({ fullPage: true, path: 'screenshots/full.png' });
+
+// Element screenshot
+const buffer3 = await steps.screenshot('PageName', 'elementName');
+const buffer4 = await steps.screenshot('PageName', 'elementName', { path: 'screenshots/element.png' });
 ```
 
 ---
@@ -269,7 +396,13 @@ await repo.get(page, 'PageName', 'elementName');
 await repo.getAll(page, 'PageName', 'elementName');
 await repo.getRandom(page, 'PageName', 'elementName');
 await repo.getByText(page, 'PageName', 'elementName', 'Desired Text');
-repo.getSelector('PageName', 'elementName'); // sync, returns raw selector string
+await repo.getByAttribute(page, 'PageName', 'elementName', 'data-status', 'active');
+await repo.getByAttribute(page, 'PageName', 'elementName', 'href', '/path', { exact: false }); // partial match
+await repo.getByIndex(page, 'PageName', 'elementName', 2);    // zero-based index
+await repo.getByRole(page, 'PageName', 'elementName', 'button'); // explicit HTML role attribute
+await repo.getVisible(page, 'PageName', 'elementName');        // first visible match
+repo.getSelector('PageName', 'elementName');                    // sync, returns raw selector string
+repo.setDefaultTimeout(10000);                                  // change default wait timeout
 ```
 
 ---
@@ -279,7 +412,7 @@ repo.getSelector('PageName', 'elementName'); // sync, returns raw selector strin
 To bypass the repository or work with dynamically generated locators, use `ElementInteractions` directly:
 
 ```ts
-import { ElementInteractions } from 'pw-element-interactions';
+import { ElementInteractions } from '@civitas-cerebrum/element-interactions';
 
 const interactions = new ElementInteractions(page);
 
@@ -289,3 +422,108 @@ await interactions.verify.count(customLocator, { greaterThan: 2 });
 ```
 
 All core `interact`, `verify`, and `navigate` methods are available on `ElementInteractions`.
+
+---
+
+## 7. Email API
+
+Send and receive emails in tests. Supports plain-text, inline HTML, and HTML file templates.
+
+### Setup
+
+```ts
+// tests/fixtures/base.ts
+import { test as base } from '@playwright/test';
+import { baseFixture } from '@civitas-cerebrum/element-interactions';
+
+export const test = baseFixture(base, 'tests/data/page-repository.json', {
+  emailCredentials: {
+    senderEmail: process.env.SENDER_EMAIL!,
+    senderPassword: process.env.SENDER_PASSWORD!,
+    senderSmtpHost: process.env.SENDER_SMTP_HOST!,
+    receiverEmail: process.env.RECEIVER_EMAIL!,
+    receiverPassword: process.env.RECEIVER_PASSWORD!,
+    // receiverImapHost: 'imap.gmail.com',  // default
+    // receiverImapPort: 993,               // default
+  }
+});
+```
+
+### Sending Emails
+
+```ts
+import { EmailSendOptions } from '@civitas-cerebrum/element-interactions';
+
+// Simple text email
+await steps.sendEmail({ to: 'user@example.com', subject: 'Test', text: 'Hello' });
+
+// Inline HTML email
+await steps.sendEmail({ to: 'user@example.com', subject: 'Report', html: '<h1>Results</h1>' });
+
+// HTML file template (e.g. test report)
+await steps.sendEmail({ to: 'user@example.com', subject: 'Report', htmlFile: 'emails/report.html' });
+```
+
+### Receiving Emails
+
+Use composable filters to search for emails. Combine as many filters as needed — all filters are applied with AND logic. Filtering tries exact match first, then falls back to partial case-insensitive match (with a warning log).
+
+```ts
+import { EmailFilterType } from '@civitas-cerebrum/element-interactions';
+// Note: EmailFilterType and other email types can also be imported from '@civitas-cerebrum/email-client'
+
+// Single filter — get the latest matching email
+const email = await steps.receiveEmail({
+  filters: [{ type: EmailFilterType.SUBJECT, value: 'Your OTP' }]
+});
+await steps.navigateTo('file://' + email.filePath);
+
+// Multiple filters — combine subject, sender, and content
+const email2 = await steps.receiveEmail({
+  filters: [
+    { type: EmailFilterType.SUBJECT, value: 'Verification' },
+    { type: EmailFilterType.FROM, value: 'noreply@example.com' },
+    { type: EmailFilterType.CONTENT, value: 'verification code' },
+  ]
+});
+
+// Get ALL matching emails
+const allEmails = await steps.receiveAllEmails({
+  filters: [
+    { type: EmailFilterType.FROM, value: 'alerts@example.com' },
+    { type: EmailFilterType.SINCE, value: new Date('2025-01-01') },
+  ]
+});
+```
+
+### Cleaning the Inbox
+
+```ts
+// Delete emails matching filters
+await steps.cleanEmails({
+  filters: [{ type: EmailFilterType.FROM, value: 'noreply@example.com' }]
+});
+
+// Delete all emails in the inbox
+await steps.cleanEmails();
+```
+
+### Email Filter Types
+
+| Type | Value | Description |
+|---|---|---|
+| `EmailFilterType.SUBJECT` | `string` | Filter by email subject |
+| `EmailFilterType.FROM` | `string` | Filter by sender address |
+| `EmailFilterType.TO` | `string` | Filter by recipient address |
+| `EmailFilterType.CONTENT` | `string` | Filter by email body (HTML or plain text) |
+| `EmailFilterType.SINCE` | `Date` | Only include emails after this date |
+
+### Email Receive Options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `filters` | `EmailFilter[]` | — | **Required.** Array of filters to apply (AND logic) |
+| `folder` | `string` | `'INBOX'` | IMAP folder to search |
+| `waitTimeout` | `number` | `30000` | Max ms to poll for the email |
+| `pollInterval` | `number` | `3000` | Ms between poll attempts |
+| `downloadDir` | `string` | `os.tmpdir()/pw-emails` | Where to save downloaded HTML |

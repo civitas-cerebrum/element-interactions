@@ -1,4 +1,4 @@
-import { Page } from '@playwright/test';
+import { Page, Response } from '@playwright/test';
 import { logger } from '../logger/Logger';
 
 const log = logger('navigate');
@@ -47,10 +47,10 @@ export class Navigation {
     /**
      * Navigates the browser history stack either backwards or forwards.
      * Mirrors the behavior of the browser's native Back and Forward buttons.
-     * @param direction - The direction to move in history: either 'BACKWARDS' or 'FORWARDS'.
+     * @param direction - The direction to move in history: either 'back' or 'forward'.
      */
-    async backOrForward(direction: 'BACKWARDS' | 'FORWARDS'): Promise<void> {
-        if (direction === 'BACKWARDS') {
+    async backOrForward(direction: 'back' | 'forward'): Promise<void> {
+        if (direction === 'back') {
             await this.page.goBack();
         } else {
             await this.page.goForward();
@@ -105,4 +105,28 @@ export class Navigation {
     getTabCount(): number {
         return this.page.context().pages().length;
     }
+
+    /**
+     * Waits until there are no in-flight network requests for at least 500ms.
+     * Useful after actions that trigger background API calls, lazy loading, or analytics.
+     */
+    async waitForNetworkIdle(): Promise<void> {
+        await this.page.waitForLoadState('networkidle');
+    }
+
+    /**
+     * Executes an action and waits for a matching network response to complete.
+     * The response is captured concurrently with the action to avoid race conditions.
+     * @param urlPattern - A string substring or RegExp to match against the response URL.
+     * @param action - An async function that triggers the network request (e.g. a form submit or click).
+     * @returns The captured Playwright Response object.
+     */
+    async waitForResponse(urlPattern: string | RegExp, action: () => Promise<void>): Promise<Response> {
+        const [response] = await Promise.all([
+            this.page.waitForResponse(urlPattern),
+            action(),
+        ]);
+        return response;
+    }
+
 }

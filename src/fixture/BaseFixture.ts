@@ -1,6 +1,8 @@
 import { ElementInteractions } from '../interactions/facade/ElementInteractions';
+import { ElementRepository } from '@civitas-cerebrum/element-repository';
+import { EmailCredentials } from '@civitas-cerebrum/email-client';
 import { ContextStore } from '@civitas-cerebrum/context-store';
-import { ElementRepository } from 'pw-element-repository';
+
 import { test as base } from '@playwright/test';
 import { Steps } from '../steps/CommonSteps';
 
@@ -11,19 +13,24 @@ type StepFixture = {
     steps: Steps;
 };
 
+export interface BaseFixtureOptions {
+    emailCredentials?: EmailCredentials;
+}
+
 export function baseFixture<T extends {}>(
     baseTest: ReturnType<typeof base.extend<T>>,
-    locatorPath: string
+    locatorPath: string,
+    options?: BaseFixtureOptions
 ) {
     return (baseTest as typeof base).extend<StepFixture>({
         repo: async ({ }, use) => {
             await use(new ElementRepository(locatorPath));
         },
         steps: async ({ page, repo }, use) => {
-            await use(new Steps(page, repo));
+            await use(new Steps(page, repo, undefined, options?.emailCredentials));
         },
         interactions: async ({ page }, use) => {
-            await use(new ElementInteractions(page));
+            await use(new ElementInteractions(page, undefined, options?.emailCredentials));
         },
         contextStore: async ({ }, use) => {
             await use(new ContextStore());

@@ -1,7 +1,9 @@
-import { Page } from '@playwright/test';
-import { ElementRepository } from 'pw-element-repository';
+import { Page, Response } from '@playwright/test';
+import { ElementRepository } from '@civitas-cerebrum/element-repository';
 import { ElementInteractions } from '../interactions/facade/ElementInteractions';
-import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions } from '../enum/Options';
+import { Utils } from '../utils/ElementUtilities';
+import { EmailCredentials, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
+import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions } from '../enum/Options';
 import { logger } from '../logger/Logger';
 
 const log = {
@@ -9,12 +11,13 @@ const log = {
     interact: logger('interact'),
     extract: logger('extract'),
     verify: logger('verify'),
+    email: logger('email'),
     wait: logger('wait'),
 };
 
 /**
  * The `Steps` class serves as a unified Facade for test orchestration.
- * It combines element acquisition (via `pw-element-repository`) with
+ * It combines element acquisition (via `@civitas-cerebrum/element-repository`) with
  * Playwright interactions, navigation, and verifications to keep test files clean,
  * readable, and free of raw locators.
  */
@@ -24,24 +27,28 @@ export class Steps {
     private extract;
     private verify;
     private utils;
+    private email;
 
     /**
      * Initializes the Steps class with the required Playwright page and element repository.
      * @param page - The current Playwright Page object.
      * @param repo - An initialized instance of `ElementRepository` containing your locators.
      * @param timeout - Optional global timeout override (in milliseconds).
+     * @param emailCredentials - Optional email credentials to enable the email sub-API.
      */
     constructor(
         private page: Page,
         private repo: ElementRepository,
-        timeout?: number
+        timeout?: number,
+        emailCredentials?: EmailCredentials
     ) {
-        const interactions = new ElementInteractions(page, timeout);
+        const interactions = new ElementInteractions(page, timeout, emailCredentials);
         this.interact = interactions.interact;
         this.navigate = interactions.navigate;
         this.extract = interactions.extract;
         this.verify = interactions.verify;
-        this.utils = interactions.utils;
+        this.utils = new Utils(timeout);
+        this.email = interactions.email;
     }
 
     // ==========================================
@@ -67,9 +74,9 @@ export class Steps {
 
     /**
      * Navigates the browser history backwards or forwards.
-     * @param direction - The direction to navigate: `'BACKWARDS'` or `'FORWARDS'`.
+     * @param direction - The direction to navigate: `'back'` or `'forward'`.
      */
-    async backOrForward(direction: 'BACKWARDS' | 'FORWARDS'): Promise<void> {
+    async backOrForward(direction: 'back' | 'forward'): Promise<void> {
         log.navigate('Navigating browser: "%s"', direction);
         await this.navigate.backOrForward(direction);
     }
@@ -163,10 +170,10 @@ export class Steps {
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param elementName - The element name as defined under the given page.
      */
-    async clickIfPresent(pageName: string, elementName: string): Promise<void> {
+    async clickIfPresent(pageName: string, elementName: string): Promise<boolean> {
         log.interact('Clicking on "%s" in "%s" (if present)', elementName, pageName);
         const locator = await this.repo.get(this.page, pageName, elementName);
-        await this.interact.clickIfPresent(locator);
+        return this.interact.clickIfPresent(locator);
     }
 
     /**
@@ -504,6 +511,94 @@ export class Steps {
     }
 
     // ==========================================
+    // 📋 LISTED ELEMENT STEPS
+    // ==========================================
+
+    /**
+     * Clicks a specific element within a list (e.g. a table row, card, or list item)
+     * identified by its visible text or an HTML attribute. Optionally drills into a
+     * child element before clicking.
+     *
+     * The base locator is resolved from the repository using `pageName` and `elementName`,
+     * then filtered using the criteria in `options` to find the exact match.
+     *
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page (should resolve to a list of elements).
+     * @param options - Match criteria: provide `text` to match by visible text, or `attribute` to match by an HTML
+     *   attribute name-value pair. Optionally include `child` (a CSS selector string or a `{ pageName, elementName }`
+     *   page-repository reference) to target a sub-element within the matched item.
+     * @throws Error if neither `text` nor `attribute` is provided, or if no matching element is found.
+     */
+    async clickListedElement(pageName: string, elementName: string, options: ListedElementMatch): Promise<void> {
+        log.interact('Clicking listed element in "%s" > "%s" with options: %O', pageName, elementName, options);
+        const baseLocator = await this.repo.get(this.page, pageName, elementName);
+        const target = await this.interact.getListedElement(baseLocator, options, this.repo);
+        await this.interact.click(target);
+    }
+
+    /**
+     * Verifies a specific element within a list by checking its text content or an HTML attribute.
+     * The element is first located by matching visible text or an attribute from the list,
+     * then the assertion is performed on the resolved (and optionally child-targeted) element.
+     *
+     * Verification behavior is determined by the `options` fields:
+     * - `expectedText` — asserts that the resolved element's text content matches this value.
+     * - `expected` — asserts that the resolved element has the specified attribute name-value pair.
+     * - If neither is provided, the method asserts that the matched element is visible.
+     *
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page (should resolve to a list of elements).
+     * @param options - Match and assertion criteria. Must include `text` or `attribute` for identification.
+     *   Optionally include `child` to drill into a sub-element, and `expectedText` or `expected` for the assertion.
+     * @throws Error if neither `text` nor `attribute` is provided, if the element is not found,
+     *   or if the assertion fails.
+     */
+    async verifyListedElement(pageName: string, elementName: string, options: VerifyListedOptions): Promise<void> {
+        log.verify('Verifying listed element in "%s" > "%s" with options: %O', pageName, elementName, options);
+        const baseLocator = await this.repo.get(this.page, pageName, elementName);
+        const target = await this.interact.getListedElement(baseLocator, options, this.repo);
+
+        if (options.expectedText !== undefined) {
+            await this.verify.text(target, options.expectedText);
+            return;
+        }
+
+        if (options.expected) {
+            await this.verify.attribute(target, options.expected.name, options.expected.value);
+            return;
+        }
+
+        await this.verify.presence(target);
+    }
+
+    /**
+     * Extracts data from a specific element within a list — either its text content
+     * or the value of a specified HTML attribute.
+     *
+     * The element is first located by matching visible text or an attribute from the list,
+     * then data is extracted from the resolved (and optionally child-targeted) element.
+     *
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page (should resolve to a list of elements).
+     * @param options - Match and extraction criteria. Must include `text` or `attribute` for identification.
+     *   Optionally include `child` to drill into a sub-element. If `extractAttribute` is set, that attribute's
+     *   value is returned; otherwise the element's text content is returned.
+     * @returns The extracted text content or attribute value, or `null` if unavailable.
+     * @throws Error if neither `text` nor `attribute` is provided, or if the element is not found.
+     */
+    async getListedElementData(pageName: string, elementName: string, options: GetListedDataOptions): Promise<string | null> {
+        log.extract('Extracting data from listed element in "%s" > "%s" with options: %O', pageName, elementName, options);
+        const baseLocator = await this.repo.get(this.page, pageName, elementName);
+        const target = await this.interact.getListedElement(baseLocator, options, this.repo);
+
+        if (options.extractAttribute) {
+            return await this.extract.getAttribute(target, options.extractAttribute);
+        }
+
+        return await this.extract.getText(target);
+    }
+
+    // ==========================================
     // ⏳ WAIT STEPS
     // ==========================================
 
@@ -542,5 +637,446 @@ export class Steps {
         log.interact('Typing "%s" sequentially into "%s" in "%s" (delay: %dms)', text, elementName, pageName, delay);
         const locator = await this.repo.get(this.page, pageName, elementName);
         await this.interact.typeSequentially(locator, text, delay);
+    }
+
+    // ==========================================
+    // 🧩 COMPOSITE / WORKFLOW STEPS
+    // ==========================================
+
+    /**
+     * Fills multiple form fields on the same page in a single call.
+     * Each key in the `fields` map is an `elementName` from the repository.
+     * String values are filled into text inputs; `DropdownSelectOptions` values
+     * trigger a dropdown selection.
+     *
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param fields - A map of `elementName` → value. Use a string for text inputs
+     *   or a `DropdownSelectOptions` object for `<select>` elements.
+     *
+     * @example
+     * ```ts
+     * await steps.fillForm('FormsPage', {
+     *   nameInput: 'John Doe',
+     *   emailInput: 'john@example.com',
+     *   genderDropdown: { type: DropdownSelectType.VALUE, value: 'male' }
+     * });
+     * ```
+     */
+    async fillForm(pageName: string, fields: Record<string, FillFormValue>): Promise<void> {
+        log.interact('Filling form on "%s" with %d fields', pageName, Object.keys(fields).length);
+        for (const [elementName, value] of Object.entries(fields)) {
+            if (typeof value === 'string') {
+                await this.fill(pageName, elementName, value);
+            } else {
+                await this.selectDropdown(pageName, elementName, value);
+            }
+        }
+    }
+
+    /**
+     * Waits until there are no in-flight network requests for at least 500ms.
+     * Useful after actions that trigger background API calls, lazy loading, or analytics.
+     */
+    async waitForNetworkIdle(): Promise<void> {
+        log.wait('Waiting for network idle');
+        await this.navigate.waitForNetworkIdle();
+    }
+
+    /**
+     * Executes an action and waits for a matching network response to complete.
+     * The response is captured concurrently with the action to avoid race conditions.
+     * @param urlPattern - A string substring or RegExp to match against the response URL.
+     * @param action - An async function that triggers the network request (e.g. a form submit or click).
+     * @returns The captured Playwright Response object.
+     */
+    async waitForResponse(urlPattern: string | RegExp, action: () => Promise<void>): Promise<Response> {
+        log.wait('Waiting for response matching "%s"', urlPattern);
+        return await this.navigate.waitForResponse(urlPattern, action);
+    }
+
+    /**
+     * Retries an action until a verification passes, or until the maximum number of
+     * attempts is reached. Useful for interactions with elements that may take multiple
+     * attempts to succeed (e.g. flaky modals, race conditions with animations).
+     *
+     * @param action - An async function performing the interaction (e.g. a click).
+     * @param verification - An async function performing the assertion. Must throw on failure.
+     * @param maxRetries - Maximum number of retry attempts. Defaults to `3`.
+     * @param delayMs - Milliseconds to wait between retry attempts. Defaults to `1000`.
+     * @throws The last verification error if all retries are exhausted.
+     */
+    async retryUntil(
+        action: () => Promise<void>,
+        verification: () => Promise<void>,
+        maxRetries: number = 3,
+        delayMs: number = 1000
+    ): Promise<void> {
+        log.interact('Retrying action up to %d times (delay: %dms)', maxRetries, delayMs);
+        let lastError: Error | undefined;
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            await action();
+            try {
+                await verification();
+                return;
+            } catch (e) {
+                lastError = e as Error;
+                if (attempt < maxRetries) {
+                    await this.page.waitForTimeout(delayMs);
+                }
+            }
+        }
+
+        throw lastError;
+    }
+
+    /**
+     * Clears the value of an input or textarea element without filling it with new text.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     */
+    async clearInput(pageName: string, elementName: string): Promise<void> {
+        log.interact('Clearing input "%s" in "%s"', elementName, pageName);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        await this.interact.clearInput(locator);
+    }
+
+    /**
+     * Selects multiple options from a `<select multiple>` element by their `value` attributes.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     * @param values - An array of `value` attribute strings to select simultaneously.
+     * @returns An array of the actually selected `value` strings.
+     */
+    async selectMultiple(pageName: string, elementName: string, values: string[]): Promise<string[]> {
+        log.interact('Selecting multiple values on "%s" in "%s": %O', elementName, pageName, values);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        return await this.interact.selectMultiple(locator, values);
+    }
+
+    /**
+     * Waits for an element to reach a specific state, then clicks it.
+     * Useful when an element exists in the DOM but is not yet interactive
+     * (e.g. waiting for `'attached'` before clicking a lazily rendered button).
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     * @param state - The state to wait for before clicking. Defaults to `'visible'`.
+     */
+    async waitAndClick(
+        pageName: string,
+        elementName: string,
+        state: 'visible' | 'attached' | 'hidden' | 'detached' = 'visible'
+    ): Promise<void> {
+        log.interact('Waiting for "%s" in "%s" to be "%s", then clicking', elementName, pageName, state);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        await this.utils.waitForState(locator, state);
+        await this.interact.click(locator);
+    }
+
+    /**
+     * Clicks the element at a specific zero-based index from all elements matching the locator.
+     * Use this when elements cannot be distinguished by text or attributes and index is
+     * the only reliable identifier.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     * @param index - The zero-based index of the element to click.
+     * @throws Error if no element exists at the specified index.
+     */
+    async clickNth(pageName: string, elementName: string, index: number): Promise<void> {
+        log.interact('Clicking element at index %d of "%s" in "%s"', index, elementName, pageName);
+        const locator = await this.repo.getByIndex(this.page, pageName, elementName, index);
+        if (!locator) throw new Error(`No element at index ${index} for "${elementName}" in "${pageName}"`);
+        await this.interact.click(locator);
+    }
+
+    // ==========================================
+    // 📊 ADDITIONAL DATA EXTRACTION STEPS
+    // ==========================================
+
+    /**
+     * Extracts text content or attribute values from all elements matching the locator.
+     * Optionally drills into a child element within each match before extracting.
+     *
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     * @param options - Optional extraction configuration. Use `child` to drill into a sub-element,
+     *   and `extractAttribute` to extract an attribute instead of text content.
+     * @returns An array of extracted strings. Null attribute values are filtered out.
+     *
+     * @example
+     * ```ts
+     * // Get all name-column texts from table rows
+     * const names = await steps.getAll('TablePage', 'rows', { child: 'td:nth-child(2)' });
+     *
+     * // Get all href attributes from links
+     * const hrefs = await steps.getAll('LinksPage', 'links', { extractAttribute: 'href' });
+     * ```
+     */
+    async getAll(pageName: string, elementName: string, options?: GetAllOptions): Promise<string[]> {
+        log.extract('Extracting all from "%s" in "%s" with options: %O', elementName, pageName, options ?? 'text');
+        let locator = await this.repo.get(this.page, pageName, elementName);
+
+        if (options?.child) {
+            if (typeof options.child === 'string') {
+                locator = locator.locator(options.child);
+            } else {
+                const childSelector = this.repo.getSelector(options.child.pageName, options.child.elementName);
+                locator = locator.locator(childSelector);
+            }
+        }
+
+        if (options?.extractAttribute) {
+            const elements = await locator.all();
+            const values = await Promise.all(elements.map(el => el.getAttribute(options.extractAttribute!)));
+            return values.filter((v): v is string => v !== null);
+        }
+
+        return await this.extract.getAllTexts(locator);
+    }
+
+    /**
+     * Returns the number of DOM elements matching the locator.
+     * Unlike `verifyCount` which asserts, this returns the count for use in test logic.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     * @returns The count of matching elements.
+     */
+    async getCount(pageName: string, elementName: string): Promise<number> {
+        log.extract('Getting count of "%s" in "%s"', elementName, pageName);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        return await this.extract.getCount(locator);
+    }
+
+    /**
+     * Retrieves the current value of an input, textarea, or select element.
+     * Unlike `getText` which reads `textContent`, this reads the `value` property.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     * @returns The current value of the input.
+     */
+    async getInputValue(pageName: string, elementName: string): Promise<string> {
+        log.extract('Getting input value of "%s" in "%s"', elementName, pageName);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        return await this.extract.getInputValue(locator);
+    }
+
+    /**
+     * Retrieves a computed CSS property value from an element.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     * @param property - The CSS property name (e.g. `'color'`, `'font-size'`, `'display'`).
+     * @returns The computed value as a string (e.g. `'rgb(255, 0, 0)'`, `'16px'`, `'block'`).
+     */
+    async getCssProperty(pageName: string, elementName: string, property: string): Promise<string> {
+        log.extract('Getting CSS "%s" from "%s" in "%s"', property, elementName, pageName);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        return await this.extract.getCssProperty(locator, property);
+    }
+
+    // ==========================================
+    // ✅ ADDITIONAL VERIFICATION STEPS
+    // ==========================================
+
+    /**
+     * Asserts that the text contents of all elements matching the locator appear
+     * in the exact order specified. Each element's text is compared against the
+     * corresponding entry in the array.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     * @param expectedTexts - The expected text values in their expected order.
+     */
+    async verifyOrder(pageName: string, elementName: string, expectedTexts: string[]): Promise<void> {
+        log.verify('Verifying order of "%s" in "%s": %O', elementName, pageName, expectedTexts);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        await this.verify.order(locator, expectedTexts);
+    }
+
+    /**
+     * Asserts that a computed CSS property of an element matches the expected value.
+     * Values are in their computed form (e.g. `'rgb(255, 0, 0)'` not `'red'`).
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     * @param property - The CSS property name (e.g. `'color'`, `'font-size'`, `'display'`).
+     * @param expectedValue - The expected computed value.
+     */
+    async verifyCssProperty(pageName: string, elementName: string, property: string, expectedValue: string): Promise<void> {
+        log.verify('Verifying CSS "%s" of "%s" in "%s" = "%s"', property, elementName, pageName, expectedValue);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        await this.verify.cssProperty(locator, property, expectedValue);
+    }
+
+    /**
+     * Performs a visual regression comparison using Playwright's built-in screenshot diffing.
+     * On the first run a baseline screenshot is saved. Subsequent runs compare against it.
+     * Use `--update-snapshots` to regenerate baselines after intentional visual changes.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     * @param name - Optional name for the snapshot file (e.g. `'header-dark-mode.png'`).
+     */
+    async verifySnapshot(pageName: string, elementName: string, name?: string): Promise<void> {
+        log.verify('Verifying snapshot of "%s" in "%s"', elementName, pageName);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        await this.verify.snapshot(locator, name);
+    }
+
+    /**
+     * Asserts that the text contents of all elements matching the locator are sorted
+     * in the specified direction using locale-aware string comparison.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     * @param direction - `'asc'` for ascending (A→Z) or `'desc'` for descending (Z→A).
+     */
+    async verifyListOrder(pageName: string, elementName: string, direction: 'asc' | 'desc'): Promise<void> {
+        log.verify('Verifying "%s" in "%s" is sorted %s', elementName, pageName, direction);
+        const locator = await this.repo.get(this.page, pageName, elementName);
+        await this.verify.listOrder(locator, direction);
+    }
+
+    // ==========================================
+    // 📸 SCREENSHOT
+    // ==========================================
+
+    /**
+     * Captures a screenshot of the full page or a specific element.
+     *
+     * @param pageNameOrOptions - Either a page name string (for element screenshots)
+     *   or `ScreenshotOptions` (for page screenshots), or omitted entirely for a default page screenshot.
+     * @param elementName - The element name (required when first arg is a page name).
+     * @param options - Optional screenshot configuration.
+     * @returns The screenshot image as a Buffer.
+     *
+     * @example
+     * ```ts
+     * // Full page screenshot
+     * await steps.screenshot();
+     * await steps.screenshot({ fullPage: true, path: 'full-page.png' });
+     *
+     * // Element screenshot
+     * await steps.screenshot('PageName', 'elementName');
+     * await steps.screenshot('PageName', 'elementName', { path: 'element.png' });
+     * ```
+     */
+    async screenshot(pageNameOrOptions?: string | ScreenshotOptions, elementName?: string, options?: ScreenshotOptions): Promise<Buffer> {
+        if (typeof pageNameOrOptions === 'string' && elementName) {
+            log.extract('Taking screenshot of "%s" in "%s"', elementName, pageNameOrOptions);
+            const locator = await this.repo.get(this.page, pageNameOrOptions, elementName);
+            return await this.extract.screenshot(locator, options);
+        }
+
+        const opts = typeof pageNameOrOptions === 'object' ? pageNameOrOptions : options;
+        log.extract('Taking page screenshot');
+        return await this.extract.screenshot(undefined, opts);
+    }
+
+    // ==========================================
+    // 📧 EMAIL STEPS
+    // ==========================================
+
+    /**
+     * Sends an email using the configured SMTP credentials.
+     * @param options - The email configuration (to, subject, text, html, or htmlFile).
+     */
+    async sendEmail(options: EmailSendOptions): Promise<void> {
+        if (!this.email) {
+            throw new Error('Email client is not configured. Pass emailCredentials to baseFixture() options when setting up your test fixture.');
+        }
+
+        log.email('Sending email to "%s" with subject "%s"', options.to, options.subject);
+        await this.email.send(options);
+    }
+
+    /**
+     * Polls the inbox and returns the latest email matching the provided filters.
+     * @param options - The receive options, including mandatory filters.
+     * @returns The matched email, including its downloaded file path and content.
+     */
+    async receiveEmail(options: EmailReceiveOptions): Promise<ReceivedEmail> {
+        if (!this.email) {
+            throw new Error('Email client is not configured. Pass emailCredentials to baseFixture() options when setting up your test fixture.');
+        }
+
+        log.email('Receiving email with %d filter(s)', options.filters.length);
+        return await this.email.receive(options);
+    }
+
+    /**
+     * Polls the inbox and returns all emails matching the provided filters.
+     * @param options - The receive options, including mandatory filters.
+     * @returns An array of matched emails.
+     */
+    async receiveAllEmails(options: EmailReceiveOptions): Promise<ReceivedEmail[]> {
+        if (!this.email) {
+            throw new Error('Email client is not configured. Pass emailCredentials to baseFixture() options when setting up your test fixture.');
+        }
+
+        log.email('Receiving all matching emails with %d filter(s)', options.filters.length);
+        return await this.email.receiveAll(options);
+    }
+
+    /**
+     * Deletes emails from the inbox. If filters are provided, only matching emails are deleted.
+     * Otherwise, the entire inbox is cleared.
+     * @param options - Optional receive options containing filters to target specific emails.
+     */
+    async cleanEmails(options?: EmailReceiveOptions): Promise<number> {
+        if (!this.email) {
+            throw new Error('Email client is not configured. Pass emailCredentials to baseFixture() options when setting up your test fixture.');
+        }
+
+        const filterCount = options?.filters?.length ?? 0;
+        if (filterCount > 0) {
+            log.email('Cleaning specific emails matching %d filter(s)', filterCount);
+        } else {
+            log.email('Cleaning ALL emails from the inbox');
+        }
+        return await this.email.clean(options);
+    }
+
+    /**
+     * Marks emails in the mailbox with a specific action (READ, UNREAD, FLAGGED, UNFLAGGED, or ARCHIVED).
+     * @param action - The marking action to apply (e.g., EmailMarkAction.READ, EmailMarkAction.FLAGGED, etc.).
+     * @param options - Optional options to target specific emails with filters.
+     * @returns The number of emails successfully marked.
+     *
+     * @example
+     * ```ts
+     * // Mark all OTP emails as read
+     * await steps.markEmail('markEmailsAsRead', EmailMarkAction.READ, {
+     *   filters: [{ type: EmailFilterType.SUBJECT, value: 'OTP' }]
+     * });
+     *
+     * // Mark all emails as unread
+     * await steps.markEmail('markEmailsAsUnread', EmailMarkAction.UNREAD);
+     *
+     * // Mark specific emails as flagged
+     * await steps.markEmail('flagImportantEmails', EmailMarkAction.FLAGGED, {
+     *   filters: [{ type: EmailFilterType.FROM, value: 'noreply@example.com' }]
+     * });
+     *
+     * // Archive emails matching a filter
+     * await steps.markEmail('archiveEmails', EmailMarkAction.ARCHIVED, {
+     *   filters: [{ type: EmailFilterType.SUBJECT, value: 'Report' }]
+     * });
+     * ```
+     */
+    async markEmail(
+        action: EmailMarkAction | string[],
+        options?: { filters?: EmailFilter[]; folder?: string; archiveFolder?: string }
+    ): Promise<number> {
+        if (!this.email) {
+            throw new Error('Email client is not configured. Pass emailCredentials to baseFixture() options when setting up your test fixture.');
+        }
+
+        const markOptions: EmailMarkOptions = {
+            action,
+            filters: options?.filters,
+            folder: options?.folder,
+            archiveFolder: options?.archiveFolder,
+        };
+
+        log.email('Marking emails with action "%s"', Array.isArray(action) ? action.join(',') : action);
+        const result = await this.email.mark(markOptions);
+        log.email('Successfully marked %d email(s)', result);
+        return result;
     }
 }

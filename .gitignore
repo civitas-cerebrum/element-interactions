@@ -6,3 +6,8 @@
 /playwright-report
 /.playwright-mcp
 api-coverage-report.txt
+
+.env
+.env.local
+/.yalc
+yalc.lock

@@ -1,6 +1,12 @@
-import { test as base } from '@playwright/test';
+import { test as base, expect } from '@playwright/test';
 import { baseFixture } from '../../src/fixture/BaseFixture';
+import { isEmailConfigured, loadEmailConfig } from '../../src/config/config';
 
-// Use the vue-test-app page-repository for new tests
-export const test = baseFixture(base, 'tests/data/page-repository.json');
-export { expect } from '@playwright/test';
+// Safely evaluate if email credentials exist before initializing the fixture
+const emailCredentials = isEmailConfigured() ? loadEmailConfig() : undefined;
+
+export const test = baseFixture(base, 'tests/data/page-repository.json', {
+    emailCredentials,
+});
+
+export { expect };
