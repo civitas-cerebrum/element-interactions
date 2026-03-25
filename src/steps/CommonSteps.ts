@@ -2,7 +2,7 @@ import { Page, Response } from '@playwright/test';
 import { ElementRepository } from '@civitas-cerebrum/element-repository';
 import { ElementInteractions } from '../interactions/facade/ElementInteractions';
 import { EmailCredentials, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
-import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, FillFormValue, GetAllOptions, ScreenshotOptions } from '../enum/Options';
+import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions } from '../enum/Options';
 import { logger } from '../logger/Logger';
 
 const log = {
@@ -528,7 +528,7 @@ export class Steps {
      *   page-repository reference) to target a sub-element within the matched item.
      * @throws Error if neither `text` nor `attribute` is provided, or if no matching element is found.
      */
-    async clickListedElement(pageName: string, elementName: string, options: ListedElementOptions): Promise<void> {
+    async clickListedElement(pageName: string, elementName: string, options: ListedElementMatch): Promise<void> {
         log.interact('Clicking listed element in "%s" > "%s" with options: %O', pageName, elementName, options);
         const baseLocator = await this.repo.get(this.page, pageName, elementName);
         const target = await this.interact.getListedElement(baseLocator, options, this.repo);
@@ -552,7 +552,7 @@ export class Steps {
      * @throws Error if neither `text` nor `attribute` is provided, if the element is not found,
      *   or if the assertion fails.
      */
-    async verifyListedElement(pageName: string, elementName: string, options: ListedElementOptions): Promise<void> {
+    async verifyListedElement(pageName: string, elementName: string, options: VerifyListedOptions): Promise<void> {
         log.verify('Verifying listed element in "%s" > "%s" with options: %O', pageName, elementName, options);
         const baseLocator = await this.repo.get(this.page, pageName, elementName);
         const target = await this.interact.getListedElement(baseLocator, options, this.repo);
@@ -585,7 +585,7 @@ export class Steps {
      * @returns The extracted text content or attribute value, or `null` if unavailable.
      * @throws Error if neither `text` nor `attribute` is provided, or if the element is not found.
      */
-    async getListedElementData(pageName: string, elementName: string, options: ListedElementOptions): Promise<string | null> {
+    async getListedElementData(pageName: string, elementName: string, options: GetListedDataOptions): Promise<string | null> {
         log.extract('Extracting data from listed element in "%s" > "%s" with options: %O', pageName, elementName, options);
         const baseLocator = await this.repo.get(this.page, pageName, elementName);
         const target = await this.interact.getListedElement(baseLocator, options, this.repo);

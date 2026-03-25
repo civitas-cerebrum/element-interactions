@@ -1,5 +1,5 @@
 import { Page, Locator } from '@playwright/test';
-import { DropdownSelectOptions, DropdownSelectType, DragAndDropOptions, ListedElementOptions } from '../enum/Options';
+import { DropdownSelectOptions, DropdownSelectType, DragAndDropOptions, ListedElementMatch } from '../enum/Options';
 import { Utils } from '../utils/ElementUtilities';
 
 /**
@@ -350,7 +350,7 @@ export class Interactions {
      */
     async getListedElement(
         baseLocator: Locator,
-        options: ListedElementOptions,
+        options: ListedElementMatch,
         repo?: { getSelector(pageName: string, elementName: string): string }
     ): Promise<Locator> {
         let matched: Locator;
