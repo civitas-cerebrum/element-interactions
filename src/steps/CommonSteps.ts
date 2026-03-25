@@ -977,7 +977,7 @@ export class Steps {
      */
     async sendEmail(options: EmailSendOptions): Promise<void> {
         if (!this.email) {
-            throw new Error('Email client is not configured. Please provide credentials to the fixture or call configureEmail() first.');
+            throw new Error('Email client is not configured. Pass emailCredentials to baseFixture() options when setting up your test fixture.');
         }
 
         log.email('Sending email to "%s" with subject "%s"', options.to, options.subject);
@@ -991,7 +991,7 @@ export class Steps {
      */
     async receiveEmail(options: EmailReceiveOptions): Promise<ReceivedEmail> {
         if (!this.email) {
-            throw new Error('Email client is not configured. Please provide credentials to the fixture or call configureEmail() first.');
+            throw new Error('Email client is not configured. Pass emailCredentials to baseFixture() options when setting up your test fixture.');
         }
 
         log.email('Receiving email with %d filter(s)', options.filters.length);
@@ -1005,7 +1005,7 @@ export class Steps {
      */
     async receiveAllEmails(options: EmailReceiveOptions): Promise<ReceivedEmail[]> {
         if (!this.email) {
-            throw new Error('Email client is not configured. Please provide credentials to the fixture or call configureEmail() first.');
+            throw new Error('Email client is not configured. Pass emailCredentials to baseFixture() options when setting up your test fixture.');
         }
 
         log.email('Receiving all matching emails with %d filter(s)', options.filters.length);
@@ -1019,7 +1019,7 @@ export class Steps {
      */
     async cleanEmails(options?: EmailReceiveOptions): Promise<number> {
         if (!this.email) {
-            throw new Error('Email client is not configured. Please provide credentials to the fixture or call configureEmail() first.');
+            throw new Error('Email client is not configured. Pass emailCredentials to baseFixture() options when setting up your test fixture.');
         }
 
         const filterCount = options?.filters?.length ?? 0;
@@ -1063,7 +1063,7 @@ export class Steps {
         options?: { filters?: EmailFilter[]; folder?: string; archiveFolder?: string }
     ): Promise<number> {
         if (!this.email) {
-            throw new Error('Email client is not configured. Please provide credentials to the fixture or call configureEmail() first.');
+            throw new Error('Email client is not configured. Pass emailCredentials to baseFixture() options when setting up your test fixture.');
         }
 
         const markOptions: EmailMarkOptions = {
