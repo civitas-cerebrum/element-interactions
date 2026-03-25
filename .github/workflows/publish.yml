@@ -36,17 +36,8 @@ jobs:
         run: |
           docker compose up --build -d
 
-      - name: 🧪  Run Unit Tests
-        run: npm run test:unit
-        env:
-          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
-          SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
-          SENDER_SMTP_HOST: ${{ secrets.SENDER_SMTP_HOST }}
-          RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
-          RECEIVER_PASSWORD: ${{ secrets.RECEIVER_PASSWORD }}
-
-      - name: 🧪  Run Email Integration Tests
-        run: npm run test:email
+      - name: 🧪  Run All Tests
+        run: npm run test:all
         env:
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
