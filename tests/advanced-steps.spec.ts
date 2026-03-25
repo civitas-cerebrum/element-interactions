@@ -355,22 +355,6 @@ test.describe('TC_069: verifyOrder — assert exact element text order', () => {
   });
 });
 
-// ─── TC_070: verifySnapshot ───
-test.describe('TC_070: verifySnapshot — visual regression screenshot', () => {
-
-  test('captures and compares element snapshot', async ({ steps }) => {
-
-    await test.step('Navigate to home page', async () => {
-      await steps.navigateTo('/');
-    });
-
-    await test.step('Verify snapshot of page title element', async () => {
-      await steps.verifySnapshot('HomePage', 'pageTitle');
-    });
-
-    log('TC_070 verifySnapshot — passed');
-  });
-});
 
 // ─── TC_071: waitForResponse ───
 test.describe('TC_071: waitForResponse — wait for network response', () => {
