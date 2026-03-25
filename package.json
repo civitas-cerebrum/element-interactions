@@ -10,7 +10,7 @@
     "test": "npx playwright test",
     "test:ui": "npx playwright test --headed",
     "prepublishOnly": "npm run build",
-    "postinstall": "node scripts/postinstall.cjs",
+    "postinstall": "node scripts/postinstall.js",
     "test:quiet": "TESTER_DEBUG=false npx playwright test",
     "test:coverage": "npx test-coverage --format github-plain",
     "test:with-coverage": "npx playwright test && npx test-coverage --format github-plain"
@@ -18,7 +18,7 @@
   "files": [
     "dist",
     "skills",
-    "scripts/postinstall.cjs"
+    "scripts/postinstall.js"
   ],
   "peerDependencies": {
     "@playwright/test": ">=1.0.0"
@@ -53,7 +53,7 @@
   "dependencies": {
     "@civitas-cerebrum/context-store": "^0.0.2",
     "@civitas-cerebrum/element-repository": "^0.0.6",
-    "@civitas-cerebrum/email-client": "^0.0.2",
+    "@civitas-cerebrum/email-client": "^0.0.3",
     "debug": "^4.4.3",
     "dotenv": "^17.3.1"
   }

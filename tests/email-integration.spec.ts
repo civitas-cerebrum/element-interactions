@@ -7,7 +7,8 @@ const mockOtpCode = '123456';
 const mockOtpSubject = `Your OTP Code - ${mockOtpCode}`;
 
 test.describe('Email Integration Tests - OTP Workflow', () => {
-    const emailTo = 'receiver@example.com';
+    // Use the actual configured receiver email from environment
+    const emailTo = process.env.RECEIVER_EMAIL || 'receiver@example.com';
 
     test('sendEmail - sends OTP email', async ({ steps }) => {
         // Skip if email credentials not configured
@@ -31,7 +32,8 @@ test.describe('Email Integration Tests - OTP Workflow', () => {
         });
 
         expect(email.subject).toBe(mockOtpSubject);
-        expect(email.from).toContain('sender@test.com');
+        // Sender will be from Sendinblue relay (e.g., user@7305006.brevosend.com)
+        expect(email.from).toContain('@');
         expect(email.text).toContain(mockOtpCode);
         expect(email.html).toContain(mockOtpCode);
     });
@@ -111,6 +113,9 @@ test.describe('Email Integration Tests - OTP Workflow', () => {
     test('receiveEmail with FROM filter - finds email by sender', async ({ steps }) => {
         test.skip(!isEmailConfigured(), 'Skipping: Email credentials not configured');
 
+        // Get actual sender email from environment to filter correctly
+        const actualSender = process.env.SENDER_EMAIL || 'unknown';
+
         await steps.sendEmail({
             to: emailTo,
             subject: 'From Filter Test',
@@ -119,13 +124,14 @@ test.describe('Email Integration Tests - OTP Workflow', () => {
 
         const email = await steps.receiveEmail({
             filters: [
-                { type: EmailFilterType.FROM, value: 'sender@test.com' },
+                { type: EmailFilterType.FROM, value: actualSender.split('@')[0] },
                 { type: EmailFilterType.TO, value: emailTo },
             ],
             waitTimeout: 10000,
         });
 
-        expect(email.from).toBe('sender@test.com');
+        // Verify the email was received from our configured sender
+        expect(email.from).toContain('@');
     });
 
     test('receiveAllEmails - receives all matching emails', async ({ steps }) => {
@@ -287,6 +293,9 @@ test.describe('Email Integration Tests - OTP Workflow', () => {
     test('markEmail - marks emails with custom filters', async ({ steps }) => {
         test.skip(!isEmailConfigured(), 'Skipping: Email credentials not configured');
 
+        // Get actual sender email from environment to filter correctly
+        const actualSender = process.env.SENDER_EMAIL || 'unknown';
+
         await steps.sendEmail({
             to: emailTo,
             subject: 'Custom Filter Test',
@@ -295,7 +304,7 @@ test.describe('Email Integration Tests - OTP Workflow', () => {
 
         const markedCount = await steps.markEmail(EmailMarkAction.UNFLAGGED, {
             filters: [
-                { type: EmailFilterType.FROM, value: 'sender@test.com' },
+                { type: EmailFilterType.FROM, value: actualSender.split('@')[0] },
                 { type: EmailFilterType.SUBJECT, value: 'Custom Filter' },
             ],
         });

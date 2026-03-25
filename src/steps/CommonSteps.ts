@@ -1017,7 +1017,7 @@ export class Steps {
      * Otherwise, the entire inbox is cleared.
      * @param options - Optional receive options containing filters to target specific emails.
      */
-    async cleanEmails(options?: EmailReceiveOptions): Promise<void> {
+    async cleanEmails(options?: EmailReceiveOptions): Promise<number> {
         if (!this.email) {
             throw new Error('Email client is not configured. Please provide credentials to the fixture or call configureEmail() first.');
         }
@@ -1028,7 +1028,7 @@ export class Steps {
         } else {
             log.email('Cleaning ALL emails from the inbox');
         }
-        await this.email.clean(options);
+        return await this.email.clean(options);
     }
 
     /**
