@@ -39,6 +39,7 @@ jobs:
       - name: 🧪  Run Tests
         run: npm test
         env:
+          EMAIL_TESTS: '1'
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
           SENDER_SMTP_HOST: ${{ secrets.SENDER_SMTP_HOST }}

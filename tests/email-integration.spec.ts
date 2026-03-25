@@ -7,6 +7,9 @@ const mockOtpCode = '123456';
 const mockOtpSubject = `Your OTP Code - ${mockOtpCode}`;
 
 test.describe('Email Integration Tests - OTP Workflow', () => {
+    // Skip email tests unless EMAIL_TESTS env var is explicitly set
+    test.skip(!process.env.EMAIL_TESTS, 'Skipping: Email tests require EMAIL_TESTS=1 environment variable');
+
     // Use the actual configured receiver email from environment
     const emailTo = process.env.RECEIVER_EMAIL || 'receiver@example.com';
 
