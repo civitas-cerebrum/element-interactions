@@ -2287,6 +2287,18 @@
           "selector": {
             "css": "[data-testid='otp-section-basic'] input:nth-of-type(1)"
           }
+        },
+        {
+          "elementName": "autocompleteGeneratedCode",
+          "selector": {
+            "css": "[data-testid='otp-generated-code-autocomplete'] .generated-code__value"
+          }
+        },
+        {
+          "elementName": "autocompleteOtpFirstInput",
+          "selector": {
+            "css": "[data-testid='otp-section-autocomplete'] input:nth-of-type(1)"
+          }
         }
       ]
     }

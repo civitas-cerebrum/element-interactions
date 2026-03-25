@@ -369,3 +369,47 @@ test.describe('Email Integration Tests - OTP Workflow', () => {
         });
     });
 });
+
+test.describe('Email Integration Tests - OTP Page Workflow', () => {
+    test.skip(!process.env.EMAIL_TESTS, 'Skipping: Email tests require EMAIL_TESTS=1 environment variable');
+
+    const emailTo = process.env.RECEIVER_EMAIL || 'receiver@example.com';
+
+    test('grab OTP from page, email it, receive it, enter it', async ({ steps }) => {
+        test.skip(!isEmailConfigured(), 'Skipping: Email credentials not configured');
+
+        await test.step('Navigate to OTP page and grab the generated code', async () => {
+            await steps.navigateTo('/otp-input');
+        });
+
+        const otp = await test.step('Read OTP from the autocomplete section', async () => {
+            return await steps.getText('OtpPage', 'autocompleteGeneratedCode');
+        });
+
+        expect(otp).toMatch(/^\d{6}$/);
+
+        await test.step('Send the OTP via email', async () => {
+            await steps.sendEmail({
+                to: emailTo,
+                subject: `OTP Code: ${otp}`,
+                text: `Your one-time password is: ${otp}`,
+                html: `<p>Your one-time password is: <strong>${otp}</strong></p>`,
+            });
+        });
+
+        const receivedOtp = await test.step('Receive the email and extract the OTP', async () => {
+            const email = await steps.receiveEmail({
+                filters: [{ type: EmailFilterType.SUBJECT, value: `OTP Code: ${otp}` }],
+                waitTimeout: 30000,
+                pollInterval: 2000,
+            });
+            const match = email.text?.match(/\d{6}/);
+            expect(match, 'OTP not found in email body').toBeTruthy();
+            return match![0];
+        });
+
+        await test.step('Enter OTP from email into the autocomplete input', async () => {
+            await steps.typeSequentially('OtpPage', 'autocompleteOtpFirstInput', receivedOtp, 100);
+        });
+    });
+});
