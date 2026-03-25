@@ -8,7 +8,7 @@
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc",
     "test": "npm run test:unit",
-    "test:all": "npx playwright test",
+    "test:all": "npm run test:unit && npm run test:email",
     "test:unit": "npx playwright test --grep-invert 'Email Integration Tests'",
     "test:email": "npx playwright test --grep 'Email Integration Tests'",
     "test:ui": "npx playwright test --headed",
