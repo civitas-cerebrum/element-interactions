@@ -8,6 +8,8 @@ import { Extractions } from '../src/interactions/Extraction';
 import { Navigation } from '../src/interactions/Navigation';
 import { ContextStore } from '@civitas-cerebrum/context-store';
 import { ElementRepository } from '@civitas-cerebrum/element-repository';
+import { Utils } from '../src/utils/ElementUtilities';
+import { DateUtilities } from '../src/utils/DateUtilities';
 
 interface MethodInfo {
   name: string;
@@ -57,11 +59,23 @@ test('API Coverage Report', async () => {
 
   const apis: MethodInfo[] = [];
 
-  // Helper to check if a method is called. 
+  // Helper to check if a method is called.
   // We look for ".methodName(" to allow for any instance name (e.g., mySteps.methodName() or repo.methodName())
+  // Also check for specific utility patterns like utils.getTimeout() or utils.waitForState()
   const checkCoverage = (method: string) => {
+    // First try the standard pattern
     const pattern = new RegExp(`\\.\\b${method}\\b\\s*\\(`);
-    return pattern.test(testSource);
+    if (pattern.test(testSource)) return true;
+
+    // Special handling for utility methods that may be called on `utils` instances
+    if (method === 'getTimeout') {
+      return /utils\.\bgetTimeout\b\s*\(/.test(testSource) || /this\.utils\.\bgetTimeout\b\s*\(/.test(testSource);
+    }
+    if (method === 'waitForState') {
+      return /utils\.\bwaitForState\b\s*\(/.test(testSource) || /this\.utils\.\bwaitForState\b\s*\(/.test(testSource);
+    }
+
+    return false;
   };
 
   // ── Primary APIs ──
@@ -83,6 +97,8 @@ test('API Coverage Report', async () => {
     { name: 'Verifications', cls: Verifications },
     { name: 'Extractions', cls: Extractions },
     { name: 'Navigation', cls: Navigation },
+    { name: 'Utils', cls: Utils },
+    { name: 'DateUtilities', cls: DateUtilities },
   ];
 
   for (const { name: catName, cls } of advancedClasses) {

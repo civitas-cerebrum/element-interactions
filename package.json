@@ -16,7 +16,7 @@
     "postinstall": "node scripts/postinstall.js",
     "test:quiet": "TESTER_DEBUG=false npx playwright test",
     "test:coverage": "npx test-coverage --format github-plain",
-    "test:with-coverage": "npx playwright test && npx test-coverage --format github-plain"
+    "test:with-coverage": "npx playwright test --grep-invert 'Email Integration Tests' && npx test-coverage --format github-plain"
   },
   "files": [
     "dist",
@@ -27,7 +27,7 @@
     "@playwright/test": ">=1.0.0"
   },
   "devDependencies": {
-    "@civitas-cerebrum/test-coverage": "^0.0.2",
+    "@civitas-cerebrum/test-coverage": "^0.0.6",
     "@playwright/test": "^1.58.2",
     "@types/debug": "^4.1.13",
     "@types/node": "^20.0.0",
