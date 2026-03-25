@@ -9,7 +9,6 @@ import { Navigation } from '../src/interactions/Navigation';
 import { ContextStore } from '@civitas-cerebrum/context-store';
 import { ElementRepository } from '@civitas-cerebrum/element-repository';
 import { Utils } from '../src/utils/ElementUtilities';
-import { DateUtilities } from '../src/utils/DateUtilities';
 
 interface MethodInfo {
   name: string;
@@ -98,7 +97,6 @@ test('API Coverage Report', async () => {
     { name: 'Extractions', cls: Extractions },
     { name: 'Navigation', cls: Navigation },
     { name: 'Utils', cls: Utils },
-    { name: 'DateUtilities', cls: DateUtilities },
   ];
 
   for (const { name: catName, cls } of advancedClasses) {
@@ -106,6 +104,10 @@ test('API Coverage Report', async () => {
       apis.push({ name: m, category: catName, tier: 'advanced', covered: checkCoverage(m) });
     }
   }
+
+  // Manual coverage check for reformatDateString (standalone function, not a class)
+  const reformatCovered = /\breformatDateString\b\s*\(/.test(testSource);
+  apis.push({ name: 'reformatDateString', category: 'DateUtilities', tier: 'advanced', covered: reformatCovered });
 
   // ── Build report ──
   const primaryApis = apis.filter((a) => a.tier === 'primary');

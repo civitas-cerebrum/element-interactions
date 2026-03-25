@@ -8,7 +8,7 @@ export { Interactions } from './interactions/Interaction';
 export { Extractions } from './interactions/Extraction';
 
 // Utilities
-export { DateUtilities } from './utils/DateUtilities';
+export { reformatDateString } from './utils/DateUtilities';
 export { Utils } from './utils/ElementUtilities';
 
 // Element Interactions Facade
