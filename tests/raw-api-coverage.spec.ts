@@ -173,9 +173,8 @@ test.describe('TC_083: Raw API — interact.getByText', () => {
 
     await test.step('getByText via raw API', async () => {
       await steps.navigateTo('/');
-      // getByText requires (baseLocator, pageName, elementName, desiredText)
       const navLinks = page.locator('[data-testid="nav-sidebar"] a');
-      const link = await interactions.interact.getByText(navLinks, 'NavSidebar', 'navLinks', 'Text Inputs');
+      const link = await interactions.interact.getByText(navLinks, 'Text Inputs');
       expect(link).toBeTruthy();
     });
 
@@ -204,7 +203,7 @@ test.describe('TC_085: Raw API — extract.getByText', () => {
     await test.step('extract.getByText via raw API', async () => {
       await steps.navigateTo('/');
       const navLinks = page.locator('[data-testid="nav-sidebar"] a');
-      const link = await interactions.interact.getByText(navLinks, 'NavSidebar', 'navLinks', 'Text Inputs');
+      const link = await interactions.interact.getByText(navLinks, 'Text Inputs');
       expect(link).toBeTruthy();
     });
 

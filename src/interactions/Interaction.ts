@@ -205,16 +205,12 @@ export class Interactions {
        * Filters a locator list and returns the first element that contains the specified text.
        * If the element is not found, it prints the available text contents of the base locator for debugging.
        * @param baseLocator The base Playwright Locator.
-       * @param pageName The name of the page block in the JSON repository.
-       * @param elementName The specific element name to look up.
        * @param desiredText The string of text to search for within the elements.
        * @param strict If true, throws an error if the element is not found. Defaults to false.
        * @returns A promise that resolves to the matched Playwright Locator, or null if not found.
        */
     public async getByText(
         baseLocator: Locator,
-        pageName: string,
-        elementName: string,
         desiredText: string,
         strict: boolean = false
     ): Promise<ReturnType<Page['locator']> | null> {
@@ -239,7 +235,7 @@ export class Interactions {
             .map((text: string) => text.trim())
             .filter((text: string) => text.length > 0);
 
-        const msg = `Element '${elementName}' on '${pageName}' with text "${desiredText}" not found.\nAvailable texts found in locator: ${availableTexts.length > 0 ? `\n- ${availableTexts.join('\n- ')}` : 'None (Base locator found no elements or elements had no text)'}`;
+        const msg = `getByText: element with text "${desiredText}" not found.\nAvailable texts: ${availableTexts.length > 0 ? `\n- ${availableTexts.join('\n- ')}` : 'None'}`;
 
         if (strict) throw new Error(msg);
         return null;
