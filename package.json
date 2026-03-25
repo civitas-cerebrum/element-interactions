@@ -8,6 +8,8 @@
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc",
     "test": "npx playwright test",
+    "test:unit": "npx playwright test --grep-invert 'Email Integration Tests'",
+    "test:email": "npx playwright test --grep 'Email Integration Tests'",
     "test:ui": "npx playwright test --headed",
     "prepublishOnly": "npm run build",
     "postinstall": "node scripts/postinstall.js",

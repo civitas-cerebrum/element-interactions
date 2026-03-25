@@ -36,8 +36,8 @@ jobs:
         run: |
           docker compose up --build -d
 
-      - name: 🧪 Run Tests
-        run: npm test -- --update-snapshots
+      - name: 🧪 Run Unit Tests
+        run: npm run test:unit -- --update-snapshots
 
       - name: 📝 Check Types
         run: npx tsc --noEmit
