@@ -2299,6 +2299,12 @@
           "selector": {
             "css": "[data-testid='otp-section-autocomplete'] input:nth-of-type(1)"
           }
+        },
+        {
+          "elementName": "autocompleteCompleteMessage",
+          "selector": {
+            "css": "[data-testid='otp-complete-message']"
+          }
         }
       ]
     }

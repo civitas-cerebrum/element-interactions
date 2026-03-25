@@ -411,5 +411,9 @@ test.describe('Email Integration Tests - OTP Page Workflow', () => {
         await test.step('Enter OTP from email into the autocomplete input', async () => {
             await steps.typeSequentially('OtpPage', 'autocompleteOtpFirstInput', receivedOtp, 100);
         });
+
+        await test.step('Verify success message appears', async () => {
+            await steps.verifyText('OtpPage', 'autocompleteCompleteMessage', '✓ Code verified successfully!');
+        });
     });
 });
