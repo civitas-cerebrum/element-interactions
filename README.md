@@ -309,7 +309,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 
 * **`navigateTo(url: string)`** — Navigates the browser to the specified absolute or relative URL.
 * **`refresh()`** — Reloads the current page.
-* **`backOrForward(direction: 'BACKWARDS' | 'FORWARDS')`** — Navigates the browser history stack in the given direction.
+* **`backOrForward(direction: 'back' | 'forward')`** — Navigates the browser history stack in the given direction.
 * **`setViewport(width: number, height: number)`** — Resizes the browser viewport to the specified pixel dimensions.
 * **`switchToNewTab(action: () => Promise<void>)`** — Executes an action that opens a new tab (e.g. clicking a link with `target="_blank"`), waits for the new tab, and returns the new `Page` object.
 * **`closeTab(targetPage?: Page)`** — Closes the specified tab (or the current one) and returns the remaining active page.
@@ -319,7 +319,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 
 * **`click(pageName, elementName)`** — Clicks an element. Automatically waits for the element to be attached, visible, stable, and actionable.
 * **`clickWithoutScrolling(pageName, elementName)`** — Dispatches a native `click` event directly, bypassing Playwright's scrolling and intersection observer checks. Useful for elements obscured by sticky headers or overlays.
-* **`clickIfPresent(pageName, elementName)`** — Clicks an element only if it is visible; skips silently otherwise. Ideal for optional elements like cookie banners.
+* **`clickIfPresent(pageName, elementName)`** — Clicks an element only if it is visible; skips silently otherwise. Returns `boolean` (`true` if clicked). Ideal for optional elements like cookie banners.
 * **`clickRandom(pageName, elementName)`** — Clicks a random element from all matches. Useful for lists or grids.
 * **`rightClick(pageName, elementName)`** — Right-clicks an element to trigger a context menu.
 * **`doubleClick(pageName, elementName)`** — Double-clicks an element.
@@ -477,39 +477,25 @@ export const test = baseFixture(base, 'tests/data/page-repository.json', {
 export { expect };
 ```
 
-Or configure credentials at runtime:
-
-```ts
-test('email flow', async ({ steps }) => {
-  steps.configureEmail({
-    senderEmail: 'sender@example.com',
-    senderPassword: 'app-password',
-    senderSmtpHost: 'smtp.gmail.com',
-    receiverEmail: 'receiver@example.com',
-    receiverPassword: 'app-password',
-  });
-});
-```
-
 ### Sending Emails
 
 ```ts
 // Plain text
-await steps.email.send({
+await steps.sendEmail({
   to: 'user@example.com',
   subject: 'Test Email',
   text: 'Hello from Playwright!'
 });
 
 // Inline HTML
-await steps.email.send({
+await steps.sendEmail({
   to: 'user@example.com',
   subject: 'HTML Email',
   html: '<h1>Hello</h1><p>Inline HTML content</p>'
 });
 
 // HTML file from project directory — great for branded templates
-await steps.email.send({
+await steps.sendEmail({
   to: 'user@example.com',
   subject: 'Monthly Report',
   htmlFile: 'emails/report-template.html'
@@ -525,7 +511,7 @@ import { EmailFilterType } from '@civitas-cerebrum/element-interactions';
 // Note: EmailFilterType and other email types can also be imported from '@civitas-cerebrum/email-client'
 
 // Single filter — get the latest matching email
-const email = await steps.email.receive({
+const email = await steps.receiveEmail({
   filters: [{ type: EmailFilterType.SUBJECT, value: 'Your OTP Code' }]
 });
 
@@ -536,7 +522,7 @@ await steps.navigateTo('file://' + email.filePath);
 const otpCode = await steps.getText('EmailPage', 'otpCode');
 
 // Combine multiple filters
-const email2 = await steps.email.receive({
+const email2 = await steps.receiveEmail({
   filters: [
     { type: EmailFilterType.SUBJECT, value: 'Verification' },
     { type: EmailFilterType.FROM, value: 'noreply@example.com' },
@@ -545,7 +531,7 @@ const email2 = await steps.email.receive({
 });
 
 // Get ALL matching emails
-const allEmails = await steps.email.receiveAll({
+const allEmails = await steps.receiveAllEmails({
   filters: [
     { type: EmailFilterType.FROM, value: 'alerts@example.com' },
     { type: EmailFilterType.SINCE, value: new Date('2025-01-01') },
@@ -559,12 +545,12 @@ Delete emails matching filters, or clean the entire inbox:
 
 ```ts
 // Delete emails from a specific sender
-await steps.email.clean({
+await steps.cleanEmails({
   filters: [{ type: EmailFilterType.FROM, value: 'noreply@example.com' }]
 });
 
 // Delete all emails in the inbox
-await steps.email.clean();
+await steps.cleanEmails();
 ```
 
 **Filter types (`EmailFilterType`):**
@@ -577,7 +563,7 @@ await steps.email.clean();
 | `CONTENT` | `string` | Filter by email body (HTML or plain text) |
 | `SINCE` | `Date` | Only include emails received after this date |
 
-**`receive()` / `receiveAll()` options:**
+**`receiveEmail()` / `receiveAllEmails()` options:**
 
 | Option | Type | Default | Description |
 |---|---|---|---|

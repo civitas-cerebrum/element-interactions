@@ -366,7 +366,7 @@ import { DropdownSelectType, ListedElementOptions, FillFormValue, ScreenshotOpti
 ```ts
 await steps.navigateTo('/path');
 await steps.refresh();
-await steps.backOrForward('BACKWARDS'); // or 'FORWARDS'
+await steps.backOrForward('back'); // or 'forward'
 await steps.setViewport(1280, 720);
 
 // Tab management
@@ -382,7 +382,7 @@ const count = steps.getTabCount();
 ```ts
 await steps.click('PageName', 'elementName');
 await steps.clickWithoutScrolling('PageName', 'elementName');
-await steps.clickIfPresent('PageName', 'elementName');
+const clicked = await steps.clickIfPresent('PageName', 'elementName'); // returns boolean
 await steps.clickRandom('PageName', 'elementName');
 await steps.clickNth('PageName', 'elementName', 2);           // zero-based index
 await steps.rightClick('PageName', 'elementName');
@@ -573,8 +573,8 @@ export const test = baseFixture(base, 'tests/data/page-repository.json', {
 #### Sending
 
 ```ts
-await steps.email.send({ to: 'user@example.com', subject: 'Test', text: 'Hello' });
-await steps.email.send({ to: 'user@example.com', subject: 'Report', htmlFile: 'emails/report.html' });
+await steps.sendEmail({ to: 'user@example.com', subject: 'Test', text: 'Hello' });
+await steps.sendEmail({ to: 'user@example.com', subject: 'Report', htmlFile: 'emails/report.html' });
 ```
 
 #### Receiving
@@ -582,12 +582,12 @@ await steps.email.send({ to: 'user@example.com', subject: 'Report', htmlFile: 'e
 ```ts
 import { EmailFilterType } from '@civitas-cerebrum/element-interactions';
 
-const email = await steps.email.receive({
+const email = await steps.receiveEmail({
   filters: [{ type: EmailFilterType.SUBJECT, value: 'Your OTP' }]
 });
 await steps.navigateTo('file://' + email.filePath);
 
-const email2 = await steps.email.receive({
+const email2 = await steps.receiveEmail({
   filters: [
     { type: EmailFilterType.SUBJECT, value: 'Verification' },
     { type: EmailFilterType.FROM, value: 'noreply@example.com' },
@@ -595,7 +595,7 @@ const email2 = await steps.email.receive({
   ]
 });
 
-const allEmails = await steps.email.receiveAll({
+const allEmails = await steps.receiveAllEmails({
   filters: [{ type: EmailFilterType.FROM, value: 'alerts@example.com' }]
 });
 ```
@@ -603,10 +603,10 @@ const allEmails = await steps.email.receiveAll({
 #### Cleaning the Inbox
 
 ```ts
-await steps.email.clean({
+await steps.cleanEmails({
   filters: [{ type: EmailFilterType.FROM, value: 'noreply@example.com' }]
 });
-await steps.email.clean(); // delete all
+await steps.cleanEmails(); // delete all
 ```
 
 Filter types: `SUBJECT`, `FROM`, `TO`, `CONTENT` (body text/HTML), `SINCE` (Date).
