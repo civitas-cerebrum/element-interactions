@@ -18,7 +18,7 @@ A two-package Playwright framework that decouples **element acquisition** (`@civ
 These rules are non-negotiable. They override helpfulness, initiative, and assumptions. If you are unsure about any rule, ask the user. Do not guess.
 
 ### 1. Do NOT skip stages
-- This skill operates in three stages. You MUST complete each stage and get user approval before advancing.
+- This skill operates in four stages. You MUST complete each stage and get user approval before advancing.
 - Do NOT jump ahead. Do NOT write automation code during the discovery stage.
 - Exception: API questions and fix/edit requests bypass the staged flow (see Opening section).
 
@@ -57,10 +57,10 @@ These rules are non-negotiable. They override helpfulness, initiative, and assum
 
 ## Staged Workflow
 
-This skill operates in **three stages**. Each stage has a hard gate — you MUST get user approval before advancing to the next stage.
+This skill operates in **four stages**. Each stage has a hard gate — you MUST get user approval before advancing to the next stage.
 
 <HARD-GATE>
-Do NOT write any automation code until Stage 3. Do NOT create selectors until Stage 2. Do NOT skip the discovery conversation in Stage 1. Every engagement follows all three stages regardless of perceived simplicity.
+Do NOT write any automation code until Stage 3. Do NOT create selectors until Stage 2. Do NOT skip the discovery conversation in Stage 1. Every engagement follows all four stages regardless of perceived simplicity.
 </HARD-GATE>
 
 ### Checklist
@@ -74,7 +74,9 @@ You MUST create a task for each of these items and complete them in order:
 5. **User approves selectors** — hard gate
 6. **Stage 3: Write Automation** — write the test using the Steps API and approved selectors
 7. **Run and validate** — execute the test, inspect failures visually, iterate
-8. **Commit** — commit after confirmed success
+8. **Stage 4: API Compliance Review** — review all scenarios against the API Reference to catch incorrect usage
+9. **Fix any issues found** — correct API misuse, re-run tests
+10. **Commit** — commit after confirmed success
 
 ### Process Flow
 
@@ -114,6 +116,12 @@ digraph element_interactions {
     "New selector needed?" [shape=diamond];
     "Mini-inspection:\ninspect DOM, propose,\nget approval" [shape=box];
     "Inspect screenshot, fix, re-run" [shape=box];
+
+    "STAGE 4: API Compliance Review" [shape=box, style=bold];
+    "Review all test code\nagainst API Reference" [shape=box];
+    "Issues found?" [shape=diamond];
+    "Fix API misuse,\nre-run tests" [shape=box];
+    "All scenarios pass\nafter fixes?" [shape=diamond];
     "Commit" [shape=doublecircle];
 
     "Skill activated" -> "Read user message";
@@ -153,12 +161,20 @@ digraph element_interactions {
     "STAGE 3: Write Automation" -> "Write test using Steps API";
     "Write test using Steps API" -> "Run test";
     "Run test" -> "Test passes?";
-    "Test passes?" -> "Commit" [label="yes"];
+    "Test passes?" -> "STAGE 4: API Compliance Review" [label="yes"];
     "Test passes?" -> "New selector needed?" [label="no"];
     "New selector needed?" -> "Mini-inspection:\ninspect DOM, propose,\nget approval" [label="yes"];
     "New selector needed?" -> "Inspect screenshot, fix, re-run" [label="no — code issue"];
     "Mini-inspection:\ninspect DOM, propose,\nget approval" -> "Inspect screenshot, fix, re-run";
     "Inspect screenshot, fix, re-run" -> "Run test";
+
+    "STAGE 4: API Compliance Review" -> "Review all test code\nagainst API Reference";
+    "Review all test code\nagainst API Reference" -> "Issues found?";
+    "Issues found?" -> "Commit" [label="no — all correct"];
+    "Issues found?" -> "Fix API misuse,\nre-run tests" [label="yes"];
+    "Fix API misuse,\nre-run tests" -> "All scenarios pass\nafter fixes?";
+    "All scenarios pass\nafter fixes?" -> "Commit" [label="yes"];
+    "All scenarios pass\nafter fixes?" -> "Inspect screenshot, fix, re-run" [label="no — regression"];
 }
 ```
 
@@ -294,6 +310,58 @@ Show the user the exact JSON entries you want to add:
 ### Skip-to-Stage-3 (Fix/Edit Mode)
 
 When the user asks to fix or edit an existing test, skip Stages 1 and 2. Read the existing test, understand the issue, and proceed directly to fixing and running. If fixing requires new selectors, use the mini-inspection flow described above — do NOT silently add selectors.
+
+---
+
+## Stage 4: API Compliance Review
+
+**Goal:** After all scenarios pass, review every test file written in this session against the API Reference to ensure correct usage of the `@civitas-cerebrum/element-interactions` package.
+
+**This stage triggers automatically** once all tests pass in Stage 3. Do NOT skip it — even if the tests pass, they may be using the API incorrectly (wrong argument order, deprecated methods, missing options, incorrect types).
+
+### Review Checklist
+
+For each test file, verify:
+
+1. **Method signatures** — every `steps.*` call matches the exact signature in the API Reference (correct argument count, correct argument order, correct types).
+2. **Imports** — all types used (`DropdownSelectType`, `EmailFilterType`, `FillFormValue`, etc.) are imported from `@civitas-cerebrum/element-interactions` (or `@civitas-cerebrum/email-client` for email types). No invented imports.
+3. **Page/element naming** — `pageName` uses PascalCase, `elementName` uses camelCase, and both match entries in `page-repository.json`.
+4. **Listed element options** — `child` uses `{ pageName, elementName }` repo references where possible instead of inline selectors (per Rule 5).
+5. **Dropdown select usage** — `DropdownSelectType.RANDOM`, `.VALUE`, or `.INDEX` with the correct companion field (`value` or `index`).
+6. **Email API usage** — `steps.sendEmail` / `steps.receiveEmail` / `steps.receiveAllEmails` / `steps.cleanEmails` match the documented signatures. Filter types use `EmailFilterType` enum.
+7. **No raw Playwright calls** — no `page.locator()`, `page.click()`, `page.fill()`, or other raw Playwright methods where a `steps.*` equivalent exists.
+8. **Fixture usage** — the test destructures only fixtures provided by `baseFixture` (`steps`, `repo`, `interactions`, `contextStore`, `page`) plus any custom fixtures defined in the project's `base.ts`.
+9. **Waiting methods** — correct state strings (`'visible'`, `'hidden'`, `'attached'`, `'detached'`) and correct usage of `waitForResponse` callback pattern.
+10. **Verification methods** — correct option shapes (`{ exactly }`, `{ greaterThan }`, `{ lessThan }` for `verifyCount`; `{ notEmpty: true }` for `verifyText`).
+
+### Process
+
+1. **Read each test file** written or modified in this session.
+2. **Cross-reference every API call** against the API Reference section below.
+3. **Report findings** to the user — list any issues found with the specific line, what's wrong, and the correct usage.
+4. **If issues are found:** fix them, re-run the tests, and confirm they still pass.
+5. **If no issues are found:** confirm compliance and proceed to commit.
+
+### Output Format
+
+Present the review as:
+
+> **API Compliance Review**
+>
+> Reviewed: `tests/example.spec.ts`, `tests/login.spec.ts`
+>
+> - **`example.spec.ts:15`** — `steps.backOrForward('back')` should be `steps.backOrForward('BACKWARDS')` (uses uppercase enum-style strings)
+> - **`login.spec.ts:8`** — missing import for `DropdownSelectType`
+>
+> [number] issue(s) found. Fixing now.
+
+Or if clean:
+
+> **API Compliance Review**
+>
+> Reviewed: `tests/example.spec.ts`
+>
+> All API calls match the documented signatures. No issues found.
 
 ---
 
