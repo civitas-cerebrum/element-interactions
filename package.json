@@ -1,6 +1,6 @@
 {
   "name": "@civitas-cerebrum/element-interactions",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "A robust, readable interaction and assertion Facade for Playwright. Abstract away boilerplate into semantic, English-like methods, making your test automation framework cleaner, easier to maintain, and accessible to non-developers.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -27,7 +27,7 @@
     "@playwright/test": ">=1.0.0"
   },
   "devDependencies": {
-    "@civitas-cerebrum/test-coverage": "^0.0.8",
+    "@civitas-cerebrum/test-coverage": "^0.0.9",
     "@playwright/test": "^1.58.2",
     "@types/debug": "^4.1.13",
     "@types/node": "^20.0.0",
@@ -55,7 +55,7 @@
   "license": "MIT",
   "dependencies": {
     "@civitas-cerebrum/context-store": "^0.0.2",
-    "@civitas-cerebrum/element-repository": "^0.1.0",
+    "@civitas-cerebrum/element-repository": "^0.1.1",
     "@civitas-cerebrum/email-client": "^0.0.6",
     "debug": "^4.4.3",
     "dotenv": "^17.3.1"
