@@ -18,7 +18,7 @@ A two-package Playwright framework that decouples **element acquisition** (`@civ
 These rules are non-negotiable. They override helpfulness, initiative, and assumptions. If you are unsure about any rule, ask the user. Do not guess.
 
 ### 1. Do NOT skip stages
-- This skill operates in three stages. You MUST complete each stage and get user approval before advancing.
+- This skill operates in four stages. You MUST complete each stage and get user approval before advancing.
 - Do NOT jump ahead. Do NOT write automation code during the discovery stage.
 - Exception: API questions and fix/edit requests bypass the staged flow (see Opening section).
 
@@ -57,10 +57,10 @@ These rules are non-negotiable. They override helpfulness, initiative, and assum
 
 ## Staged Workflow
 
-This skill operates in **three stages**. Each stage has a hard gate — you MUST get user approval before advancing to the next stage.
+This skill operates in **four stages**. Each stage has a hard gate — you MUST get user approval before advancing to the next stage.
 
 <HARD-GATE>
-Do NOT write any automation code until Stage 3. Do NOT create selectors until Stage 2. Do NOT skip the discovery conversation in Stage 1. Every engagement follows all three stages regardless of perceived simplicity.
+Do NOT write any automation code until Stage 3. Do NOT create selectors until Stage 2. Do NOT skip the discovery conversation in Stage 1. Every engagement follows all four stages regardless of perceived simplicity.
 </HARD-GATE>
 
 ### Checklist
@@ -74,7 +74,9 @@ You MUST create a task for each of these items and complete them in order:
 5. **User approves selectors** — hard gate
 6. **Stage 3: Write Automation** — write the test using the Steps API and approved selectors
 7. **Run and validate** — execute the test, inspect failures visually, iterate
-8. **Commit** — commit after confirmed success
+8. **Stage 4: API Compliance Review** — review all scenarios against the API Reference to catch incorrect usage
+9. **Fix any issues found** — correct API misuse, re-run tests
+10. **Commit** — commit after confirmed success
 
 ### Process Flow
 
@@ -114,6 +116,12 @@ digraph element_interactions {
     "New selector needed?" [shape=diamond];
     "Mini-inspection:\ninspect DOM, propose,\nget approval" [shape=box];
     "Inspect screenshot, fix, re-run" [shape=box];
+
+    "STAGE 4: API Compliance Review" [shape=box, style=bold];
+    "Review all test code\nagainst API Reference" [shape=box];
+    "Issues found?" [shape=diamond];
+    "Fix API misuse,\nre-run tests" [shape=box];
+    "All scenarios pass\nafter fixes?" [shape=diamond];
     "Commit" [shape=doublecircle];
 
     "Skill activated" -> "Read user message";
@@ -153,12 +161,20 @@ digraph element_interactions {
     "STAGE 3: Write Automation" -> "Write test using Steps API";
     "Write test using Steps API" -> "Run test";
     "Run test" -> "Test passes?";
-    "Test passes?" -> "Commit" [label="yes"];
+    "Test passes?" -> "STAGE 4: API Compliance Review" [label="yes"];
     "Test passes?" -> "New selector needed?" [label="no"];
     "New selector needed?" -> "Mini-inspection:\ninspect DOM, propose,\nget approval" [label="yes"];
     "New selector needed?" -> "Inspect screenshot, fix, re-run" [label="no — code issue"];
     "Mini-inspection:\ninspect DOM, propose,\nget approval" -> "Inspect screenshot, fix, re-run";
     "Inspect screenshot, fix, re-run" -> "Run test";
+
+    "STAGE 4: API Compliance Review" -> "Review all test code\nagainst API Reference";
+    "Review all test code\nagainst API Reference" -> "Issues found?";
+    "Issues found?" -> "Commit" [label="no — all correct"];
+    "Issues found?" -> "Fix API misuse,\nre-run tests" [label="yes"];
+    "Fix API misuse,\nre-run tests" -> "All scenarios pass\nafter fixes?";
+    "All scenarios pass\nafter fixes?" -> "Commit" [label="yes"];
+    "All scenarios pass\nafter fixes?" -> "Inspect screenshot, fix, re-run" [label="no — regression"];
 }
 ```
 
@@ -284,7 +300,7 @@ Show the user the exact JSON entries you want to add:
 
 ### Writing Process
 
-1. **Check project setup.** Read `tests/fixtures/base.ts` and `playwright.config.ts` — create or update only if missing or broken.
+1. **Check project setup.** Read `tests/fixtures/base.ts` and `playwright.config.ts` — create or update only if missing or broken. Also verify that `.gitignore` includes `.claude/` and `CLAUDE.md` to prevent Claude Code configuration from being pushed to the repository — add them if missing.
 2. **Add approved selectors** to `page-repository.json` (if not already done).
 3. **Write the test file** using the Steps API. Every interaction goes through `steps.*` methods — no raw `page.locator()` calls.
 4. **Run the test** with `npx playwright test <test-file>`.
@@ -294,6 +310,59 @@ Show the user the exact JSON entries you want to add:
 ### Skip-to-Stage-3 (Fix/Edit Mode)
 
 When the user asks to fix or edit an existing test, skip Stages 1 and 2. Read the existing test, understand the issue, and proceed directly to fixing and running. If fixing requires new selectors, use the mini-inspection flow described above — do NOT silently add selectors.
+
+---
+
+## Stage 4: API Compliance Review
+
+**Goal:** After all scenarios pass, review every test file written in this session against the API Reference to ensure correct usage of the `@civitas-cerebrum/element-interactions` package.
+
+**This stage triggers automatically** once all tests pass in Stage 3. Do NOT skip it — even if the tests pass, they may be using the API incorrectly (wrong argument order, deprecated methods, missing options, incorrect types).
+
+### Review Checklist
+
+For each test file, verify:
+
+1. **Method signatures** — every `steps.*` call matches the exact signature in the API Reference (correct argument count, correct argument order, correct types).
+2. **Imports** — all types used (`DropdownSelectType`, `EmailFilterType`, `FillFormValue`, etc.) are imported from `@civitas-cerebrum/element-interactions` (or `@civitas-cerebrum/email-client` for email types). No invented imports.
+3. **Page/element naming** — `pageName` uses PascalCase, `elementName` uses camelCase, and both match entries in `page-repository.json`.
+4. **Listed element options** — `child` uses `{ pageName, elementName }` repo references where possible instead of inline selectors (per Rule 5).
+5. **Dropdown select usage** — `DropdownSelectType.RANDOM`, `.VALUE`, or `.INDEX` with the correct companion field (`value` or `index`).
+6. **Email API usage** — `steps.sendEmail` / `steps.receiveEmail` / `steps.receiveAllEmails` / `steps.cleanEmails` match the documented signatures. Filter types use `EmailFilterType` enum.
+7. **No raw Playwright calls** — no `page.locator()`, `page.click()`, `page.fill()`, or other raw Playwright methods where a `steps.*` equivalent exists.
+8. **Fixture usage** — the test destructures only fixtures provided by `baseFixture` (`steps`, `repo`, `interactions`, `contextStore`, `page`) plus any custom fixtures defined in the project's `base.ts`.
+9. **Waiting methods** — correct state strings (`'visible'`, `'hidden'`, `'attached'`, `'detached'`) and correct usage of `waitForResponse` callback pattern.
+10. **Verification methods** — correct option shapes (`{ exactly }`, `{ greaterThan }`, `{ lessThan }` for `verifyCount`; `{ notEmpty: true }` for `verifyText`).
+
+### Process
+
+1. **Read each test file** written or modified in this session.
+2. **Cross-reference every API call** against the API Reference section below.
+3. **Report findings** to the user — list any issues found with the specific line, what's wrong, and the correct usage.
+4. **If issues are found:** investigate *why* the non-compliant code was written — was the API misunderstood? Was a method signature wrong in the scenario? Did a previous stage produce incorrect assumptions? Understanding the root cause prevents the same mistake from recurring in the next scenario. Then fix, re-run the tests, and confirm they still pass.
+5. **If fixes cause a test failure:** follow Rule 6 — inspect the failure screenshot first before attempting any further fix. Do NOT guess from the error message alone.
+6. **If no issues are found:** confirm compliance and proceed to commit.
+
+### Output Format
+
+Present the review as:
+
+> **API Compliance Review**
+>
+> Reviewed: `tests/example.spec.ts`, `tests/login.spec.ts`
+>
+> - **`example.spec.ts:15`** — `steps.backOrForward('back')` should be `steps.backOrForward('BACKWARDS')` (uses uppercase enum-style strings)
+> - **`login.spec.ts:8`** — missing import for `DropdownSelectType`
+>
+> [number] issue(s) found. Fixing now.
+
+Or if clean:
+
+> **API Compliance Review**
+>
+> Reviewed: `tests/example.spec.ts`
+>
+> All API calls match the documented signatures. No issues found.
 
 ---
 
@@ -358,7 +427,7 @@ Every method takes `pageName` and `elementName` as its first two arguments, matc
 
 **Imports** — add at the top of your test file as needed:
 ```ts
-import { DropdownSelectType, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, ScreenshotOptions } from '@civitas-cerebrum/element-interactions';
+import { DropdownSelectType, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, ScreenshotOptions, EmailFilterType, EmailMarkAction, WebElement } from '@civitas-cerebrum/element-interactions';
 ```
 
 #### Navigation
@@ -404,10 +473,10 @@ const val2 = await steps.selectDropdown('PageName', 'elementName', { type: Dropd
 const val3 = await steps.selectDropdown('PageName', 'elementName', { type: DropdownSelectType.INDEX, index: 2 });
 await steps.selectMultiple('PageName', 'multiSelect', ['opt1', 'opt2']);
 
-// Drag and drop
-await steps.dragAndDrop('PageName', 'elementName', { target: otherLocator });
+// Drag and drop — target accepts a Locator or Element from the repository
+await steps.dragAndDrop('PageName', 'elementName', { target: otherLocatorOrElement });
 await steps.dragAndDrop('PageName', 'elementName', { xOffset: 100, yOffset: 0 });
-await steps.dragAndDropListedElement('PageName', 'elementName', 'Item Label', { target: otherLocator });
+await steps.dragAndDropListedElement('PageName', 'elementName', 'Item Label', { target: otherLocatorOrElement });
 ```
 
 #### Data Extraction
@@ -511,27 +580,34 @@ const buf3 = await steps.screenshot('PageName', 'elementName');             // e
 
 ### Accessing the Repository Directly
 
-Use `repo` when you need to filter by visible text, iterate all matches, or pick a random item:
+Use `repo` when you need to filter by visible text, iterate all matches, or pick a random item. Repository methods return `Element` wrappers (not raw Playwright `Locator` objects). The `Element` interface provides common methods like `click()`, `fill()`, `textContent()`, etc. To access the underlying Playwright `Locator` (e.g. for Playwright-specific assertions), cast to `WebElement`:
 
 ```ts
+import { WebElement } from '@civitas-cerebrum/element-interactions';
+
 test('example', async ({ page, repo, steps }) => {
   await steps.navigateTo('/');
   const link = await repo.getByText(page, 'HomePage', 'categories', 'Forms');
-  await link?.click();
+  await link?.click();                              // Element.click() works directly
+
+  // When you need the underlying Locator:
+  const element = await repo.get(page, 'PageName', 'elementName');
+  const locator = (element as WebElement).locator;  // access raw Playwright Locator
 });
 ```
 
 ```ts
-await repo.get(page, 'PageName', 'elementName');
-await repo.getAll(page, 'PageName', 'elementName');
-await repo.getRandom(page, 'PageName', 'elementName');
-await repo.getByText(page, 'PageName', 'elementName', 'Text');
+await repo.get(page, 'PageName', 'elementName');               // single Element
+await repo.getAll(page, 'PageName', 'elementName');             // array of Elements
+await repo.getRandom(page, 'PageName', 'elementName');          // random from matches
+await repo.getByText(page, 'PageName', 'elementName', 'Text'); // exact match, then contains fallback
 await repo.getByAttribute(page, 'PageName', 'elementName', 'data-status', 'active');
 await repo.getByAttribute(page, 'PageName', 'elementName', 'href', '/path', { exact: false });
 await repo.getByIndex(page, 'PageName', 'elementName', 2);
 await repo.getByRole(page, 'PageName', 'elementName', 'button');
 await repo.getVisible(page, 'PageName', 'elementName');
 repo.getSelector('PageName', 'elementName');        // sync, returns raw selector string
+repo.getSelectorRaw('PageName', 'elementName');     // sync, returns { strategy, value }
 repo.setDefaultTimeout(10000);
 ```
 
@@ -556,7 +632,25 @@ Send and receive emails in tests. Supports plain-text, inline HTML, and HTML fil
 
 #### Setup
 
+Pass email credentials using the split config (recommended) or the legacy combined format. You can provide `smtp` only, `imap` only, or both:
+
 ```ts
+// Split config (recommended)
+export const test = baseFixture(base, 'tests/data/page-repository.json', {
+  emailCredentials: {
+    smtp: {
+      email: process.env.SENDER_EMAIL!,
+      password: process.env.SENDER_PASSWORD!,
+      host: process.env.SENDER_SMTP_HOST!,
+    },
+    imap: {
+      email: process.env.RECEIVER_EMAIL!,
+      password: process.env.RECEIVER_PASSWORD!,
+    },
+  }
+});
+
+// Legacy combined format (still supported)
 export const test = baseFixture(base, 'tests/data/page-repository.json', {
   emailCredentials: {
     senderEmail: process.env.SENDER_EMAIL!,
@@ -572,6 +666,7 @@ export const test = baseFixture(base, 'tests/data/page-repository.json', {
 
 ```ts
 await steps.sendEmail({ to: 'user@example.com', subject: 'Test', text: 'Hello' });
+await steps.sendEmail({ to: 'user@example.com', subject: 'Report', html: '<h1>Results</h1>' });
 await steps.sendEmail({ to: 'user@example.com', subject: 'Report', htmlFile: 'emails/report.html' });
 ```
 
@@ -597,6 +692,25 @@ const allEmails = await steps.receiveAllEmails({
   filters: [{ type: EmailFilterType.FROM, value: 'alerts@example.com' }]
 });
 ```
+
+#### Marking Emails
+
+```ts
+import { EmailMarkAction } from '@civitas-cerebrum/element-interactions';
+
+await steps.markEmail(EmailMarkAction.READ, {
+  filters: [{ type: EmailFilterType.SUBJECT, value: 'OTP' }]
+});
+await steps.markEmail(EmailMarkAction.FLAGGED, {
+  filters: [{ type: EmailFilterType.FROM, value: 'noreply@example.com' }]
+});
+await steps.markEmail(EmailMarkAction.ARCHIVED, {
+  filters: [{ type: EmailFilterType.SUBJECT, value: 'Report' }]
+});
+await steps.markEmail(EmailMarkAction.UNREAD); // mark all in folder
+```
+
+Mark actions: `READ`, `UNREAD`, `FLAGGED`, `UNFLAGGED`, `ARCHIVED`.
 
 #### Cleaning the Inbox
 
