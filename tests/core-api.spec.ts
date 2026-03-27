@@ -1,6 +1,7 @@
 import { test, expect } from './fixture/StepFixture';
 import { Steps } from '../src/steps/CommonSteps';
 import { DropdownSelectType } from '../src/enum/Options';
+import { WebElement } from '@civitas-cerebrum/element-repository';
 import { createLogger } from '../src/logger/Logger';
 
 const log = createLogger('tests');
@@ -91,7 +92,7 @@ test.describe('E2E Facade Implementation Suite', () => {
 
       await steps.dragAndDropListedElement('SortablePage', 'sortableItems', 'Item A', { target: dropZone! });
 
-      await interactions.verify.textContains(dropZone!, 'Item A');
+      await interactions.verify.textContains((dropZone as WebElement).locator, 'Item A');
     });
 
     log('TC_002 Drag and Drop Interactions — passed');
