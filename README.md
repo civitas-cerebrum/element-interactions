@@ -240,7 +240,11 @@ test('Complete checkout flow', async ({ steps }) => {
 
 ### 4. Access `repo` directly when needed
 
+Repository methods return `Element` wrappers (not raw Playwright `Locator` objects). For most use cases, the `Steps` API handles this transparently. When using `repo` directly, the `Element` interface provides common methods like `click()`, `fill()`, `textContent()`, etc. To access the underlying Playwright `Locator` (e.g. for Playwright-specific assertions), cast to `WebElement`:
+
 ```ts
+import { WebElement } from '@civitas-cerebrum/element-interactions';
+
 test('Navigate to Forms category', async ({ page, repo, steps }) => {
   await steps.navigateTo('/');
 
@@ -249,21 +253,28 @@ test('Navigate to Forms category', async ({ page, repo, steps }) => {
 
   await steps.verifyAbsence('HomePage', 'categories');
 });
+
+test('Use underlying Locator for advanced assertions', async ({ page, repo }) => {
+  const element = await repo.get(page, 'PageName', 'elementName');
+  const locator = (element as WebElement).locator;
+  await expect(locator).toHaveCSS('color', 'rgb(255, 0, 0)');
+});
 ```
 
 **Full Repository API:**
 
 ```ts
-await repo.get(page, 'PageName', 'elementName');               // single locator
-await repo.getAll(page, 'PageName', 'elementName');             // array of locators
+await repo.get(page, 'PageName', 'elementName');               // single Element
+await repo.getAll(page, 'PageName', 'elementName');             // array of Elements
 await repo.getRandom(page, 'PageName', 'elementName');          // random from matches
-await repo.getByText(page, 'PageName', 'elementName', 'Text'); // filter by visible text
+await repo.getByText(page, 'PageName', 'elementName', 'Text'); // filter by visible text (exact, then contains)
 await repo.getByAttribute(page, 'PageName', 'elementName', 'data-status', 'active'); // filter by attribute
 await repo.getByAttribute(page, 'PageName', 'elementName', 'href', '/path', { exact: false }); // partial match
 await repo.getByIndex(page, 'PageName', 'elementName', 2);     // zero-based index
 await repo.getByRole(page, 'PageName', 'elementName', 'button'); // explicit HTML role attribute
 await repo.getVisible(page, 'PageName', 'elementName');         // first visible match
 repo.getSelector('PageName', 'elementName');                     // sync, returns raw selector string
+repo.getSelectorRaw('PageName', 'elementName');                  // sync, returns { strategy, value }
 repo.setDefaultTimeout(10000);                                   // change default wait timeout
 ```
 
@@ -327,7 +338,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 * **`uncheck(pageName, elementName)`** — Unchecks a checkbox. No-op if already unchecked.
 * **`hover(pageName, elementName)`** — Hovers over an element to trigger dropdowns or tooltips.
 * **`scrollIntoView(pageName, elementName)`** — Smoothly scrolls an element into the viewport.
-* **`dragAndDrop(pageName, elementName, options: DragAndDropOptions)`** — Drags an element to a target element (`{ target: Locator }`), by coordinate offset (`{ xOffset, yOffset }`), or both.
+* **`dragAndDrop(pageName, elementName, options: DragAndDropOptions)`** — Drags an element to a target element (`{ target: Locator | Element }`), by coordinate offset (`{ xOffset, yOffset }`), or both.
 * **`dragAndDropListedElement(pageName, elementName, elementText, options: DragAndDropOptions)`** — Finds a specific element by its text from a list, then drags it to a destination.
 * **`fill(pageName, elementName, text: string)`** — Clears and fills an input field with the provided text.
 * **`uploadFile(pageName, elementName, filePath: string)`** — Uploads a file to an `<input type="file">` element.
@@ -457,13 +468,36 @@ Send and receive emails in your tests. Supports plain text, inline HTML, and HTM
 
 ### Setup
 
-Pass email credentials to `baseFixture` via the options parameter:
+Pass email credentials to `baseFixture` via the options parameter. You can use the split config (recommended) or the legacy combined format:
 
 ```ts
 // tests/fixtures/base.ts
 import { test as base, expect } from '@playwright/test';
 import { baseFixture } from '@civitas-cerebrum/element-interactions';
 
+// Split config (recommended) — configure smtp, imap, or both
+export const test = baseFixture(base, 'tests/data/page-repository.json', {
+  emailCredentials: {
+    smtp: {
+      email: process.env.SENDER_EMAIL!,
+      password: process.env.SENDER_PASSWORD!,
+      host: process.env.SENDER_SMTP_HOST!,
+    },
+    imap: {
+      email: process.env.RECEIVER_EMAIL!,
+      password: process.env.RECEIVER_PASSWORD!,
+    },
+  }
+});
+export { expect };
+```
+
+Only need to send? Provide `smtp` only. Only need to receive? Provide `imap` only. The client will throw a clear error if you call a method that requires the missing credential.
+
+<details>
+<summary>Legacy combined format (still supported)</summary>
+
+```ts
 export const test = baseFixture(base, 'tests/data/page-repository.json', {
   emailCredentials: {
     senderEmail: process.env.SENDER_EMAIL!,
@@ -473,8 +507,9 @@ export const test = baseFixture(base, 'tests/data/page-repository.json', {
     receiverPassword: process.env.RECEIVER_PASSWORD!,
   }
 });
-export { expect };
 ```
+
+</details>
 
 ### Sending Emails
 
@@ -538,6 +573,32 @@ const allEmails = await steps.receiveAllEmails({
 });
 ```
 
+### Marking Emails
+
+Mark emails as read, unread, flagged, unflagged, or archived:
+
+```ts
+import { EmailMarkAction } from '@civitas-cerebrum/element-interactions';
+
+// Mark matching emails as read
+await steps.markEmail(EmailMarkAction.READ, {
+  filters: [{ type: EmailFilterType.SUBJECT, value: 'OTP' }]
+});
+
+// Flag all emails from a sender
+await steps.markEmail(EmailMarkAction.FLAGGED, {
+  filters: [{ type: EmailFilterType.FROM, value: 'noreply@example.com' }]
+});
+
+// Archive emails
+await steps.markEmail(EmailMarkAction.ARCHIVED, {
+  filters: [{ type: EmailFilterType.SUBJECT, value: 'Report' }]
+});
+
+// Mark all emails in folder
+await steps.markEmail(EmailMarkAction.UNREAD);
+```
+
 ### Cleaning the Inbox
 
 Delete emails matching filters, or clean the entire inbox:
@@ -570,6 +631,8 @@ await steps.cleanEmails();
 | `folder` | `string` | `'INBOX'` | IMAP folder to search |
 | `waitTimeout` | `number` | `30000` | Max time (ms) to wait for a match |
 | `pollInterval` | `number` | `3000` | How often (ms) to poll the inbox |
+| `expectedCount` | `number` | — | Specific number of expected results |
+| `maxFetchLimit` | `number` | `50` | Max emails to fetch per polling cycle |
 | `downloadDir` | `string` | `os.tmpdir()/pw-emails` | Where to save the downloaded HTML |
 
 **`ReceivedEmail` return type:**

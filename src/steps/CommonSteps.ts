@@ -2,7 +2,7 @@ import { Page, Locator, Response } from '@playwright/test';
 import { ElementRepository, Element, WebElement } from '@civitas-cerebrum/element-repository';
 import { ElementInteractions } from '../interactions/facade/ElementInteractions';
 import { Utils } from '../utils/ElementUtilities';
-import { EmailCredentials, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
+import { EmailCredentials, EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions } from '../enum/Options';
 import { logger } from '../logger/Logger';
 
@@ -49,7 +49,7 @@ export class Steps {
         private page: Page,
         private repo: ElementRepository,
         timeout?: number,
-        emailCredentials?: EmailCredentials
+        emailCredentials?: EmailCredentials | EmailClientConfig
     ) {
         const interactions = new ElementInteractions(page, timeout, emailCredentials);
         this.interact = interactions.interact;

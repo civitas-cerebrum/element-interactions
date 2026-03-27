@@ -28,9 +28,13 @@ export { baseFixture, BaseFixtureOptions } from './fixture/BaseFixture';
 export { EmailClient } from '@civitas-cerebrum/email-client';
 export type {
     EmailCredentials,
+    EmailClientConfig,
+    SmtpCredentials,
+    ImapCredentials,
     EmailFilter,
     EmailSendOptions,
     EmailReceiveOptions,
     ReceivedEmail,
+    EmailMarkOptions,
 } from '@civitas-cerebrum/email-client';
-export { EmailFilterType } from '@civitas-cerebrum/email-client';
+export { EmailFilterType, EmailMarkAction } from '@civitas-cerebrum/email-client';

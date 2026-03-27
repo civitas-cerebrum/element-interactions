@@ -3,7 +3,7 @@ import { Interactions } from '../Interaction';
 import { Navigation } from '../Navigation';
 import { Verifications } from '../Verification';
 import { Extractions } from '../Extraction';
-import { EmailClient, EmailCredentials } from '@civitas-cerebrum/email-client';
+import { EmailClient, EmailCredentials, EmailClientConfig } from '@civitas-cerebrum/email-client';
 import { Utils } from '../../utils/ElementUtilities';
 import { logger } from '../../logger/Logger';
 
@@ -27,7 +27,7 @@ export class ElementInteractions {
      * @param timeout - Optional global timeout override (in milliseconds) for all interactions and verifications. Defaults to 30000 ms (30 seconds).
      * @param emailCredentials - Optional email credentials to enable the email sub-API.
      */
-    constructor(page: Page, timeout?: number, emailCredentials?: EmailCredentials) {
+    constructor(page: Page, timeout?: number, emailCredentials?: EmailCredentials | EmailClientConfig) {
         this.interact = new Interactions(page, timeout);
         this.verify = new Verifications(page, timeout);
         this.navigate = new Navigation(page);

@@ -1,6 +1,6 @@
 import { ElementInteractions } from '../interactions/facade/ElementInteractions';
 import { ElementRepository } from '@civitas-cerebrum/element-repository';
-import { EmailCredentials } from '@civitas-cerebrum/email-client';
+import { EmailCredentials, EmailClientConfig } from '@civitas-cerebrum/email-client';
 import { ContextStore } from '@civitas-cerebrum/context-store';
 
 import { test as base } from '@playwright/test';
@@ -14,7 +14,7 @@ type StepFixture = {
 };
 
 export interface BaseFixtureOptions {
-    emailCredentials?: EmailCredentials;
+    emailCredentials?: EmailCredentials | EmailClientConfig;
 }
 
 export function baseFixture<T extends {}>(
