@@ -14,6 +14,10 @@ export { Utils } from './utils/ElementUtilities';
 // Element Interactions Facade
 export { ElementInteractions } from './interactions/facade/ElementInteractions';
 
+// Re-exports from @civitas-cerebrum/element-repository
+export type { Element } from '@civitas-cerebrum/element-repository';
+export { ElementType, WebElement, PlatformElement, isWeb, isPlatform } from '@civitas-cerebrum/element-repository';
+
 // Test Steps Facade
 export { Steps } from './steps/CommonSteps';
 

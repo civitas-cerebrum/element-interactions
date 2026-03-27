@@ -1,6 +1,15 @@
 import { Page, Locator } from '@playwright/test';
 import { DropdownSelectOptions, DropdownSelectType, DragAndDropOptions, ListedElementMatch } from '../enum/Options';
 import { Utils } from '../utils/ElementUtilities';
+import { WebElement } from '@civitas-cerebrum/element-repository';
+
+/** Resolves a Locator or Element to a Playwright Locator. */
+function resolveLocator(target: Locator | import('@civitas-cerebrum/element-repository').Element): Locator {
+    if ('_type' in target) {
+        return (target as unknown as WebElement).locator;
+    }
+    return target as Locator;
+}
 
 /**
  * The `Interactions` class provides a robust set of methods for interacting 
@@ -157,10 +166,11 @@ export class Interactions {
         await this.utils.waitForState(locator, 'visible');
 
         if (options.target) {
-            await this.utils.waitForState(options.target, 'visible');
+            const target = resolveLocator(options.target);
+            await this.utils.waitForState(target, 'visible');
 
             if (options.xOffset !== undefined && options.yOffset !== undefined) {
-                const targetBox = await options.target.boundingBox();
+                const targetBox = await target.boundingBox();
                 if (!targetBox) {
                     throw new Error(`[Action] Error -> Unable to get bounding box for target element.`);
                 }
@@ -170,14 +180,14 @@ export class Interactions {
                     y: (targetBox.height / 2) + options.yOffset
                 };
 
-                await locator.dragTo(options.target, {
+                await locator.dragTo(target, {
                     targetPosition,
                     timeout: this.ELEMENT_TIMEOUT
                 });
                 return;
             }
 
-            await locator.dragTo(options.target, { timeout: this.ELEMENT_TIMEOUT });
+            await locator.dragTo(target, { timeout: this.ELEMENT_TIMEOUT });
             return;
         }
 

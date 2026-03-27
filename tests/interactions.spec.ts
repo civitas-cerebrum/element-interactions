@@ -57,9 +57,8 @@ test.describe('TC_028: Droppable Page', () => {
     });
 
     await test.step('Drag red item to red zone — correct drop', async () => {
-      const redItem = await repo.get(page, 'DroppablePage', 'redItem1');
       const redZone = await repo.get(page, 'DroppablePage', 'redZone');
-      await steps.dragAndDrop('DroppablePage', 'redItem1', { target: redZone! });
+      await steps.dragAndDrop('DroppablePage', 'redItem1', { target: redZone });
       await steps.verifyTextContains('DroppablePage', 'redZoneCount', '1');
     });
 

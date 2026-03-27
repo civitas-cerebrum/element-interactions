@@ -55,7 +55,7 @@
   "license": "MIT",
   "dependencies": {
     "@civitas-cerebrum/context-store": "^0.0.2",
-    "@civitas-cerebrum/element-repository": "^0.0.6",
+    "@civitas-cerebrum/element-repository": "^0.1.0",
     "@civitas-cerebrum/email-client": "^0.0.4",
     "debug": "^4.4.3",
     "dotenv": "^17.3.1"

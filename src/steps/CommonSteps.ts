@@ -1,10 +1,19 @@
-import { Page, Response } from '@playwright/test';
-import { ElementRepository } from '@civitas-cerebrum/element-repository';
+import { Page, Locator, Response } from '@playwright/test';
+import { ElementRepository, Element, WebElement } from '@civitas-cerebrum/element-repository';
 import { ElementInteractions } from '../interactions/facade/ElementInteractions';
 import { Utils } from '../utils/ElementUtilities';
 import { EmailCredentials, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions } from '../enum/Options';
 import { logger } from '../logger/Logger';
+
+/**
+ * Extracts the underlying Playwright Locator from an Element wrapper.
+ * This bridges the platform-agnostic Element interface from element-repository
+ * with the Playwright-specific interaction/verification/extraction classes.
+ */
+function toLocator(element: Element): Locator {
+    return (element as WebElement).locator;
+}
 
 const log = {
     navigate: logger('navigate'),
@@ -133,7 +142,7 @@ export class Steps {
      */
     async click(pageName: string, elementName: string): Promise<void> {
         log.interact('Clicking on "%s" in "%s"', elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.interact.click(locator);
     }
 
@@ -145,7 +154,7 @@ export class Steps {
      */
     async clickWithoutScrolling(pageName: string, elementName: string): Promise<void> {
         log.interact('Clicking (no scroll) on "%s" in "%s"', elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.interact.clickWithoutScrolling(locator);
     }
 
@@ -158,9 +167,9 @@ export class Steps {
      */
     async clickRandom(pageName: string, elementName: string): Promise<void> {
         log.interact('Clicking a random element from "%s" in "%s"', elementName, pageName);
-        const locator = await this.repo.getRandom(this.page, pageName, elementName);
-        if (!locator) throw new Error(`No visible element found for "${elementName}" in "${pageName}"`);
-        await this.interact.click(locator);
+        const element = await this.repo.getRandom(this.page, pageName, elementName);
+        if (!element) throw new Error(`No visible element found for "${elementName}" in "${pageName}"`);
+        await this.interact.click(toLocator(element));
     }
 
     /**
@@ -172,7 +181,7 @@ export class Steps {
      */
     async clickIfPresent(pageName: string, elementName: string): Promise<boolean> {
         log.interact('Clicking on "%s" in "%s" (if present)', elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         return this.interact.clickIfPresent(locator);
     }
 
@@ -184,7 +193,7 @@ export class Steps {
      */
     async rightClick(pageName: string, elementName: string): Promise<void> {
         log.interact('Right-clicking on "%s" in "%s"', elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.interact.rightClick(locator);
     }
 
@@ -195,7 +204,7 @@ export class Steps {
      */
     async doubleClick(pageName: string, elementName: string): Promise<void> {
         log.interact('Double-clicking on "%s" in "%s"', elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.interact.doubleClick(locator);
     }
 
@@ -206,7 +215,7 @@ export class Steps {
      */
     async check(pageName: string, elementName: string): Promise<void> {
         log.interact('Checking "%s" in "%s"', elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.interact.check(locator);
     }
 
@@ -217,7 +226,7 @@ export class Steps {
      */
     async uncheck(pageName: string, elementName: string): Promise<void> {
         log.interact('Unchecking "%s" in "%s"', elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.interact.uncheck(locator);
     }
 
@@ -228,7 +237,7 @@ export class Steps {
      */
     async hover(pageName: string, elementName: string): Promise<void> {
         log.interact('Hovering over "%s" in "%s"', elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.interact.hover(locator);
     }
 
@@ -239,7 +248,7 @@ export class Steps {
      */
     async scrollIntoView(pageName: string, elementName: string): Promise<void> {
         log.interact('Scrolling "%s" in "%s" into view', elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.interact.scrollIntoView(locator);
     }
 
@@ -251,7 +260,7 @@ export class Steps {
      */
     async fill(pageName: string, elementName: string, text: string): Promise<void> {
         log.interact('Filling "%s" in "%s" with text: "%s"', elementName, pageName, text);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.interact.fill(locator, text);
     }
 
@@ -263,7 +272,7 @@ export class Steps {
      */
     async uploadFile(pageName: string, elementName: string, filePath: string): Promise<void> {
         log.interact('Uploading file "%s" to "%s" in "%s"', filePath, elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.interact.uploadFile(locator, filePath);
     }
 
@@ -282,7 +291,7 @@ export class Steps {
         options?: DropdownSelectOptions
     ): Promise<string> {
         log.interact('Selecting dropdown option for "%s" in "%s" using options: %O', elementName, pageName, options ?? 'default (random)');
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         return await this.interact.selectDropdown(locator, options);
     }
 
@@ -295,7 +304,7 @@ export class Steps {
      */
     async dragAndDrop(pageName: string, elementName: string, options: DragAndDropOptions): Promise<void> {
         log.interact('Dragging and dropping "%s" in "%s"', elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.interact.dragAndDrop(locator, options);
     }
 
@@ -310,9 +319,9 @@ export class Steps {
      */
     async dragAndDropListedElement(pageName: string, elementName: string, elementText: string, options: DragAndDropOptions): Promise<void> {
         log.interact('Dragging and dropping "%s" in "%s"', elementText, pageName);
-        const locator = await this.repo.getByText(this.page, pageName, elementName, elementText);
-        if (!locator) throw new Error(`No element with text "${elementText}" found for "${elementName}" in "${pageName}"`);
-        await this.interact.dragAndDrop(locator, options);
+        const element = await this.repo.getByText(this.page, pageName, elementName, elementText);
+        if (!element) throw new Error(`No element with text "${elementText}" found for "${elementName}" in "${pageName}"`);
+        await this.interact.dragAndDrop(toLocator(element), options);
     }
 
     /**
@@ -323,7 +332,7 @@ export class Steps {
      */
     async setSliderValue(pageName: string, elementName: string, value: number): Promise<void> {
         log.interact('Setting slider "%s" in "%s" to value: %d', elementName, pageName, value);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.interact.setSliderValue(locator, value);
     }
 
@@ -349,7 +358,7 @@ export class Steps {
      */
     async getText(pageName: string, elementName: string): Promise<string | null> {
         log.extract('Getting text from "%s" in "%s"', elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         return await this.extract.getText(locator);
     }
 
@@ -362,7 +371,7 @@ export class Steps {
      */
     async getAttribute(pageName: string, elementName: string, attributeName: string): Promise<string | null> {
         log.extract('Getting attribute "%s" from "%s" in "%s"', attributeName, elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         return await this.extract.getAttribute(locator, attributeName);
     }
 
@@ -377,7 +386,7 @@ export class Steps {
      */
     async verifyPresence(pageName: string, elementName: string): Promise<void> {
         log.verify('Verifying presence of "%s" in "%s"', elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.verify.presence(locator);
     }
 
@@ -404,7 +413,7 @@ export class Steps {
     async verifyText(pageName: string, elementName: string, expectedText?: string, options?: TextVerifyOptions): Promise<void> {
         const logDetail = options?.notEmpty ? 'is not empty' : `matches: "${expectedText}"`;
         log.verify('Verifying text of "%s" in "%s" %s', elementName, pageName, logDetail);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.verify.text(locator, expectedText, options);
     }
 
@@ -417,7 +426,7 @@ export class Steps {
      */
     async verifyCount(pageName: string, elementName: string, options: CountVerifyOptions): Promise<void> {
         log.verify('Verifying count for "%s" in "%s" with options: %O', elementName, pageName, options);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.verify.count(locator, options);
     }
 
@@ -430,7 +439,7 @@ export class Steps {
      */
     async verifyImages(pageName: string, elementName: string, scroll: boolean = true): Promise<void> {
         log.verify('Verifying images for "%s" in "%s" (scroll: %s)', elementName, pageName, scroll);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.verify.images(locator, scroll);
     }
 
@@ -442,7 +451,7 @@ export class Steps {
      */
     async verifyTextContains(pageName: string, elementName: string, expectedText: string): Promise<void> {
         log.verify('Verifying "%s" in "%s" contains text: "%s"', elementName, pageName, expectedText);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.verify.textContains(locator, expectedText);
     }
 
@@ -474,7 +483,7 @@ export class Steps {
      */
     async verifyAttribute(pageName: string, elementName: string, attributeName: string, expectedValue: string): Promise<void> {
         log.verify('Verifying "%s" in "%s" has attribute "%s" = "%s"', elementName, pageName, attributeName, expectedValue);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.verify.attribute(locator, attributeName, expectedValue);
     }
 
@@ -497,7 +506,7 @@ export class Steps {
      */
     async verifyInputValue(pageName: string, elementName: string, expectedValue: string): Promise<void> {
         log.verify('Verifying input value of "%s" in "%s" matches: "%s"', elementName, pageName, expectedValue);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.verify.inputValue(locator, expectedValue);
     }
 
@@ -531,7 +540,7 @@ export class Steps {
      */
     async clickListedElement(pageName: string, elementName: string, options: ListedElementMatch): Promise<void> {
         log.interact('Clicking listed element in "%s" > "%s" with options: %O', pageName, elementName, options);
-        const baseLocator = await this.repo.get(this.page, pageName, elementName);
+        const baseLocator = toLocator(await this.repo.get(this.page, pageName, elementName));
         const target = await this.interact.getListedElement(baseLocator, options, this.repo);
         await this.interact.click(target);
     }
@@ -555,7 +564,7 @@ export class Steps {
      */
     async verifyListedElement(pageName: string, elementName: string, options: VerifyListedOptions): Promise<void> {
         log.verify('Verifying listed element in "%s" > "%s" with options: %O', pageName, elementName, options);
-        const baseLocator = await this.repo.get(this.page, pageName, elementName);
+        const baseLocator = toLocator(await this.repo.get(this.page, pageName, elementName));
         const target = await this.interact.getListedElement(baseLocator, options, this.repo);
 
         if (options.expectedText !== undefined) {
@@ -588,7 +597,7 @@ export class Steps {
      */
     async getListedElementData(pageName: string, elementName: string, options: GetListedDataOptions): Promise<string | null> {
         log.extract('Extracting data from listed element in "%s" > "%s" with options: %O', pageName, elementName, options);
-        const baseLocator = await this.repo.get(this.page, pageName, elementName);
+        const baseLocator = toLocator(await this.repo.get(this.page, pageName, elementName));
         const target = await this.interact.getListedElement(baseLocator, options, this.repo);
 
         if (options.extractAttribute) {
@@ -615,7 +624,7 @@ export class Steps {
         state: 'visible' | 'attached' | 'hidden' | 'detached' = 'visible'
     ): Promise<void> {
         log.wait('Waiting for "%s" in "%s" to be "%s"', elementName, pageName, state);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.utils.waitForState(locator, state);
     }
 
@@ -635,7 +644,7 @@ export class Steps {
         delay: number = 100
     ): Promise<void> {
         log.interact('Typing "%s" sequentially into "%s" in "%s" (delay: %dms)', text, elementName, pageName, delay);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.interact.typeSequentially(locator, text, delay);
     }
 
@@ -737,7 +746,7 @@ export class Steps {
      */
     async clearInput(pageName: string, elementName: string): Promise<void> {
         log.interact('Clearing input "%s" in "%s"', elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.interact.clearInput(locator);
     }
 
@@ -750,7 +759,7 @@ export class Steps {
      */
     async selectMultiple(pageName: string, elementName: string, values: string[]): Promise<string[]> {
         log.interact('Selecting multiple values on "%s" in "%s": %O', elementName, pageName, values);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         return await this.interact.selectMultiple(locator, values);
     }
 
@@ -768,7 +777,7 @@ export class Steps {
         state: 'visible' | 'attached' | 'hidden' | 'detached' = 'visible'
     ): Promise<void> {
         log.interact('Waiting for "%s" in "%s" to be "%s", then clicking', elementName, pageName, state);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.utils.waitForState(locator, state);
         await this.interact.click(locator);
     }
@@ -784,9 +793,9 @@ export class Steps {
      */
     async clickNth(pageName: string, elementName: string, index: number): Promise<void> {
         log.interact('Clicking element at index %d of "%s" in "%s"', index, elementName, pageName);
-        const locator = await this.repo.getByIndex(this.page, pageName, elementName, index);
-        if (!locator) throw new Error(`No element at index ${index} for "${elementName}" in "${pageName}"`);
-        await this.interact.click(locator);
+        const element = await this.repo.getByIndex(this.page, pageName, elementName, index);
+        if (!element) throw new Error(`No element at index ${index} for "${elementName}" in "${pageName}"`);
+        await this.interact.click(toLocator(element));
     }
 
     // ==========================================
@@ -814,7 +823,7 @@ export class Steps {
      */
     async getAll(pageName: string, elementName: string, options?: GetAllOptions): Promise<string[]> {
         log.extract('Extracting all from "%s" in "%s" with options: %O', elementName, pageName, options ?? 'text');
-        let locator = await this.repo.get(this.page, pageName, elementName);
+        let locator = toLocator(await this.repo.get(this.page, pageName, elementName));
 
         if (options?.child) {
             if (typeof options.child === 'string') {
@@ -843,7 +852,7 @@ export class Steps {
      */
     async getCount(pageName: string, elementName: string): Promise<number> {
         log.extract('Getting count of "%s" in "%s"', elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         return await this.extract.getCount(locator);
     }
 
@@ -856,7 +865,7 @@ export class Steps {
      */
     async getInputValue(pageName: string, elementName: string): Promise<string> {
         log.extract('Getting input value of "%s" in "%s"', elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         return await this.extract.getInputValue(locator);
     }
 
@@ -869,7 +878,7 @@ export class Steps {
      */
     async getCssProperty(pageName: string, elementName: string, property: string): Promise<string> {
         log.extract('Getting CSS "%s" from "%s" in "%s"', property, elementName, pageName);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         return await this.extract.getCssProperty(locator, property);
     }
 
@@ -887,7 +896,7 @@ export class Steps {
      */
     async verifyOrder(pageName: string, elementName: string, expectedTexts: string[]): Promise<void> {
         log.verify('Verifying order of "%s" in "%s": %O', elementName, pageName, expectedTexts);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.verify.order(locator, expectedTexts);
     }
 
@@ -901,7 +910,7 @@ export class Steps {
      */
     async verifyCssProperty(pageName: string, elementName: string, property: string, expectedValue: string): Promise<void> {
         log.verify('Verifying CSS "%s" of "%s" in "%s" = "%s"', property, elementName, pageName, expectedValue);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.verify.cssProperty(locator, property, expectedValue);
     }
 
@@ -915,7 +924,7 @@ export class Steps {
      */
     async verifyListOrder(pageName: string, elementName: string, direction: 'asc' | 'desc'): Promise<void> {
         log.verify('Verifying "%s" in "%s" is sorted %s', elementName, pageName, direction);
-        const locator = await this.repo.get(this.page, pageName, elementName);
+        const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.verify.listOrder(locator, direction);
     }
 
@@ -946,7 +955,7 @@ export class Steps {
     async screenshot(pageNameOrOptions?: string | ScreenshotOptions, elementName?: string, options?: ScreenshotOptions): Promise<Buffer> {
         if (typeof pageNameOrOptions === 'string' && elementName) {
             log.extract('Taking screenshot of "%s" in "%s"', elementName, pageNameOrOptions);
-            const locator = await this.repo.get(this.page, pageNameOrOptions, elementName);
+            const locator = toLocator(await this.repo.get(this.page, pageNameOrOptions, elementName));
             return await this.extract.screenshot(locator, options);
         }
 
