@@ -27,7 +27,7 @@
     "@playwright/test": ">=1.0.0"
   },
   "devDependencies": {
-    "@civitas-cerebrum/test-coverage": "^0.0.8",
+    "@civitas-cerebrum/test-coverage": "^0.0.9",
     "@playwright/test": "^1.58.2",
     "@types/debug": "^4.1.13",
     "@types/node": "^20.0.0",
