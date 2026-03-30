@@ -4,6 +4,8 @@ description: >
   Use this skill whenever writing, editing, or generating Playwright tests! Triggers on any mention of
   Playwright tests, @civitas-cerebrum/element-interactions or @civitas-cerebrum/element-repository packages, the Steps API, ElementRepository, ElementInteractions, baseFixture,
   ContextStore, page-repository.json, or any request to write, fix, or add to a Playwright test in this project.
+  Also use when asked to add entries to a page-repository JSON file, use fixtures, select dropdowns, verify elements, wait for states, or perform any browser interaction through this framework. Always consult this skill before generating test code or locator JSON — do not guess API shapes or invent method signatures.
+  Stage 5 (Test Composer): Also triggers when asked to "increase test coverage", "cover the whole app", "add more scenarios", "think like a QA", "expand the test suite", or any request for iterative, comprehensive E2E test development.
 ---
 
 # @civitas-cerebrum/element-interactions — Agent Skill
@@ -18,9 +20,10 @@ A two-package Playwright framework that decouples **element acquisition** (`@civ
 These rules are non-negotiable. They override helpfulness, initiative, and assumptions. If you are unsure about any rule, ask the user. Do not guess.
 
 ### 1. Do NOT skip stages
-- This skill operates in four stages. You MUST complete each stage and get user approval before advancing.
+- This skill operates in five stages. You MUST complete each stage and get user approval before advancing.
 - Do NOT jump ahead. Do NOT write automation code during the discovery stage.
 - Exception: API questions and fix/edit requests bypass the staged flow (see Opening section).
+- **Stage 5 (Test Composer)**: When asked to expand coverage, increase depth, or "cover the whole app", read `references/test-composer.md` for the iterative test composition workflow.
 
 ### 2. Do NOT edit `page-repository.json` without explicit permission
 - Show the user the exact JSON you want to add. Wait for "yes." Then edit.
@@ -49,6 +52,41 @@ These rules are non-negotiable. They override helpfulness, initiative, and assum
 
 ### 7. Before modifying `playwright.config.ts`, read the existing file first
 
+### 8. Save application context on every page visit or component discovery
+This is a **critical action** that must happen automatically during Stages 1, 2, and 5 (Test Composer).
+
+Every time you navigate to a new page or discover a new component (via Playwright MCP snapshot, DOM inspection, or test execution), you MUST save what you learned to a context file at `tests/e2e/docs/app-context.md`. This file is the team's living knowledge base of the application under test.
+
+**What to save per page/component:**
+- **URL pattern** — the route (e.g. `/jobs/{id}/validation`)
+- **Page purpose** — one sentence describing what this page does
+- **Key sections** — the major UI sections visible on the page
+- **Data displayed** — what data fields, labels, and values are shown
+- **Interactive elements** — buttons, links, forms, tabs, dropdowns
+- **State variations** — how the page looks in different states (empty, loaded, error)
+- **Relationships** — what pages link here and where this page links to
+
+**Format for each entry:**
+```markdown
+## PageName — `/route/pattern`
+**Purpose:** One sentence.
+**Sections:** List of major UI areas.
+**Data fields:** Labels and value types shown.
+**Actions:** Buttons, links, forms available.
+**States:** Empty state, loaded state, error state variations.
+**Navigation:** Reached from → Links to.
+**Known issues:** Any bugs or quirks discovered.
+```
+
+**When to update:**
+- During Stage 1 discovery — as you explore the app
+- During Stage 2 inspection — as you inspect DOM elements
+- During Stage 5 Test Composer — as you discover new pages in each iteration
+- When a test failure screenshot reveals unexpected page state
+- When you discover a new route, component, or state variation
+
+**Why this matters:** Without accumulated context, every new session starts from zero. This file lets future sessions understand the app's structure, known states, and edge cases without re-inspecting every page. It also serves as the source of truth for identifying test coverage gaps.
+
 ### Workflow
 - **Run the tests** to validate your work. Do not skip this.
 - **Commit** after every confirmed success. Do not batch.
@@ -65,7 +103,7 @@ Do NOT write any automation code until Stage 3. Do NOT create selectors until St
 
 ### Checklist
 
-You MUST create a task for each of these items and complete them in order:
+You MUST create a task for each of these items and complete them in order (Stages 1-4 are for individual scenarios; Stage 5 is for comprehensive suite expansion):
 
 1. **Understand intent** — read the user's message; only show the greeting menu if intent is unclear
 2. **Stage 1: Scenario Discovery** — understand the app, clarify the scenario, produce a formatted scenario
@@ -76,6 +114,7 @@ You MUST create a task for each of these items and complete them in order:
 7. **Run and validate** — execute the test, inspect failures visually, iterate
 8. **Stage 4: API Compliance Review** — review all scenarios against the API Reference to catch incorrect usage
 9. **Fix any issues found** — correct API misuse, re-run tests
+10. **Stage 5: Test Composer** (optional, on request) — read `references/test-composer.md` and follow the iterative cycle: Inventory → Discover → Implement (using User Journey Layers) → Stabilize → Document → Review → Repeat
 10. **Commit** — commit after confirmed success
 
 ### Process Flow
@@ -546,6 +585,8 @@ const href = await steps.getListedElementData('PageName', 'tableRows', {
 await steps.waitForState('PageName', 'elementName');                        // default: 'visible'
 await steps.waitForState('PageName', 'elementName', 'hidden');              // also: 'attached', 'detached'
 await steps.waitAndClick('PageName', 'elementName');                        // waits for visible, then clicks
+await steps.scrollUntilFound('PageName', 'elementName');             // scrolls until found, default 75s timeout
+await steps.scrollUntilFound('PageName', 'elementName', 30000);      // custom timeout
 await steps.waitForNetworkIdle();
 await steps.waitForResponse('/api/data', async () => {
   await steps.click('PageName', 'submitButton');
