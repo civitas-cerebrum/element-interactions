@@ -12,6 +12,18 @@ description: >
 
 A two-package Playwright framework that decouples **element acquisition** (`@civitas-cerebrum/element-repository`) from **element interaction** (`@civitas-cerebrum/element-interactions`). Tests reference elements by plain strings (`'HomePage'`, `'submitButton'`); raw selectors never appear in test code.
 
+## Companion Skills
+
+This skill is the orchestrator for a group of testing skills. It handles Stages 1-4 directly, then activates companion skills for advanced stages:
+
+| Skill | Activates when | What it does |
+|---|---|---|
+| `test-composer` | User asks to expand coverage, or Stage 5 reached | Iterative test suite expansion across the full app |
+| `bug-discovery` | Automatically after Stage 5 achieves target coverage | Adversarial bug hunting after tests pass |
+| `agents-vs-agents` | App has AI features, or user mentions AI guardrails/red-teaming/bias testing | Adversarial AI testing with LLM-powered attacker + judge |
+
+When any of these conditions are met, invoke the Skill tool with the companion skill name. Do not try to handle their workflows inline — they have their own staged processes.
+
 ---
 
 ## 🚨 ABSOLUTE RULES — STOP AND READ BEFORE ANY ACTION
@@ -23,7 +35,7 @@ These rules are non-negotiable. They override helpfulness, initiative, and assum
 - This skill operates in five stages. You MUST complete each stage and get user approval before advancing.
 - Do NOT jump ahead. Do NOT write automation code during the discovery stage.
 - Exception: API questions and fix/edit requests bypass the staged flow (see Opening section).
-- **Stage 5 (Test Composer)**: When asked to expand coverage, increase depth, or "cover the whole app", read `references/test-composer.md` for the iterative test composition workflow.
+- **Stages 5+**: See Companion Skills table above for when to activate `test-composer`, `bug-discovery`, and `agents-vs-agents`.
 
 ### 2. Do NOT edit `page-repository.json` without explicit permission
 - Show the user the exact JSON you want to add. Wait for "yes." Then edit.
@@ -111,11 +123,13 @@ You MUST create a task for each of these items and complete them in order (Stage
 4. **Stage 2: Element Inspection** — inspect the live app (or receive user-provided selectors), propose page-repository entries
 5. **User approves selectors** — hard gate
 6. **Stage 3: Write Automation** — write the test using the Steps API and approved selectors
-7. **Run and validate** — execute the test, inspect failures visually, iterate
-8. **Stage 4: API Compliance Review** — review all scenarios against the API Reference to catch incorrect usage
-9. **Fix any issues found** — correct API misuse, re-run tests
-10. **Stage 5: Test Composer** (optional, on request) — read `references/test-composer.md` and follow the iterative cycle: Inventory → Discover → Implement (using User Journey Layers) → Stabilize → Document → Review → Repeat
-10. **Commit** — commit after confirmed success
+7. **Run and validate** — execute the test, inspect failures visually, iterate until passing
+8. **Stage 4: API Compliance Review** — triggers automatically each time a test passes. Review that test's code against the API Reference before proceeding
+9. **Fix any issues found** — correct API misuse, re-run to confirm still passing
+10. **Commit** — commit after each passing + compliant test case
+11. **Repeat 6-10** for each additional scenario, or proceed to Stage 5/6
+12. **Stage 5: Test Composer** (optional, on request) — invoke the `test-composer` skill for the iterative test composition workflow
+13. **Stage 6: Bug Discovery** (auto after Stage 5) — invoke the `bug-discovery` skill to actively probe for bugs
 
 ### Process Flow
 
@@ -207,13 +221,16 @@ digraph element_interactions {
     "Mini-inspection:\ninspect DOM, propose,\nget approval" -> "Inspect screenshot, fix, re-run";
     "Inspect screenshot, fix, re-run" -> "Run test";
 
-    "STAGE 4: API Compliance Review" -> "Review all test code\nagainst API Reference";
-    "Review all test code\nagainst API Reference" -> "Issues found?";
-    "Issues found?" -> "Commit" [label="no — all correct"];
-    "Issues found?" -> "Fix API misuse,\nre-run tests" [label="yes"];
-    "Fix API misuse,\nre-run tests" -> "All scenarios pass\nafter fixes?";
-    "All scenarios pass\nafter fixes?" -> "Commit" [label="yes"];
-    "All scenarios pass\nafter fixes?" -> "Inspect screenshot, fix, re-run" [label="no — regression"];
+    "STAGE 4: API Compliance Review" -> "Review this test's code\nagainst API Reference";
+    "Review this test's code\nagainst API Reference" -> "Issues found?";
+    "Issues found?" -> "Commit this test" [label="no — compliant"];
+    "Issues found?" -> "Fix API misuse,\nre-run test" [label="yes"];
+    "Fix API misuse,\nre-run test" -> "Test still passes?" [label=""];
+    "Test still passes?" -> "Commit this test" [label="yes"];
+    "Test still passes?" -> "Inspect screenshot, fix, re-run" [label="no — regression"];
+    "Commit this test" -> "More scenarios?" [label=""];
+    "More scenarios?" -> "STAGE 3: Write Automation" [label="yes — next scenario"];
+    "More scenarios?" -> "Done" [label="no"];
 }
 ```
 
@@ -354,9 +371,9 @@ When the user asks to fix or edit an existing test, skip Stages 1 and 2. Read th
 
 ## Stage 4: API Compliance Review
 
-**Goal:** After all scenarios pass, review every test file written in this session against the API Reference to ensure correct usage of the `@civitas-cerebrum/element-interactions` package.
+**Goal:** Review test code against the API Reference to ensure correct usage of the `@civitas-cerebrum/element-interactions` package.
 
-**This stage triggers automatically** once all tests pass in Stage 3. Do NOT skip it — even if the tests pass, they may be using the API incorrectly (wrong argument order, deprecated methods, missing options, incorrect types).
+**This stage triggers automatically every time a test reaches passing state** in Stage 3. Do NOT batch — review each test case immediately after it passes, before moving on to the next scenario. Even if the tests pass, they may be using the API incorrectly (wrong argument order, deprecated methods, missing options, incorrect types). Catching issues early prevents the same mistake from propagating into subsequent test cases.
 
 ### Review Checklist
 
