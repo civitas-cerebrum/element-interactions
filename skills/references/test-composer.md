@@ -1,3 +1,12 @@
+---
+name: test-composer
+description: >
+  Use this skill when asked to "increase coverage", "add more tests", "cover the whole app",
+  "think like a QA", "expand the test suite", "add more scenarios", or any request for iterative,
+  comprehensive E2E test development. Triggers on requests to systematically expand an existing
+  Playwright test suite across an entire application. Do NOT use for writing a single test scenario.
+---
+
 # Test Composer — Stage 5: Iterative Test Suite Expansion
 
 The fifth stage of the element-interactions workflow. After writing initial automation (Stages 1-4), this stage systematically expands coverage through iterative cycles of scenario generation, implementation, stabilization, review, and gap analysis.
