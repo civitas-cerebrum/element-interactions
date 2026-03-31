@@ -13,3 +13,4 @@ api-coverage-report.txt
 yalc.lock
 test-coverage-report.md
 *.txt
+/docs
