@@ -3,13 +3,24 @@
 const fs   = require('fs');
 const path = require('path');
 
-const projectRoot = path.resolve(__dirname, '..', '..', '..');
-const skillsDir   = path.join(__dirname, '..', 'skills');
-const destDir     = path.join(projectRoot, '.claude', 'skills', 'element-interactions');
+const packageDir  = path.resolve(__dirname, '..');
+const skillsDir   = path.join(packageDir, 'skills');
+
+// When installed as a dependency, __dirname is:
+//   <project>/node_modules/@civitas-cerebrum/element-interactions/scripts
+// so four levels up reaches the consumer's project root.
+const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
+
+// Skip when running in the package's own repo (local dev `npm install`).
+if (!packageDir.includes('node_modules')) {
+  process.exit(0);
+}
+
+const skillsDestBase = path.join(projectRoot, '.claude', 'skills');
 
 const files = [
-  { src: 'element-interactions.md', dest: 'SKILL.md' },
-  { src: 'references/test-composer.md', dest: 'references/test-composer.md' },
+  { src: 'element-interactions.md', destDir: 'element-interactions', dest: 'SKILL.md' },
+  { src: 'references/test-composer.md', destDir: 'test-composer', dest: 'SKILL.md' },
 ];
 
 try {
@@ -17,7 +28,7 @@ try {
 
   for (const file of files) {
     const srcPath  = path.join(skillsDir, file.src);
-    const destPath = path.join(destDir, file.dest);
+    const destPath = path.join(skillsDestBase, file.destDir, file.dest);
 
     if (!fs.existsSync(srcPath)) {
       continue;
