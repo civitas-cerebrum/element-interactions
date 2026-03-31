@@ -24,6 +24,7 @@ These rules are non-negotiable. They override helpfulness, initiative, and assum
 - Do NOT jump ahead. Do NOT write automation code during the discovery stage.
 - Exception: API questions and fix/edit requests bypass the staged flow (see Opening section).
 - **Stage 5 (Test Composer)**: When asked to expand coverage, increase depth, or "cover the whole app", read `references/test-composer.md` for the iterative test composition workflow.
+- **AI Guardrail Testing (Agents vs Agents)**: When the app has AI features (chat, generation, decision-making), read `references/agents-vs-agents.md` for the adversarial testing methodology. Covers 8 universal categories: prompt injection, bias, compliance, content injection, scope containment, factual consistency, data leakage, and multi-turn social engineering. Uses an Adversary LLM → Target AI → Judge LLM architecture.
 
 ### 2. Do NOT edit `page-repository.json` without explicit permission
 - Show the user the exact JSON you want to add. Wait for "yes." Then edit.
