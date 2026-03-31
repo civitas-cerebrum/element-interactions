@@ -1,3 +1,14 @@
+---
+name: agents-vs-agents
+description: >
+  Use this skill for adversarial AI testing — red-teaming, guardrail verification, bias detection,
+  prompt injection testing, and compliance auditing of any application with an AI component. Triggers
+  on any mention of: "test AI guardrails", "adversarial testing", "red team the AI", "test for bias",
+  "prompt injection testing", "AI safety testing", "agents vs agents", "AI compliance testing",
+  "guardrail verification", or any request to test whether an AI behaves safely, stays in scope, or
+  handles adversarial inputs correctly. Also use when testing AI chatbots, content generators,
+  AI-driven decision systems, or any LLM-integrated feature for safety and correctness.
+---
 
 # Agents vs Agents — Adversarial AI Testing
 

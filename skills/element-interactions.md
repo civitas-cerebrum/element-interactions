@@ -23,8 +23,9 @@ These rules are non-negotiable. They override helpfulness, initiative, and assum
 - This skill operates in five stages. You MUST complete each stage and get user approval before advancing.
 - Do NOT jump ahead. Do NOT write automation code during the discovery stage.
 - Exception: API questions and fix/edit requests bypass the staged flow (see Opening section).
-- **Stage 5 (Test Composer)**: When asked to expand coverage, increase depth, or "cover the whole app", read `references/test-composer.md` for the iterative test composition workflow.
-- **AI Guardrail Testing (Agents vs Agents)**: When the app has AI features (chat, generation, decision-making), read `references/agents-vs-agents.md` for the adversarial testing methodology. Covers 8 universal categories: prompt injection, bias, compliance, content injection, scope containment, factual consistency, data leakage, and multi-turn social engineering. Uses an Adversary LLM → Target AI → Judge LLM architecture.
+- **Stage 5 (Test Composer)**: When asked to expand coverage, increase depth, or "cover the whole app", invoke the `test-composer` skill for the iterative test composition workflow.
+- **AI Guardrail Testing (Agents vs Agents)**: When the app has AI features (chat, generation, decision-making), invoke the `agents-vs-agents` skill for the adversarial testing methodology. Covers 8 universal categories: prompt injection, bias, compliance, content injection, scope containment, factual consistency, data leakage, and multi-turn social engineering.
+- **Bug Discovery (Stage 6)**: After Test Composer (Stage 5) achieves target coverage, automatically invoke the `bug-discovery` skill to actively probe for bugs, edge cases, and failures that passing tests missed.
 
 ### 2. Do NOT edit `page-repository.json` without explicit permission
 - Show the user the exact JSON you want to add. Wait for "yes." Then edit.
