@@ -27,10 +27,10 @@ export function baseFixture<T extends {}>(
             await use(new ElementRepository(locatorPath));
         },
         steps: async ({ page, repo }, use) => {
-            await use(new Steps(page, repo, undefined, options?.emailCredentials));
+            await use(new Steps(page, repo, options?.emailCredentials));
         },
         interactions: async ({ page }, use) => {
-            await use(new ElementInteractions(page, undefined, options?.emailCredentials));
+            await use(new ElementInteractions(page, options?.emailCredentials));
         },
         contextStore: async ({ }, use) => {
             await use(new ContextStore());
