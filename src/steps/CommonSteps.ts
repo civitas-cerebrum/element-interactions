@@ -42,16 +42,15 @@ export class Steps {
      * Initializes the Steps class with the required Playwright page and element repository.
      * @param page - The current Playwright Page object.
      * @param repo - An initialized instance of `ElementRepository` containing your locators.
-     * @param emailCredentials - Optional email credentials to enable the email sub-API.
-     * @param timeout - Optional global timeout override (in milliseconds).
+     * @param options - Optional configuration: emailCredentials and/or timeout.
      */
     constructor(
         private page: Page,
         private repo: ElementRepository,
-        emailCredentials?: EmailCredentials | EmailClientConfig,
-        timeout?: number
+        options?: { emailCredentials?: EmailCredentials | EmailClientConfig; timeout?: number }
     ) {
-        const interactions = new ElementInteractions(page, emailCredentials, timeout);
+        const { emailCredentials, timeout } = options ?? {};
+        const interactions = new ElementInteractions(page, { emailCredentials, timeout });
         this.interact = interactions.interact;
         this.navigate = interactions.navigate;
         this.extract = interactions.extract;

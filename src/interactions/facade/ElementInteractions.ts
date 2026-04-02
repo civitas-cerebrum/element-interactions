@@ -24,10 +24,10 @@ export class ElementInteractions {
     /**
      * Initializes the ElementInteractions facade.
      * @param page - The current Playwright Page object.
-     * @param emailCredentials - Optional email credentials to enable the email sub-API.
-     * @param timeout - Optional global timeout override (in milliseconds) for all interactions and verifications. Defaults to 30000 ms (30 seconds).
+     * @param options - Optional configuration: emailCredentials and/or timeout.
      */
-    constructor(page: Page, emailCredentials?: EmailCredentials | EmailClientConfig, timeout?: number) {
+    constructor(page: Page, options?: { emailCredentials?: EmailCredentials | EmailClientConfig; timeout?: number }) {
+        const { emailCredentials, timeout } = options ?? {};
         this.interact = new Interactions(page, timeout);
         this.verify = new Verifications(page, timeout);
         this.navigate = new Navigation(page);

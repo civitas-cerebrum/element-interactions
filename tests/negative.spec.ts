@@ -14,7 +14,7 @@ test.describe('Negative Tests', () => {
   const NEGATIVE_TIMEOUT = 2000;
 
   test('TC_077: click on missing element throws', async ({ page }) => {
-    const fast = new ElementInteractions(page, NEGATIVE_TIMEOUT);
+    const fast = new ElementInteractions(page, { timeout: NEGATIVE_TIMEOUT });
     await page.goto('/');
     const missing = page.locator('[data-testid="does-not-exist"]');
     await expect(async () => {
@@ -24,7 +24,7 @@ test.describe('Negative Tests', () => {
   });
 
   test('TC_078: verifyText rejects incorrect text', async ({ page, steps }) => {
-    const fast = new ElementInteractions(page, NEGATIVE_TIMEOUT);
+    const fast = new ElementInteractions(page, { timeout: NEGATIVE_TIMEOUT });
     await steps.navigateTo('/');
     const title = page.locator('h1');
     await expect(async () => {
@@ -34,7 +34,7 @@ test.describe('Negative Tests', () => {
   });
 
   test('TC_079: verifyAbsence rejects visible element', async ({ page, steps }) => {
-    const fast = new ElementInteractions(page, NEGATIVE_TIMEOUT);
+    const fast = new ElementInteractions(page, { timeout: NEGATIVE_TIMEOUT });
     await steps.navigateTo('/');
     const title = page.locator('h1');
     await expect(async () => {
@@ -44,7 +44,7 @@ test.describe('Negative Tests', () => {
   });
 
   test('TC_080: verifyCount rejects incorrect count', async ({ page, steps }) => {
-    const fast = new ElementInteractions(page, NEGATIVE_TIMEOUT);
+    const fast = new ElementInteractions(page, { timeout: NEGATIVE_TIMEOUT });
     await steps.navigateTo('/');
     const categories = page.locator('.sidebar-section');
     await expect(async () => {
@@ -54,7 +54,7 @@ test.describe('Negative Tests', () => {
   });
 
   test('TC_081: fill rejects disabled input', async ({ page, steps }) => {
-    const fast = new ElementInteractions(page, NEGATIVE_TIMEOUT);
+    const fast = new ElementInteractions(page, { timeout: NEGATIVE_TIMEOUT });
     await steps.navigateTo('/text-inputs');
     const disabled = page.locator('[data-testid="input-disabled"]');
     await expect(async () => {
@@ -64,7 +64,7 @@ test.describe('Negative Tests', () => {
   });
 
   test('TC_082: selectDropdown rejects nonexistent value', async ({ page, steps }) => {
-    const fast = new ElementInteractions(page, NEGATIVE_TIMEOUT);
+    const fast = new ElementInteractions(page, { timeout: NEGATIVE_TIMEOUT });
     await steps.navigateTo('/dropdown');
     await expect(async () => {
       await fast.interact.selectDropdown(
@@ -76,7 +76,7 @@ test.describe('Negative Tests', () => {
   });
 
   test('TC_083: clicking non-matching listed element throws', async ({ page, steps }) => {
-    const fast = new ElementInteractions(page, NEGATIVE_TIMEOUT);
+    const fast = new ElementInteractions(page, { timeout: NEGATIVE_TIMEOUT });
     await steps.navigateTo('/table');
     const rows = page.locator('[data-testid^="table-row-"]');
     const result = await fast.interact.getListedElement(rows, { text: 'Nonexistent Person XYZ' });
@@ -88,7 +88,7 @@ test.describe('Negative Tests', () => {
   });
 
   test('TC_084: getListedElement requires text or attribute', async ({ page, steps }) => {
-    const fast = new ElementInteractions(page, NEGATIVE_TIMEOUT);
+    const fast = new ElementInteractions(page, { timeout: NEGATIVE_TIMEOUT });
     await steps.navigateTo('/table');
     const rows = page.locator('[data-testid^="table-row-"]');
     await expect(async () => {
@@ -98,7 +98,7 @@ test.describe('Negative Tests', () => {
   });
 
   test('TC_085: dragAndDrop rejects missing options', async ({ page, steps }) => {
-    const fast = new ElementInteractions(page, NEGATIVE_TIMEOUT);
+    const fast = new ElementInteractions(page, { timeout: NEGATIVE_TIMEOUT });
     await steps.navigateTo('/draggable');
     const draggable = page.locator('[data-testid="draggable-box"]');
     await expect(async () => {
@@ -108,7 +108,7 @@ test.describe('Negative Tests', () => {
   });
 
   test('TC_086: getByText strict throws when not found', async ({ page, steps }) => {
-    const fast = new ElementInteractions(page, NEGATIVE_TIMEOUT);
+    const fast = new ElementInteractions(page, { timeout: NEGATIVE_TIMEOUT });
     await steps.navigateTo('/table');
     const rows = page.locator('[data-testid^="table-row-"]');
     await expect(async () => {
