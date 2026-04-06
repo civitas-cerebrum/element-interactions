@@ -227,3 +227,45 @@ test.describe('TC_046: verifyImages - Image Verification', () => {
     log('TC_046 verifyImages — passed');
   });
 });
+
+test.describe('TC_047: Steps - isPresent boolean visibility check', () => {
+
+  test('isPresent returns true for visible elements and false for absent ones', async ({ steps }) => {
+
+    await test.step('Navigate to Buttons page', async () => {
+      await steps.navigateTo('/');
+      await steps.click('SidebarNav', 'buttonsLink');
+      await steps.verifyUrlContains('/buttons');
+    });
+
+    await test.step('isPresent returns true for a visible element', async () => {
+      const result = await steps.isPresent('ButtonsPage', 'primaryButton');
+      expect(result).toBe(true);
+    });
+
+    await test.step('isPresent returns false for an element on a different page', async () => {
+      const result = await steps.isPresent('FormsPage', 'formTitle');
+      expect(result).toBe(false);
+    });
+
+    log('TC_047 isPresent — passed');
+  });
+});
+
+test.describe('TC_048: Steps - navigateTo with query params', () => {
+  test.use({ baseURL: 'https://civitas-cerebrum.github.io/vue-test-app/' });
+
+  test('navigateTo appends query parameters to the URL', async ({ steps }) => {
+
+    await test.step('Navigate with query params', async () => {
+      await steps.navigateTo('/', { query: { tab: 'settings', lang: 'en' } });
+    });
+
+    await test.step('URL contains the appended query params', async () => {
+      await steps.verifyUrlContains('tab=settings');
+      await steps.verifyUrlContains('lang=en');
+    });
+
+    log('TC_048 navigateTo query params — passed');
+  });
+});

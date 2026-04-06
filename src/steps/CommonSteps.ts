@@ -65,11 +65,18 @@ export class Steps {
 
     /**
      * Navigates the browser to the specified URL.
+     * Optionally appends query parameters from an options object.
      * @param url - The URL or path to navigate to (e.g. `'/dashboard'` or `'https://example.com'`).
+     * @param options - Optional settings. `query` is a key-value map appended as query parameters.
      */
-    async navigateTo(url: string): Promise<void> {
-        log.navigate('Navigating to URL: "%s"', url);
-        await this.navigate.toUrl(url);
+    async navigateTo(url: string, options?: { query?: Record<string, string> }): Promise<void> {
+        let targetUrl = url;
+        if (options?.query) {
+            const params = new URLSearchParams(options.query).toString();
+            targetUrl = `${url}${url.includes('?') ? '&' : '?'}${params}`;
+        }
+        log.navigate('Navigating to URL: "%s"', targetUrl);
+        await this.navigate.toUrl(targetUrl);
     }
 
     /**
@@ -387,6 +394,23 @@ export class Steps {
         log.verify('Verifying presence of "%s" in "%s"', elementName, pageName);
         const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
         await this.verify.presence(locator);
+    }
+
+    /**
+     * Checks whether an element is currently present and visible in the DOM.
+     * Returns a boolean instead of throwing — useful for conditional logic.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param elementName - The element name as defined under the given page.
+     * @returns `true` if the element is visible, `false` otherwise.
+     */
+    async isPresent(pageName: string, elementName: string): Promise<boolean> {
+        log.verify('Checking presence of "%s" in "%s"', elementName, pageName);
+        try {
+            const locator = toLocator(await this.repo.get(this.page, pageName, elementName));
+            return await locator.isVisible();
+        } catch {
+            return false;
+        }
     }
 
     /**
