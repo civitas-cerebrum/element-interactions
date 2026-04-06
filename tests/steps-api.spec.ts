@@ -244,7 +244,7 @@ test.describe('TC_047: Steps - isPresent boolean visibility check', () => {
     });
 
     await test.step('isPresent returns false for an element on a different page', async () => {
-      const result = await steps.isPresent('FormsPage', 'formTitle');
+      const result = await steps.isPresent('FormsPage', 'nameInput');
       expect(result).toBe(false);
     });
 
