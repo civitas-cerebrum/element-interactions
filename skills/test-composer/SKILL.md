@@ -42,7 +42,7 @@ Each iteration follows this exact sequence. Do not skip steps.
 └─────────────────────────────────────────────┘
 ```
 
-Repeat until coverage reaches the target (typically 80%+) or the remaining gaps require external setup (test data, third-party services) that cannot be created within tests.
+Repeat until 100% coverage is reached — every page, every user flow, every interactive element must have test coverage. The only acceptable gaps are those requiring external setup (test data, third-party services) that cannot be created within tests.
 
 ---
 
@@ -237,13 +237,12 @@ At the end of each cycle, assess:
 
 **Continue if:**
 - P0 or P1 gaps remain that can be implemented without external setup
-- Coverage is below the target threshold
-- The user explicitly asked for more depth
+- Coverage is below 100%
+- Any page, flow, or interactive element lacks test coverage
 
 **Stop if:**
 - Remaining gaps require external setup (test data, third-party APIs, specific user roles)
-- Coverage has plateaued (each cycle adds <5 new tests)
-- The user is satisfied
+- 100% coverage is verified — every page, flow, and element is covered
 
 **Commit message format:**
 ```
