@@ -138,7 +138,7 @@ Each selector object supports `css`, `xpath`, `id`, or `text` as the locator str
 
 ---
 
-## Usage: The `Steps` API (Recommended)
+## 💻 Usage: The `Steps` API (Recommended)
 
 Initialize `Steps` by passing your `ElementRepository` instance (which already holds the driver/page):
 
