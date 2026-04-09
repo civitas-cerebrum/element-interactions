@@ -64,7 +64,28 @@ These rules are non-negotiable. They override helpfulness, initiative, and assum
 
 ### 7. Before modifying `playwright.config.ts`, read the existing file first
 
-### 8. Save application context on every page visit or component discovery
+### 8. Do NOT work around application bugs — report them
+- When a test fails, **classify the problem** before acting:
+  - **Test issue (fix it yourself):** wrong selector, test logic error, timing/race condition, missing page-repository entry, incorrect API usage, flaky network — the test is wrong, not the app.
+  - **Application bug (report and stop):** the app itself behaves incorrectly — a button doesn't work, a page crashes, data is wrong, a flow is broken, a feature doesn't do what it should, a UI element is missing or misplaced, an API returns an error. The test is correct but the app is broken.
+- **How to tell the difference:**
+  1. Look at the failure screenshot (Rule 6). Does the app look/behave wrong, or did your test target the wrong thing?
+  2. Verify your selectors and API usage are correct. If they are, the problem is in the app.
+  3. If a user flow that *should* work based on the scenario doesn't work because the app won't let it — that's an application bug, not a test to fix.
+- **When you identify an application bug:**
+  1. **STOP.** Do not try to make the test pass.
+  2. **Report it to the user** with: what you were testing, what you expected to happen, what actually happened, and the screenshot evidence.
+  3. **Leave the test as-is.** The test is correct — it accurately describes what *should* work. Do not modify it to match the broken behavior.
+- **There are NO acceptable workarounds for application bugs. This means:**
+  - Do NOT change assertions to match the buggy behavior (e.g., expecting an error message instead of success)
+  - Do NOT skip, remove, or comment out the failing test flow
+  - Do NOT rewrite the test to use an alternative flow that avoids the broken feature
+  - Do NOT add try/catch to handle app errors gracefully in the test
+  - Do NOT treat an app bug as a test that needs debugging — if the test correctly describes the expected behavior and the app doesn't deliver, the app is wrong
+  - Do NOT silently move on to the next scenario as if the failure didn't happen
+- **The test's job is to describe correct behavior. If the app doesn't match, that's a bug to report, not a test to fix.**
+
+### 9. Save application context on every page visit or component discovery
 This is a **critical action** that must happen automatically during Stages 1, 2, and 5 (Test Composer).
 
 Every time you navigate to a new page or discover a new component (via Playwright MCP snapshot, DOM inspection, or test execution), you MUST save what you learned to a context file at `tests/e2e/docs/app-context.md`. This file is the team's living knowledge base of the application under test.
@@ -215,7 +236,9 @@ digraph element_interactions {
     "Write test using Steps API" -> "Run test";
     "Run test" -> "Test passes?";
     "Test passes?" -> "STAGE 4: API Compliance Review" [label="yes"];
-    "Test passes?" -> "New selector needed?" [label="no"];
+    "Test passes?" -> "Classify failure\n(Rule 8)" [label="no"];
+    "Classify failure\n(Rule 8)" -> "Report app bug to user\nand STOP" [label="application bug — do not modify test"];
+    "Classify failure\n(Rule 8)" -> "New selector needed?" [label="test issue"];
     "New selector needed?" -> "Mini-inspection:\ninspect DOM, propose,\nget approval" [label="yes"];
     "New selector needed?" -> "Inspect screenshot, fix, re-run" [label="no — code issue"];
     "Mini-inspection:\ninspect DOM, propose,\nget approval" -> "Inspect screenshot, fix, re-run";
@@ -360,7 +383,9 @@ Show the user the exact JSON entries you want to add:
 2. **Add approved selectors** to `page-repository.json` (if not already done).
 3. **Write the test file** using the Steps API. Every interaction goes through `steps.*` methods — no raw `page.locator()` calls.
 4. **Run the test** with `npx playwright test <test-file>`.
-5. **If the test fails:** open the HTML report (`npx playwright show-report`), inspect the failure screenshot via Playwright MCP, diagnose, fix, and re-run. If the failure reveals a missing or broken selector, perform a **mini-inspection**: inspect the DOM (or ask the user for the selector if no MCP), propose the new entry, get approval, then continue fixing.
+5. **If the test fails:** open the HTML report (`npx playwright show-report`), inspect the failure screenshot via Playwright MCP, then **classify the failure** (see Rule 8):
+   - **Test issue** (selector problem, test logic, timing, incorrect API usage) — fix the test. If the failure reveals a missing or broken selector, perform a **mini-inspection**: inspect the DOM (or ask the user for the selector if no MCP), propose the new entry, get approval, then continue fixing.
+   - **Application bug** (the app itself is broken — wrong behavior, missing feature, crash, bad data) — **stop and report to the user**. The test is correct; the app is wrong. Do not modify the test to accommodate the bug. Provide what you tested, what you expected, what happened, and the screenshot evidence.
 6. **If the test passes:** commit immediately.
 
 ### Skip-to-Stage-3 (Fix/Edit Mode)
