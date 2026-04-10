@@ -3,7 +3,7 @@ import { ClickOptions, DropdownSelectOptions, DropdownSelectType, DragAndDropOpt
 import { Utils } from '../utils/ElementUtilities';
 import { Element, WebElement } from '@civitas-cerebrum/element-repository';
 
-/** A Playwright Locator or a platform-agnostic Element from the repository. */
+/** A Playwright Locator or an Element wrapper from the repository. */
 export type Target = Locator | Element;
 
 /** Resolves a Target to a Playwright Locator. */

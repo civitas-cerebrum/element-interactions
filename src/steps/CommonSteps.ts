@@ -9,7 +9,7 @@ import { ElementAction } from './ElementAction';
 
 /**
  * Extracts the underlying Playwright Locator from an Element wrapper.
- * This bridges the platform-agnostic Element interface from element-repository
+ * This bridges the Element interface from element-repository
  * with the Playwright-specific interaction/verification/extraction classes.
  */
 function toLocator(element: Element): Locator {
