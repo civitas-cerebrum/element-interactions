@@ -703,6 +703,36 @@ const count = await steps.on('items', 'ListPage').getCount();
 await steps.on('modal', 'Page').waitForState('visible');
 ```
 
+#### Chaining Examples
+
+Combine strategy selectors with actions for concise, readable test flows:
+
+```ts
+// Navigate a hover menu — select random item, bypass actionability checks
+await steps.on('mainNavItems', 'HomePage').first().hover();
+await steps.on('subcategoryItems', 'HomePage').random().click({ withoutScrolling: true });
+
+// Fill a form field then verify it took
+await steps.on('emailInput', 'LoginPage').fill('user@test.com');
+await steps.on('emailInput', 'LoginPage').verifyInputValue('user@test.com');
+
+// Find a specific item by text, click it, verify navigation
+await steps.on('categories', 'HomePage').byText('Accessories').click();
+await steps.verifyUrlContains('/accessories');
+await steps.on('productCards', 'CollectionsPage').verifyCount({ greaterThan: 0 });
+
+// Verify multiple properties — use element.action() chain for sequencing
+const submitBtn = await repo.get('submitButton', 'CheckoutPage');
+await submitBtn.action()
+  .verifyPresence()
+  .verifyText('Place Order')
+  .verifyEnabled();
+
+// Extract data from a specific element in a list
+const thirdPrice = await steps.on('price', 'CollectionsPage').nth(2).getText();
+const isVisible = await steps.on('saleBadge', 'ProductPage').isPresent();
+```
+
 ### Accessing the Repository Directly
 
 Use `repo` when you need to filter by visible text, iterate all matches, or pick a random item. Repository methods use `(elementName, pageName)` order (no driver arg — driver is bound at construction). Methods return `Element` wrappers with `click()`, `fill()`, `textContent()`, etc. To access the underlying Playwright `Locator`, cast to `WebElement`:
