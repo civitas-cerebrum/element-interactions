@@ -509,7 +509,7 @@ Supports `css`, `xpath`, `id`, or `text` strategies. Names: PascalCase pages (`C
 
 ### Steps API
 
-Every method takes `pageName` and `elementName` as its first two arguments, matching keys in your JSON file.
+Every method takes `elementName` and `pageName` as its first two arguments, matching keys in your JSON file.
 
 **Imports** — add at the top of your test file as needed:
 ```ts
@@ -526,7 +526,7 @@ await steps.setViewport(1280, 720);
 
 // Tab management
 const newPage = await steps.switchToNewTab(async () => {
-  await steps.click('PageName', 'newTabLink');
+  await steps.click('newTabLink', 'PageName');
 });
 await steps.closeTab(newPage);
 const count = steps.getTabCount();
@@ -535,91 +535,91 @@ const count = steps.getTabCount();
 #### Interaction
 
 ```ts
-await steps.click('PageName', 'elementName');
-await steps.clickWithoutScrolling('PageName', 'elementName');
-const clicked = await steps.clickIfPresent('PageName', 'elementName'); // returns boolean
-await steps.clickRandom('PageName', 'elementName');
-await steps.clickNth('PageName', 'elementName', 2);           // zero-based index
-await steps.rightClick('PageName', 'elementName');
-await steps.doubleClick('PageName', 'elementName');
-await steps.check('PageName', 'elementName');
-await steps.uncheck('PageName', 'elementName');
-await steps.hover('PageName', 'elementName');
-await steps.scrollIntoView('PageName', 'elementName');
-await steps.fill('PageName', 'elementName', 'text');
-await steps.clearInput('PageName', 'elementName');
-await steps.typeSequentially('PageName', 'elementName', 'text', 50); // optional delay ms
-await steps.uploadFile('PageName', 'elementName', 'path/to/file.pdf');
-await steps.setSliderValue('PageName', 'elementName', 75);
+await steps.click('elementName', 'PageName');
+await steps.clickWithoutScrolling('elementName', 'PageName');
+const clicked = await steps.clickIfPresent('elementName', 'PageName'); // returns boolean
+await steps.clickRandom('elementName', 'PageName');
+await steps.clickNth('elementName', 'PageName', 2);           // zero-based index
+await steps.rightClick('elementName', 'PageName');
+await steps.doubleClick('elementName', 'PageName');
+await steps.check('elementName', 'PageName');
+await steps.uncheck('elementName', 'PageName');
+await steps.hover('elementName', 'PageName');
+await steps.scrollIntoView('elementName', 'PageName');
+await steps.fill('elementName', 'PageName', 'text');
+await steps.clearInput('elementName', 'PageName');
+await steps.typeSequentially('elementName', 'PageName', 'text', 50); // optional delay ms
+await steps.uploadFile('elementName', 'PageName', 'path/to/file.pdf');
+await steps.setSliderValue('elementName', 'PageName', 75);
 await steps.pressKey('Enter');                                 // 'Escape', 'Tab', 'Control+A', etc.
 
 // Dropdowns
-const val = await steps.selectDropdown('PageName', 'elementName');                                              // random (default)
-const val2 = await steps.selectDropdown('PageName', 'elementName', { type: DropdownSelectType.VALUE, value: 'xl' });
-const val3 = await steps.selectDropdown('PageName', 'elementName', { type: DropdownSelectType.INDEX, index: 2 });
-await steps.selectMultiple('PageName', 'multiSelect', ['opt1', 'opt2']);
+const val = await steps.selectDropdown('elementName', 'PageName');                                              // random (default)
+const val2 = await steps.selectDropdown('elementName', 'PageName', { type: DropdownSelectType.VALUE, value: 'xl' });
+const val3 = await steps.selectDropdown('elementName', 'PageName', { type: DropdownSelectType.INDEX, index: 2 });
+await steps.selectMultiple('multiSelect', 'PageName', ['opt1', 'opt2']);
 
 // Drag and drop — target accepts a Locator or Element from the repository
-await steps.dragAndDrop('PageName', 'elementName', { target: otherLocatorOrElement });
-await steps.dragAndDrop('PageName', 'elementName', { xOffset: 100, yOffset: 0 });
-await steps.dragAndDropListedElement('PageName', 'elementName', 'Item Label', { target: otherLocatorOrElement });
+await steps.dragAndDrop('elementName', 'PageName', { target: otherLocatorOrElement });
+await steps.dragAndDrop('elementName', 'PageName', { xOffset: 100, yOffset: 0 });
+await steps.dragAndDropListedElement('elementName', 'PageName', 'Item Label', { target: otherLocatorOrElement });
 ```
 
 #### Data Extraction
 
 ```ts
-const text = await steps.getText('PageName', 'elementName');
-const href = await steps.getAttribute('PageName', 'elementName', 'href');
-const count = await steps.getCount('PageName', 'elementName');
-const inputVal = await steps.getInputValue('PageName', 'elementName');
-const color = await steps.getCssProperty('PageName', 'elementName', 'color');
+const text = await steps.getText('elementName', 'PageName');
+const href = await steps.getAttribute('elementName', 'PageName', 'href');
+const count = await steps.getCount('elementName', 'PageName');
+const inputVal = await steps.getInputValue('elementName', 'PageName');
+const color = await steps.getCssProperty('elementName', 'PageName', 'color');
 
 // Bulk extraction
-const allTexts = await steps.getAll('PageName', 'listItems');
-const allChildTexts = await steps.getAll('PageName', 'tableRows', { child: { pageName: 'TablePage', elementName: 'nameCell' } });
-const allHrefs = await steps.getAll('PageName', 'links', { extractAttribute: 'href' });
+const allTexts = await steps.getAll('listItems', 'PageName');
+const allChildTexts = await steps.getAll('tableRows', 'PageName', { child: { pageName: 'TablePage', elementName: 'nameCell' } });
+const allHrefs = await steps.getAll('links', 'PageName', { extractAttribute: 'href' });
 ```
 
 #### Verification
 
 ```ts
-await steps.verifyPresence('PageName', 'elementName');
-await steps.verifyAbsence('PageName', 'elementName');
-await steps.verifyText('PageName', 'elementName', 'Expected text');
-await steps.verifyText('PageName', 'elementName');  // no args = asserts not empty
-await steps.verifyTextContains('PageName', 'elementName', 'partial');
-await steps.verifyCount('PageName', 'elementName', { exactly: 3 });        // also: greaterThan, lessThan
-await steps.verifyState('PageName', 'elementName', 'enabled');              // 'disabled', 'editable', 'checked', 'focused', 'visible', 'hidden', 'attached', 'inViewport'
-await steps.verifyAttribute('PageName', 'elementName', 'href', '/path');
-await steps.verifyInputValue('PageName', 'elementName', 'expected');
-await steps.verifyImages('PageName', 'elementName');
+await steps.verifyPresence('elementName', 'PageName');
+await steps.verifyAbsence('elementName', 'PageName');
+await steps.verifyText('elementName', 'PageName', 'Expected text');
+await steps.verifyText('elementName', 'PageName');  // no args = asserts not empty
+await steps.verifyTextContains('elementName', 'PageName', 'partial');
+await steps.verifyCount('elementName', 'PageName', { exactly: 3 });        // also: greaterThan, lessThan
+await steps.verifyState('elementName', 'PageName', 'enabled');              // 'disabled', 'editable', 'checked', 'focused', 'visible', 'hidden', 'attached', 'inViewport'
+await steps.verifyAttribute('elementName', 'PageName', 'href', '/path');
+await steps.verifyInputValue('elementName', 'PageName', 'expected');
+await steps.verifyImages('elementName', 'PageName');
 await steps.verifyUrlContains('/dashboard');
 await steps.verifyTabCount(2);
-await steps.verifyOrder('PageName', 'listItems', ['First', 'Second', 'Third']);
-await steps.verifyListOrder('PageName', 'listItems', 'asc');               // or 'desc'
-await steps.verifyCssProperty('PageName', 'elementName', 'color', 'rgb(255, 0, 0)');
+await steps.verifyOrder('listItems', 'PageName', ['First', 'Second', 'Third']);
+await steps.verifyListOrder('listItems', 'PageName', 'asc');               // or 'desc'
+await steps.verifyCssProperty('elementName', 'PageName', 'color', 'rgb(255, 0, 0)');
 ```
 
 #### Listed Elements
 
 ```ts
 // Click by text or attribute match
-await steps.clickListedElement('PageName', 'tableRows', { text: 'John' });
-await steps.clickListedElement('PageName', 'tableRows', {
+await steps.clickListedElement('tableRows', 'PageName', { text: 'John' });
+await steps.clickListedElement('tableRows', 'PageName', {
   attribute: { name: 'data-id', value: '5' },
   child: { pageName: 'TablePage', elementName: 'editButton' }
 });
 
 // Verify text/attribute of a listed element
-await steps.verifyListedElement('PageName', 'entries', {
+await steps.verifyListedElement('entries', 'PageName', {
   text: 'Name',
   child: { pageName: 'TablePage', elementName: 'valueCell' },
   expectedText: 'John Doe'
 });
 
 // Extract data from a listed element
-const text = await steps.getListedElementData('PageName', 'entries', { text: 'Name' });
-const href = await steps.getListedElementData('PageName', 'tableRows', {
+const text = await steps.getListedElementData('entries', 'PageName', { text: 'Name' });
+const href = await steps.getListedElementData('tableRows', 'PageName', {
   text: 'John',
   child: { pageName: 'TablePage', elementName: 'profileLink' },
   extractAttribute: 'href'
@@ -629,14 +629,14 @@ const href = await steps.getListedElementData('PageName', 'tableRows', {
 #### Waiting
 
 ```ts
-await steps.waitForState('PageName', 'elementName');                        // default: 'visible'
-await steps.waitForState('PageName', 'elementName', 'hidden');              // also: 'attached', 'detached'
-await steps.waitAndClick('PageName', 'elementName');                        // waits for visible, then clicks
-await steps.scrollUntilFound('PageName', 'elementName');             // scrolls until found, default 75s timeout
-await steps.scrollUntilFound('PageName', 'elementName', 30000);      // custom timeout
+await steps.waitForState('elementName', 'PageName');                        // default: 'visible'
+await steps.waitForState('elementName', 'PageName', 'hidden');              // also: 'attached', 'detached'
+await steps.waitAndClick('elementName', 'PageName');                        // waits for visible, then clicks
+await steps.scrollUntilFound('elementName', 'PageName');             // scrolls until found, default 75s timeout
+await steps.scrollUntilFound('elementName', 'PageName', 30000);      // custom timeout
 await steps.waitForNetworkIdle();
 await steps.waitForResponse('/api/data', async () => {
-  await steps.click('PageName', 'submitButton');
+  await steps.click('submitButton', 'PageName');
 });
 ```
 
@@ -652,8 +652,8 @@ await steps.fillForm('FormsPage', {
 
 // Retry an action until a verification passes
 await steps.retryUntil(
-  async () => { await steps.click('PageName', 'refreshButton'); },
-  async () => { await steps.verifyText('PageName', 'status', 'Ready'); },
+  async () => { await steps.click('refreshButton', 'PageName'); },
+  async () => { await steps.verifyText('status', 'PageName', 'Ready'); },
   3, 1000  // maxRetries, delayMs
 );
 ```
@@ -663,7 +663,7 @@ await steps.retryUntil(
 ```ts
 const buf = await steps.screenshot();                                       // page screenshot
 const buf2 = await steps.screenshot({ fullPage: true, path: 'out.png' });   // full page with save
-const buf3 = await steps.screenshot('PageName', 'elementName');             // element screenshot
+const buf3 = await steps.screenshot('elementName', 'PageName');             // element screenshot
 ```
 
 ### Accessing the Repository Directly
