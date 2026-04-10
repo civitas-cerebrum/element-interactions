@@ -13,22 +13,22 @@ test.describe('TC_038: Long List Page', () => {
 
     await test.step('Navigate to Long List page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'longListLink');
+      await steps.click( 'longListLink','SidebarNav');
       await steps.verifyUrlContains('/long-list');
     });
 
     await test.step('200 items are rendered', async () => {
-      await steps.verifyCount('LongListPage', 'listItems', { exactly: 200 });
+      await steps.verifyCount( 'listItems','LongListPage', { exactly: 200 });
     });
 
     await test.step('Search filters the list', async () => {
-      await steps.fill('LongListPage', 'searchInput', 'Item 1');
-      await steps.verifyCount('LongListPage', 'listItems', { lessThan: 200 });
+      await steps.fill( 'searchInput','LongListPage', 'Item 1');
+      await steps.verifyCount( 'listItems','LongListPage', { lessThan: 200 });
     });
 
     await test.step('Clear search restores full list', async () => {
-      await steps.fill('LongListPage', 'searchInput', '');
-      await steps.verifyCount('LongListPage', 'listItems', { exactly: 200 });
+      await steps.fill( 'searchInput','LongListPage', '');
+      await steps.verifyCount( 'listItems','LongListPage', { exactly: 200 });
     });
 
     log('TC_038 Long List Page — passed');
@@ -41,42 +41,42 @@ test.describe('TC_039: Multi-step Form Page', () => {
 
     await test.step('Navigate to Multi-step Form page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'multistepLink');
+      await steps.click( 'multistepLink','SidebarNav');
       await steps.verifyUrlContains('/multistep');
     });
 
     await test.step('Starts at step 1', async () => {
-      await steps.verifyTextContains('MultiStepFormPage', 'currentStep', '1');
+      await steps.verifyTextContains( 'currentStep','MultiStepFormPage', '1');
     });
 
     await test.step('Fill step 1 and go to step 2', async () => {
-      await steps.fill('MultiStepFormPage', 'firstNameInput', 'John');
-      await steps.fill('MultiStepFormPage', 'lastNameInput', 'Doe');
-      await steps.click('MultiStepFormPage', 'nextButton');
-      await steps.verifyTextContains('MultiStepFormPage', 'currentStep', '2');
+      await steps.fill( 'firstNameInput','MultiStepFormPage', 'John');
+      await steps.fill( 'lastNameInput','MultiStepFormPage', 'Doe');
+      await steps.click( 'nextButton','MultiStepFormPage');
+      await steps.verifyTextContains( 'currentStep','MultiStepFormPage', '2');
     });
 
     await test.step('Fill step 2 and go to step 3', async () => {
-      await steps.fill('MultiStepFormPage', 'emailInput', 'john@example.com');
-      await steps.fill('MultiStepFormPage', 'phoneInput', '555-1234');
-      await steps.click('MultiStepFormPage', 'nextButton');
-      await steps.verifyTextContains('MultiStepFormPage', 'currentStep', '3');
+      await steps.fill( 'emailInput','MultiStepFormPage', 'john@example.com');
+      await steps.fill( 'phoneInput','MultiStepFormPage', '555-1234');
+      await steps.click( 'nextButton','MultiStepFormPage');
+      await steps.verifyTextContains( 'currentStep','MultiStepFormPage', '3');
     });
 
     await test.step('Step 3 has message input', async () => {
-      await steps.verifyPresence('MultiStepFormPage', 'messageInput');
+      await steps.verifyPresence( 'messageInput','MultiStepFormPage');
     });
 
     await test.step('Go back to step 2 and return', async () => {
-      await steps.click('MultiStepFormPage', 'prevButton');
-      await steps.verifyTextContains('MultiStepFormPage', 'currentStep', '2');
-      await steps.click('MultiStepFormPage', 'nextButton');
-      await steps.verifyTextContains('MultiStepFormPage', 'currentStep', '3');
+      await steps.click( 'prevButton','MultiStepFormPage');
+      await steps.verifyTextContains( 'currentStep','MultiStepFormPage', '2');
+      await steps.click( 'nextButton','MultiStepFormPage');
+      await steps.verifyTextContains( 'currentStep','MultiStepFormPage', '3');
     });
 
     await test.step('Fill message and submit — summary appears', async () => {
-      await steps.fill('MultiStepFormPage', 'messageInput', 'Test message');
-      await steps.click('MultiStepFormPage', 'submitButton');
+      await steps.fill( 'messageInput','MultiStepFormPage', 'Test message');
+      await steps.click( 'submitButton','MultiStepFormPage');
       const submitted = page.locator('h2:has-text("Submitted!")');
       await submitted.waitFor({ state: 'visible', timeout: 5000 });
     });
@@ -91,31 +91,31 @@ test.describe('TC_040: State Viewer Page', () => {
 
     await test.step('Navigate to State Viewer page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'stateViewerLink');
+      await steps.click( 'stateViewerLink','SidebarNav');
       await steps.verifyUrlContains('/state-viewer');
     });
 
     await test.step('Click Empty state button', async () => {
-      await steps.click('StateViewerPage', 'emptyButton');
-      await steps.verifyPresence('StateViewerPage', 'emptyView');
-      await steps.verifyTextContains('StateViewerPage', 'currentState', 'empty');
+      await steps.click( 'emptyButton','StateViewerPage');
+      await steps.verifyPresence( 'emptyView','StateViewerPage');
+      await steps.verifyTextContains( 'currentState','StateViewerPage', 'empty');
     });
 
     await test.step('Click Loading state button', async () => {
-      await steps.click('StateViewerPage', 'loadingButton');
-      await steps.verifyPresence('StateViewerPage', 'loadingView');
-      await steps.verifyTextContains('StateViewerPage', 'currentState', 'loading');
+      await steps.click( 'loadingButton','StateViewerPage');
+      await steps.verifyPresence( 'loadingView','StateViewerPage');
+      await steps.verifyTextContains( 'currentState','StateViewerPage', 'loading');
     });
 
     await test.step('Click Error state button', async () => {
-      await steps.click('StateViewerPage', 'errorButton');
-      await steps.verifyPresence('StateViewerPage', 'errorView');
-      await steps.verifyTextContains('StateViewerPage', 'currentState', 'error');
+      await steps.click( 'errorButton','StateViewerPage');
+      await steps.verifyPresence( 'errorView','StateViewerPage');
+      await steps.verifyTextContains( 'currentState','StateViewerPage', 'error');
     });
 
     await test.step('Click Populated state button', async () => {
-      await steps.click('StateViewerPage', 'populatedButton');
-      await steps.verifyTextContains('StateViewerPage', 'currentState', 'populated');
+      await steps.click( 'populatedButton','StateViewerPage');
+      await steps.verifyTextContains( 'currentState','StateViewerPage', 'populated');
     });
 
     log('TC_040 State Viewer Page — passed');

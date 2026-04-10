@@ -15,17 +15,17 @@ test.describe('E2E Facade Implementation Suite', () => {
     });
 
     await test.step('Verify Category Count', async () => {
-      await steps.verifyCount('HomePage', 'categories', { exactly: 8 });
+      await steps.verifyCount( 'categories','HomePage', { exactly: 8 });
     });
 
     await test.step('Open Forms Page and verify navigation', async () => {
-      await steps.click('HomePage', 'formsCard');
-      await steps.verifyAbsence('HomePage', 'categories');
+      await steps.click( 'formsCard','HomePage');
+      await steps.verifyAbsence( 'categories','HomePage');
     });
 
     await test.step('Verify Page Title', async () => {
       await steps.verifyUrlContains('/forms');
-      await steps.verifyText('FormsPage', 'title', 'Submission Form');
+      await steps.verifyText( 'title','FormsPage', 'Submission Form');
     });
 
     await test.step('Fill Standard Inputs', async () => {
@@ -34,41 +34,41 @@ test.describe('E2E Facade Implementation Suite', () => {
       contextStore.put('Mobile', '0000000000');
       contextStore.put('Current Address', 'Prinsenstraat, 1015 DB Amsterdam');
 
-      await steps.fill('FormsPage', 'nameInput', contextStore.get('Name'));
-      await steps.fill('FormsPage', 'emailInput', contextStore.get('Email'));
-      await steps.fill('FormsPage', 'mobileInput', contextStore.get('Mobile'));
-      await steps.fill('FormsPage', 'addressInput', contextStore.get('Current Address'));
+      await steps.fill( 'nameInput','FormsPage', contextStore.get('Name'));
+      await steps.fill( 'emailInput','FormsPage', contextStore.get('Email'));
+      await steps.fill( 'mobileInput','FormsPage', contextStore.get('Mobile'));
+      await steps.fill( 'addressInput','FormsPage', contextStore.get('Current Address'));
     });
 
     await test.step('Select a Random Enabled Gender', async () => {
-      const gender = await steps.selectDropdown('FormsPage', 'genderDropdown', {
+      const gender = await steps.selectDropdown( 'genderDropdown','FormsPage', {
         type: DropdownSelectType.RANDOM
       });
       contextStore.put('Gender', gender);
     });
 
     await test.step('Handle Date Picker and Data Extraction', async () => {
-      await steps.click('FormsPage', 'dateOfBirthInput');
-      await steps.waitForState('FormsPage', 'todayCell', 'visible');
-      await steps.verifyPresence('FormsPage', 'todayCell');
-      await steps.click('FormsPage', 'todayCell');
+      await steps.click( 'dateOfBirthInput','FormsPage');
+      await steps.waitForState( 'todayCell','FormsPage', 'visible');
+      await steps.verifyPresence( 'todayCell','FormsPage');
+      await steps.click( 'todayCell','FormsPage');
 
-      await steps.verifyPresence('FormsPage', 'datePickerSubmitButton');
-      await steps.click('FormsPage', 'datePickerSubmitButton');
+      await steps.verifyPresence( 'datePickerSubmitButton','FormsPage');
+      await steps.click( 'datePickerSubmitButton','FormsPage');
 
       const now = new Date();
       const dobValue = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
       contextStore.put('Date of Birth', dobValue);
 
-      await steps.click('FormsPage', 'hobbiesInput');
+      await steps.click( 'hobbiesInput','FormsPage');
     });
 
     await test.step('Submit Form and Verify Modal via verifyListedElement', async () => {
-      await steps.click('FormsPage', 'submitButton');
-      await steps.verifyPresence('FormsPage', 'table');
+      await steps.click( 'submitButton','FormsPage');
+      await steps.verifyPresence( 'table','FormsPage');
 
       for (const [key, expectedValue] of contextStore.entries()) {
-        await steps.verifyListedElement('FormsPage', 'submissionRows', {
+        await steps.verifyListedElement( 'submissionRows','FormsPage', {
           text: key,
           child: { pageName: 'FormsPage', elementName: 'submissionValue' },
           expectedText: expectedValue
@@ -83,15 +83,15 @@ test.describe('E2E Facade Implementation Suite', () => {
 
     await test.step('Navigate to Sortable page via homepage', async () => {
       await steps.navigateTo('/');
-      await steps.click('HomePage', 'interactionsCard');
+      await steps.click( 'interactionsCard','HomePage');
       await steps.verifyUrlContains('/sortable');
     });
 
     await test.step('Drag Item A to the Second List', async () => {
-      await steps.waitForState('SortablePage', 'dropZones');
+      await steps.waitForState( 'dropZones','SortablePage');
       const dropZone = await repo.getByText('dropZones', 'SortablePage', 'Second List');
 
-      await steps.dragAndDropListedElement('SortablePage', 'sortableItems', 'Item A', { target: dropZone! });
+      await steps.dragAndDropListedElement( 'sortableItems','SortablePage', 'Item A', { target: dropZone! });
 
       await interactions.verify.textContains((dropZone as WebElement).locator, 'Item A');
     });
@@ -110,7 +110,7 @@ test.describe('E2E Facade Implementation Suite', () => {
     await test.step('verifyAbsence on a visible element should throw', async () => {
       let errorCaught = false;
       try {
-        await steps.verifyAbsence('HomePage', 'categories');
+        await steps.verifyAbsence( 'categories','HomePage');
       } catch (error) {
         errorCaught = true;
         log('Caught expected error: verifyAbsence failed correctly');
@@ -121,7 +121,7 @@ test.describe('E2E Facade Implementation Suite', () => {
     await test.step('verifyCount with an incorrect number should throw', async () => {
       let errorCaught = false;
       try {
-        await steps.verifyCount('HomePage', 'categories', { exactly: 99 });
+        await steps.verifyCount( 'categories','HomePage', { exactly: 99 });
       } catch (error) {
         errorCaught = true;
         log('Caught expected error: verifyCount failed correctly');
@@ -144,7 +144,7 @@ test.describe('E2E Facade Implementation Suite', () => {
 
       log('Intentionally waiting for a timeout to trigger the warning mechanism...');
       try {
-        await steps.waitForState('HomePage', 'categories', 'hidden');
+        await steps.waitForState( 'categories','HomePage', 'hidden');
       } catch (error) {
         errorCaught = true;
       }
@@ -163,8 +163,8 @@ test.describe('E2E Facade Implementation Suite', () => {
     });
 
     await test.step('Click a random category and verify navigation', async () => {
-      await steps.clickRandom('HomePage', 'categories');
-      await steps.verifyAbsence('HomePage', 'categories');
+      await steps.clickRandom( 'categories','HomePage');
+      await steps.verifyAbsence( 'categories','HomePage');
     });
 
     log('TC_005 Click Random — passed');
@@ -178,18 +178,18 @@ test.describe('E2E Facade Implementation Suite', () => {
     });
 
     await test.step('verifyCount with greaterThan (positive)', async () => {
-      await steps.verifyCount('HomePage', 'categories', { greaterThan: 3 });
+      await steps.verifyCount( 'categories','HomePage', { greaterThan: 3 });
     });
 
     await test.step('verifyCount with lessThan (positive)', async () => {
-      await steps.verifyCount('HomePage', 'categories', { lessThan: 10 });
+      await steps.verifyCount( 'categories','HomePage', { lessThan: 10 });
     });
 
     await test.step('verifyCount with greaterThan polls until timeout (negative)', async () => {
       const start = Date.now();
       let errorCaught = false;
       try {
-        await steps.verifyCount('HomePage', 'categories', { greaterThan: 8 });
+        await steps.verifyCount( 'categories','HomePage', { greaterThan: 8 });
       } catch {
         errorCaught = true;
       }

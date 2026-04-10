@@ -28,7 +28,7 @@ test.describe('Utilities Coverage Tests', () => {
 
     test('Steps.waitForState - calls utils.waitForState internally', async ({ steps }) => {
         await steps.navigateTo('/');
-        await steps.waitForState('HomePage', 'pageTitle', 'visible');
+        await steps.waitForState( 'pageTitle','HomePage', 'visible');
         expect(true).toBe(true);
     });
 

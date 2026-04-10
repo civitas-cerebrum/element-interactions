@@ -23,7 +23,7 @@ test.describe('Vue Test App v2 - Homepage Tests', () => {
     });
 
     await test.step('Verify title text', async () => {
-      const title = await steps.getText('HomePage', 'pageTitle');
+      const title = await steps.getText( 'pageTitle','HomePage');
       log('Title: %s', title);
     });
 
@@ -36,11 +36,11 @@ test.describe('Vue Test App v2 - Forms Tests', () => {
   test('TC_003: Forms page loads correctly', async ({ page, steps }) => {
     await test.step('Navigate to Forms page via homepage', async () => {
       await steps.navigateTo('/');
-      await steps.click('HomePage', 'formsCard');
+      await steps.click( 'formsCard','HomePage');
     });
 
     await test.step('Verify page title', async () => {
-      const title = await steps.getText('FormsPage', 'formTitle');
+      const title = await steps.getText( 'formTitle','FormsPage');
       expect(title).toBe('Submission Form');
       log('Form title: %s', title);
     });
@@ -51,15 +51,15 @@ test.describe('Vue Test App v2 - Forms Tests', () => {
   test('TC_004: Verify form elements', async ({ steps }) => {
     await test.step('Navigate to Forms page via homepage', async () => {
       await steps.navigateTo('/');
-      await steps.click('HomePage', 'formsCard');
+      await steps.click( 'formsCard','HomePage');
     });
 
     await test.step('Verify name input exists', async () => {
-      await steps.verifyPresence('FormsPage', 'nameInput');
+      await steps.verifyPresence( 'nameInput','FormsPage');
     });
 
     await test.step('Verify submit button exists', async () => {
-      await steps.verifyPresence('FormsPage', 'submitButton');
+      await steps.verifyPresence( 'submitButton','FormsPage');
     });
 
     log('TC_004 Verify form elements — passed');
@@ -71,7 +71,7 @@ test.describe('Vue Test App v2 - Interactions Tests', () => {
   test('TC_005: Interactions page loads correctly', async ({ page, steps }) => {
     await test.step('Navigate to Sortable page via homepage', async () => {
       await steps.navigateTo('/');
-      await steps.click('HomePage', 'interactionsCard');
+      await steps.click( 'interactionsCard','HomePage');
     });
 
     await test.step('Verify page loaded', async () => {
@@ -88,7 +88,7 @@ test.describe('Vue Test App v2 - Elements Tests', () => {
   test('TC_006: Elements page loads correctly', async ({ page, steps }) => {
     await test.step('Navigate to Elements page via homepage', async () => {
       await steps.navigateTo('/');
-      await steps.click('HomePage', 'elementsCard');
+      await steps.click( 'elementsCard','HomePage');
     });
 
     await test.step('Verify page loaded', async () => {

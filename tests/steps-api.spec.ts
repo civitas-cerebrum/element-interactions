@@ -13,17 +13,17 @@ test.describe('TC_041: Steps - Navigation, Viewport & Scroll', () => {
 
     await test.step('Navigate to Buttons page', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'buttonsLink');
+      await steps.click( 'buttonsLink','SidebarNav');
       await steps.verifyUrlContains('/buttons');
     });
 
     await test.step('refresh reloads the page', async () => {
       await steps.refresh();
-      await steps.verifyPresence('ButtonsPage', 'primaryButton');
+      await steps.verifyPresence( 'primaryButton','ButtonsPage');
     });
 
     await test.step('Navigate to a second page then backOrForward', async () => {
-      await steps.click('SidebarNav', 'textInputsLink');
+      await steps.click( 'textInputsLink','SidebarNav');
       await steps.verifyUrlContains('/text-inputs');
       await steps.backOrForward('back');
       await steps.verifyUrlContains('/buttons');
@@ -33,9 +33,9 @@ test.describe('TC_041: Steps - Navigation, Viewport & Scroll', () => {
 
     await test.step('scrollIntoView scrolls an element into view', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'buttonsLink');
+      await steps.click( 'buttonsLink','SidebarNav');
       await steps.verifyUrlContains('/buttons');
-      await steps.scrollIntoView('ButtonsPage', 'loadingButton');
+      await steps.scrollIntoView( 'loadingButton','ButtonsPage');
     });
 
     await test.step('pressKey sends a keyboard event', async () => {
@@ -59,36 +59,36 @@ test.describe('TC_042: Steps - Click Variants & Data Extraction', () => {
 
     await test.step('Navigate to Buttons page', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'buttonsLink');
+      await steps.click( 'buttonsLink','SidebarNav');
       await steps.verifyUrlContains('/buttons');
     });
 
     await test.step('clickWithoutScrolling clicks without scrolling', async () => {
-      await steps.clickWithoutScrolling('ButtonsPage', 'primaryButton');
-      await steps.verifyTextContains('ButtonsPage', 'resultText', 'Primary');
+      await steps.clickWithoutScrolling( 'primaryButton','ButtonsPage');
+      await steps.verifyTextContains( 'resultText','ButtonsPage', 'Primary');
     });
 
     await test.step('clickIfPresent clicks a present element', async () => {
-      await steps.clickIfPresent('ButtonsPage', 'secondaryButton');
-      await steps.verifyTextContains('ButtonsPage', 'resultText', 'Secondary');
+      await steps.clickIfPresent( 'secondaryButton','ButtonsPage');
+      await steps.verifyTextContains( 'resultText','ButtonsPage', 'Secondary');
     });
 
     await test.step('clickIfPresent does nothing for a missing element', async () => {
-      await steps.clickIfPresent('FormsPage', 'title'); // not on this page
+      await steps.clickIfPresent( 'title','FormsPage'); // not on this page
     });
 
     await test.step('getText returns element text content', async () => {
-      const text = await steps.getText('ButtonsPage', 'resultText');
+      const text = await steps.getText( 'resultText','ButtonsPage');
       expect(text).toContain('Secondary');
     });
 
     await test.step('getAttribute returns an attribute value', async () => {
-      const testId = await steps.getAttribute('ButtonsPage', 'disabledButton', 'data-testid');
+      const testId = await steps.getAttribute( 'disabledButton','ButtonsPage', 'data-testid');
       expect(testId).toBe('btn-disabled');
     });
 
     await test.step('verifyAttribute asserts an attribute value', async () => {
-      await steps.verifyAttribute('ButtonsPage', 'disabledButton', 'data-testid', 'btn-disabled');
+      await steps.verifyAttribute( 'disabledButton','ButtonsPage', 'data-testid', 'btn-disabled');
     });
 
     log('TC_042 Click Variants & Data Extraction — passed');
@@ -101,7 +101,7 @@ test.describe('TC_043: Steps - Tab Management', () => {
 
     await test.step('Navigate to Alerts page', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'alertsLink');
+      await steps.click( 'alertsLink','SidebarNav');
       await steps.verifyUrlContains('/alerts');
     });
 
@@ -112,7 +112,7 @@ test.describe('TC_043: Steps - Tab Management', () => {
 
     await test.step('Open new tab and close it via steps.closeTab', async () => {
       const newPage = await steps.switchToNewTab(async () => {
-        await steps.click('AlertsPage', 'newTabButton');
+        await steps.click( 'newTabButton','AlertsPage');
       });
       expect(steps.getTabCount()).toBe(2);
 
@@ -212,16 +212,16 @@ test.describe('TC_046: verifyImages - Image Verification', () => {
 
     await test.step('Navigate to Product Carousel page', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'productCarouselLink');
+      await steps.click( 'productCarouselLink','SidebarNav');
       await steps.verifyUrlContains('/product-carousel');
     });
 
     await test.step('verifyImages on the active carousel slide', async () => {
-      await steps.verifyImages('ProductCarouselPage', 'firstCarouselImage');
+      await steps.verifyImages( 'firstCarouselImage','ProductCarouselPage');
     });
 
     await test.step('verifyImages on the product grid thumbnails', async () => {
-      await steps.verifyImages('ProductCarouselPage', 'productThumbnails');
+      await steps.verifyImages( 'productThumbnails','ProductCarouselPage');
     });
 
     log('TC_046 verifyImages — passed');
@@ -234,17 +234,17 @@ test.describe('TC_047: Steps - isPresent boolean visibility check', () => {
 
     await test.step('Navigate to Buttons page', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'buttonsLink');
+      await steps.click( 'buttonsLink','SidebarNav');
       await steps.verifyUrlContains('/buttons');
     });
 
     await test.step('isPresent returns true for a visible element', async () => {
-      const result = await steps.isPresent('ButtonsPage', 'primaryButton');
+      const result = await steps.isPresent( 'primaryButton','ButtonsPage');
       expect(result).toBe(true);
     });
 
     await test.step('isPresent returns false for an element on a different page', async () => {
-      const result = await steps.isPresent('FormsPage', 'nameInput');
+      const result = await steps.isPresent( 'nameInput','FormsPage');
       expect(result).toBe(false);
     });
 

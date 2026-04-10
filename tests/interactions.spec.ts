@@ -13,23 +13,23 @@ test.describe('TC_027: Draggable Page', () => {
 
     await test.step('Navigate to Draggable page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'draggableLink');
+      await steps.click( 'draggableLink','SidebarNav');
       await steps.verifyUrlContains('/draggable');
     });
 
     await test.step('Status starts as "none"', async () => {
-      await steps.verifyTextContains('DraggablePage', 'status', 'none');
+      await steps.verifyTextContains( 'status','DraggablePage', 'none');
     });
 
     await test.step('Drag item 1 and verify it moves', async () => {
-      await steps.dragAndDrop('DraggablePage', 'item1', { xOffset: 100, yOffset: 50 });
+      await steps.dragAndDrop( 'item1','DraggablePage', { xOffset: 100, yOffset: 50 });
     });
 
     await test.step('All 4 draggable items are present', async () => {
-      await steps.verifyPresence('DraggablePage', 'item1');
-      await steps.verifyPresence('DraggablePage', 'item2');
-      await steps.verifyPresence('DraggablePage', 'item3');
-      await steps.verifyPresence('DraggablePage', 'item4');
+      await steps.verifyPresence( 'item1','DraggablePage');
+      await steps.verifyPresence( 'item2','DraggablePage');
+      await steps.verifyPresence( 'item3','DraggablePage');
+      await steps.verifyPresence( 'item4','DraggablePage');
     });
 
     log('TC_027 Draggable Page — passed');
@@ -42,30 +42,30 @@ test.describe('TC_028: Droppable Page', () => {
 
     await test.step('Navigate to Droppable page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'droppableLink');
+      await steps.click( 'droppableLink','SidebarNav');
       await steps.verifyUrlContains('/droppable');
     });
 
     await test.step('Initial status is Ready', async () => {
-      await steps.verifyTextContains('DroppablePage', 'status', 'Ready');
+      await steps.verifyTextContains( 'status','DroppablePage', 'Ready');
     });
 
     await test.step('All zones start with 0 items', async () => {
-      await steps.verifyTextContains('DroppablePage', 'redZoneCount', '0');
-      await steps.verifyTextContains('DroppablePage', 'blueZoneCount', '0');
-      await steps.verifyTextContains('DroppablePage', 'greenZoneCount', '0');
+      await steps.verifyTextContains( 'redZoneCount','DroppablePage', '0');
+      await steps.verifyTextContains( 'blueZoneCount','DroppablePage', '0');
+      await steps.verifyTextContains( 'greenZoneCount','DroppablePage', '0');
     });
 
     await test.step('Drag red item to red zone — correct drop', async () => {
       const redZone = await repo.get('redZone', 'DroppablePage');
-      await steps.dragAndDrop('DroppablePage', 'redItem1', { target: redZone });
-      await steps.verifyTextContains('DroppablePage', 'redZoneCount', '1');
+      await steps.dragAndDrop( 'redItem1','DroppablePage', { target: redZone });
+      await steps.verifyTextContains( 'redZoneCount','DroppablePage', '1');
     });
 
     await test.step('Reset returns items to source', async () => {
-      await steps.click('DroppablePage', 'resetButton');
-      await steps.verifyTextContains('DroppablePage', 'redZoneCount', '0');
-      await steps.verifyTextContains('DroppablePage', 'status', 'Ready');
+      await steps.click( 'resetButton','DroppablePage');
+      await steps.verifyTextContains( 'redZoneCount','DroppablePage', '0');
+      await steps.verifyTextContains( 'status','DroppablePage', 'Ready');
     });
 
     log('TC_028 Droppable Page — passed');
@@ -78,20 +78,20 @@ test.describe('TC_029: Resizable Page', () => {
 
     await test.step('Navigate to Resizable page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'resizableLink');
+      await steps.click( 'resizableLink','SidebarNav');
       await steps.verifyUrlContains('/resizable');
     });
 
     await test.step('Initial width is 300px', async () => {
-      await steps.verifyTextContains('ResizablePage', 'widthDisplay', '300');
+      await steps.verifyTextContains( 'widthDisplay','ResizablePage', '300');
     });
 
     await test.step('Drag handle right to increase width', async () => {
-      await steps.dragAndDrop('ResizablePage', 'handle', { xOffset: 100, yOffset: 0 });
+      await steps.dragAndDrop( 'handle','ResizablePage', { xOffset: 100, yOffset: 0 });
     });
 
     await test.step('Width display is present and updated', async () => {
-      await steps.verifyText('ResizablePage', 'widthDisplay', undefined, { notEmpty: true });
+      await steps.verifyText( 'widthDisplay','ResizablePage', undefined, { notEmpty: true });
     });
 
     log('TC_029 Resizable Page — passed');
@@ -104,25 +104,25 @@ test.describe('TC_030: Kanban Page', () => {
 
     await test.step('Navigate to Kanban page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'kanbanLink');
+      await steps.click( 'kanbanLink','SidebarNav');
       await steps.verifyUrlContains('/kanban');
     });
 
     await test.step('All three columns are present', async () => {
-      await steps.verifyPresence('KanbanPage', 'todoColumn');
-      await steps.verifyPresence('KanbanPage', 'inProgressColumn');
-      await steps.verifyPresence('KanbanPage', 'doneColumn');
+      await steps.verifyPresence( 'todoColumn','KanbanPage');
+      await steps.verifyPresence( 'inProgressColumn','KanbanPage');
+      await steps.verifyPresence( 'doneColumn','KanbanPage');
     });
 
     await test.step('Cards are present initially', async () => {
-      await steps.verifyCount('KanbanPage', 'cards', { greaterThan: 0 });
+      await steps.verifyCount( 'cards','KanbanPage', { greaterThan: 0 });
     });
 
     await test.step('Add a new card to Todo column', async () => {
       const allCards = await repo.getAll('cards', 'KanbanPage');
       const countBefore = allCards!.length;
-      await steps.click('KanbanPage', 'addTodoButton');
-      await steps.verifyCount('KanbanPage', 'cards', { greaterThan: countBefore });
+      await steps.click( 'addTodoButton','KanbanPage');
+      await steps.verifyCount( 'cards','KanbanPage', { greaterThan: countBefore });
     });
 
     log('TC_030 Kanban Page — passed');
@@ -135,13 +135,13 @@ test.describe('TC_031: Infinite Scroll Page', () => {
 
     await test.step('Navigate to Infinite Scroll page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'infiniteScrollLink');
+      await steps.click( 'infiniteScrollLink','SidebarNav');
       await steps.verifyUrlContains('/infinite-scroll');
     });
 
     await test.step('Wait for initial items to load', async () => {
       await page.locator("[data-testid^='scroll-item-']").first().waitFor({ timeout: 10000 });
-      await steps.verifyCount('InfiniteScrollPage', 'items', { greaterThan: 0 });
+      await steps.verifyCount( 'items','InfiniteScrollPage', { greaterThan: 0 });
     });
 
     await test.step('Scroll container to trigger more loads', async () => {
@@ -164,32 +164,32 @@ test.describe('TC_032: Loading States Page', () => {
 
     await test.step('Navigate to Loading States page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'loadingLink');
+      await steps.click( 'loadingLink','SidebarNav');
       await steps.verifyUrlContains('/loading');
     });
 
     await test.step('Spinner is visible', async () => {
-      await steps.verifyPresence('LoadingStatesPage', 'spinner');
+      await steps.verifyPresence( 'spinner','LoadingStatesPage');
     });
 
     await test.step('Skeleton is visible by default', async () => {
-      await steps.verifyPresence('LoadingStatesPage', 'skeleton');
+      await steps.verifyPresence( 'skeleton','LoadingStatesPage');
     });
 
     await test.step('Toggle skeleton off', async () => {
-      await steps.click('LoadingStatesPage', 'skeletonToggle');
-      await steps.verifyAbsence('LoadingStatesPage', 'skeleton');
+      await steps.click( 'skeletonToggle','LoadingStatesPage');
+      await steps.verifyAbsence( 'skeleton','LoadingStatesPage');
     });
 
     await test.step('Toggle skeleton back on', async () => {
-      await steps.click('LoadingStatesPage', 'skeletonToggle');
-      await steps.verifyPresence('LoadingStatesPage', 'skeleton');
+      await steps.click( 'skeletonToggle','LoadingStatesPage');
+      await steps.verifyPresence( 'skeleton','LoadingStatesPage');
     });
 
     await test.step('Click loading button — enters loading state', async () => {
-      await steps.click('LoadingStatesPage', 'loadingButton');
+      await steps.click( 'loadingButton','LoadingStatesPage');
       // Button should show loading state (text changes or spinner appears)
-      await steps.verifyPresence('LoadingStatesPage', 'loadingButton');
+      await steps.verifyPresence( 'loadingButton','LoadingStatesPage');
     });
 
     log('TC_032 Loading States Page — passed');
@@ -202,27 +202,27 @@ test.describe('TC_033: Dynamic Form Page', () => {
 
     await test.step('Navigate to Dynamic Form page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'dynamicFormLink');
+      await steps.click( 'dynamicFormLink','SidebarNav');
       await steps.verifyUrlContains('/dynamic-form');
     });
 
     await test.step('Starts with 1 field', async () => {
-      await steps.verifyCount('DynamicFormPage', 'fields', { exactly: 1 });
+      await steps.verifyCount( 'fields','DynamicFormPage', { exactly: 1 });
     });
 
     await test.step('Add a second field', async () => {
-      await steps.click('DynamicFormPage', 'addButton');
-      await steps.verifyCount('DynamicFormPage', 'fields', { exactly: 2 });
+      await steps.click( 'addButton','DynamicFormPage');
+      await steps.verifyCount( 'fields','DynamicFormPage', { exactly: 2 });
     });
 
     await test.step('Add a third field', async () => {
-      await steps.click('DynamicFormPage', 'addButton');
-      await steps.verifyCount('DynamicFormPage', 'fields', { exactly: 3 });
+      await steps.click( 'addButton','DynamicFormPage');
+      await steps.verifyCount( 'fields','DynamicFormPage', { exactly: 3 });
     });
 
     await test.step('Fill field 1 and submit', async () => {
-      await steps.fill('DynamicFormPage', 'field1', 'Test Value');
-      await steps.click('DynamicFormPage', 'submitButton');
+      await steps.fill( 'field1','DynamicFormPage', 'Test Value');
+      await steps.click( 'submitButton','DynamicFormPage');
     });
 
     log('TC_033 Dynamic Form Page — passed');

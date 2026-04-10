@@ -14,37 +14,37 @@ test.describe('TC_009: Buttons Page', () => {
 
     await test.step('Navigate to Buttons page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'buttonsLink');
+      await steps.click( 'buttonsLink','SidebarNav');
       await steps.verifyUrlContains('/buttons');
     });
 
     await test.step('Click Primary button and verify result', async () => {
-      await steps.click('ButtonsPage', 'primaryButton');
-      await steps.verifyTextContains('ButtonsPage', 'resultText', 'Primary');
+      await steps.click( 'primaryButton','ButtonsPage');
+      await steps.verifyTextContains( 'resultText','ButtonsPage', 'Primary');
     });
 
     await test.step('Click Secondary button and verify result', async () => {
-      await steps.click('ButtonsPage', 'secondaryButton');
-      await steps.verifyTextContains('ButtonsPage', 'resultText', 'Secondary');
+      await steps.click( 'secondaryButton','ButtonsPage');
+      await steps.verifyTextContains( 'resultText','ButtonsPage', 'Secondary');
     });
 
     await test.step('Click Danger button and verify result', async () => {
-      await steps.click('ButtonsPage', 'dangerButton');
-      await steps.verifyTextContains('ButtonsPage', 'resultText', 'Danger');
+      await steps.click( 'dangerButton','ButtonsPage');
+      await steps.verifyTextContains( 'resultText','ButtonsPage', 'Danger');
     });
 
     await test.step('Verify disabled button is disabled', async () => {
-      await steps.verifyState('ButtonsPage', 'disabledButton', 'disabled');
+      await steps.verifyState( 'disabledButton','ButtonsPage', 'disabled');
     });
 
     await test.step('Verify loading button is disabled', async () => {
-      await steps.verifyState('ButtonsPage', 'loadingButton', 'disabled');
+      await steps.verifyState( 'loadingButton','ButtonsPage', 'disabled');
     });
 
     await test.step('Verify size variants are visible', async () => {
-      await steps.verifyPresence('ButtonsPage', 'smallButton');
-      await steps.verifyPresence('ButtonsPage', 'mediumButton');
-      await steps.verifyPresence('ButtonsPage', 'largeButton');
+      await steps.verifyPresence( 'smallButton','ButtonsPage');
+      await steps.verifyPresence( 'mediumButton','ButtonsPage');
+      await steps.verifyPresence( 'largeButton','ButtonsPage');
     });
 
     log('TC_009 Buttons Page — passed');
@@ -57,42 +57,42 @@ test.describe('TC_010: Text Inputs Page', () => {
 
     await test.step('Navigate to Text Inputs page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'textInputsLink');
+      await steps.click( 'textInputsLink','SidebarNav');
       await steps.verifyUrlContains('/text-inputs');
     });
 
     await test.step('Fill text input and verify', async () => {
-      await steps.fill('TextInputsPage', 'textInput', 'hello world');
-      await steps.verifyInputValue('TextInputsPage', 'textInput', 'hello world');
+      await steps.fill( 'textInput','TextInputsPage', 'hello world');
+      await steps.verifyInputValue( 'textInput','TextInputsPage', 'hello world');
     });
 
     await test.step('Fill email input and verify', async () => {
-      await steps.fill('TextInputsPage', 'emailInput', 'test@example.com');
-      await steps.verifyInputValue('TextInputsPage', 'emailInput', 'test@example.com');
+      await steps.fill( 'emailInput','TextInputsPage', 'test@example.com');
+      await steps.verifyInputValue( 'emailInput','TextInputsPage', 'test@example.com');
     });
 
     await test.step('Fill number input and verify', async () => {
-      await steps.fill('TextInputsPage', 'numberInput', '42');
-      await steps.verifyInputValue('TextInputsPage', 'numberInput', '42');
+      await steps.fill( 'numberInput','TextInputsPage', '42');
+      await steps.verifyInputValue( 'numberInput','TextInputsPage', '42');
     });
 
     await test.step('Fill textarea and verify', async () => {
-      await steps.fill('TextInputsPage', 'textareaInput', 'multi-line text');
-      await steps.verifyInputValue('TextInputsPage', 'textareaInput', 'multi-line text');
+      await steps.fill( 'textareaInput','TextInputsPage', 'multi-line text');
+      await steps.verifyInputValue( 'textareaInput','TextInputsPage', 'multi-line text');
     });
 
     await test.step('Verify disabled input is disabled', async () => {
-      await steps.verifyState('TextInputsPage', 'disabledInput', 'disabled');
+      await steps.verifyState( 'disabledInput','TextInputsPage', 'disabled');
     });
 
     await test.step('Verify values display updates', async () => {
-      await steps.verifyText('TextInputsPage', 'valuesDisplay', undefined, { notEmpty: true });
+      await steps.verifyText( 'valuesDisplay','TextInputsPage', undefined, { notEmpty: true });
     });
 
     await test.step('Type sequentially in text input', async () => {
-      await steps.fill('TextInputsPage', 'textInput', '');
-      await steps.typeSequentially('TextInputsPage', 'textInput', 'typed');
-      await steps.verifyInputValue('TextInputsPage', 'textInput', 'typed');
+      await steps.fill( 'textInput','TextInputsPage', '');
+      await steps.typeSequentially( 'textInput','TextInputsPage', 'typed');
+      await steps.verifyInputValue( 'textInput','TextInputsPage', 'typed');
     });
 
     log('TC_010 Text Inputs Page — passed');
@@ -105,26 +105,26 @@ test.describe('TC_011: Checkboxes & Toggles Page', () => {
 
     await test.step('Navigate to Checkboxes page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'checkboxesLink');
+      await steps.click( 'checkboxesLink','SidebarNav');
       await steps.verifyUrlContains('/checkboxes');
     });
 
     await test.step('Check the unchecked checkbox', async () => {
-      await steps.check('CheckboxesPage', 'uncheckedCheckbox');
-      await steps.verifyState('CheckboxesPage', 'uncheckedCheckbox', 'checked');
+      await steps.check( 'uncheckedCheckbox','CheckboxesPage');
+      await steps.verifyState( 'uncheckedCheckbox','CheckboxesPage', 'checked');
     });
 
     await test.step('Uncheck the checked checkbox', async () => {
-      await steps.uncheck('CheckboxesPage', 'checkedCheckbox');
+      await steps.uncheck( 'checkedCheckbox','CheckboxesPage');
     });
 
     await test.step('Verify disabled checkbox is disabled', async () => {
-      await steps.verifyState('CheckboxesPage', 'disabledCheckbox', 'disabled');
+      await steps.verifyState( 'disabledCheckbox','CheckboxesPage', 'disabled');
     });
 
     await test.step('Verify disabled-checked checkbox is both checked and disabled', async () => {
-      await steps.verifyState('CheckboxesPage', 'disabledCheckedCheckbox', 'checked');
-      await steps.verifyState('CheckboxesPage', 'disabledCheckedCheckbox', 'disabled');
+      await steps.verifyState( 'disabledCheckedCheckbox','CheckboxesPage', 'checked');
+      await steps.verifyState( 'disabledCheckedCheckbox','CheckboxesPage', 'disabled');
     });
 
     await test.step('Toggle switches via label click (hidden inputs)', async () => {
@@ -136,7 +136,7 @@ test.describe('TC_011: Checkboxes & Toggles Page', () => {
     });
 
     await test.step('Verify state summary updates', async () => {
-      await steps.verifyText('CheckboxesPage', 'stateSummary', undefined, { notEmpty: true });
+      await steps.verifyText( 'stateSummary','CheckboxesPage', undefined, { notEmpty: true });
     });
 
     log('TC_011 Checkboxes & Toggles — passed');
@@ -149,26 +149,26 @@ test.describe('TC_012: Sliders Page', () => {
 
     await test.step('Navigate to Sliders page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'slidersLink');
+      await steps.click( 'slidersLink','SidebarNav');
       await steps.verifyUrlContains('/sliders');
     });
 
     await test.step('Set basic slider to 75 and verify value', async () => {
-      await steps.setSliderValue('SlidersPage', 'basicSlider', 75);
-      await steps.verifyTextContains('SlidersPage', 'basicSliderValue', '75');
+      await steps.setSliderValue( 'basicSlider','SlidersPage', 75);
+      await steps.verifyTextContains( 'basicSliderValue','SlidersPage', '75');
     });
 
     await test.step('Set stepped slider to 50 and verify value', async () => {
-      await steps.setSliderValue('SlidersPage', 'steppedSlider', 50);
-      await steps.verifyTextContains('SlidersPage', 'steppedSliderValue', '50');
+      await steps.setSliderValue( 'steppedSlider','SlidersPage', 50);
+      await steps.verifyTextContains( 'steppedSliderValue','SlidersPage', '50');
     });
 
     await test.step('Verify disabled slider is disabled', async () => {
-      await steps.verifyState('SlidersPage', 'disabledSlider', 'disabled');
+      await steps.verifyState( 'disabledSlider','SlidersPage', 'disabled');
     });
 
     await test.step('Verify range slider values display', async () => {
-      await steps.verifyText('SlidersPage', 'rangeValue', undefined, { notEmpty: true });
+      await steps.verifyText( 'rangeValue','SlidersPage', undefined, { notEmpty: true });
     });
 
     log('TC_012 Sliders Page — passed');
@@ -181,28 +181,28 @@ test.describe('TC_013: Drag Progress Page', () => {
 
     await test.step('Navigate to Drag Progress page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'dragProgressLink');
+      await steps.click( 'dragProgressLink','SidebarNav');
       await steps.verifyUrlContains('/drag-progress');
     });
 
     await test.step('Click Set 50% button and verify', async () => {
-      await steps.click('DragProgressPage', 'setHalfButton');
-      await steps.verifyTextContains('DragProgressPage', 'progressValue', '50');
+      await steps.click( 'setHalfButton','DragProgressPage');
+      await steps.verifyTextContains( 'progressValue','DragProgressPage', '50');
     });
 
     await test.step('Click Set 100% button and verify', async () => {
-      await steps.click('DragProgressPage', 'setFullButton');
-      await steps.verifyTextContains('DragProgressPage', 'progressValue', '100');
+      await steps.click( 'setFullButton','DragProgressPage');
+      await steps.verifyTextContains( 'progressValue','DragProgressPage', '100');
     });
 
     await test.step('Click Reset button and verify', async () => {
-      await steps.click('DragProgressPage', 'resetButton');
-      await steps.verifyTextContains('DragProgressPage', 'progressValue', '0');
+      await steps.click( 'resetButton','DragProgressPage');
+      await steps.verifyTextContains( 'progressValue','DragProgressPage', '0');
     });
 
     await test.step('Verify progress track and handle are present', async () => {
-      await steps.verifyPresence('DragProgressPage', 'progressTrack');
-      await steps.verifyPresence('DragProgressPage', 'progressHandle');
+      await steps.verifyPresence( 'progressTrack','DragProgressPage');
+      await steps.verifyPresence( 'progressHandle','DragProgressPage');
     });
 
     log('TC_013 Drag Progress Page — passed');
@@ -219,30 +219,30 @@ test.describe('TC_014: Dropdown Page', () => {
 
     await test.step('Navigate to Dropdown page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'dropdownLink');
+      await steps.click( 'dropdownLink','SidebarNav');
       await steps.verifyUrlContains('/dropdown');
     });
 
     await test.step('Select a random option from the single select', async () => {
-      const selected = await steps.selectDropdown('DropdownSelectPage', 'singleSelect');
+      const selected = await steps.selectDropdown( 'singleSelect','DropdownSelectPage');
       expect(selected).toBeTruthy();
     });
 
     await test.step('Verify single select value is displayed', async () => {
-      await steps.verifyText('DropdownSelectPage', 'singleValue', undefined, { notEmpty: true });
+      await steps.verifyText( 'singleValue','DropdownSelectPage', undefined, { notEmpty: true });
     });
 
     await test.step('Select by value from single select', async () => {
-      await steps.selectDropdown('DropdownSelectPage', 'singleSelect', {
+      await steps.selectDropdown( 'singleSelect','DropdownSelectPage', {
         type: DropdownSelectType.VALUE,
         value: 'Canada'
       });
-      await steps.verifyTextContains('DropdownSelectPage', 'singleValue', 'Canada');
+      await steps.verifyTextContains( 'singleValue','DropdownSelectPage', 'Canada');
     });
 
     await test.step('Open custom dropdown and verify list appears', async () => {
-      await steps.click('DropdownSelectPage', 'customDropdownButton');
-      await steps.verifyPresence('DropdownSelectPage', 'customDropdownList');
+      await steps.click( 'customDropdownButton','DropdownSelectPage');
+      await steps.verifyPresence( 'customDropdownList','DropdownSelectPage');
     });
 
     log('TC_014 Dropdown Page — passed');
@@ -255,13 +255,13 @@ test.describe('TC_015: File Upload Page', () => {
 
     await test.step('Navigate to File Upload page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'fileUploadLink');
+      await steps.click( 'fileUploadLink','SidebarNav');
       await steps.verifyUrlContains('/file-upload');
     });
 
     await test.step('Upload a single file and verify filename displayed', async () => {
-      await steps.uploadFile('FileUploadPage', 'singleFileInput', 'tests/test-files/test-upload.txt');
-      await steps.verifyTextContains('FileUploadPage', 'singleFileName', 'test-upload.txt');
+      await steps.uploadFile( 'singleFileInput','FileUploadPage', 'tests/test-files/test-upload.txt');
+      await steps.verifyTextContains( 'singleFileName','FileUploadPage', 'test-upload.txt');
     });
 
     log('TC_015 File Upload Page — passed');
@@ -274,12 +274,12 @@ test.describe('TC_016: Autocomplete Page', () => {
 
     await test.step('Navigate to Autocomplete page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'autocompleteLink');
+      await steps.click( 'autocompleteLink','SidebarNav');
       await steps.verifyUrlContains('/autocomplete');
     });
 
     await test.step('Type "Uni" to trigger suggestions', async () => {
-      await steps.typeSequentially('AutocompletePage', 'searchInput', 'Uni', 50);
+      await steps.typeSequentially( 'searchInput','AutocompletePage', 'Uni', 50);
     });
 
     await test.step('Click "United States" suggestion', async () => {
@@ -288,12 +288,12 @@ test.describe('TC_016: Autocomplete Page', () => {
     });
 
     await test.step('Verify selected value', async () => {
-      await steps.verifyTextContains('AutocompletePage', 'selectedValue', 'United States');
+      await steps.verifyTextContains( 'selectedValue','AutocompletePage', 'United States');
     });
 
     await test.step('Clear and verify reset', async () => {
-      await steps.click('AutocompletePage', 'clearButton');
-      await steps.verifyInputValue('AutocompletePage', 'searchInput', '');
+      await steps.click( 'clearButton','AutocompletePage');
+      await steps.verifyInputValue( 'searchInput','AutocompletePage', '');
     });
 
     log('TC_016 Autocomplete Page — passed');
@@ -310,7 +310,7 @@ test.describe('TC_017: Alerts Page - Click Types', () => {
 
     await test.step('Navigate to Alerts page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'alertsLink');
+      await steps.click( 'alertsLink','SidebarNav');
       await steps.verifyUrlContains('/alerts');
     });
 
@@ -320,7 +320,7 @@ test.describe('TC_017: Alerts Page - Click Types', () => {
         dialogMessage = dialog.message();
         await dialog.accept();
       });
-      await steps.click('AlertsPage', 'clickMeButton');
+      await steps.click( 'clickMeButton','AlertsPage');
       expect(dialogMessage).toBe('Single click!');
     });
 
@@ -330,7 +330,7 @@ test.describe('TC_017: Alerts Page - Click Types', () => {
         dialogMessage = dialog.message();
         await dialog.accept();
       });
-      await steps.rightClick('AlertsPage', 'rightClickButton');
+      await steps.rightClick( 'rightClickButton','AlertsPage');
       expect(dialogMessage).toBe('Right click!');
     });
 
@@ -340,7 +340,7 @@ test.describe('TC_017: Alerts Page - Click Types', () => {
         dialogMessage = dialog.message();
         await dialog.accept();
       });
-      await steps.doubleClick('AlertsPage', 'doubleClickButton');
+      await steps.doubleClick( 'doubleClickButton','AlertsPage');
       expect(dialogMessage).toBe('Double click!');
     });
 
@@ -354,13 +354,13 @@ test.describe('TC_018: Alerts Page - New Tab', () => {
 
     await test.step('Navigate to Alerts page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'alertsLink');
+      await steps.click( 'alertsLink','SidebarNav');
       await steps.verifyUrlContains('/alerts');
     });
 
     await test.step('Click New Tab and switch to it', async () => {
       const newPage = await steps.switchToNewTab(async () => {
-        await steps.click('AlertsPage', 'newTabButton');
+        await steps.click( 'newTabButton','AlertsPage');
       });
       await steps.verifyTabCount(2);
       await newPage.close();
@@ -380,27 +380,27 @@ test.describe('TC_019: Modal Page', () => {
 
     await test.step('Navigate to Modal page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'modalLink');
+      await steps.click( 'modalLink','SidebarNav');
       await steps.verifyUrlContains('/modal');
     });
 
     await test.step('Open modal and verify overlay appears', async () => {
-      await steps.click('ModalPage', 'openButton');
-      await steps.verifyPresence('ModalPage', 'overlay');
+      await steps.click( 'openButton','ModalPage');
+      await steps.verifyPresence( 'overlay','ModalPage');
     });
 
     await test.step('Click Confirm and verify status', async () => {
-      await steps.click('ModalPage', 'confirmButton');
-      await steps.verifyAbsence('ModalPage', 'overlay');
-      await steps.verifyTextContains('ModalPage', 'status', 'confirmed');
+      await steps.click( 'confirmButton','ModalPage');
+      await steps.verifyAbsence( 'overlay','ModalPage');
+      await steps.verifyTextContains( 'status','ModalPage', 'confirmed');
     });
 
     await test.step('Reopen modal and cancel', async () => {
-      await steps.click('ModalPage', 'openButton');
-      await steps.verifyPresence('ModalPage', 'overlay');
-      await steps.click('ModalPage', 'cancelButton');
-      await steps.verifyAbsence('ModalPage', 'overlay');
-      await steps.verifyTextContains('ModalPage', 'status', 'cancelled');
+      await steps.click( 'openButton','ModalPage');
+      await steps.verifyPresence( 'overlay','ModalPage');
+      await steps.click( 'cancelButton','ModalPage');
+      await steps.verifyAbsence( 'overlay','ModalPage');
+      await steps.verifyTextContains( 'status','ModalPage', 'cancelled');
     });
 
     log('TC_019 Modal Page — passed');
@@ -413,21 +413,21 @@ test.describe('TC_020: Toast Page', () => {
 
     await test.step('Navigate to Toast page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'toastLink');
+      await steps.click( 'toastLink','SidebarNav');
       await steps.verifyUrlContains('/toast');
     });
 
     await test.step('Trigger success toast and verify it appears', async () => {
-      await steps.click('ToastPage', 'successButton');
-      await steps.verifyPresence('ToastPage', 'container');
+      await steps.click( 'successButton','ToastPage');
+      await steps.verifyPresence( 'container','ToastPage');
     });
 
     await test.step('Trigger error toast', async () => {
-      await steps.click('ToastPage', 'errorButton');
+      await steps.click( 'errorButton','ToastPage');
     });
 
     await test.step('Trigger warning toast', async () => {
-      await steps.click('ToastPage', 'warningButton');
+      await steps.click( 'warningButton','ToastPage');
     });
 
     log('TC_020 Toast Page — passed');
@@ -440,18 +440,18 @@ test.describe('TC_021: Tooltip & Popover Page', () => {
 
     await test.step('Navigate to Tooltip page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'tooltipLink');
+      await steps.click( 'tooltipLink','SidebarNav');
       await steps.verifyUrlContains('/tooltip');
     });
 
     await test.step('Hover to show tooltip', async () => {
-      await steps.hover('TooltipPage', 'tooltipTrigger1');
-      await steps.verifyPresence('TooltipPage', 'tooltipContent1');
+      await steps.hover( 'tooltipTrigger1','TooltipPage');
+      await steps.verifyPresence( 'tooltipContent1','TooltipPage');
     });
 
     await test.step('Click to show popover', async () => {
-      await steps.click('TooltipPage', 'popoverTrigger1');
-      await steps.verifyPresence('TooltipPage', 'popoverContent1');
+      await steps.click( 'popoverTrigger1','TooltipPage');
+      await steps.verifyPresence( 'popoverContent1','TooltipPage');
     });
 
     log('TC_021 Tooltip & Popover Page — passed');
@@ -464,25 +464,25 @@ test.describe('TC_022: Drawer Page', () => {
 
     await test.step('Navigate to Drawer page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'drawerLink');
+      await steps.click( 'drawerLink','SidebarNav');
       await steps.verifyUrlContains('/drawer');
     });
 
     await test.step('Open left drawer and verify status', async () => {
-      await steps.click('DrawerPage', 'openLeftButton');
-      await steps.verifyTextContains('DrawerPage', 'status', 'left');
+      await steps.click( 'openLeftButton','DrawerPage');
+      await steps.verifyTextContains( 'status','DrawerPage', 'left');
     });
 
     await test.step('Close drawer via close button', async () => {
-      await steps.click('DrawerPage', 'closeButton');
-      await steps.verifyTextContains('DrawerPage', 'status', 'closed');
+      await steps.click( 'closeButton','DrawerPage');
+      await steps.verifyTextContains( 'status','DrawerPage', 'closed');
     });
 
     await test.step('Open right drawer and close via overlay click', async () => {
-      await steps.click('DrawerPage', 'openRightButton');
-      await steps.verifyTextContains('DrawerPage', 'status', 'right');
-      await steps.click('DrawerPage', 'overlay');
-      await steps.verifyTextContains('DrawerPage', 'status', 'closed');
+      await steps.click( 'openRightButton','DrawerPage');
+      await steps.verifyTextContains( 'status','DrawerPage', 'right');
+      await steps.click( 'overlay','DrawerPage');
+      await steps.verifyTextContains( 'status','DrawerPage', 'closed');
     });
 
     log('TC_022 Drawer Page — passed');

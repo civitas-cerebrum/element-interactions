@@ -13,7 +13,7 @@ test.describe('TC_034: Gallery Page', () => {
 
     await test.step('Navigate to Gallery page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'galleryLink');
+      await steps.click( 'galleryLink','SidebarNav');
       await steps.verifyUrlContains('/gallery');
     });
 
@@ -45,31 +45,31 @@ test.describe('TC_035: Carousel Page', () => {
 
     await test.step('Navigate to Carousel page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'carouselLink');
+      await steps.click( 'carouselLink','SidebarNav');
       await steps.verifyUrlContains('/carousel');
     });
 
     await test.step('First slide visible on load', async () => {
-      await steps.verifyPresence('CarouselPage', 'slide1');
+      await steps.verifyPresence( 'slide1','CarouselPage');
     });
 
     await test.step('Click Next — slide advances', async () => {
-      await steps.click('CarouselPage', 'nextButton');
-      await steps.verifyPresence('CarouselPage', 'slide2');
+      await steps.click( 'nextButton','CarouselPage');
+      await steps.verifyPresence( 'slide2','CarouselPage');
     });
 
     await test.step('Click Previous — goes back', async () => {
-      await steps.click('CarouselPage', 'prevButton');
-      await steps.verifyPresence('CarouselPage', 'slide1');
+      await steps.click( 'prevButton','CarouselPage');
+      await steps.verifyPresence( 'slide1','CarouselPage');
     });
 
     await test.step('Click dot 2 — jumps to slide 2', async () => {
-      await steps.click('CarouselPage', 'dot2');
-      await steps.verifyPresence('CarouselPage', 'slide2');
+      await steps.click( 'dot2','CarouselPage');
+      await steps.verifyPresence( 'slide2','CarouselPage');
     });
 
     await test.step('Autoplay toggle is present', async () => {
-      await steps.verifyPresence('CarouselPage', 'autoplayButton');
+      await steps.verifyPresence( 'autoplayButton','CarouselPage');
     });
 
     log('TC_035 Carousel Page — passed');

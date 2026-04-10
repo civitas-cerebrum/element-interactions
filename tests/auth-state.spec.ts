@@ -13,21 +13,21 @@ test.describe('TC_036: Login Form Page', () => {
 
     await test.step('Navigate to Login Form page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'loginFormLink');
+      await steps.click( 'loginFormLink','SidebarNav');
       await steps.verifyUrlContains('/login-form');
     });
 
     await test.step('Empty submit shows validation errors', async () => {
-      await steps.click('LoginFormPage', 'signInButton');
+      await steps.click( 'signInButton','LoginFormPage');
       // Validation errors should appear for empty fields
       const errors = page.locator("[data-testid='login-username-error'], [data-testid='login-password-error']");
       await errors.first().waitFor({ state: 'visible', timeout: 5000 });
     });
 
     await test.step('Wrong credentials show error', async () => {
-      await steps.fill('LoginFormPage', 'usernameInput', 'wrong');
-      await steps.fill('LoginFormPage', 'passwordInput', 'wrongpass');
-      await steps.click('LoginFormPage', 'signInButton');
+      await steps.fill( 'usernameInput','LoginFormPage', 'wrong');
+      await steps.fill( 'passwordInput','LoginFormPage', 'wrongpass');
+      await steps.click( 'signInButton','LoginFormPage');
       const loginError = page.locator("[data-testid='login-error']");
       await loginError.waitFor({ state: 'visible', timeout: 5000 });
     });
@@ -35,16 +35,16 @@ test.describe('TC_036: Login Form Page', () => {
     await test.step('Show/hide password toggle', async () => {
       const passwordField = page.locator('#login-password-input');
       expect(await passwordField.getAttribute('type')).toBe('password');
-      await steps.click('LoginFormPage', 'showPasswordButton');
+      await steps.click( 'showPasswordButton','LoginFormPage');
       expect(await passwordField.getAttribute('type')).toBe('text');
-      await steps.click('LoginFormPage', 'showPasswordButton');
+      await steps.click( 'showPasswordButton','LoginFormPage');
       expect(await passwordField.getAttribute('type')).toBe('password');
     });
 
     await test.step('Correct login succeeds', async () => {
-      await steps.fill('LoginFormPage', 'usernameInput', 'admin');
-      await steps.fill('LoginFormPage', 'passwordInput', 'password123');
-      await steps.click('LoginFormPage', 'signInButton');
+      await steps.fill( 'usernameInput','LoginFormPage', 'admin');
+      await steps.fill( 'passwordInput','LoginFormPage', 'password123');
+      await steps.click( 'signInButton','LoginFormPage');
       const success = page.locator("[data-testid='login-success']");
       await success.waitFor({ state: 'visible', timeout: 5000 });
     });
@@ -59,41 +59,41 @@ test.describe('TC_037: Pinia Counter Page', () => {
 
     await test.step('Navigate to Pinia Counter page via sidebar', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'piniaCounterLink');
+      await steps.click( 'piniaCounterLink','SidebarNav');
       await steps.verifyUrlContains('/pinia-counter');
     });
 
     await test.step('Initial value is 0', async () => {
-      await steps.verifyText('PiniaCounterPage', 'counterValue', '0');
+      await steps.verifyText( 'counterValue','PiniaCounterPage', '0');
     });
 
     await test.step('Increment increases value', async () => {
-      await steps.click('PiniaCounterPage', 'incrementButton');
-      await steps.verifyText('PiniaCounterPage', 'counterValue', '1');
+      await steps.click( 'incrementButton','PiniaCounterPage');
+      await steps.verifyText( 'counterValue','PiniaCounterPage', '1');
     });
 
     await test.step('Decrement decreases value', async () => {
-      await steps.click('PiniaCounterPage', 'decrementButton');
-      await steps.verifyText('PiniaCounterPage', 'counterValue', '0');
+      await steps.click( 'decrementButton','PiniaCounterPage');
+      await steps.verifyText( 'counterValue','PiniaCounterPage', '0');
     });
 
     await test.step('Increment twice and reset', async () => {
-      await steps.click('PiniaCounterPage', 'incrementButton');
-      await steps.click('PiniaCounterPage', 'incrementButton');
-      await steps.verifyText('PiniaCounterPage', 'counterValue', '2');
-      await steps.click('PiniaCounterPage', 'resetButton');
-      await steps.verifyText('PiniaCounterPage', 'counterValue', '0');
+      await steps.click( 'incrementButton','PiniaCounterPage');
+      await steps.click( 'incrementButton','PiniaCounterPage');
+      await steps.verifyText( 'counterValue','PiniaCounterPage', '2');
+      await steps.click( 'resetButton','PiniaCounterPage');
+      await steps.verifyText( 'counterValue','PiniaCounterPage', '0');
     });
 
     await test.step('Change step to 5 and increment', async () => {
-      await steps.fill('PiniaCounterPage', 'stepInput', '5');
-      await steps.click('PiniaCounterPage', 'incrementButton');
-      await steps.verifyText('PiniaCounterPage', 'counterValue', '5');
+      await steps.fill( 'stepInput','PiniaCounterPage', '5');
+      await steps.click( 'incrementButton','PiniaCounterPage');
+      await steps.verifyText( 'counterValue','PiniaCounterPage', '5');
     });
 
     await test.step('History tracks operations', async () => {
-      await steps.verifyPresence('PiniaCounterPage', 'history');
-      await steps.verifyText('PiniaCounterPage', 'history', undefined, { notEmpty: true });
+      await steps.verifyPresence( 'history','PiniaCounterPage');
+      await steps.verifyText( 'history','PiniaCounterPage', undefined, { notEmpty: true });
     });
 
     log('TC_037 Pinia Counter Page — passed');

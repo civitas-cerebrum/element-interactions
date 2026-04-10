@@ -9,52 +9,52 @@ test.describe('TC_007: verifyState - All Playwright element states', () => {
 
     await test.step('Navigate to Forms page', async () => {
       await steps.navigateTo('/');
-      await steps.click('HomePage', 'formsCard');
+      await steps.click( 'formsCard','HomePage');
       await steps.verifyUrlContains('/forms');
     });
 
     await test.step('visible: title is visible', async () => {
-      await steps.verifyState('FormsPage', 'title', 'visible');
+      await steps.verifyState( 'title','FormsPage', 'visible');
     });
 
     await test.step('attached: title is attached to the DOM', async () => {
-      await steps.verifyState('FormsPage', 'title', 'attached');
+      await steps.verifyState( 'title','FormsPage', 'attached');
     });
 
     await test.step('inViewport: title is in viewport', async () => {
-      await steps.verifyState('FormsPage', 'title', 'inViewport');
+      await steps.verifyState( 'title','FormsPage', 'inViewport');
     });
 
     await test.step('enabled: submit button is enabled', async () => {
-      await steps.verifyState('FormsPage', 'submitButton', 'enabled');
+      await steps.verifyState( 'submitButton','FormsPage', 'enabled');
     });
 
     await test.step('editable: name input is editable', async () => {
-      await steps.verifyState('FormsPage', 'nameInput', 'editable');
+      await steps.verifyState( 'nameInput','FormsPage', 'editable');
     });
 
     await test.step('focused: name input is focused after clicking', async () => {
-      await steps.click('FormsPage', 'nameInput');
-      await steps.verifyState('FormsPage', 'nameInput', 'focused');
+      await steps.click( 'nameInput','FormsPage');
+      await steps.verifyState( 'nameInput','FormsPage', 'focused');
     });
 
     await test.step('Navigate to Radio Buttons page', async () => {
       await steps.navigateTo('/');
-      await steps.click('HomePage', 'elementsCard');
+      await steps.click( 'elementsCard','HomePage');
       await steps.verifyUrlContains('/radiobuttons');
     });
 
     await test.step('disabled: the No radio button is disabled', async () => {
-      await steps.verifyState('RadioButtonsPage', 'disabledRadio', 'disabled');
+      await steps.verifyState( 'disabledRadio','RadioButtonsPage', 'disabled');
     });
 
     await test.step('checked: Yes radio is checked after clicking', async () => {
-      await steps.click('RadioButtonsPage', 'yesRadio');
-      await steps.verifyState('RadioButtonsPage', 'yesRadio', 'checked');
+      await steps.click( 'yesRadio','RadioButtonsPage');
+      await steps.verifyState( 'yesRadio','RadioButtonsPage', 'checked');
     });
 
     await test.step('hidden: FormsPage title is hidden on a different page', async () => {
-      await steps.verifyState('FormsPage', 'title', 'hidden', 500);
+      await steps.verifyState( 'title','FormsPage', 'hidden', 500);
     });
 
     log('TC_007 verifyState — passed');
@@ -70,7 +70,7 @@ test.describe('TC_008: navigateTo resolves relative URLs via Playwright baseURL'
     });
 
     await test.step('Verify the home page loaded', async () => {
-      await steps.verifyCount('HomePage', 'categories', { exactly: 8 });
+      await steps.verifyCount( 'categories','HomePage', { exactly: 8 });
     });
 
     await test.step('verifyUrlContains escapes regex metacharacters', async () => {

@@ -383,7 +383,7 @@ test.describe('Email Integration Tests - OTP Page Workflow', () => {
         });
 
         const otp = await test.step('Read OTP from the autocomplete section', async () => {
-            return await steps.getText('OtpPage', 'autocompleteGeneratedCode');
+            return await steps.getText( 'autocompleteGeneratedCode','OtpPage');
         });
 
         expect(otp).toMatch(/^\d{6}$/);
@@ -409,11 +409,11 @@ test.describe('Email Integration Tests - OTP Page Workflow', () => {
         });
 
         await test.step('Enter OTP from email into the autocomplete input', async () => {
-            await steps.typeSequentially('OtpPage', 'autocompleteOtpFirstInput', receivedOtp, 100);
+            await steps.typeSequentially( 'autocompleteOtpFirstInput','OtpPage', receivedOtp, 100);
         });
 
         await test.step('Verify success message appears', async () => {
-            await steps.verifyText('OtpPage', 'autocompleteCompleteMessage', '✓ Code verified successfully!');
+            await steps.verifyText( 'autocompleteCompleteMessage','OtpPage', '✓ Code verified successfully!');
         });
     });
 });

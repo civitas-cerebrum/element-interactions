@@ -13,16 +13,16 @@ test.describe('TC_051: clickListedElement', () => {
 
     await test.step('Navigate to Table page', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'tableLink');
+      await steps.click( 'tableLink','SidebarNav');
       await steps.verifyUrlContains('/table');
     });
 
     await test.step('Click by text', async () => {
-      await steps.clickListedElement('TablePage', 'rows', { text: 'Alice' });
+      await steps.clickListedElement( 'rows','TablePage', { text: 'Alice' });
     });
 
     await test.step('Click by text + child CSS selector', async () => {
-      await steps.clickListedElement('TablePage', 'rows', {
+      await steps.clickListedElement( 'rows','TablePage', {
         text: 'Alice',
         child: 'td:nth-child(2)'
       });
@@ -30,7 +30,7 @@ test.describe('TC_051: clickListedElement', () => {
 
     await test.step('Click by attribute', async () => {
       await steps.navigateTo('/');
-      await steps.clickListedElement('HomePage', 'categories', {
+      await steps.clickListedElement( 'categories','HomePage', {
         attribute: { name: 'data-testid', value: 'home-card-forms' }
       });
       await steps.verifyUrlContains('/forms');
@@ -38,9 +38,9 @@ test.describe('TC_051: clickListedElement', () => {
 
     await test.step('Click by attribute + child CSS selector', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'tableLink');
+      await steps.click( 'tableLink','SidebarNav');
       await steps.verifyUrlContains('/table');
-      await steps.clickListedElement('TablePage', 'rows', {
+      await steps.clickListedElement( 'rows','TablePage', {
         attribute: { name: 'data-testid', value: 'table-row-1' },
         child: 'td:nth-child(2)'
       });
@@ -56,26 +56,26 @@ test.describe('TC_052: verifyListedElement', () => {
 
     await test.step('Navigate to Table page', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'tableLink');
+      await steps.click( 'tableLink','SidebarNav');
       await steps.verifyUrlContains('/table');
     });
 
     await test.step('Verify presence by text (no assertion fields)', async () => {
-      await steps.verifyListedElement('TablePage', 'rows', { text: 'Alice' });
+      await steps.verifyListedElement( 'rows','TablePage', { text: 'Alice' });
     });
 
     await test.step('Verify expectedText on matched element (no child)', async () => {
       await steps.navigateTo('/');
-      await steps.verifyListedElement('HomePage', 'categories', {
+      await steps.verifyListedElement( 'categories','HomePage', {
         text: 'Forms',
         expectedText: 'Forms5 components'
       });
     });
 
     await test.step('Verify expectedText on a child element (text + child + expectedText)', async () => {
-      await steps.click('SidebarNav', 'tableLink');
+      await steps.click( 'tableLink','SidebarNav');
       await steps.verifyUrlContains('/table');
-      await steps.verifyListedElement('TablePage', 'rows', {
+      await steps.verifyListedElement( 'rows','TablePage', {
         text: 'Alice',
         child: 'td:nth-child(2)',
         expectedText: 'Alice Martin'
@@ -83,7 +83,7 @@ test.describe('TC_052: verifyListedElement', () => {
     });
 
     await test.step('Verify expected attribute by text match', async () => {
-      await steps.verifyListedElement('TablePage', 'rows', {
+      await steps.verifyListedElement( 'rows','TablePage', {
         text: 'Alice',
         expected: { name: 'data-testid', value: 'table-row-1' }
       });
@@ -91,16 +91,16 @@ test.describe('TC_052: verifyListedElement', () => {
 
     await test.step('Verify expected attribute by attribute match', async () => {
       await steps.navigateTo('/');
-      await steps.verifyListedElement('HomePage', 'categories', {
+      await steps.verifyListedElement( 'categories','HomePage', {
         attribute: { name: 'data-testid', value: 'home-card-forms' },
         expected: { name: 'data-testid', value: 'home-card-forms' }
       });
     });
 
     await test.step('Verify expectedText on child via attribute match', async () => {
-      await steps.click('SidebarNav', 'tableLink');
+      await steps.click( 'tableLink','SidebarNav');
       await steps.verifyUrlContains('/table');
-      await steps.verifyListedElement('TablePage', 'rows', {
+      await steps.verifyListedElement( 'rows','TablePage', {
         attribute: { name: 'data-testid', value: 'table-row-1' },
         child: 'td:nth-child(2)',
         expectedText: 'Alice Martin'
@@ -108,7 +108,7 @@ test.describe('TC_052: verifyListedElement', () => {
     });
 
     await test.step('Verify presence by attribute (no assertion fields)', async () => {
-      await steps.verifyListedElement('TablePage', 'rows', {
+      await steps.verifyListedElement( 'rows','TablePage', {
         attribute: { name: 'data-testid', value: 'table-row-1' }
       });
     });
@@ -123,17 +123,17 @@ test.describe('TC_053: getListedElementData', () => {
 
     await test.step('Navigate to Table page', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'tableLink');
+      await steps.click( 'tableLink','SidebarNav');
       await steps.verifyUrlContains('/table');
     });
 
     await test.step('Extract text by text match (no child)', async () => {
-      const text = await steps.getListedElementData('TablePage', 'rows', { text: 'Alice' });
+      const text = await steps.getListedElementData( 'rows','TablePage', { text: 'Alice' });
       expect(text).toContain('Alice');
     });
 
     await test.step('Extract text from child by text match (text + child)', async () => {
-      const name = await steps.getListedElementData('TablePage', 'rows', {
+      const name = await steps.getListedElementData( 'rows','TablePage', {
         text: 'Alice',
         child: 'td:nth-child(2)'
       });
@@ -141,7 +141,7 @@ test.describe('TC_053: getListedElementData', () => {
     });
 
     await test.step('Extract attribute by text match (text + extractAttribute)', async () => {
-      const testId = await steps.getListedElementData('TablePage', 'rows', {
+      const testId = await steps.getListedElementData( 'rows','TablePage', {
         text: 'Alice',
         extractAttribute: 'data-testid'
       });
@@ -149,7 +149,7 @@ test.describe('TC_053: getListedElementData', () => {
     });
 
     await test.step('Extract text by attribute match (attribute only)', async () => {
-      const text = await steps.getListedElementData('TablePage', 'rows', {
+      const text = await steps.getListedElementData( 'rows','TablePage', {
         attribute: { name: 'data-testid', value: 'table-row-1' }
       });
       expect(text).toContain('Alice');
@@ -157,7 +157,7 @@ test.describe('TC_053: getListedElementData', () => {
 
     await test.step('Extract attribute from child by attribute match (attribute + child + extractAttribute)', async () => {
       await steps.navigateTo('/');
-      const testId = await steps.getListedElementData('HomePage', 'categories', {
+      const testId = await steps.getListedElementData( 'categories','HomePage', {
         text: 'Forms',
         extractAttribute: 'data-testid'
       });
@@ -165,9 +165,9 @@ test.describe('TC_053: getListedElementData', () => {
     });
 
     await test.step('Extract text from child by attribute match (attribute + child)', async () => {
-      await steps.click('SidebarNav', 'tableLink');
+      await steps.click( 'tableLink','SidebarNav');
       await steps.verifyUrlContains('/table');
-      const name = await steps.getListedElementData('TablePage', 'rows', {
+      const name = await steps.getListedElementData( 'rows','TablePage', {
         attribute: { name: 'data-testid', value: 'table-row-1' },
         child: 'td:nth-child(2)'
       });
@@ -184,7 +184,7 @@ test.describe('TC_054: getListedElement (raw) — child variants and error cases
 
     await test.step('Navigate to Table page', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'tableLink');
+      await steps.click( 'tableLink','SidebarNav');
       await steps.verifyUrlContains('/table');
     });
 

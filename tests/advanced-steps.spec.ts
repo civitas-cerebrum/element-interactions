@@ -14,7 +14,7 @@ test.describe('TC_055: fillForm — fill multiple fields in one call', () => {
 
     await test.step('Navigate to Forms page', async () => {
       await steps.navigateTo('/');
-      await steps.click('HomePage', 'formsCard');
+      await steps.click( 'formsCard','HomePage');
       await steps.verifyUrlContains('/forms');
     });
 
@@ -28,9 +28,9 @@ test.describe('TC_055: fillForm — fill multiple fields in one call', () => {
     });
 
     await test.step('Verify all fields were filled', async () => {
-      await steps.verifyInputValue('FormsPage', 'nameInput', 'Fill Form Test');
-      await steps.verifyInputValue('FormsPage', 'emailInput', 'fillform@test.com');
-      await steps.verifyInputValue('FormsPage', 'mobileInput', '1234567890');
+      await steps.verifyInputValue( 'nameInput','FormsPage', 'Fill Form Test');
+      await steps.verifyInputValue( 'emailInput','FormsPage', 'fillform@test.com');
+      await steps.verifyInputValue( 'mobileInput','FormsPage', '1234567890');
     });
 
     log('TC_055 fillForm — passed');
@@ -43,18 +43,18 @@ test.describe('TC_056: clearInput — clear an input field', () => {
 
     await test.step('Navigate to Text Inputs page', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'textInputsLink');
+      await steps.click( 'textInputsLink','SidebarNav');
       await steps.verifyUrlContains('/text-inputs');
     });
 
     await test.step('Fill text input', async () => {
-      await steps.fill('TextInputsPage', 'textInput', 'Some text to clear');
-      await steps.verifyInputValue('TextInputsPage', 'textInput', 'Some text to clear');
+      await steps.fill( 'textInput','TextInputsPage', 'Some text to clear');
+      await steps.verifyInputValue( 'textInput','TextInputsPage', 'Some text to clear');
     });
 
     await test.step('Clear input and verify it is empty', async () => {
-      await steps.clearInput('TextInputsPage', 'textInput');
-      await steps.verifyInputValue('TextInputsPage', 'textInput', '');
+      await steps.clearInput( 'textInput','TextInputsPage');
+      await steps.verifyInputValue( 'textInput','TextInputsPage', '');
     });
 
     log('TC_056 clearInput — passed');
@@ -67,23 +67,23 @@ test.describe('TC_057: getInputValue — read input values', () => {
 
     await test.step('Navigate to Text Inputs page', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'textInputsLink');
+      await steps.click( 'textInputsLink','SidebarNav');
       await steps.verifyUrlContains('/text-inputs');
     });
 
     await test.step('Read pre-populated error input value', async () => {
-      const value = await steps.getInputValue('TextInputsPage', 'errorInput');
+      const value = await steps.getInputValue( 'errorInput','TextInputsPage');
       expect(value).toBe('invalid@');
     });
 
     await test.step('Read pre-populated success input value', async () => {
-      const value = await steps.getInputValue('TextInputsPage', 'successInput');
+      const value = await steps.getInputValue( 'successInput','TextInputsPage');
       expect(value).toBe('valid@example.com');
     });
 
     await test.step('Fill and read back a value', async () => {
-      await steps.fill('TextInputsPage', 'emailInput', 'test@example.org');
-      const value = await steps.getInputValue('TextInputsPage', 'emailInput');
+      await steps.fill( 'emailInput','TextInputsPage', 'test@example.org');
+      const value = await steps.getInputValue( 'emailInput','TextInputsPage');
       expect(value).toBe('test@example.org');
     });
 
@@ -100,7 +100,7 @@ test.describe('TC_058: getCount — count elements', () => {
     });
 
     await test.step('getCount returns 8 categories', async () => {
-      const count = await steps.getCount('HomePage', 'categories');
+      const count = await steps.getCount( 'categories','HomePage');
       expect(count).toBe(8);
     });
 
@@ -114,23 +114,23 @@ test.describe('TC_059: getAll — bulk text extraction', () => {
 
     await test.step('Navigate to Table page', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'tableLink');
+      await steps.click( 'tableLink','SidebarNav');
       await steps.verifyUrlContains('/table');
     });
 
     await test.step('getAll — basic text extraction from rows', async () => {
-      const texts = await steps.getAll('TablePage', 'rows');
+      const texts = await steps.getAll( 'rows','TablePage');
       expect(texts.length).toBe(5);
       expect(texts[0]).toContain('Alice Martin');
     });
 
     await test.step('getAll — with child selector', async () => {
-      const names = await steps.getAll('TablePage', 'rows', { child: { pageName: 'TablePage', elementName: 'nameCell' } });
+      const names = await steps.getAll( 'rows','TablePage', { child: { pageName: 'TablePage', elementName: 'nameCell' } });
       expect(names).toEqual(['Alice Martin', 'Bob Chen', 'Carol White', 'David Kim', 'Eve Torres']);
     });
 
     await test.step('getAll — with extractAttribute', async () => {
-      const testIds = await steps.getAll('TablePage', 'rowCheckboxes', { extractAttribute: 'data-testid' });
+      const testIds = await steps.getAll( 'rowCheckboxes','TablePage', { extractAttribute: 'data-testid' });
       expect(testIds.length).toBe(5);
       expect(testIds[0]).toContain('table-row-checkbox-');
     });
@@ -148,12 +148,12 @@ test.describe('TC_060: getCssProperty — read computed styles', () => {
     });
 
     await test.step('Read display property of page title', async () => {
-      const display = await steps.getCssProperty('HomePage', 'pageTitle', 'display');
+      const display = await steps.getCssProperty( 'pageTitle','HomePage', 'display');
       expect(display).toBeTruthy();
     });
 
     await test.step('Read font-size of page title', async () => {
-      const fontSize = await steps.getCssProperty('HomePage', 'pageTitle', 'font-size');
+      const fontSize = await steps.getCssProperty( 'pageTitle','HomePage', 'font-size');
       expect(fontSize).toMatch(/\d+px/);
     });
 
@@ -167,13 +167,13 @@ test.describe('TC_061: verifyCssProperty — assert computed styles', () => {
 
     await test.step('Navigate to Text Inputs page', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'textInputsLink');
+      await steps.click( 'textInputsLink','SidebarNav');
       await steps.verifyUrlContains('/text-inputs');
     });
 
     await test.step('Verify display property of text input', async () => {
-      const display = await steps.getCssProperty('TextInputsPage', 'textInput', 'display');
-      await steps.verifyCssProperty('TextInputsPage', 'textInput', 'display', display);
+      const display = await steps.getCssProperty( 'textInput','TextInputsPage', 'display');
+      await steps.verifyCssProperty( 'textInput','TextInputsPage', 'display', display);
     });
 
     log('TC_061 verifyCssProperty — passed');
@@ -189,7 +189,7 @@ test.describe('TC_062: waitAndClick — wait then click', () => {
     });
 
     await test.step('waitAndClick on forms card (default: visible)', async () => {
-      await steps.waitAndClick('HomePage', 'formsCard');
+      await steps.waitAndClick( 'formsCard','HomePage');
       await steps.verifyUrlContains('/forms');
     });
 
@@ -206,9 +206,9 @@ test.describe('TC_063: clickNth — click by index', () => {
     });
 
     await test.step('Click the second category card (index 1)', async () => {
-      await steps.clickNth('HomePage', 'categories', 1);
+      await steps.clickNth( 'categories','HomePage', 1);
       // Should navigate to one of the category pages
-      await steps.verifyAbsence('HomePage', 'categories');
+      await steps.verifyAbsence( 'categories','HomePage');
     });
 
     log('TC_063 clickNth — passed');
@@ -221,12 +221,12 @@ test.describe('TC_064: selectMultiple — select multiple options', () => {
 
     await test.step('Navigate to Dropdown page', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'dropdownLink');
+      await steps.click( 'dropdownLink','SidebarNav');
       await steps.verifyUrlContains('/dropdown');
     });
 
     await test.step('Select multiple countries', async () => {
-      const selected = await steps.selectMultiple('DropdownSelectPage', 'multiSelect', ['Australia', 'Canada', 'France']);
+      const selected = await steps.selectMultiple( 'multiSelect','DropdownSelectPage', ['Australia', 'Canada', 'France']);
       expect(selected).toContain('Australia');
       expect(selected).toContain('Canada');
       expect(selected).toContain('France');
@@ -242,21 +242,21 @@ test.describe('TC_065: verifyListOrder — assert sort direction', () => {
 
     await test.step('Navigate to Table page', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'tableLink');
+      await steps.click( 'tableLink','SidebarNav');
       await steps.verifyUrlContains('/table');
     });
 
     await test.step('Default name order is ascending — verify with verifyListOrder', async () => {
-      await steps.verifyListOrder('TablePage', 'nameCell', 'asc');
+      await steps.verifyListOrder( 'nameCell','TablePage', 'asc');
     });
 
     await test.step('Click Name header twice to sort descending', async () => {
-      await steps.click('TablePage', 'headerName');
-      await steps.click('TablePage', 'headerName');
+      await steps.click( 'headerName','TablePage');
+      await steps.click( 'headerName','TablePage');
     });
 
     await test.step('Verify descending order with verifyListOrder', async () => {
-      await steps.verifyListOrder('TablePage', 'nameCell', 'desc');
+      await steps.verifyListOrder( 'nameCell','TablePage', 'desc');
     });
 
     log('TC_065 verifyListOrder — passed');
@@ -269,17 +269,17 @@ test.describe('TC_066: retryUntil — retry action until verification', () => {
 
     await test.step('Navigate to Checkboxes page', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'checkboxesLink');
+      await steps.click( 'checkboxesLink','SidebarNav');
       await steps.verifyUrlContains('/checkboxes');
     });
 
     await test.step('retryUntil — click checkbox until checked', async () => {
       // First uncheck if already checked
-      await steps.uncheck('CheckboxesPage', 'uncheckedCheckbox');
+      await steps.uncheck( 'uncheckedCheckbox','CheckboxesPage');
       // Now retry click until it becomes checked
       await steps.retryUntil(
-        async () => { await steps.check('CheckboxesPage', 'uncheckedCheckbox'); },
-        async () => { await steps.verifyState('CheckboxesPage', 'uncheckedCheckbox', 'checked'); },
+        async () => { await steps.check( 'uncheckedCheckbox','CheckboxesPage'); },
+        async () => { await steps.verifyState( 'uncheckedCheckbox','CheckboxesPage', 'checked'); },
         3,
         500
       );
@@ -310,7 +310,7 @@ test.describe('TC_067: screenshot — page and element screenshots', () => {
     });
 
     await test.step('Element screenshot', async () => {
-      const buffer = await steps.screenshot('HomePage', 'pageTitle');
+      const buffer = await steps.screenshot( 'pageTitle','HomePage');
       expect(buffer).toBeInstanceOf(Buffer);
       expect(buffer.length).toBeGreaterThan(0);
     });
@@ -329,8 +329,8 @@ test.describe('TC_068: waitForNetworkIdle — wait for network quiet', () => {
     });
 
     await test.step('Page is fully loaded after network idle', async () => {
-      await steps.verifyPresence('HomePage', 'pageTitle');
-      await steps.verifyCount('HomePage', 'categories', { exactly: 8 });
+      await steps.verifyPresence( 'pageTitle','HomePage');
+      await steps.verifyCount( 'categories','HomePage', { exactly: 8 });
     });
 
     log('TC_068 waitForNetworkIdle — passed');
@@ -343,12 +343,12 @@ test.describe('TC_069: verifyOrder — assert exact element text order', () => {
 
     await test.step('Navigate to Table page', async () => {
       await steps.navigateTo('/');
-      await steps.click('SidebarNav', 'tableLink');
+      await steps.click( 'tableLink','SidebarNav');
       await steps.verifyUrlContains('/table');
     });
 
     await test.step('Verify exact order of names using verifyOrder', async () => {
-      await steps.verifyOrder('TablePage', 'nameCell', ['Alice Martin', 'Bob Chen', 'Carol White', 'David Kim', 'Eve Torres']);
+      await steps.verifyOrder( 'nameCell','TablePage', ['Alice Martin', 'Bob Chen', 'Carol White', 'David Kim', 'Eve Torres']);
     });
 
     log('TC_069 verifyOrder — passed');
@@ -373,7 +373,7 @@ test.describe('TC_071: waitForResponse — wait for network response', () => {
 
     await test.step('Verify table page loaded', async () => {
       await steps.verifyUrlContains('/table');
-      await steps.verifyPresence('TablePage', 'table');
+      await steps.verifyPresence( 'table','TablePage');
     });
 
     log('TC_071 waitForResponse — passed');
