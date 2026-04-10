@@ -27,9 +27,6 @@ jobs:
       - name: 🛠️ Build package
         run: npm run build
 
-      - name: 🌍 Install Playwright
-        run: npx playwright install chromium --with-deps
-
       - name: 📊 Generate & Post Table Report
         if: always()
         uses: actions/github-script@v7
