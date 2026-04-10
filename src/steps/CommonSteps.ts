@@ -113,7 +113,7 @@ export class Steps {
      * ```
      */
     on(elementName: string, pageName: string): ElementAction {
-        const interactions = new ElementInteractions(this.page, {});
+        const interactions = new ElementInteractions(this.page, { timeout: this.timeout });
         return new ElementAction(this.repo, elementName, pageName, interactions, this.timeout);
     }
 
@@ -628,8 +628,8 @@ export class Steps {
         const notEmpty = verifyOptions?.notEmpty || expectedText === undefined;
         const logDetail = notEmpty ? 'is not empty' : `matches: "${expectedText}"`;
         log.verify('Verifying text of "%s" in "%s" %s', elementName, pageName, logDetail);
-        const locator = toLocator(await this.repo.get(elementName, pageName, this.toResolutionOptions(options)));
-        await this.verify.text(locator, expectedText, notEmpty ? { notEmpty: true } : verifyOptions);
+        const element = await this.repo.get(elementName, pageName, this.toResolutionOptions(options));
+        await this.verify.text(element, expectedText, notEmpty ? { notEmpty: true } : verifyOptions);
     }
 
     /**
@@ -641,8 +641,8 @@ export class Steps {
      */
     async verifyCount(elementName: string, pageName: string, countOptions: CountVerifyOptions, options?: StepOptions): Promise<void> {
         log.verify('Verifying count for "%s" in "%s" with options: %O', elementName, pageName, countOptions);
-        const locator = toLocator(await this.repo.get(elementName, pageName, this.toAllResolutionOptions(options)));
-        await this.verify.count(locator, countOptions);
+        const element = await this.repo.get(elementName, pageName, this.toAllResolutionOptions(options));
+        await this.verify.count(element, countOptions);
     }
 
     /**
@@ -667,8 +667,8 @@ export class Steps {
      */
     async verifyTextContains(elementName: string, pageName: string, expectedText: string, options?: StepOptions): Promise<void> {
         log.verify('Verifying "%s" in "%s" contains text: "%s"', elementName, pageName, expectedText);
-        const locator = toLocator(await this.repo.get(elementName, pageName, this.toResolutionOptions(options)));
-        await this.verify.textContains(locator, expectedText);
+        const element = await this.repo.get(elementName, pageName, this.toResolutionOptions(options));
+        await this.verify.textContains(element, expectedText);
     }
 
     /**
@@ -699,8 +699,8 @@ export class Steps {
      */
     async verifyAttribute(elementName: string, pageName: string, attributeName: string, expectedValue: string, options?: StepOptions): Promise<void> {
         log.verify('Verifying "%s" in "%s" has attribute "%s" = "%s"', elementName, pageName, attributeName, expectedValue);
-        const locator = toLocator(await this.repo.get(elementName, pageName, this.toResolutionOptions(options)));
-        await this.verify.attribute(locator, attributeName, expectedValue);
+        const element = await this.repo.get(elementName, pageName, this.toResolutionOptions(options));
+        await this.verify.attribute(element, attributeName, expectedValue);
     }
 
     /**
@@ -721,8 +721,8 @@ export class Steps {
      */
     async verifyInputValue(elementName: string, pageName: string, expectedValue: string, options?: StepOptions): Promise<void> {
         log.verify('Verifying input value of "%s" in "%s" matches: "%s"', elementName, pageName, expectedValue);
-        const locator = toLocator(await this.repo.get(elementName, pageName, this.toResolutionOptions(options)));
-        await this.verify.inputValue(locator, expectedValue);
+        const element = await this.repo.get(elementName, pageName, this.toResolutionOptions(options));
+        await this.verify.inputValue(element, expectedValue);
     }
 
     /**
@@ -744,8 +744,8 @@ export class Steps {
      */
     async verifyOrder(elementName: string, pageName: string, expectedTexts: string[], options?: StepOptions): Promise<void> {
         log.verify('Verifying order of "%s" in "%s": %O', elementName, pageName, expectedTexts);
-        const locator = toLocator(await this.repo.get(elementName, pageName, this.toAllResolutionOptions(options)));
-        await this.verify.order(locator, expectedTexts);
+        const element = await this.repo.get(elementName, pageName, this.toAllResolutionOptions(options));
+        await this.verify.order(element, expectedTexts);
     }
 
     /**
@@ -758,8 +758,8 @@ export class Steps {
      */
     async verifyCssProperty(elementName: string, pageName: string, property: string, expectedValue: string, options?: StepOptions): Promise<void> {
         log.verify('Verifying CSS "%s" of "%s" in "%s" = "%s"', property, elementName, pageName, expectedValue);
-        const locator = toLocator(await this.repo.get(elementName, pageName, this.toResolutionOptions(options)));
-        await this.verify.cssProperty(locator, property, expectedValue);
+        const element = await this.repo.get(elementName, pageName, this.toResolutionOptions(options));
+        await this.verify.cssProperty(element, property, expectedValue);
     }
 
     /**
@@ -772,8 +772,8 @@ export class Steps {
      */
     async verifyListOrder(elementName: string, pageName: string, direction: 'asc' | 'desc', options?: StepOptions): Promise<void> {
         log.verify('Verifying "%s" in "%s" is sorted %s', elementName, pageName, direction);
-        const locator = toLocator(await this.repo.get(elementName, pageName, this.toAllResolutionOptions(options)));
-        await this.verify.listOrder(locator, direction);
+        const element = await this.repo.get(elementName, pageName, this.toAllResolutionOptions(options));
+        await this.verify.listOrder(element, direction);
     }
 
     // ==========================================
@@ -854,8 +854,12 @@ export class Steps {
         options?: StepOptions
     ): Promise<void> {
         log.wait('Waiting for "%s" in "%s" to be "%s"', elementName, pageName, state);
-        const locator = toLocator(await this.repo.get(elementName, pageName, this.toResolutionOptions(options)));
-        await this.utils.waitForState(locator, state);
+        const element = await this.repo.get(elementName, pageName, this.toResolutionOptions(options));
+        try {
+            await element.waitFor({ state, timeout: this.timeout });
+        } catch {
+            log.wait('Element failed to reach state \'%s\' within %dms...', state, this.timeout ?? 30000);
+        }
     }
 
     /**
