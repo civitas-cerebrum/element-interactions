@@ -237,6 +237,8 @@ test('@bug-discovery double-click submit creates duplicate', async ({ steps }) =
 
 Assert the **correct** behavior so the test **fails** against the current buggy state. When the bug is fixed, the test turns green without modification.
 
+**If a test fails for unexpected reasons** (not the intended bug reproduction — e.g., wrong selector, navigation error, test code issue): invoke the `failure-diagnosis` protocol to diagnose and fix. The failure-diagnosis pipeline distinguishes between test issues (fix autonomously) and app bugs (report). Only use this for unintended failures — the expected failure from the bug reproduction is not a test issue.
+
 Example: double-click creates duplicates → test double-clicks and asserts `verifyCount('Page', 'records', { exactly: originalCount + 1 })`.
 
 ---

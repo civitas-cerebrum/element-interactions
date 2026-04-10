@@ -56,11 +56,12 @@ These rules are non-negotiable. They override helpfulness, initiative, and assum
 - Use `{ child: { pageName: 'PageName', elementName: 'elementName' } }` over `{ child: 'td:nth-child(2)' }`.
 - This is a preference, not a hard ban — inline selectors are acceptable when a repo entry would be overkill.
 
-### 6. When a test fails: look at the screenshot FIRST
+### 6. When a test fails: invoke the failure-diagnosis protocol
 - The base fixture captures a `failure-screenshot` on every failure.
-- Run `npx playwright show-report` and look at the screenshot before doing anything else.
+- Follow the full diagnostic pipeline: collect evidence (screenshot + DOM + error context), group failures by root cause, classify (test issue vs app bug vs ambiguous), check edge cases, then fix or report.
 - Do NOT guess what went wrong from the error message alone. The screenshot tells you what actually happened.
 - If the screenshot shows a selector problem, re-inspect the live DOM before changing locators.
+- A fix is not confirmed until the test passes **3-5 consecutive runs** without failure.
 
 ### 7. Before modifying `playwright.config.ts`, read the existing file first
 
@@ -383,9 +384,7 @@ Show the user the exact JSON entries you want to add:
 2. **Add approved selectors** to `page-repository.json` (if not already done).
 3. **Write the test file** using the Steps API. Every interaction goes through `steps.*` methods — no raw `page.locator()` calls.
 4. **Run the test** with `npx playwright test <test-file>`.
-5. **If the test fails:** open the HTML report (`npx playwright show-report`), inspect the failure screenshot via Playwright MCP, then **classify the failure** (see Rule 8):
-   - **Test issue** (selector problem, test logic, timing, incorrect API usage) — fix the test. If the failure reveals a missing or broken selector, perform a **mini-inspection**: inspect the DOM (or ask the user for the selector if no MCP), propose the new entry, get approval, then continue fixing.
-   - **Application bug** (the app itself is broken — wrong behavior, missing feature, crash, bad data) — **stop and report to the user**. The test is correct; the app is wrong. Do not modify the test to accommodate the bug. Provide what you tested, what you expected, what happened, and the screenshot evidence.
+5. **If the test fails:** invoke the `failure-diagnosis` protocol — collect evidence (screenshot, DOM, error context), group failures by root cause, classify (test issue vs app bug vs ambiguous), check edge cases, then fix test issues autonomously with stability validation (3-5 passing runs) or report app bugs with full evidence. If the fix requires new selectors, use Playwright MCP to inspect the DOM, propose the new entry, and get approval before editing.
 6. **If the test passes:** commit immediately.
 
 ### Skip-to-Stage-3 (Fix/Edit Mode)

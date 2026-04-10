@@ -152,22 +152,9 @@ Build tests in order of user flow depth, so each layer adds selectors that the n
 
 Run the new tests. Fix every failure. Run again. Repeat until 0 failures.
 
-**Debugging protocol:**
-1. Run the tests: `npx playwright test <spec-name> --project=chromium --no-deps`
-2. For each failure, check the screenshot FIRST (read the PNG from test-results/)
-3. Common failure patterns:
-   - **Strict mode violation** — selector matches multiple elements → add `.first()` or scope to `main`/`aside`
-   - **Element not visible** — page still loading → add `waitForState` or increase timeout
-   - **Test ordering dependency** — data changed by previous test → use `.or()` for multiple states
-   - **Stale selector** — DOM changed since discovery → re-inspect via MCP
-4. After fixing, re-run the full suite (not just the fixed test) to catch regressions
+**If tests fail:** invoke the `failure-diagnosis` protocol to run the full diagnostic pipeline. It will collect evidence (screenshot, DOM, error context), group failures by root cause, classify (test issue vs app bug), and fix test issues autonomously with stability validation (3-5 passing runs). App bugs are reported with full evidence.
 
-**Flake detection:** If a test fails in the full suite but passes alone, it's a test isolation issue. Common causes:
-- Shared browser state (cookies, localStorage)
-- Data mutated by earlier tests
-- Timing issues under parallel load
-
-Fix by: adding explicit waits, using `test.skip()` for data-dependent tests, increasing timeouts for slow-loading pages.
+After fixing, re-run the full suite (not just the fixed test) to catch regressions.
 
 ---
 
