@@ -1,11 +1,10 @@
 ---
 name: element-interactions
 description: >
-  Use this skill whenever the user mentions testing, test automation, or anything related to verifying application behavior.
-  Triggers on general testing intent: "test the app", "test this", "lets test", "write tests", "add tests", "run tests",
-  "e2e tests", "end-to-end tests", "browser testing", "UI testing", "functional testing", "test automation",
-  "automate tests", "test scenario", "test case", "happy path", "smoke test", "regression test", "test coverage",
-  "QA", "quality assurance".
+  Use this skill whenever writing, editing, or generating Playwright or end-to-end browser tests.
+  Triggers on E2E and browser testing intent: "e2e tests", "end-to-end tests", "browser testing", "UI testing",
+  "functional testing", "test automation", "automate tests", "smoke test", "regression test",
+  "happy path", "test scenario", "test case".
   Also triggers on framework-specific keywords: Playwright tests, @civitas-cerebrum/element-interactions,
   @civitas-cerebrum/element-repository, Steps API, ElementRepository, ElementInteractions, baseFixture,
   ContextStore, page-repository.json, or any request to write, fix, or add to a Playwright test in this project.

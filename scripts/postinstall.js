@@ -36,7 +36,7 @@ const files = [
 ];
 
 try {
-  let installed = 0;
+  const installedSkills = new Set();
 
   for (const skillsDestBase of destinations) {
     for (const file of files) {
@@ -49,12 +49,12 @@ try {
 
       fs.mkdirSync(path.dirname(destPath), { recursive: true });
       fs.copyFileSync(srcPath, destPath);
-      installed++;
+      installedSkills.add(file.destDir);
     }
   }
 
-  if (installed > 0) {
-    console.log(`[@civitas-cerebrum/element-interactions] ✔ Claude Code skills installed (${installed} file${installed > 1 ? 's' : ''}) — restart Claude Code to pick it up.`);
+  if (installedSkills.size > 0) {
+    console.log(`[@civitas-cerebrum/element-interactions] ✔ ${installedSkills.size} skill${installedSkills.size > 1 ? 's' : ''} installed to ${destinations.length} locations — restart Claude Code to pick it up.`);
   } else {
     console.warn('[@civitas-cerebrum/element-interactions] Skill files not found, skipping.');
   }
