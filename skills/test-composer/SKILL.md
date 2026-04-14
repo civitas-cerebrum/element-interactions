@@ -46,27 +46,24 @@ Repeat until 100% coverage is reached — every page, every user flow, every int
 
 ---
 
-## Step 1: Inventory
+## Step 1: Inventory & Prioritize
 
-List every test that currently exists. Count by area. Calculate coverage against the app's known pages and features.
+List every test that currently exists. If a journey map exists (`tests/e2e/docs/journey-map.md`), use it as the source of truth for what needs coverage. If no journey map exists, invoke the `journey-mapping` skill first — test-composer must not proceed without one.
 
 **How to inventory:**
 ```bash
 npx playwright test --list
 ```
 
-Map tests against the app's route structure:
-```bash
-find app -name "page.tsx" | sort
-```
+**Map tests against the journey map.** For each journey, check which steps have test coverage:
 
-Produce a coverage table:
+| Journey | Priority | Steps | Covered | Missing |
+|---------|----------|-------|---------|---------|
+| Visitor to Contact | P0 | 6 | 4 | Step 5-6 (booking) |
+| Content Discovery | P2 | 3 | 3 | — |
+| ... | ... | ... | ... | ... |
 
-| Area | Tests | Pages Covered | Missing |
-|------|-------|---------------|---------|
-| Auth | 5 | /login, /verify | /account-blocked |
-| Dashboard | 7 | /dashboard | — |
-| ... | ... | ... | ... |
+**Implementation order follows priority:** P0 journeys first (full coverage including error states and mobile), then P1, P2, P3. Within a priority level, implement by user flow depth so selectors build up naturally.
 
 ---
 
@@ -202,6 +199,38 @@ Read the plain English scenarios document. Think like a senior QA engineer. Ask:
 - Are tests resilient to data state changes?
 - Do tests use proper waits (not arbitrary timeouts)?
 - Are selectors stable (not dependent on implementation details)?
+
+**Responsive coverage questions (P0 and P1 pages only):**
+- Has the highest-priority journey been walked end-to-end at mobile viewport (375x812)?
+- Does the mobile navigation work (hamburger menu opens, links navigate)?
+- Are all primary action buttons reachable on mobile after scrolling?
+- Are forms fully usable on mobile (fields focusable, keyboard doesn't obscure submit)?
+
+To test at a different viewport:
+```ts
+test.describe('Homepage — Mobile', () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+  test('mobile nav works', async ({ steps }) => { ... });
+});
+```
+
+Three viewport tiers: Mobile (375x812), Tablet (768x1024), Desktop (1280x720). Desktop is baseline. Mobile is where breakage lives — test mobile first for P0 pages.
+
+**Performance baseline questions (P0 pages only):**
+- Does the P0 entry page load within 5 seconds?
+- Are there any obvious layout shifts during load?
+
+Lightweight performance check pattern:
+```ts
+test('homepage loads within performance budget', async ({ page, steps }) => {
+  const start = Date.now();
+  await steps.navigateTo('/');
+  await steps.verifyPresence('heroHeading', 'HomePage');
+  expect(Date.now() - start).toBeLessThan(5000);
+});
+```
+
+Do not over-invest in performance testing — one load-time assertion per P0 entry page is sufficient. Performance testing is a discipline of its own; this is a smoke check.
 
 **Produce a gap table:**
 

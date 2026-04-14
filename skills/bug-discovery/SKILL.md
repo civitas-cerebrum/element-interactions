@@ -78,12 +78,14 @@ Apply to every interactive element found on every page:
 1. Navigate via MCP
 2. Take a snapshot
 3. Identify all interactive elements
-4. Systematically try each probing category on each element
-5. Log every anomaly with a screenshot — even if unsure whether it's a bug
+4. **Visibility gate:** For each element, check `getBoundingClientRect()` — if width and height are both 0, or if any ancestor has `display: none`, `visibility: hidden`, or zero height, mark the element as **DOM-only**. Continue probing both visible and DOM-only elements, but tag all findings accordingly.
+5. Systematically try each probing category on each element
+6. **Screenshot verification:** For every anomaly found, take a screenshot that shows the issue as a user would see it. If the anomaly is not visible in the screenshot (element is hidden, zero-sized, or off-screen), classify it as **DOM-only** — not a user-facing bug.
+7. Log every anomaly with: page, action taken, observed result, screenshot, and **visibility classification** (user-visible or DOM-only)
 
 ### Output
 
-A raw findings list. Each entry: page, action taken, observed result, screenshot.
+A raw findings list. Each entry: page, action taken, observed result, screenshot, visibility classification (user-visible / DOM-only).
 
 ---
 
@@ -181,12 +183,26 @@ Merge all findings from Phases 2, 3, and 4 into a single prioritized list.
 
 ### Severity
 
-| Severity | Definition |
-|---|---|
-| **Critical** | Data loss, security vulnerability, complete flow broken |
-| **High** | Core feature broken (workaround exists), incorrect data displayed |
-| **Medium** | UI glitch, non-critical flow broken, inconsistent behavior |
-| **Low** | Cosmetic, edge case unlikely in normal usage |
+Severity is based on **real-world user impact** — what a user experiences, not what the DOM contains. Every finding MUST be screenshot-verified before severity assignment. If you cannot see the issue in a screenshot, it is not a user-facing bug.
+
+| Severity | Definition | Decision criteria | Examples |
+|---|---|---|---|
+| **Critical** | Security vulnerabilities, privacy violations, leaked sensitive data, broken authentication, missing compliance certifications, or complete failure of a primary user journey. Issues that pose legal, financial, or reputational risk to the business, or that make the application fundamentally unusable for its intended purpose. | Ask: "Could this cause a data breach, legal liability, or prevent all users from achieving the app's core purpose?" If yes → Critical. | XSS/injection vulnerabilities, exposed API keys or credentials in client-side code, authentication bypass, SSL certificate errors, GDPR/CCPA violations (e.g., tracking without consent), broken payment flow, complete app crash on load |
+| **High** | Functional bugs that block or seriously obstruct a user journey — the user cannot complete an intended action without a workaround, or the workaround is non-obvious. The affected feature is part of the app's core value proposition. | Ask: "Is a user stuck? Can they not complete what they came to do?" If yes → High. If a simple workaround exists and the feature is non-core → Medium. | Form submission silently fails with no error, primary navigation leads to error/blank page, core feature throws unhandled exception, search returns no results when results exist, login/signup flow broken |
+| **Medium** | Broken links, 404 errors, expired or stale content, incorrect data display — issues that degrade the user experience and erode trust but do not prevent users from using the app. The user notices something is wrong but can continue their journey. | Ask: "Does the user notice something is wrong, but can still use the app?" If yes → Medium. Exception: if the broken content is critical to the app's purpose (e.g., pricing data on an e-commerce site), escalate to High. | Dead outbound links, expired job listings, 404 on linked pages, stale references to renamed products, broken images on content pages, incorrect phone numbers or addresses, outdated partner logos |
+| **Low** | Issues that do not obstruct the usage of the app whatsoever. The information or functionality is still accessible, just slightly inconvenient. A typical user would not notice or care. | Ask: "Would a normal user even notice this? Does it prevent them from doing anything?" If no to both → Low. | Phone number displayed correctly but link uses `href="#"` instead of `tel:`, external links open in same tab (missing `target="_blank"`), minor naming inconsistencies between nav and footer, tooltip text slightly truncated |
+| **No impact (DOM-only)** | Issues found only by inspecting the HTML source or DOM that are invisible to users. Hidden elements, zero-height containers, unused CMS template content, HTML metadata issues. These are code hygiene items, not bugs. | Ask: "Can I see this in a screenshot?" If no → No impact. Do NOT escalate DOM-only findings regardless of what the underlying issue appears to be. | Lorem ipsum in `display: none` sections, broken anchor links in collapsed/hidden navs, unused FAQ sections with zero dimensions, missing H1 in hidden blocks, generic `<title>` tags, placeholder content in zero-height containers |
+
+### Visibility Rule
+
+**A finding that is not visible to users in a screenshot cannot receive a severity above "No impact (DOM-only)".** This rule is absolute. DOM-only findings are reported in a separate section as code hygiene items — they are not bugs.
+
+**Verification process — mandatory for every finding:**
+1. Navigate to the page where the finding occurs
+2. Take a screenshot of the viewport area where the element lives
+3. **If the issue is visible in the screenshot** — the user would see this. Assign severity based on user impact using the decision criteria above.
+4. **If the issue is NOT visible** (element hidden, zero-sized, off-screen, `display: none`, collapsed container) — classify as "No impact (DOM-only)" regardless of what DOM inspection reveals. A hidden broken link is not a broken link — it's unused HTML.
+5. **When in doubt**, scroll to the element, take a full-page screenshot, and check. Do not rely on DOM inspection alone to determine visibility — CSS transforms, overflow hidden, z-index stacking, and scroll-reveal animations can all make an element invisible despite being "in the DOM".
 
 ### Also in this phase
 
@@ -241,6 +257,35 @@ Assert the **correct** behavior so the test **fails** against the current buggy 
 
 Example: double-click creates duplicates → test double-clicks and asserts `verifyCount('Page', 'records', { exactly: originalCount + 1 })`.
 
+### Visibility Pre-Check in Reproduction Tests
+
+Every reproduction test for a user-visible bug MUST include a visibility assertion before testing the bug behavior. This confirms the element is actually visible to users and prevents false flags from hidden DOM content.
+
+```ts
+// User-visible bug — verify element is visible first, then assert correct behavior
+test('@bug-discovery expired job listing links to live posting', async ({ steps }) => {
+  await steps.navigateTo('/careers');
+  await steps.verifyPresence('viewListingButton', 'CareersPage'); // visibility pre-check
+  // ... then assert the bug
+});
+```
+
+For DOM-only findings, tag tests with `@dom-only` instead of `@bug-discovery`, and include `@visibility: dom-only` in the JSDoc:
+
+```ts
+/**
+ * @bug BUG-004
+ * @severity No impact (DOM-only)
+ * @visibility dom-only
+ */
+test('@dom-only missing H1 on blog page', async ({ steps, page }) => {
+  // DOM inspection — no visibility pre-check needed
+});
+```
+
+Run user-visible bugs: `npx playwright test --grep @bug-discovery`
+Run DOM-only issues: `npx playwright test --grep @dom-only`
+
 ---
 
 ## Phase 7: Report & Triage
@@ -256,24 +301,29 @@ Example: double-click creates duplicates → test double-clicks and asserts `ver
 **Date:** YYYY-MM-DD
 **App:** [baseURL from playwright config]
 **Total findings:** X
-**New bugs:** X | **Regression candidates:** X | **Undocumented quirks:** X | **Known but untested:** X
+**User-visible bugs:** X | **DOM-only issues:** X | **Undocumented quirks:** X
 
 ## Summary by Severity
 | Severity | Count | Categories |
 |----------|-------|------------|
+| **User-Visible** | | |
 | Critical | X     | ...        |
 | High     | X     | ...        |
 | Medium   | X     | ...        |
 | Low      | X     | ...        |
+| **DOM-Only** | | |
+| No impact | X    | ...        |
 
-## Findings
+## User-Visible Bugs (Confirmed)
 
 ### [BUG-001] Title
 **Severity:** Critical | High | Medium | Low
+**Visibility:** User-visible (confirmed via screenshot)
 **Category:** Boundary input | State transition | Race condition | ...
 **Phase discovered:** 1a | 1b | 4
 **Page:** PageName — `/route`
 **Reproduction test:** `tests/bug-discovery/element-bugs.spec.ts:L42`
+**Screenshot:** ![](screenshots/BUG-001.png)
 **Steps:**
 1. Navigate to /page
 2. Do X
@@ -281,9 +331,12 @@ Example: double-click creates duplicates → test double-clicks and asserts `ver
 
 **Expected:** Z
 **Actual:** W
-**Screenshot:** ![](screenshots/BUG-001.png)
 
 ---
+
+## DOM-Only Issues (Lowest Priority)
+Issues found by inspecting the HTML/DOM that are not visible to users.
+These are cleanup items, not user-facing bugs.
 
 ## Undocumented Quirks (User Decision Required)
 Items that could not be definitively classified as bugs.

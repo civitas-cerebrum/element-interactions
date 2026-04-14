@@ -158,9 +158,11 @@ You MUST create a task for each of these items and complete them in order (Stage
 8. **Stage 4: API Compliance Review** — triggers automatically each time a test passes. Review that test's code against the API Reference before proceeding
 9. **Fix any issues found** — correct API misuse, re-run to confirm still passing
 10. **Commit** — commit after each passing + compliant test case
-11. **Repeat 6-10** for each additional scenario, or proceed to Stage 5/6
-12. **Stage 5: Test Composer** (optional, on request) — invoke the `test-composer` skill for the iterative test composition workflow
-13. **Stage 6: Bug Discovery** (auto after Stage 5) — invoke the `bug-discovery` skill to actively probe for bugs
+11. **Repeat 6-10** for each additional scenario the user requests
+12. **Onboarding completion gate** — When the user signals they have no more individual scenarios, you MUST explicitly offer Stage 5 before ending the session. See the "Onboarding Completion Gate" section below. Do NOT silently stop.
+13. **Stage 5: Test Composer** (on user approval at gate) — invoke the `test-composer` skill for the iterative test composition workflow
+14. **Stage 6: Bug Discovery** (auto after Stage 5) — invoke the `bug-discovery` skill to actively probe for bugs
+15. **Stage 7: Work Summary** (auto after Stage 6, or on request) — invoke the `work-summary-deck` skill to generate a branded HTML presentation deck summarizing all QA work, then export as PDF. This is the final deliverable of the Full Suite flow.
 
 ### Process Flow
 
@@ -263,7 +265,20 @@ digraph element_interactions {
     "Test still passes?" -> "Inspect screenshot, fix, re-run" [label="no — regression"];
     "Commit this test" -> "More scenarios?" [label=""];
     "More scenarios?" -> "STAGE 3: Write Automation" [label="yes — next scenario"];
-    "More scenarios?" -> "Done" [label="no"];
+    "More scenarios?" -> "Offer Stage 5\n(Coverage Expansion)" [label="no"];
+    "Offer Stage 5\n(Coverage Expansion)" [shape=box, style=bold];
+    "Offer Stage 5\n(Coverage Expansion)" -> "Invoke test-composer skill" [label="user accepts"];
+    "Offer Stage 5\n(Coverage Expansion)" -> "Done" [label="user declines"];
+    "Invoke test-composer skill" -> "Invoke bug-discovery skill" [label="coverage complete"];
+    "Invoke bug-discovery skill" -> "Invoke work-summary-deck skill" [label="bugs reported"];
+    "Invoke work-summary-deck skill" -> "Export PDF and deliver" [label="deck generated"];
+    "Export PDF and deliver" -> "Done";
+
+    // Full Suite fast-path
+    "Full Suite request?" [shape=diamond];
+    "Intent clear?" -> "Full Suite request?" [label="yes"];
+    "Full Suite request?" -> "STAGE 1: Scenario Discovery" [label="yes — run full cycle:\nStages 1-4 → 5 → 6 → Report PDF"];
+    "Full Suite request?" -> "API question?" [label="no"];
 }
 ```
 
@@ -277,12 +292,14 @@ Only show the greeting menu if the user's message is vague or just says somethin
 
 > "How can I help you today? I can:
 > - **Automate a scenario** — describe what you want to test, or give me a link to the app
+> - **Build a full E2E suite** — give me a URL and I'll build complete coverage with bug discovery and a report
 > - **Scale an existing project** — add more scenarios to an existing test suite
 > - **Fix or edit a test** — debug a failing test or modify an existing one
 > - **Answer an API question** — help with Steps API syntax, fixtures, or configuration"
 
 ### Routing
 
+- **User asks for a full E2E suite** (e.g., "automate tests for [site]", "build an E2E suite for [url]", "test [website]") — This is the **Full Suite** flow. Run the complete cycle autonomously: Stage 1-4 for an initial scenario → Stage 5 (Test Composer) for full coverage expansion → Stage 6 (Bug Discovery) for adversarial probing → generate a `work-summary-deck` report PDF at the end. Ask one clarifying question (the URL/app to test), then proceed through all stages, requesting user approval only at the hard gates (scenario approval, selector approval). At the end, invoke the `work-summary-deck` skill to generate a branded HTML deck and export it as PDF.
 - **User already described a scenario** — Skip the greeting. Go directly to Stage 1 (fast path if scenario is complete, full discovery if vague).
 - **API question** — Answer directly from the API Reference section below. No stages needed.
 - **Fix or edit a test** — Skip to Stage 3 (Fix/Edit Mode).
@@ -455,6 +472,44 @@ Or if clean:
 
 ---
 
+## Onboarding Completion Gate
+
+**Goal:** When the user signals they have no more individual scenarios to add (the "onboarding cycle" — Stages 1-4 — is complete), explicitly offer Stage 5 (Coverage Expansion) instead of silently ending the session.
+
+### When this gate triggers
+
+After any Stage 4 commit, when the user indicates they are done adding individual scenarios — for example by saying "that's all", "we're done", "no more for now", or by simply not requesting another scenario after a reasonable pause.
+
+### What to do
+
+1. **Summarize what was built in the onboarding cycle.** Briefly list the scenarios committed, the pages covered, and the page-repository entries added. Keep it to 3-5 lines.
+2. **Run a readiness check** before offering Stage 5:
+   - All committed tests pass on a clean re-run
+   - `page-repository.json` is valid JSON and matches the tests
+   - `tests/e2e/docs/app-context.md` exists and reflects the pages discovered so far
+   - No open API compliance issues from Stage 4
+   - If any check fails, fix it first — do NOT offer Stage 5 with a broken baseline
+3. **Present the offer to the user verbatim:**
+
+> **Onboarding cycle complete.**
+>
+> You now have an initial test suite that covers the scenarios you described. The next stage is **Coverage Expansion** — I would systematically probe the rest of the application, identify uncovered pages and flows, and build out the suite until every page and interactive element has test coverage. This typically takes multiple iteration cycles and runs more autonomously than the staged onboarding flow.
+>
+> Would you like me to proceed to **Stage 5: Coverage Expansion**? I can also:
+> - **Pause here** — I'll stop and you can resume any time by asking
+> - **Jump straight to Bug Discovery (Stage 6)** — only recommended if you already have comprehensive coverage from a previous session
+> - **Generate a work summary deck** — produce a stakeholder-facing report of what was built so far
+
+4. **Wait for explicit user choice.** Do NOT auto-proceed. Do NOT assume yes.
+5. **On user approval of Stage 5:** invoke the `test-composer` skill via the Skill tool. Pass along the readiness check results and the list of pages already covered so test-composer's Step 1 (Inventory) starts from a known baseline.
+6. **On user pause:** confirm the session is at a clean stopping point and end gracefully. Remind the user how to resume ("just say 'expand coverage' or 'add more tests' next time").
+
+### Hard rule
+
+Do NOT silently end the session after Stage 4. The onboarding cycle was an entry point — the user may not realize Stage 5 exists. Always surface it.
+
+---
+
 ## API Reference
 
 The following sections document the full API available for writing tests in Stage 3.
@@ -487,6 +542,83 @@ export { expect };
 `baseFixture` attaches a full-page `failure-screenshot` to the HTML report on every failed test automatically.
 
 **Extending with custom fixtures** — `baseFixture` returns a standard Playwright `test` object, so use `.extend<T>()` as usual.
+
+### Test Data & Environment
+
+Tests should be environment-portable — able to run against staging, CI, or local environments without manual data setup.
+
+**Environment configuration pattern:**
+```ts
+// tests/fixtures/base.ts — add environment config before baseFixture
+const ENV = {
+  baseURL: process.env.BASE_URL || 'https://staging.example.com',
+  testUser: {
+    email: process.env.TEST_EMAIL || 'test@example.com',
+    password: process.env.TEST_PASSWORD || '',
+  },
+};
+```
+
+**Test data principles:**
+- Each test should create its own preconditions and not depend on other tests' state
+- Use `test.describe.configure({ mode: 'parallel' })` as the default
+- Use `test.describe.serial()` only for intentional journey tests where step order matters
+- Store credentials in `.env` files (gitignored), never in test code
+- Tests that need specific data state should use `test.skip()` when that data isn't found, not fail
+- For apps with APIs, use `test.beforeEach` with `request` fixture for programmatic setup/teardown:
+
+```ts
+test.beforeEach(async ({ request }) => {
+  await request.post('/api/test/seed', { data: { scenario: 'checkout' } });
+});
+test.afterEach(async ({ request }) => {
+  await request.post('/api/test/cleanup');
+});
+```
+
+### CI/CD Integration
+
+When the project is ready for continuous integration, generate a workflow file for the detected CI platform. Check for `.github/`, `.gitlab-ci.yml`, `Jenkinsfile`, or `azure-pipelines.yml`.
+
+**GitHub Actions (most common):**
+```yaml
+# .github/workflows/e2e.yml
+name: E2E Tests
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test --grep-invert @bug-discovery
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+```
+
+**For large suites (50+ tests), add sharding:**
+```yaml
+strategy:
+  matrix:
+    shard: [1/4, 2/4, 3/4, 4/4]
+steps:
+  - run: npx playwright test --shard=${{ matrix.shard }}
+```
+
+**Flaky test management:**
+- Configure `retries: 2` for CI, `retries: 0` for local development
+- A test that fails 1 in 10 runs needs root cause analysis, not retries
+- Use `test.fixme()` for known flaky tests with a linked issue
+- Never use `test.skip()` without a reason comment
+
+CI integration is offered at the Onboarding Completion Gate or after test-composer finishes. Ask: "Would you like me to generate a CI workflow for running these tests automatically?"
 
 ### Locator Format
 
