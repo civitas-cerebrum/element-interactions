@@ -158,9 +158,10 @@ You MUST create a task for each of these items and complete them in order (Stage
 8. **Stage 4: API Compliance Review** — triggers automatically each time a test passes. Review that test's code against the API Reference before proceeding
 9. **Fix any issues found** — correct API misuse, re-run to confirm still passing
 10. **Commit** — commit after each passing + compliant test case
-11. **Repeat 6-10** for each additional scenario, or proceed to Stage 5/6
-12. **Stage 5: Test Composer** (optional, on request) — invoke the `test-composer` skill for the iterative test composition workflow
-13. **Stage 6: Bug Discovery** (auto after Stage 5) — invoke the `bug-discovery` skill to actively probe for bugs
+11. **Repeat 6-10** for each additional scenario the user requests
+12. **Onboarding completion gate** — When the user signals they have no more individual scenarios, you MUST explicitly offer Stage 5 before ending the session. See the "Onboarding Completion Gate" section below. Do NOT silently stop.
+13. **Stage 5: Test Composer** (on user approval at gate) — invoke the `test-composer` skill for the iterative test composition workflow
+14. **Stage 6: Bug Discovery** (auto after Stage 5) — invoke the `bug-discovery` skill to actively probe for bugs
 
 ### Process Flow
 
@@ -263,7 +264,11 @@ digraph element_interactions {
     "Test still passes?" -> "Inspect screenshot, fix, re-run" [label="no — regression"];
     "Commit this test" -> "More scenarios?" [label=""];
     "More scenarios?" -> "STAGE 3: Write Automation" [label="yes — next scenario"];
-    "More scenarios?" -> "Done" [label="no"];
+    "More scenarios?" -> "Offer Stage 5\n(Coverage Expansion)" [label="no"];
+    "Offer Stage 5\n(Coverage Expansion)" [shape=box, style=bold];
+    "Offer Stage 5\n(Coverage Expansion)" -> "Invoke test-composer skill" [label="user accepts"];
+    "Offer Stage 5\n(Coverage Expansion)" -> "Done" [label="user declines"];
+    "Invoke test-composer skill" -> "Done";
 }
 ```
 
@@ -452,6 +457,44 @@ Or if clean:
 > Reviewed: `tests/example.spec.ts`
 >
 > All API calls match the documented signatures. No issues found.
+
+---
+
+## Onboarding Completion Gate
+
+**Goal:** When the user signals they have no more individual scenarios to add (the "onboarding cycle" — Stages 1-4 — is complete), explicitly offer Stage 5 (Coverage Expansion) instead of silently ending the session.
+
+### When this gate triggers
+
+After any Stage 4 commit, when the user indicates they are done adding individual scenarios — for example by saying "that's all", "we're done", "no more for now", or by simply not requesting another scenario after a reasonable pause.
+
+### What to do
+
+1. **Summarize what was built in the onboarding cycle.** Briefly list the scenarios committed, the pages covered, and the page-repository entries added. Keep it to 3-5 lines.
+2. **Run a readiness check** before offering Stage 5:
+   - All committed tests pass on a clean re-run
+   - `page-repository.json` is valid JSON and matches the tests
+   - `tests/e2e/docs/app-context.md` exists and reflects the pages discovered so far
+   - No open API compliance issues from Stage 4
+   - If any check fails, fix it first — do NOT offer Stage 5 with a broken baseline
+3. **Present the offer to the user verbatim:**
+
+> **Onboarding cycle complete.**
+>
+> You now have an initial test suite that covers the scenarios you described. The next stage is **Coverage Expansion** — I would systematically probe the rest of the application, identify uncovered pages and flows, and build out the suite until every page and interactive element has test coverage. This typically takes multiple iteration cycles and runs more autonomously than the staged onboarding flow.
+>
+> Would you like me to proceed to **Stage 5: Coverage Expansion**? I can also:
+> - **Pause here** — I'll stop and you can resume any time by asking
+> - **Jump straight to Bug Discovery (Stage 6)** — only recommended if you already have comprehensive coverage from a previous session
+> - **Generate a work summary deck** — produce a stakeholder-facing report of what was built so far
+
+4. **Wait for explicit user choice.** Do NOT auto-proceed. Do NOT assume yes.
+5. **On user approval of Stage 5:** invoke the `test-composer` skill via the Skill tool. Pass along the readiness check results and the list of pages already covered so test-composer's Step 1 (Inventory) starts from a known baseline.
+6. **On user pause:** confirm the session is at a clean stopping point and end gracefully. Remind the user how to resume ("just say 'expand coverage' or 'add more tests' next time").
+
+### Hard rule
+
+Do NOT silently end the session after Stage 4. The onboarding cycle was an entry point — the user may not realize Stage 5 exists. Always surface it.
 
 ---
 
