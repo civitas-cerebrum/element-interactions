@@ -16,33 +16,45 @@ if (!packageDir.includes('node_modules')) {
   process.exit(0);
 }
 
-const skillsDestBase = path.join(projectRoot, '.claude', 'skills');
+// Install to both project-level and user-level .claude/skills/ directories.
+// Project-level ensures the correct version is available for this project.
+// User-level ensures stale skills from older installs are overwritten,
+// preventing outdated user-level files from taking precedence.
+const homeDir = require('os').homedir();
+const destinations = [
+  path.join(projectRoot, '.claude', 'skills'),
+  path.join(homeDir, '.claude', 'skills'),
+];
 
 const files = [
   { src: 'element-interactions/SKILL.md', destDir: 'element-interactions', dest: 'SKILL.md' },
   { src: 'test-composer/SKILL.md', destDir: 'test-composer', dest: 'SKILL.md' },
   { src: 'bug-discovery/SKILL.md', destDir: 'bug-discovery', dest: 'SKILL.md' },
   { src: 'agents-vs-agents/SKILL.md', destDir: 'agents-vs-agents', dest: 'SKILL.md' },
+  { src: 'failure-diagnosis/SKILL.md', destDir: 'failure-diagnosis', dest: 'SKILL.md' },
+  { src: 'work-summary-deck/SKILL.md', destDir: 'work-summary-deck', dest: 'SKILL.md' },
 ];
 
 try {
-  let installed = 0;
+  const installedSkills = new Set();
 
-  for (const file of files) {
-    const srcPath  = path.join(skillsDir, file.src);
-    const destPath = path.join(skillsDestBase, file.destDir, file.dest);
+  for (const skillsDestBase of destinations) {
+    for (const file of files) {
+      const srcPath  = path.join(skillsDir, file.src);
+      const destPath = path.join(skillsDestBase, file.destDir, file.dest);
 
-    if (!fs.existsSync(srcPath)) {
-      continue;
+      if (!fs.existsSync(srcPath)) {
+        continue;
+      }
+
+      fs.mkdirSync(path.dirname(destPath), { recursive: true });
+      fs.copyFileSync(srcPath, destPath);
+      installedSkills.add(file.destDir);
     }
-
-    fs.mkdirSync(path.dirname(destPath), { recursive: true });
-    fs.copyFileSync(srcPath, destPath);
-    installed++;
   }
 
-  if (installed > 0) {
-    console.log(`[@civitas-cerebrum/element-interactions] ✔ Claude Code skill installed (${installed} file${installed > 1 ? 's' : ''}) — restart Claude Code to pick it up.`);
+  if (installedSkills.size > 0) {
+    console.log(`[@civitas-cerebrum/element-interactions] ✔ ${installedSkills.size} skill${installedSkills.size > 1 ? 's' : ''} installed to ${destinations.length} locations — restart Claude Code to pick it up.`);
   } else {
     console.warn('[@civitas-cerebrum/element-interactions] Skill files not found, skipping.');
   }
