@@ -200,33 +200,33 @@ test.describe('Enhanced Selectors — Issue Fixes #61-#65', () => {
 
   test('#62: iframe — read text inside iframe', async ({ steps }) => {
     await test.step('Verify iframe title text', async () => {
-      await steps.verifyText('iframeTitle', 'SimpleIframePage', 'Inside the iframe');
+      await steps.verifyText('iframeTitle', 'SimpleIframe', 'Inside the iframe');
     });
   });
 
   test('#62: iframe — click inside iframe', async ({ steps }) => {
     await test.step('Click button inside iframe', async () => {
-      await steps.click('iframeButton', 'SimpleIframePage');
+      await steps.click('iframeButton', 'SimpleIframe');
     });
 
     await test.step('Verify click result inside iframe', async () => {
-      await steps.verifyText('iframeResult', 'SimpleIframePage', 'Clicked!');
+      await steps.verifyText('iframeResult', 'SimpleIframe', 'Clicked!');
     });
   });
 
   test('#62: iframe — fill input inside iframe', async ({ steps }) => {
     await test.step('Fill input inside iframe', async () => {
-      await steps.fill('iframeInput', 'SimpleIframePage', 'Hello from outside!');
+      await steps.fill('iframeInput', 'SimpleIframe', 'Hello from outside!');
     });
   });
 
   test('#62: iframe — second iframe (card form)', async ({ steps }) => {
     await test.step('Fill card number inside card iframe', async () => {
-      await steps.fill('cardNumberInput', 'CardIframePage', '4111111111111111');
+      await steps.fill('cardNumberInput', 'CardIframe', '4111111111111111');
     });
 
     await test.step('Fill expiry inside card iframe', async () => {
-      await steps.fill('expiryInput', 'CardIframePage', '12/28');
+      await steps.fill('expiryInput', 'CardIframe', '12/28');
     });
   });
 });

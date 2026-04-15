@@ -2446,7 +2446,7 @@
       ]
     },
     {
-      "name": "SimpleIframePage",
+      "name": "SimpleIframe",
       "frame": { "css": "[data-testid='simple-iframe']" },
       "elements": [
         {
@@ -2476,7 +2476,7 @@
       ]
     },
     {
-      "name": "CardIframePage",
+      "name": "CardIframe",
       "frame": { "css": "[data-testid='card-iframe']" },
       "elements": [
         {
