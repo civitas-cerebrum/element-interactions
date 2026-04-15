@@ -3,7 +3,7 @@ import { ElementRepository, Element, WebElement, ElementResolutionOptions, Selec
 import { ElementInteractions } from '../interactions/facade/ElementInteractions';
 import { Utils } from '../utils/ElementUtilities';
 import { EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
-import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions } from '../enum/Options';
+import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions } from '../enum/Options';
 import { logger } from '../logger/Logger';
 import { ElementAction } from './ElementAction';
 
@@ -210,6 +210,7 @@ export class Steps {
         return await this.interact.click(element, {
             withoutScrolling: options?.withoutScrolling,
             ifPresent: options?.ifPresent,
+            force: options?.force,
         });
     }
 
@@ -599,6 +600,36 @@ export class Steps {
         try {
             const element = await this.repo.get(elementName, pageName, this.toResolutionOptions(options));
             return await element.isVisible();
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Non-throwing visibility probe. Returns `true` if the element is visible
+     * within the given timeout, `false` otherwise. Optionally filters by text content.
+     *
+     * Unlike `isPresent`, this method supports a custom timeout (default 2000ms)
+     * and an optional `containsText` filter that requires the element's text to
+     * include the given substring.
+     *
+     * @param elementName - The element name as defined under the given page.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param options - Optional probe settings.
+     * @returns `true` if the element is visible (and matches text, if specified), `false` otherwise.
+     */
+    async isVisible(elementName: string, pageName: string, options?: IsVisibleOptions): Promise<boolean> {
+        const timeout = options?.timeout ?? 2000;
+        log.verify('Probing visibility of "%s" in "%s" (timeout: %dms)', elementName, pageName, timeout);
+        try {
+            const selector = this.repo.getSelector(elementName, pageName);
+            const locator = this.page.locator(selector).first();
+            await locator.waitFor({ state: 'visible', timeout });
+            if (options?.containsText) {
+                const text = await locator.textContent({ timeout }).catch(() => null);
+                return text !== null && text.includes(options.containsText);
+            }
+            return true;
         } catch {
             return false;
         }

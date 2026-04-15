@@ -1,7 +1,7 @@
 import { Locator } from '@playwright/test';
 import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
 import { ElementInteractions } from '../interactions/facade/ElementInteractions';
-import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ScreenshotOptions } from '../enum/Options';
+import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ScreenshotOptions, IsVisibleOptions } from '../enum/Options';
 
 function toLocator(element: Element): Locator {
     return (element as WebElement).locator;
@@ -76,16 +76,24 @@ export class ElementAction {
     // -- Terminal actions: interactions --
 
     /** Click the resolved element. */
-    async click(options?: { withoutScrolling?: boolean }): Promise<void> {
-        const element = await this.resolve();
-        await element.action(this.timeout).click(options);
+    async click(options?: { withoutScrolling?: boolean; force?: boolean }): Promise<void> {
+        const locator = toLocator(await this.resolve());
+        await this.interactions.interact.click(locator, {
+            withoutScrolling: options?.withoutScrolling,
+            force: options?.force,
+        });
     }
 
     /** Click the resolved element if present. Returns `true` if clicked, `false` if skipped. */
-    async clickIfPresent(options?: { withoutScrolling?: boolean }): Promise<boolean> {
+    async clickIfPresent(options?: { withoutScrolling?: boolean; force?: boolean }): Promise<boolean> {
         const element = await this.resolve();
         if (await element.isVisible()) {
-            await element.action(this.timeout).click(options);
+            const locator = toLocator(element);
+            await this.interactions.interact.click(locator, {
+                withoutScrolling: options?.withoutScrolling,
+                ifPresent: true,
+                force: options?.force,
+            });
             return true;
         }
         return false;
@@ -213,6 +221,25 @@ export class ElementAction {
         try {
             const element = await this.resolve();
             return await element.action(this.timeout).isPresent();
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Non-throwing visibility probe with optional text filtering and custom timeout.
+     * Returns `true` if the element is visible (and matches text if specified), `false` otherwise.
+     */
+    async isVisible(options?: IsVisibleOptions): Promise<boolean> {
+        const timeout = options?.timeout ?? 2000;
+        try {
+            const locator = await this.resolveLocator();
+            await locator.waitFor({ state: 'visible', timeout });
+            if (options?.containsText) {
+                const text = await locator.textContent({ timeout }).catch(() => null);
+                return text !== null && text.includes(options.containsText);
+            }
+            return true;
         } catch {
             return false;
         }

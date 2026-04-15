@@ -41,28 +41,60 @@ export class Interactions {
      */
     async click(target: Target, options?: ClickOptions): Promise<boolean | void> {
         const locator = resolveLocator(target);
+        const useDispatch = options?.force || options?.withoutScrolling;
 
         if (options?.ifPresent) {
             if (await locator.isVisible()) {
-                if (options?.withoutScrolling) {
-                    await this.utils.waitForState(locator, 'attached');
-                    await locator.dispatchEvent('click');
+                if (useDispatch) {
+                    await this.dispatchClick(locator);
                 } else {
-                    await locator.click({ timeout: this.ELEMENT_TIMEOUT });
+                    await this.clickWithInterceptionRetry(locator);
                 }
                 return true;
             }
             return false;
         }
 
-        if (options?.withoutScrolling) {
-            await this.utils.waitForState(locator, 'attached');
-            await locator.dispatchEvent('click');
+        if (useDispatch) {
+            await this.dispatchClick(locator);
             return;
         }
 
         await this.utils.waitForState(locator, 'visible');
-        await locator.click({ timeout: this.ELEMENT_TIMEOUT });
+        await this.clickWithInterceptionRetry(locator);
+    }
+
+    /**
+     * Dispatches a native 'click' event directly on the element, bypassing
+     * Playwright's actionability checks and pointer-interception guards.
+     * Used by both `force` and `withoutScrolling` options.
+     */
+    private async dispatchClick(locator: Locator): Promise<void> {
+        await this.utils.waitForState(locator, 'attached');
+        await locator.dispatchEvent('click');
+    }
+
+    /**
+     * Attempts a standard click. If the click fails because another element
+     * intercepts pointer events, automatically retries by dispatching a native
+     * click event directly on the element (bypassing the overlay).
+     *
+     * Uses a short initial timeout (5s) for the first attempt so that
+     * interception retries don't add 30s+ of dead wait time.
+     */
+    private async clickWithInterceptionRetry(locator: Locator): Promise<void> {
+        try {
+            await locator.click({ timeout: Math.min(this.ELEMENT_TIMEOUT, 5000) });
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (message.includes('intercepts pointer events')) {
+                await locator.dispatchEvent('click');
+            } else {
+                // Retry with full timeout in case the short attempt failed for
+                // a timing reason (element wasn't ready yet)
+                await locator.click({ timeout: this.ELEMENT_TIMEOUT });
+            }
+        }
     }
 
     /**

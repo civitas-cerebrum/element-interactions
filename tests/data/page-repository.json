@@ -2307,6 +2307,191 @@
           }
         }
       ]
+    },
+    {
+      "name": "EnhancedSelectorsPage",
+      "elements": [
+        {
+          "elementName": "loginButton",
+          "selector": {
+            "role": "button",
+            "name": "Log in"
+          }
+        },
+        {
+          "elementName": "signupButton",
+          "selector": {
+            "role": "button",
+            "name": "Sign up"
+          }
+        },
+        {
+          "elementName": "continueButton",
+          "selector": {
+            "role": "button",
+            "name": "Continue"
+          }
+        },
+        {
+          "elementName": "authButton",
+          "selector": {
+            "role": "button",
+            "name": { "regex": "Log in|Sign up|Continue", "flags": "i" }
+          }
+        },
+        {
+          "elementName": "emailTextbox",
+          "selector": {
+            "role": "textbox",
+            "name": "Email address"
+          }
+        },
+        {
+          "elementName": "notificationSwitch",
+          "selector": {
+            "role": "switch",
+            "name": "Enable notifications"
+          }
+        },
+        {
+          "elementName": "roleResult",
+          "selector": {
+            "css": "[data-testid='role-result']"
+          }
+        },
+        {
+          "elementName": "switchResult",
+          "selector": {
+            "css": "[data-testid='switch-result']"
+          }
+        },
+        {
+          "elementName": "planResult",
+          "selector": {
+            "css": "[data-testid='plan-result']"
+          }
+        },
+        {
+          "elementName": "payRestrictionAlert",
+          "selector": {
+            "text": { "regex": "Just Eat Pay.*cannot.*be used", "flags": "i" }
+          }
+        },
+        {
+          "elementName": "versionAlert",
+          "selector": {
+            "text": { "regex": "Version \\d+\\.\\d+\\.\\d+.*released", "flags": "i" }
+          }
+        },
+        {
+          "elementName": "priceDisplay",
+          "selector": {
+            "css": "[data-testid='price-display']"
+          }
+        },
+        {
+          "elementName": "interceptedButton",
+          "selector": {
+            "css": "[data-testid='intercepted-button']"
+          }
+        },
+        {
+          "elementName": "forceClickResult",
+          "selector": {
+            "css": "[data-testid='force-click-result']"
+          }
+        },
+        {
+          "elementName": "interceptedToggle",
+          "selector": {
+            "css": "[data-testid='intercepted-toggle']"
+          }
+        },
+        {
+          "elementName": "toggleResult",
+          "selector": {
+            "css": "[data-testid='toggle-result']"
+          }
+        },
+        {
+          "elementName": "toggleBannerBtn",
+          "selector": {
+            "css": "[data-testid='toggle-banner-btn']"
+          }
+        },
+        {
+          "elementName": "promoBanner",
+          "selector": {
+            "css": "[data-testid='promo-banner']"
+          }
+        },
+        {
+          "elementName": "alwaysHidden",
+          "selector": {
+            "css": "[data-testid='always-hidden']"
+          }
+        },
+        {
+          "elementName": "delayedElement",
+          "selector": {
+            "css": "[data-testid='delayed-element']"
+          }
+        },
+        {
+          "elementName": "triggerDelayedBtn",
+          "selector": {
+            "css": "[data-testid='trigger-delayed-btn']"
+          }
+        }
+      ]
+    },
+    {
+      "name": "SimpleIframePage",
+      "frame": { "css": "[data-testid='simple-iframe']" },
+      "elements": [
+        {
+          "elementName": "iframeTitle",
+          "selector": {
+            "id": "iframe-title"
+          }
+        },
+        {
+          "elementName": "iframeButton",
+          "selector": {
+            "id": "iframe-button"
+          }
+        },
+        {
+          "elementName": "iframeResult",
+          "selector": {
+            "id": "iframe-result"
+          }
+        },
+        {
+          "elementName": "iframeInput",
+          "selector": {
+            "id": "iframe-input"
+          }
+        }
+      ]
+    },
+    {
+      "name": "CardIframePage",
+      "frame": { "css": "[data-testid='card-iframe']" },
+      "elements": [
+        {
+          "elementName": "cardNumberInput",
+          "selector": {
+            "css": "[data-testid='card-input']"
+          }
+        },
+        {
+          "elementName": "expiryInput",
+          "selector": {
+            "css": "[data-testid='expiry-input']"
+          }
+        }
+      ]
     }
   ]
 }

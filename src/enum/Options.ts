@@ -135,6 +135,16 @@ export interface ScreenshotOptions {
 }
 
 /**
+ * Options for the `isVisible` probe method.
+ */
+export interface IsVisibleOptions {
+    /** Maximum time to wait for the element in milliseconds. Defaults to `2000`. */
+    timeout?: number;
+    /** Only return `true` if the element's text content contains this string. */
+    containsText?: string;
+}
+
+/**
  * Modifiers for click actions.
  */
 export interface ClickOptions {
@@ -142,6 +152,8 @@ export interface ClickOptions {
     withoutScrolling?: boolean;
     /** Skip silently if element is not visible instead of throwing. */
     ifPresent?: boolean;
+    /** Force the click, bypassing Playwright's pointer-interception checks. Useful for elements obscured by parent overlays. */
+    force?: boolean;
 }
 
 /**
@@ -162,4 +174,6 @@ export interface StepOptions {
     withoutScrolling?: boolean;
     /** Skip silently if element is not visible. */
     ifPresent?: boolean;
+    /** Force the click, bypassing Playwright's pointer-interception checks. */
+    force?: boolean;
 }
