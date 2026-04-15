@@ -194,6 +194,29 @@ test.describe('Enhanced Selectors — Issue Fixes #61-#65', () => {
     expect(hidden).toBe(false);
   });
 
+  test('#63: ifVisible — conditional click on visible element', async ({ steps }) => {
+    await test.step('Click banner via ifVisible (should succeed)', async () => {
+      await steps.on('toggleBannerBtn', 'EnhancedSelectorsPage').ifVisible().click();
+    });
+
+    await test.step('Banner should now be hidden', async () => {
+      const visible = await steps.isVisible('promoBanner', 'EnhancedSelectorsPage', { timeout: 500 });
+      expect(visible).toBe(false);
+    });
+  });
+
+  test('#63: ifVisible — conditional click on hidden element silently skips', async ({ steps }) => {
+    await test.step('Try clicking hidden element via ifVisible (should skip)', async () => {
+      await steps.on('alwaysHidden', 'EnhancedSelectorsPage').ifVisible(500).click();
+      // No error thrown — action was skipped
+    });
+
+    await test.step('Try filling hidden element via ifVisible (should skip)', async () => {
+      await steps.on('alwaysHidden', 'EnhancedSelectorsPage').ifVisible(500).fill('text');
+      // No error thrown — action was skipped
+    });
+  });
+
   // ============================================================
   // #62 — Iframe / Cross-Frame Scope
   // ============================================================

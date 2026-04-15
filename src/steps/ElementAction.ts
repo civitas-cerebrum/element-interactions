@@ -20,6 +20,8 @@ function toLocator(element: Element): Locator {
 export class ElementAction {
     private resolutionOptions: ElementResolutionOptions = {};
     private timeout: number;
+    private conditionalVisible: boolean = false;
+    private visibilityTimeout: number = 2000;
 
     constructor(
         private repo: ElementRepository,
@@ -63,7 +65,41 @@ export class ElementAction {
         return this;
     }
 
+    /**
+     * Makes all subsequent actions conditional on visibility.
+     * If the element is not visible within the timeout, actions silently skip
+     * instead of throwing. Returns `this` for chaining.
+     *
+     * @param timeout - Max wait in ms to check visibility. Defaults to `2000`.
+     *
+     * @example
+     * ```ts
+     * await steps.on('cookieBanner', 'Page').ifVisible().click();
+     * await steps.on('promoPopup', 'Page').ifVisible(500).click();
+     * ```
+     */
+    ifVisible(timeout?: number): this {
+        this.conditionalVisible = true;
+        if (timeout !== undefined) this.visibilityTimeout = timeout;
+        return this;
+    }
+
     // -- Internal helpers --
+
+    /**
+     * Checks the ifVisible condition. Returns `true` if the action should proceed,
+     * `false` if it should be skipped.
+     */
+    private async shouldProceed(): Promise<boolean> {
+        if (!this.conditionalVisible) return true;
+        try {
+            const locator = await this.resolveLocator();
+            await locator.waitFor({ state: 'visible', timeout: this.visibilityTimeout });
+            return true;
+        } catch {
+            return false;
+        }
+    }
 
     private async resolve(): Promise<Element> {
         return this.repo.get(this.elementName, this.pageName, this.resolutionOptions);
@@ -75,8 +111,9 @@ export class ElementAction {
 
     // -- Terminal actions: interactions --
 
-    /** Click the resolved element. */
+    /** Click the resolved element. Skips silently if `ifVisible()` was set and element is hidden. */
     async click(options?: { withoutScrolling?: boolean; force?: boolean }): Promise<void> {
+        if (!await this.shouldProceed()) return;
         const locator = toLocator(await this.resolve());
         await this.interactions.interact.click(locator, {
             withoutScrolling: options?.withoutScrolling,
@@ -99,20 +136,23 @@ export class ElementAction {
         return false;
     }
 
-    /** Hover over the resolved element. */
+    /** Hover over the resolved element. Skips silently if `ifVisible()` was set and element is hidden. */
     async hover(): Promise<void> {
+        if (!await this.shouldProceed()) return;
         const element = await this.resolve();
         await element.action(this.timeout).hover();
     }
 
-    /** Clear and fill the resolved element with text. */
+    /** Clear and fill the resolved element with text. Skips silently if `ifVisible()` was set and element is hidden. */
     async fill(text: string): Promise<void> {
+        if (!await this.shouldProceed()) return;
         const element = await this.resolve();
         await element.action(this.timeout).fill(text);
     }
 
-    /** Scroll the resolved element into view. */
+    /** Scroll the resolved element into view. Skips silently if `ifVisible()` was set and element is hidden. */
     async scrollIntoView(): Promise<void> {
+        if (!await this.shouldProceed()) return;
         const element = await this.resolve();
         await element.action(this.timeout).scrollIntoView();
     }
@@ -123,14 +163,16 @@ export class ElementAction {
         return await this.interactions.interact.selectDropdown(locator, options);
     }
 
-    /** Check a checkbox or radio button. */
+    /** Check a checkbox or radio button. Skips silently if `ifVisible()` was set and element is hidden. */
     async check(): Promise<void> {
+        if (!await this.shouldProceed()) return;
         const element = await this.resolve();
         await element.action(this.timeout).check();
     }
 
-    /** Uncheck a checkbox. */
+    /** Uncheck a checkbox. Skips silently if `ifVisible()` was set and element is hidden. */
     async uncheck(): Promise<void> {
+        if (!await this.shouldProceed()) return;
         const element = await this.resolve();
         await element.action(this.timeout).uncheck();
     }
