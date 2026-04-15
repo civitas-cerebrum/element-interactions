@@ -396,14 +396,15 @@ Show the user the exact JSON entries you want to add:
 
 1. **Check project setup.** Read `tests/fixtures/base.ts` and `playwright.config.ts` — create or update only if missing or broken. Also verify that `.gitignore` includes `.claude/` and `CLAUDE.md` to prevent Claude Code configuration from being pushed to the repository — add them if missing.
 2. **Add approved selectors** to `page-repository.json` (if not already done).
-3. **Write the test file** using the Steps API. Every interaction goes through `steps.*` methods — no raw `page.locator()` calls.
-4. **Run the test** with `npx playwright test <test-file>`.
-5. **If the test fails:** invoke the `failure-diagnosis` protocol — collect evidence (screenshot, DOM, error context), group failures by root cause, classify (test issue vs app bug vs ambiguous), check edge cases, then fix test issues autonomously with stability validation (3-5 passing runs) or report app bugs with full evidence. If the fix requires new selectors, use Playwright MCP to inspect the DOM, propose the new entry, and get approval before editing.
-6. **If the test passes:** commit immediately.
+3. **Read `references/api-reference.md`** — load the full API reference before writing any test code. Do not write from memory.
+4. **Write the test file** using the Steps API. Every interaction goes through `steps.*` methods — no raw `page.locator()` calls.
+5. **Run the test** with `npx playwright test <test-file>`.
+6. **If the test fails:** invoke the `failure-diagnosis` protocol — collect evidence (screenshot, DOM, error context), group failures by root cause, classify (test issue vs app bug vs ambiguous), check edge cases, then fix test issues autonomously with stability validation (3-5 passing runs) or report app bugs with full evidence. If the fix requires new selectors, use Playwright MCP to inspect the DOM, propose the new entry, and get approval before editing.
+7. **If the test passes:** commit immediately.
 
 ### Skip-to-Stage-3 (Fix/Edit Mode)
 
-When the user asks to fix or edit an existing test, skip Stages 1 and 2. Read the existing test, understand the issue, and proceed directly to fixing and running. If fixing requires new selectors, use the mini-inspection flow described above — do NOT silently add selectors.
+When the user asks to fix or edit an existing test, skip Stages 1 and 2. Read `references/api-reference.md`, then read the existing test, understand the issue, and proceed directly to fixing and running. If fixing requires new selectors, use the mini-inspection flow described above — do NOT silently add selectors.
 
 ---
 
@@ -430,12 +431,13 @@ For each test file, verify:
 
 ### Process
 
-1. **Read each test file** written or modified in this session.
-2. **Cross-reference every API call** against the API Reference section below.
-3. **Report findings** to the user — list any issues found with the specific line, what's wrong, and the correct usage.
-4. **If issues are found:** investigate *why* the non-compliant code was written — was the API misunderstood? Was a method signature wrong in the scenario? Did a previous stage produce incorrect assumptions? Understanding the root cause prevents the same mistake from recurring in the next scenario. Then fix, re-run the tests, and confirm they still pass.
-5. **If fixes cause a test failure:** follow Rule 6 — inspect the failure screenshot first before attempting any further fix. Do NOT guess from the error message alone.
-6. **If no issues are found:** confirm compliance and proceed to commit.
+1. **Read `references/api-reference.md`** — load the full API reference. Do not review from memory.
+2. **Read each test file** written or modified in this session.
+3. **Cross-reference every API call** against the API Reference.
+4. **Report findings** to the user — list any issues found with the specific line, what's wrong, and the correct usage.
+5. **If issues are found:** investigate *why* the non-compliant code was written — was the API misunderstood? Was a method signature wrong in the scenario? Did a previous stage produce incorrect assumptions? Understanding the root cause prevents the same mistake from recurring in the next scenario. Then fix, re-run the tests, and confirm they still pass.
+6. **If fixes cause a test failure:** follow Rule 6 — inspect the failure screenshot first before attempting any further fix. Do NOT guess from the error message alone.
+7. **If no issues are found:** confirm compliance and proceed to commit.
 
 ### Output Format
 
@@ -501,9 +503,17 @@ Do NOT silently end the session after Stage 4. The onboarding cycle was an entry
 ## API Reference
 
 <CRITICAL>
-**You MUST read `references/api-reference.md` before writing ANY test code, selector JSON, or answering API questions.**
+**You MUST read `references/api-reference.md` before writing ANY test code, selector JSON, or answering API questions. This is not optional.**
 
-Do not guess method signatures, argument order, or selector formats from memory. The reference file is the single source of truth. Read it at the start of Stage 3, and re-read the relevant section any time you are unsure about a method's signature or options.
+Every method signature, argument order, option shape, and selector format MUST come from this file — not from memory, not from training data, not from pattern matching. The API has specific conventions (e.g., `elementName` before `pageName`, `force` dispatches a native event, `isVisible` defaults to 2000ms) that are easy to get wrong from memory. A single wrong argument order silently produces a broken test.
+
+**When to read it:**
+- Stage 3 step 3: before writing any test code
+- Stage 4 step 1: before reviewing any test code
+- Fix/Edit mode: before modifying any test
+- API questions: before answering
+
+If you catch yourself writing `steps.*` calls without having read this file in the current session, STOP and read it first.
 </CRITICAL>
 
 The API reference is in a separate file to keep this skill lean. Read it when:
