@@ -1,0 +1,64 @@
+name: 📝 Coverage Comment
+
+on:
+  workflow_run:
+    workflows: ['📊 API Coverage Report']
+    types: [completed]
+
+permissions:
+  pull-requests: write
+  actions: read
+
+jobs:
+  comment:
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Download coverage context
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-context
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 💬 Post or update coverage comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            const prNumber = parseInt(fs.readFileSync('pr-number.txt', 'utf-8').trim(), 10);
+            const body = fs.readFileSync('report.md', 'utf-8');
+
+            if (!Number.isFinite(prNumber) || prNumber <= 0) {
+              core.setFailed(`Invalid PR number in artifact: "${prNumber}"`);
+              return;
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            const existing = comments.find(c =>
+              c.user.login === 'github-actions[bot]' &&
+              c.body.includes('API Coverage Report')
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body,
+              });
+            }
