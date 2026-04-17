@@ -26,30 +26,44 @@ const destinations = [
   path.join(homeDir, '.claude', 'skills'),
 ];
 
-const files = [
-  { src: 'element-interactions/SKILL.md', destDir: 'element-interactions', dest: 'SKILL.md' },
-  { src: 'test-composer/SKILL.md', destDir: 'test-composer', dest: 'SKILL.md' },
-  { src: 'bug-discovery/SKILL.md', destDir: 'bug-discovery', dest: 'SKILL.md' },
-  { src: 'agents-vs-agents/SKILL.md', destDir: 'agents-vs-agents', dest: 'SKILL.md' },
-  { src: 'failure-diagnosis/SKILL.md', destDir: 'failure-diagnosis', dest: 'SKILL.md' },
-  { src: 'work-summary-deck/SKILL.md', destDir: 'work-summary-deck', dest: 'SKILL.md' },
+const skills = [
+  'element-interactions',
+  'test-composer',
+  'bug-discovery',
+  'agents-vs-agents',
+  'failure-diagnosis',
+  'work-summary-deck',
 ];
+
+// Recursively copy one skill directory. Copies SKILL.md, contributing.md,
+// and the whole references/ tree — everything SKILL.md's instructions refer to.
+function copyDirRecursive(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDirRecursive(srcPath, destPath);
+    } else if (entry.isFile()) {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
 
 try {
   const installedSkills = new Set();
 
   for (const skillsDestBase of destinations) {
-    for (const file of files) {
-      const srcPath  = path.join(skillsDir, file.src);
-      const destPath = path.join(skillsDestBase, file.destDir, file.dest);
+    for (const skill of skills) {
+      const srcDir = path.join(skillsDir, skill);
+      const destDir = path.join(skillsDestBase, skill);
 
-      if (!fs.existsSync(srcPath)) {
+      if (!fs.existsSync(srcDir)) {
         continue;
       }
 
-      fs.mkdirSync(path.dirname(destPath), { recursive: true });
-      fs.copyFileSync(srcPath, destPath);
-      installedSkills.add(file.destDir);
+      copyDirRecursive(srcDir, destDir);
+      installedSkills.add(skill);
     }
   }
 
