@@ -766,6 +766,23 @@ export class Steps {
     }
 
     /**
+     * Asserts that two extracted values are equal or not equal.
+     * Use after getText() or getInputValue() to compare two captured values.
+     * @param actual - The actual value captured from the page.
+     * @param expected - The value to compare against.
+     * @param options - Optional. Pass `{ not: true }` to assert the values differ instead.
+     */
+    expect(actual: string | null, expected: string | null, options?: { not?: boolean }): void {
+        if (options?.not) {
+            log.verify('Expecting values to differ: "%s" !== "%s"', actual, expected);
+            this.verify.expectNotEqual(actual, expected);
+        } else {
+            log.verify('Expecting values to be equal: "%s" === "%s"', actual, expected);
+            this.verify.expectEqual(actual, expected);
+        }
+    }
+
+    /**
      * Asserts that the text contents of all elements matching the locator appear
      * in the exact order specified.     * @param elementName - The element name as defined under the given page.
 

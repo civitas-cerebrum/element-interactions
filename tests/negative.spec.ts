@@ -116,4 +116,26 @@ test.describe('Negative Tests', () => {
     }).rejects.toThrow('not found');
     log('TC_086 Negative getByText strict — passed');
   });
+
+  test('TC_088: expectValue throws on mismatch and throws on match when { not: true }', async ({ page, steps }) => {
+    const fast = new ElementInteractions(page, { timeout: NEGATIVE_TIMEOUT });
+
+    expect(() => {
+      steps.expect('hello', 'world');
+    }).toThrow();
+
+    expect(() => {
+      steps.expect('hello', 'hello', { not: true });
+    }).toThrow();
+
+    expect(() => {
+      fast.verify.expectEqual('hello', 'world');
+    }).toThrow();
+
+    expect(() => {
+      fast.verify.expectNotEqual('hello', 'hello');
+    }).toThrow();
+
+    log('TC_088 Negative expectValue — passed');
+  });
 });

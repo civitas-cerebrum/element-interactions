@@ -252,6 +252,30 @@ test.describe('TC_047: Steps - isPresent boolean visibility check', () => {
   });
 });
 
+test.describe('TC_087: Steps - expectValue', () => {
+
+  test('expectValue passes for equal values and for differing values with { not: true }', async ({ steps }) => {
+
+    await test.step('expectValue passes when values are identical', () => {
+      steps.expect('$5.99', '$5.99');
+    });
+
+    await test.step('expectValue passes when both values are null', () => {
+      steps.expect(null, null);
+    });
+
+    await test.step('expectValue with { not: true } passes when values differ', () => {
+      steps.expect('$5.99', '$9.99', { not: true });
+    });
+
+    await test.step('expectValue with { not: true } passes when actual is null and expected is a string', () => {
+      steps.expect(null, 'some value', { not: true });
+    });
+
+    log('TC_087 expectValue — passed');
+  });
+});
+
 test.describe('TC_048: Steps - navigateTo with query params', () => {
   test.use({ baseURL: 'https://civitas-cerebrum.github.io/vue-test-app/' });
 

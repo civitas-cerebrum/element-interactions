@@ -208,6 +208,30 @@ export class Verifications {
     }
 
     /**
+     * Asserts that two values are strictly equal.
+     * Typically used to compare two values captured from the page via getText() or getInputValue().
+     * Both parameters accept null to support values that may not be present in the DOM.
+     *
+     * @param actual - The value captured from the page.
+     * @param expected - The value to compare against. Can be another captured value or a literal string.
+     */
+    expectEqual(actual: string | null, expected: string | null): void {
+        expect(actual, `Expected values to be equal.\n  Actual:   "${actual}"\n  Expected: "${expected}"`).toBe(expected);
+    }
+
+    /**
+     * Asserts that two values are not equal.
+     * Typically used to confirm that two values captured from the page differ from each other.
+     * Both parameters accept null to support values that may not be present in the DOM.
+     *
+     * @param actual - The value captured from the page.
+     * @param notExpected - The value that actual must differ from.
+     */
+    expectNotEqual(actual: string | null, notExpected: string | null): void {
+        expect(actual, `Expected values to differ, but both were: "${actual}"`).not.toBe(notExpected);
+    }
+
+    /**
     * Asserts the number of elements matching the locator based on the provided conditions.
     * @param target - A Playwright Locator or Element pointing to the target elements.
     * @param options - Configuration specifying 'exact', 'greaterThan', or 'lessThan' logic.
