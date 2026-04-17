@@ -5,7 +5,7 @@ The following sections document the full API available for writing tests in Stag
 ## Table of Contents
 - [Setup — Fixtures](#setup--fixtures)
 - [Locator Format](#locator-format) (css, xpath, id, text, role+name, regex, iframe)
-- [Steps API](#steps-api) (navigation, interaction, extraction, verification, visibility, listed elements, waiting, composite, screenshot)
+- [Steps API](#steps-api) (navigation, interaction, extraction, verification, expect matcher tree, visibility, listed elements, waiting, composite, screenshot)
 - [Fluent API — steps.on()](#fluent-api--stepson) (strategy selectors, ifVisible, terminal actions, chaining)
 - [Accessing the Repository Directly](#accessing-the-repository-directly)
 - [Raw Interactions API](#raw-interactions-api)
@@ -230,6 +230,108 @@ await steps.verifyTabCount(2);
 await steps.verifyOrder('listItems', 'PageName', ['First', 'Second', 'Third']);
 await steps.verifyListOrder('listItems', 'PageName', 'asc');               // or 'desc'
 await steps.verifyCssProperty('elementName', 'PageName', 'color', 'rgb(255, 0, 0)');
+```
+
+### Expect Matcher Tree
+
+A chain-style assertion API available at both the top level (`steps.expect(el, page)`) and the fluent builder (`steps.on(el, page)`). Each matcher retries against a fresh snapshot until the element timeout expires, then throws with the final snapshot in the error message. `verify*` still works and remains the shortest form for the basic cases it covers — use the matcher tree when you need regex, contains, negation, multi-field conditions, or custom predicates.
+
+**Field matchers — available on both entry points:**
+
+```ts
+// Top-level entry — steps.expect(elementName, pageName)
+await steps.expect('price', 'ProductPage').text.toBe('$19.99');
+await steps.expect('price', 'ProductPage').text.toContain('Premium');
+await steps.expect('price', 'ProductPage').text.toMatch(/^\$\d+\.\d{2}$/);
+await steps.expect('price', 'ProductPage').text.toStartWith('$');
+await steps.expect('price', 'ProductPage').text.toEndWith('USD');
+
+await steps.expect('emailInput', 'LoginPage').value.toBe('user@test.com');
+await steps.expect('emailInput', 'LoginPage').value.toMatch(/@/);
+
+await steps.expect('link', 'NavPage').attributes.get('href').toBe('/dashboard');
+await steps.expect('link', 'NavPage').attributes.get('class').toContain('active');
+await steps.expect('link', 'NavPage').attributes.get('href').toMatch(/\/products\/\d+/);
+await steps.expect('btn', 'Page').attributes.toHaveKey('disabled');
+
+await steps.expect('items', 'ListPage').count.toBe(3);
+await steps.expect('items', 'ListPage').count.toBeGreaterThan(3);
+await steps.expect('items', 'ListPage').count.toBeLessThan(20);
+await steps.expect('items', 'ListPage').count.toBeGreaterThanOrEqual(5);
+await steps.expect('items', 'ListPage').count.toBeLessThanOrEqual(10);
+
+await steps.expect('banner', 'Page').visible.toBeTrue();
+await steps.expect('banner', 'Page').visible.toBe(true);
+await steps.expect('spinner', 'Page').visible.toBeFalse();
+await steps.expect('submitBtn', 'Page').enabled.toBeTrue();
+
+await steps.expect('banner', 'Page').css('color').toBe('rgb(255, 0, 0)');
+await steps.expect('banner', 'Page').css('cursor').toMatch(/pointer|default/);
+
+// Fluent entry — same matchers directly on steps.on()
+await steps.on('price', 'ProductPage').text.toBe('$19.99');
+await steps.on('row', 'TablePage').nth(2).attributes.get('data-id').toBe('42');
+await steps.on('cards', 'ListPage').random().text.toMatch(/\$\d+/);
+await steps.on('banner', 'HomePage').ifVisible().text.toContain('Promo');
+```
+
+**Negation with `.not`:**
+
+```ts
+// Flip any matcher via .not — composes on either side of the field accessor
+await steps.expect('error', 'Page').not.text.toContain('Crash');
+await steps.expect('error', 'Page').text.not.toContain('Crash');
+await steps.on('submitBtn', 'Page').enabled.not.toBe(false);
+await steps.on('link', 'Page').attributes.not.toHaveKey('disabled');
+await steps.on('link', 'Page').attributes.get('href').not.toBe('/wrong');
+```
+
+**Predicate escape hatch** — for assertions the matcher tree doesn't cover (multi-field combinations, parsed numeric thresholds, JSON in `data-*`):
+
+```ts
+// Top-level — pass predicate as third argument
+await steps.expect(
+  'price', 'ProductPage',
+  el => parseFloat(el.text.slice(1)) > 10,
+  'price must be above $10',
+);
+
+// Fluent — .expect(predicate, message?) on ElementAction
+await steps.on('price', 'ProductPage').expect(
+  el => parseFloat(el.text.slice(1)) > 10,
+);
+
+await steps.on('card', 'DashboardPage').expect(
+  el => el.visible && el.attributes['data-status'] === 'ready' && el.count > 0,
+);
+```
+
+Predicates receive an `ElementSnapshot` — plain data, no async methods:
+
+```ts
+interface ElementSnapshot {
+    readonly text: string;
+    readonly value: string;                         // input value, '' for non-inputs
+    readonly attributes: Readonly<Record<string, string>>;
+    readonly visible: boolean;
+    readonly enabled: boolean;
+    readonly count: number;                         // total matches post-strategy
+}
+```
+
+On predicate timeout, the error message includes the full snapshot pretty-printed so you can see exactly why the assertion failed:
+
+```
+expect() predicate failed on ProductPage.price after 30000ms
+  snapshot at timeout:
+    {
+      "text": "12.99 USD",
+      "value": "",
+      "attributes": { ... },
+      "visible": true,
+      "enabled": true,
+      "count": 1
+    }
 ```
 
 ### Visibility Probe

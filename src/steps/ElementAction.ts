@@ -2,6 +2,20 @@ import { Locator } from '@playwright/test';
 import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
 import { ElementInteractions } from '../interactions/facade/ElementInteractions';
 import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ScreenshotOptions, IsVisibleOptions } from '../enum/Options';
+import {
+    AttributesMatcher,
+    BooleanMatcher,
+    CountMatcher,
+    CssMatcher,
+    ElementSnapshot,
+    ExpectBuilder,
+    ExpectContext,
+    TextMatcher,
+    ValueMatcher,
+} from './ExpectMatchers';
+
+/** DOM Element alias — disambiguates from the repository's `Element` wrapper in callbacks that run inside Playwright's browser context. */
+type DomElement = globalThis.Element;
 
 function toLocator(element: Element): Locator {
     return (element as WebElement).locator;
@@ -373,47 +387,148 @@ export class ElementAction {
         return await this.interactions.extract.screenshot(locator, options);
     }
 
+    // -- Expect matcher tree + predicate escape hatch --
+
     /**
-     * Extracts a value from the element and asserts it matches the expected value.
+     * Captures a snapshot of the element's state at the current moment. Used
+     * by the matcher tree (`.text.toBe(...)`, `.count.toBeGreaterThan(...)`,
+     * etc.) and by the predicate form of `expect(...)`.
      *
-     * By default, compares against the element's text content. Use options to extract
-     * a specific attribute, input value, or CSS property instead.
-     *
-     * @param expected - The value to compare against.
-     * @param options.not - When true, asserts the extracted value does NOT equal the expected value.
-     * @param options.attribute - Extract the given HTML attribute (e.g. `'href'`, `'data-id'`).
-     * @param options.inputValue - Extract the input field's value instead of its text content.
-     * @param options.cssProperty - Extract the computed CSS property (e.g. `'color'`, `'font-size'`).
+     * Snapshot fields are all primitives — no async access needed in predicates.
+     */
+    async captureSnapshot(): Promise<ElementSnapshot> {
+        const locator = await this.resolveLocator();
+        const first = locator.first();
+
+        const [count, text, value, attributes, visible, enabled] = await Promise.all([
+            locator.count().catch(() => 0),
+            first.textContent().then(t => (t ?? '').trim()).catch(() => ''),
+            first.inputValue().catch(() => ''),
+            first.evaluate((el: DomElement) => {
+                const out: Record<string, string> = {};
+                for (const attr of Array.from(el.attributes)) {
+                    out[attr.name] = attr.value;
+                }
+                return out;
+            }).catch(() => ({} as Record<string, string>)),
+            first.isVisible().catch(() => false),
+            first.isEnabled().catch(() => false),
+        ]);
+
+        return { text, value, attributes, visible, enabled, count };
+    }
+
+    /** Build the context object consumed by the matcher tree classes. */
+    buildExpectContext(): ExpectContext {
+        return {
+            elementName: this.elementName,
+            pageName: this.pageName,
+            timeout: this.timeout,
+            conditionalVisible: this.conditionalVisible,
+            visibilityTimeout: this.visibilityTimeout,
+            resolveLocator: () => this.resolveLocator(),
+            captureSnapshot: () => this.captureSnapshot(),
+        };
+    }
+
+    /** Matcher entry for text content. */
+    get text(): TextMatcher {
+        return new TextMatcher(this.buildExpectContext());
+    }
+
+    /** Matcher entry for input value. */
+    get value(): ValueMatcher {
+        return new ValueMatcher(this.buildExpectContext());
+    }
+
+    /** Matcher entry for the count of matching elements. */
+    get count(): CountMatcher {
+        return new CountMatcher(this.buildExpectContext());
+    }
+
+    /** Matcher entry for visibility. */
+    get visible(): BooleanMatcher {
+        return new BooleanMatcher(this.buildExpectContext(), 'visible');
+    }
+
+    /** Matcher entry for enabled state. */
+    get enabled(): BooleanMatcher {
+        return new BooleanMatcher(this.buildExpectContext(), 'enabled');
+    }
+
+    /** Matcher entry for DOM attributes. */
+    get attributes(): AttributesMatcher {
+        return new AttributesMatcher(this.buildExpectContext());
+    }
+
+    /**
+     * Returns a negated matcher tree. Flip the expected outcome of any matcher
+     * reached from this object.
      *
      * @example
-     * await steps.on('title', 'Page').expect('Welcome');
-     * await steps.on('link', 'Page').expect('/dashboard', { attribute: 'href' });
-     * await steps.on('input', 'Page').expect('hello@example.com', { inputValue: true });
-     * await steps.on('banner', 'Page').expect('rgb(255, 0, 0)', { cssProperty: 'color' });
-     * await steps.on('price', 'Page').expect('$0.00', { not: true });
+     * await steps.on('error', 'Page').not.text.toContain('Error');
+     * await steps.on('submitBtn', 'Page').not.enabled.toBe(false);
+     */
+    get not(): ExpectBuilder {
+        return new ExpectBuilder(this.buildExpectContext(), true);
+    }
+
+    /** Matcher entry for a specific computed CSS property. */
+    css(property: string): CssMatcher {
+        return new CssMatcher(this.buildExpectContext(), property);
+    }
+
+    /**
+     * Predicate escape hatch for custom assertions the matcher tree doesn't
+     * cover. Runs the predicate against a fresh snapshot on every retry until
+     * the predicate returns `true` or the element timeout expires.
+     *
+     * @param predicate - Function receiving an `ElementSnapshot` that returns
+     *   `true` when the assertion holds.
+     * @param message - Optional custom error message shown on failure.
+     *
+     * @example
+     * await steps.on('price', 'ProductPage').expect(
+     *   el => parseFloat(el.text.slice(1)) > 10,
+     *   'price must be above $10'
+     * );
      */
     async expect(
-        expected: string | null,
-        options?: { not?: boolean; attribute?: string; inputValue?: boolean; cssProperty?: string }
+        predicate: (el: ElementSnapshot) => boolean,
+        message?: string,
     ): Promise<void> {
-        const locator = await this.resolveLocator();
-        let actual: string | null;
-
-        if (options?.attribute) {
-            actual = await this.interactions.extract.getAttribute(locator, options.attribute);
-        } else if (options?.inputValue) {
-            actual = await this.interactions.extract.getInputValue(locator);
-        } else if (options?.cssProperty) {
-            actual = await this.interactions.extract.getCssProperty(locator, options.cssProperty);
-        } else {
-            actual = await this.interactions.extract.getText(locator);
+        if (this.conditionalVisible) {
+            try {
+                const locator = await this.resolveLocator();
+                await locator.waitFor({ state: 'visible', timeout: this.visibilityTimeout });
+            } catch {
+                return;
+            }
         }
 
-        if (options?.not) {
-            this.interactions.verify.expectNotEqual(actual, expected);
-        } else {
-            this.interactions.verify.expectEqual(actual, expected);
+        const deadline = Date.now() + this.timeout;
+        const pollMs = 100;
+        let lastSnapshot: ElementSnapshot | null = null;
+        let lastError: unknown = null;
+
+        while (Date.now() < deadline) {
+            try {
+                lastSnapshot = await this.captureSnapshot();
+                if (predicate(lastSnapshot)) return;
+            } catch (err) {
+                lastError = err;
+            }
+            await new Promise(resolve => setTimeout(resolve, pollMs));
         }
+
+        const header = message
+            ?? `expect() predicate failed on ${this.pageName}.${this.elementName} after ${this.timeout}ms`;
+        if (!lastSnapshot) {
+            const reason = lastError instanceof Error ? lastError.message : String(lastError ?? 'unknown');
+            throw new Error(`${header}\n  element could not be resolved: ${reason}`);
+        }
+        const snapshotJson = JSON.stringify(lastSnapshot, null, 2).replace(/^/gm, '    ');
+        throw new Error(`${header}\n  snapshot at timeout:\n${snapshotJson}`);
     }
 
     // -- Terminal actions: waiting --

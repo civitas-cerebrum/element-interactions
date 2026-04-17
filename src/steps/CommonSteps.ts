@@ -6,6 +6,7 @@ import { EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail
 import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions } from '../enum/Options';
 import { logger } from '../logger/Logger';
 import { ElementAction } from './ElementAction';
+import { ExpectBuilder, ElementSnapshot } from './ExpectMatchers';
 
 /**
  * Extracts the underlying Playwright Locator from an Element wrapper.
@@ -766,20 +767,51 @@ export class Steps {
     }
 
     /**
-     * Asserts that two extracted values are equal or not equal.
-     * Use after getText() or getInputValue() to compare two captured values.
-     * @param actual - The actual value captured from the page.
-     * @param expected - The value to compare against.
-     * @param options - Optional. Pass `{ not: true }` to assert the values differ instead.
+     * Entry point for the matcher tree. Resolves the named element and returns
+     * an `ExpectBuilder` that exposes field-scoped matchers (`.text`, `.value`,
+     * `.attributes`, `.count`, `.visible`, `.enabled`, `.css(prop)`, and `.not`).
+     *
+     * Also serves as a predicate escape hatch — pass a third argument that
+     * returns `boolean` and the call asserts the predicate holds, retrying
+     * against a fresh snapshot until the element timeout expires.
+     *
+     * @example
+     * // Matcher tree
+     * await steps.expect('price', 'ProductPage').text.toBe('$19.99');
+     * await steps.expect('price', 'ProductPage').text.toMatch(/^\$/);
+     * await steps.expect('items', 'ListPage').count.toBeGreaterThan(3);
+     * await steps.expect('submitBtn', 'Page').visible.toBeTrue();
+     * await steps.expect('link', 'Page').attributes.get('href').toBe('/x');
+     * await steps.expect('error', 'Page').not.text.toContain('crash');
+     *
+     * // Predicate escape hatch
+     * await steps.expect(
+     *   'price', 'ProductPage',
+     *   el => parseFloat(el.text.slice(1)) > 10,
+     *   'price must be above $10'
+     * );
      */
-    expect(actual: string | null, expected: string | null, options?: { not?: boolean }): void {
-        if (options?.not) {
-            log.verify('Expecting values to differ: "%s" !== "%s"', actual, expected);
-            this.verify.expectNotEqual(actual, expected);
-        } else {
-            log.verify('Expecting values to be equal: "%s" === "%s"', actual, expected);
-            this.verify.expectEqual(actual, expected);
+    expect(elementName: string, pageName: string): ExpectBuilder;
+    expect(
+        elementName: string,
+        pageName: string,
+        predicate: (el: ElementSnapshot) => boolean,
+        message?: string,
+    ): Promise<void>;
+    expect(
+        elementName: string,
+        pageName: string,
+        predicate?: (el: ElementSnapshot) => boolean,
+        message?: string,
+    ): ExpectBuilder | Promise<void> {
+        const interactions = new ElementInteractions(this.page, { timeout: this.timeout });
+        const action = new ElementAction(this.repo, elementName, pageName, interactions, this.timeout);
+        if (typeof predicate === 'function') {
+            log.verify('Expecting predicate on "%s" in "%s"', elementName, pageName);
+            return action.expect(predicate, message);
         }
+        log.verify('Building matcher tree for "%s" in "%s"', elementName, pageName);
+        return new ExpectBuilder(action.buildExpectContext());
     }
 
     /**

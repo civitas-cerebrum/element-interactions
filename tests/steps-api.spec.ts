@@ -252,27 +252,34 @@ test.describe('TC_047: Steps - isPresent boolean visibility check', () => {
   });
 });
 
-test.describe('TC_087: Steps - expectValue', () => {
+test.describe('TC_087: Steps - expect matcher tree (top-level)', () => {
 
-  test('expectValue passes for equal values and for differing values with { not: true }', async ({ steps }) => {
+  test('top-level steps.expect(el, page) exposes the matcher tree', async ({ steps }) => {
+    await steps.navigateTo('/');
+    await steps.click('buttonsLink', 'SidebarNav');
+    await steps.verifyUrlContains('/buttons');
 
-    await test.step('expectValue passes when values are identical', () => {
-      steps.expect('$5.99', '$5.99');
+    await test.step('text.toBe passes on exact match', async () => {
+      await steps.expect('primaryButton', 'ButtonsPage').text.toBe('Primary');
     });
 
-    await test.step('expectValue passes when both values are null', () => {
-      steps.expect(null, null);
+    await test.step('text.toMatch passes on regex', async () => {
+      await steps.expect('primaryButton', 'ButtonsPage').text.toMatch(/^Prim/);
     });
 
-    await test.step('expectValue with { not: true } passes when values differ', () => {
-      steps.expect('$5.99', '$9.99', { not: true });
+    await test.step('count.toBeGreaterThan works', async () => {
+      await steps.expect('primaryButton', 'ButtonsPage').count.toBeGreaterThan(0);
     });
 
-    await test.step('expectValue with { not: true } passes when actual is null and expected is a string', () => {
-      steps.expect(null, 'some value', { not: true });
+    await test.step('.not flips outcome', async () => {
+      await steps.expect('primaryButton', 'ButtonsPage').not.text.toBe('Nope');
     });
 
-    log('TC_087 expectValue — passed');
+    await test.step('predicate form — positive case', async () => {
+      await steps.expect('primaryButton', 'ButtonsPage', el => el.text === 'Primary' && el.visible);
+    });
+
+    log('TC_087 expect matcher tree — passed');
   });
 });
 

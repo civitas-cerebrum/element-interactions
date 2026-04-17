@@ -117,16 +117,8 @@ test.describe('Negative Tests', () => {
     log('TC_086 Negative getByText strict — passed');
   });
 
-  test('TC_088: expectValue throws on mismatch and throws on match when { not: true }', async ({ page, steps }) => {
+  test('TC_088: Verifications.expectEqual/expectNotEqual throw on mismatch and match respectively', async ({ page }) => {
     const fast = new ElementInteractions(page, { timeout: NEGATIVE_TIMEOUT });
-
-    expect(() => {
-      steps.expect('hello', 'world');
-    }).toThrow();
-
-    expect(() => {
-      steps.expect('hello', 'hello', { not: true });
-    }).toThrow();
 
     expect(() => {
       fast.verify.expectEqual('hello', 'world');
@@ -136,6 +128,6 @@ test.describe('Negative Tests', () => {
       fast.verify.expectNotEqual('hello', 'hello');
     }).toThrow();
 
-    log('TC_088 Negative expectValue — passed');
+    log('TC_088 Negative expectEqual/expectNotEqual — passed');
   });
 });
