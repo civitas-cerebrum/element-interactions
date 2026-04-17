@@ -11,6 +11,11 @@ function resolveLocator(target: Target): Locator {
     return target as Locator;
 }
 
+function toElement(target: Target): Element {
+    if ('_type' in target) return target as Element;
+    return new WebElement(target as Locator);
+}
+
 /**
  * The `Verifications` class provides a unified wrapper around Playwright's `expect` assertions.
  * It standardizes timeouts and includes advanced custom, robust verifications
@@ -303,8 +308,9 @@ export class Verifications {
             throw new Error(`You must provide 'exact', 'greaterThan', or 'lessThan' in CountVerifyOptions.`);
         }
 
+        const element = toElement(target);
         await expect.poll(async () => {
-            const actualCount = await locator.count();
+            const actualCount = await element.count();
             if (options.greaterThan !== undefined && actualCount <= options.greaterThan) return false;
             if (options.lessThan !== undefined && actualCount >= options.lessThan) return false;
             return true;

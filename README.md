@@ -108,6 +108,8 @@ Once loaded, Claude Code will:
 * **Force click with auto-retry** — Clicks automatically retry with a native DOM event when pointer interception is detected. No configuration needed.
 * **Non-throwing visibility probes** — `isVisible()` returns a boolean with configurable timeout and text filtering, never throws.
 * **Conditional chaining** — `steps.on('banner', 'Page').ifVisible().click()` silently skips when the element isn't visible.
+* **Chain-style expect matchers** — `steps.expect('price', 'Page').text.toMatch(/^\$/).count.toBe(1).attributes.get('data-status').toBe('ready')` chains as many verifications as you need on a single element; awaiting flushes the queue and short-circuits on the first failure. `.not` is one-shot, `.throws('msg')` overrides messages, `.timeout(ms)` scopes wait time per call.
+* **Predicate escape hatch** — `steps.expect('price', 'Page').toBe(el => parseFloat(el.text.slice(1)) > 10).throws('price must be above $10')` for assertions the matcher tree doesn't cover. Predicates run against a snapshot of plain element data — no async access required inside the lambda.
 * **Role + accessible name selectors** — `{ "role": "button", "name": "Log in" }` resolves via `page.getByRole()` with regex support.
 * **Regex text selectors** — `{ "text": { "regex": "pattern", "flags": "i" } }` for matching dynamic content.
 * **Iframe-scoped pages** — Elements inside iframes are resolved transparently via `frame` property on page definitions.
@@ -217,6 +219,43 @@ test('Fluent checkout flow', async ({ steps }) => {
   const hasDiscount = await steps.on('discountBadge', 'ProductDetailsPage').isVisible();
 });
 ```
+
+### Expect Matcher Tree
+
+A chain-style assertion API for the common case where you want to verify multiple things about a single element. Available at both `steps.expect(el, page)` (top-level) and as field getters on `steps.on(el, page)` (fluent). Each matcher call queues an assertion; awaiting flushes the queue and short-circuits on the first failure.
+
+```ts
+test('Submit button readiness', async ({ steps }) => {
+  // Chain multiple verifications in one expression
+  await steps.on('submit-button', 'CheckoutPage')
+    .text.toBe('Place Order')
+    .visible.toBeTrue()
+    .enabled.toBeTrue()
+    .attributes.get('data-variant').toBe('primary')
+    .not.attributes.toHaveKey('disabled')
+    .css('cursor').toMatch(/pointer|default|auto/);
+});
+
+test('Top-level matcher tree', async ({ steps }) => {
+  await steps.expect('price', 'ProductPage').text.toBe('$19.99');
+  await steps.expect('price', 'ProductPage').text.toMatch(/^\$\d+\.\d{2}$/);
+  await steps.expect('items', 'ListPage').count.toBeGreaterThan(3);
+  await steps.expect('error', 'Page').not.text.toContain('Crash');
+});
+
+test('Predicate escape hatch + custom message', async ({ steps }) => {
+  await steps.expect('price', 'ProductPage')
+    .toBe(el => parseFloat(el.text.slice(1)) > 10)
+    .throws('price must be above $10');
+});
+
+test('Per-call timeout override', async ({ steps }) => {
+  await steps.on('slow-widget', 'Page').timeout(5000).text.toBe('Ready');
+  await steps.on('items', 'Page').count.timeout(500).toBeGreaterThan(0);
+});
+```
+
+**Field matchers:** `text`, `value`, `count`, `visible`, `enabled`, `attributes`, `css(prop)`. Each carries `.not` for negation. Snapshot fields available in predicates: `text`, `value`, `attributes`, `visible`, `enabled`, `count`. See the [API reference](skills/element-interactions/references/api-reference.md#expect-matcher-tree) for the full surface.
 
 ### StepOptions
 

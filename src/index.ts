@@ -23,6 +23,19 @@ export { ElementType, WebElement, PlatformElement, ElementChain, ElementAssertio
 export { Steps } from './steps/CommonSteps';
 export { ElementAction } from './steps/ElementAction';
 
+// Expect Matcher Tree
+export {
+    ExpectBuilder,
+    TextMatcher,
+    ValueMatcher,
+    CountMatcher,
+    BooleanMatcher,
+    AttributeMatcher,
+    AttributesMatcher,
+    CssMatcher,
+} from './steps/ExpectMatchers';
+export type { ElementSnapshot, ExpectContext } from './steps/ExpectMatchers';
+
 // Test Fixture
 export { baseFixture, BaseFixtureOptions } from './fixture/BaseFixture';
 

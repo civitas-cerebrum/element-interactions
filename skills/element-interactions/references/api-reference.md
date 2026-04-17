@@ -5,7 +5,7 @@ The following sections document the full API available for writing tests in Stag
 ## Table of Contents
 - [Setup — Fixtures](#setup--fixtures)
 - [Locator Format](#locator-format) (css, xpath, id, text, role+name, regex, iframe)
-- [Steps API](#steps-api) (navigation, interaction, extraction, verification, visibility, listed elements, waiting, composite, screenshot)
+- [Steps API](#steps-api) (navigation, interaction, extraction, verification, expect matcher tree, visibility, listed elements, waiting, composite, screenshot)
 - [Fluent API — steps.on()](#fluent-api--stepson) (strategy selectors, ifVisible, terminal actions, chaining)
 - [Accessing the Repository Directly](#accessing-the-repository-directly)
 - [Raw Interactions API](#raw-interactions-api)
@@ -231,6 +231,170 @@ await steps.verifyOrder('listItems', 'PageName', ['First', 'Second', 'Third']);
 await steps.verifyListOrder('listItems', 'PageName', 'asc');               // or 'desc'
 await steps.verifyCssProperty('elementName', 'PageName', 'color', 'rgb(255, 0, 0)');
 ```
+
+### Expect Matcher Tree
+
+A chain-style assertion API available at both the top level (`steps.expect(el, page)`) and the fluent builder (`steps.on(el, page)`). Each matcher retries against a fresh snapshot until the element timeout expires, then throws with the final snapshot in the error message. `verify*` still works and remains the shortest form for the basic cases it covers — use the matcher tree when you need regex, contains, negation, multi-field conditions, or custom predicates.
+
+**Field matchers — available on both entry points:**
+
+```ts
+// Top-level entry — steps.expect(elementName, pageName)
+await steps.expect('price', 'ProductPage').text.toBe('$19.99');
+await steps.expect('price', 'ProductPage').text.toContain('Premium');
+await steps.expect('price', 'ProductPage').text.toMatch(/^\$\d+\.\d{2}$/);
+await steps.expect('price', 'ProductPage').text.toStartWith('$');
+await steps.expect('price', 'ProductPage').text.toEndWith('USD');
+
+await steps.expect('emailInput', 'LoginPage').value.toBe('user@test.com');
+await steps.expect('emailInput', 'LoginPage').value.toMatch(/@/);
+
+await steps.expect('link', 'NavPage').attributes.get('href').toBe('/dashboard');
+await steps.expect('link', 'NavPage').attributes.get('class').toContain('active');
+await steps.expect('link', 'NavPage').attributes.get('href').toMatch(/\/products\/\d+/);
+await steps.expect('btn', 'Page').attributes.toHaveKey('disabled');
+
+await steps.expect('items', 'ListPage').count.toBe(3);
+await steps.expect('items', 'ListPage').count.toBeGreaterThan(3);
+await steps.expect('items', 'ListPage').count.toBeLessThan(20);
+await steps.expect('items', 'ListPage').count.toBeGreaterThanOrEqual(5);
+await steps.expect('items', 'ListPage').count.toBeLessThanOrEqual(10);
+
+await steps.expect('banner', 'Page').visible.toBeTrue();
+await steps.expect('banner', 'Page').visible.toBe(true);
+await steps.expect('spinner', 'Page').visible.toBeFalse();
+await steps.expect('submitBtn', 'Page').enabled.toBeTrue();
+
+await steps.expect('banner', 'Page').css('color').toBe('rgb(255, 0, 0)');
+await steps.expect('banner', 'Page').css('cursor').toMatch(/pointer|default/);
+
+// Fluent entry — same matchers directly on steps.on()
+await steps.on('price', 'ProductPage').text.toBe('$19.99');
+await steps.on('row', 'TablePage').nth(2).attributes.get('data-id').toBe('42');
+await steps.on('cards', 'ListPage').random().text.toMatch(/\$\d+/);
+await steps.on('banner', 'HomePage').ifVisible().text.toContain('Promo');
+```
+
+**Chained multi-verification on `steps.on()`:**
+
+Every matcher call enqueues an assertion onto the builder and returns it, so multiple verifications on a single element compose in one expression. `await` executes the queue sequentially; the first failure short-circuits the rest.
+
+```ts
+// Chain 8+ verifications on one element in a single expression
+await steps.on('primaryButton', 'ButtonsPage')
+  .text.toBe('Primary')
+  .visible.toBeTrue()
+  .enabled.toBeTrue()
+  .count.toBe(1)
+  .attributes.get('data-testid').toBe('btn-primary')
+  .attributes.toHaveKey('data-testid')
+  .not.attributes.toHaveKey('disabled')
+  .css('cursor').toMatch(/pointer|default|auto/)
+  .toBe(el => el.visible && el.enabled && el.text === 'Primary');
+
+// .not is one-shot — applies to the next matcher only
+await steps.on('btn', 'Page')
+  .not.text.toBe('Wrong')    // negated
+  .count.toBe(1);            // NOT negated
+
+// .throws(msg) attaches to the most recently queued assertion
+await steps.on('btn', 'Page')
+  .text.toBe('Primary').throws('primary button must have correct label')
+  .visible.toBeTrue();
+
+// .timeout(ms) mixes long and short per-matcher in one chain
+await steps.on('slowThenFast', 'Page')
+  .text.timeout(5000).toBe('Ready')      // this one may take up to 5s
+  .visible.timeout(100).toBeTrue()       // this one must be visible within 100ms
+  .count.timeout(500).toBe(1);
+```
+
+**Per-call timeout override — `.timeout(ms)`:**
+
+Composes anywhere in the chain. Useful for slow widgets or fast-failing assertions without changing the fixture-level default.
+
+```ts
+// On ElementAction (fluent)
+await steps.on('slowWidget', 'Page').timeout(5000).text.toBe('Ready');
+
+// On ExpectBuilder (top-level)
+await steps.expect('slowWidget', 'Page').timeout(5000).text.toBe('Ready');
+
+// On a specific field matcher
+await steps.expect('el', 'Page').text.timeout(5000).toBe('x');
+await steps.expect('el', 'Page').count.timeout(2000).toBeGreaterThan(3);
+await steps.expect('el', 'Page').attributes.get('href').timeout(1000).toBe('/x');
+
+// On the predicate chain — order independent with .throws()
+await steps.expect('price', 'Page')
+  .toBe(el => parseFloat(el.text.slice(1)) > 10)
+  .timeout(2000)
+  .throws('price must be above $10');
+
+// Composes with .not and strategy selectors
+await steps.on('item', 'Page').nth(2).timeout(500).text.toBe('x');
+await steps.expect('error', 'Page').not.timeout(1000).visible.toBeTrue();
+```
+
+**Negation with `.not`:**
+
+```ts
+// Flip any matcher via .not — composes on either side of the field accessor
+await steps.expect('error', 'Page').not.text.toContain('Crash');
+await steps.expect('error', 'Page').text.not.toContain('Crash');
+await steps.on('submitBtn', 'Page').enabled.not.toBe(false);
+await steps.on('link', 'Page').attributes.not.toHaveKey('disabled');
+await steps.on('link', 'Page').attributes.get('href').not.toBe('/wrong');
+```
+
+**Predicate escape hatch** — for assertions the matcher tree doesn't cover (multi-field combinations, parsed numeric thresholds, JSON in `data-*`). Use `.toBe(predicate)` — returns a chainable, awaitable assertion. Add `.throws(message)` for a custom failure message.
+
+```ts
+// Top-level
+await steps.expect('price', 'ProductPage').toBe(el => parseFloat(el.text.slice(1)) > 10);
+await steps.expect('price', 'ProductPage')
+  .toBe(el => parseFloat(el.text.slice(1)) > 10)
+  .throws('price must be above $10');
+
+// Fluent
+await steps.on('price', 'ProductPage').toBe(el => parseFloat(el.text.slice(1)) > 10);
+await steps.on('card', 'DashboardPage').toBe(
+  el => el.visible && el.attributes['data-status'] === 'ready' && el.count > 0,
+);
+
+// Negated — predicate's expected outcome is flipped
+await steps.on('error', 'Page').not.toBe(el => el.visible);
+```
+
+Predicates receive an `ElementSnapshot` — plain data, no async methods:
+
+```ts
+interface ElementSnapshot {
+    readonly text: string;
+    readonly value: string;                         // input value, '' for non-inputs
+    readonly attributes: Readonly<Record<string, string>>;
+    readonly visible: boolean;
+    readonly enabled: boolean;
+    readonly count: number;                         // total matches post-strategy
+}
+```
+
+On predicate timeout, the error message includes the full snapshot pretty-printed so you can see exactly why the assertion failed:
+
+```
+expect().toBe(predicate) failed on ProductPage.price after 30000ms
+  snapshot at timeout:
+    {
+      "text": "12.99 USD",
+      "value": "",
+      "attributes": { ... },
+      "visible": true,
+      "enabled": true,
+      "count": 1
+    }
+```
+
+When `.throws(message)` is chained, that message replaces the default header while the snapshot is still appended — so you get both the domain-specific explanation and the raw state.
 
 ### Visibility Probe
 

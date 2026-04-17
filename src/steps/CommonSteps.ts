@@ -6,6 +6,7 @@ import { EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail
 import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions } from '../enum/Options';
 import { logger } from '../logger/Logger';
 import { ElementAction } from './ElementAction';
+import { ExpectBuilder } from './ExpectMatchers';
 
 /**
  * Extracts the underlying Playwright Locator from an Element wrapper.
@@ -622,11 +623,14 @@ export class Steps {
         const timeout = options?.timeout ?? 2000;
         log.verify('Probing visibility of "%s" in "%s" (timeout: %dms)', elementName, pageName, timeout);
         try {
+            // Use getSelector + construct a WebElement directly so the caller-supplied
+            // timeout is the only wait in play — repo.get() would block on its own
+            // repository resolution timeout (15s default) before our waitFor runs.
             const selector = this.repo.getSelector(elementName, pageName);
-            const locator = this.page.locator(selector).first();
-            await locator.waitFor({ state: 'visible', timeout });
+            const element = new WebElement(this.page.locator(selector).first());
+            await element.waitFor({ state: 'visible', timeout });
             if (options?.containsText) {
-                const text = await locator.textContent({ timeout }).catch(() => null);
+                const text = await element.textContent().catch(() => null);
                 return text !== null && text.includes(options.containsText);
             }
             return true;
@@ -766,20 +770,29 @@ export class Steps {
     }
 
     /**
-     * Asserts that two extracted values are equal or not equal.
-     * Use after getText() or getInputValue() to compare two captured values.
-     * @param actual - The actual value captured from the page.
-     * @param expected - The value to compare against.
-     * @param options - Optional. Pass `{ not: true }` to assert the values differ instead.
+     * Entry point for the matcher tree. Resolves the named element and returns
+     * an `ExpectBuilder` that exposes field-scoped matchers (`.text`, `.value`,
+     * `.attributes`, `.count`, `.visible`, `.enabled`, `.css(prop)`, `.not`)
+     * plus the predicate escape hatch `.toBe(predicate)` for assertions the
+     * matcher tree doesn't cover.
+     *
+     * @example
+     * // Matcher tree
+     * await steps.expect('price', 'ProductPage').text.toBe('$19.99');
+     * await steps.expect('items', 'ListPage').count.toBeGreaterThan(3);
+     * await steps.expect('link', 'Page').attributes.get('href').toBe('/x');
+     * await steps.expect('error', 'Page').not.text.toContain('crash');
+     *
+     * // Predicate chain — assertion executes when awaited
+     * await steps.expect('price', 'ProductPage')
+     *   .toBe(el => parseFloat(el.text.slice(1)) > 10)
+     *   .throws('price must be above $10');
      */
-    expect(actual: string | null, expected: string | null, options?: { not?: boolean }): void {
-        if (options?.not) {
-            log.verify('Expecting values to differ: "%s" !== "%s"', actual, expected);
-            this.verify.expectNotEqual(actual, expected);
-        } else {
-            log.verify('Expecting values to be equal: "%s" === "%s"', actual, expected);
-            this.verify.expectEqual(actual, expected);
-        }
+    expect(elementName: string, pageName: string): ExpectBuilder {
+        const interactions = new ElementInteractions(this.page, { timeout: this.timeout });
+        const action = new ElementAction(this.repo, elementName, pageName, interactions, this.timeout);
+        log.verify('Building matcher tree for "%s" in "%s"', elementName, pageName);
+        return new ExpectBuilder(action.buildExpectContext());
     }
 
     /**
