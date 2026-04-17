@@ -26,7 +26,6 @@ export { ElementAction } from './steps/ElementAction';
 // Expect Matcher Tree
 export {
     ExpectBuilder,
-    PredicateAssertion,
     TextMatcher,
     ValueMatcher,
     CountMatcher,

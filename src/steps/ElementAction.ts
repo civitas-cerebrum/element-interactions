@@ -6,7 +6,6 @@ import {
     ElementSnapshot,
     ExpectBuilder,
     ExpectContext,
-    PredicateAssertion,
 } from './ExpectMatchers';
 
 /** DOM Element alias — disambiguates from the repository's `Element` wrapper in callbacks that run inside Playwright's browser context. */
@@ -471,15 +470,16 @@ export class ElementAction {
     }
 
     /**
-     * Predicate escape hatch. Returns a chainable, awaitable assertion that
-     * passes when the predicate returns `true`. Use `.throws(message)` to
-     * override the failure message.
+     * Predicate escape hatch. Queues a custom predicate assertion and returns
+     * the chain builder so more matchers can follow. End the chain with
+     * `.throws(message)` to override the failure message.
      *
      * @example
-     * await steps.on('price', 'ProductPage').toBe(el => parseFloat(el.text.slice(1)) > 10)
+     * await steps.on('price', 'ProductPage')
+     *   .toBe(el => parseFloat(el.text.slice(1)) > 10)
      *   .throws('price must be above $10');
      */
-    toBe(predicate: (el: ElementSnapshot) => boolean): PredicateAssertion {
+    toBe(predicate: (el: ElementSnapshot) => boolean): ExpectBuilder {
         return this.expectBuilder().toBe(predicate);
     }
 

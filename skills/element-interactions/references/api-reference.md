@@ -275,6 +275,40 @@ await steps.on('cards', 'ListPage').random().text.toMatch(/\$\d+/);
 await steps.on('banner', 'HomePage').ifVisible().text.toContain('Promo');
 ```
 
+**Chained multi-verification on `steps.on()`:**
+
+Every matcher call enqueues an assertion onto the builder and returns it, so multiple verifications on a single element compose in one expression. `await` executes the queue sequentially; the first failure short-circuits the rest.
+
+```ts
+// Chain 8+ verifications on one element in a single expression
+await steps.on('primaryButton', 'ButtonsPage')
+  .text.toBe('Primary')
+  .visible.toBeTrue()
+  .enabled.toBeTrue()
+  .count.toBe(1)
+  .attributes.get('data-testid').toBe('btn-primary')
+  .attributes.toHaveKey('data-testid')
+  .not.attributes.toHaveKey('disabled')
+  .css('cursor').toMatch(/pointer|default|auto/)
+  .toBe(el => el.visible && el.enabled && el.text === 'Primary');
+
+// .not is one-shot — applies to the next matcher only
+await steps.on('btn', 'Page')
+  .not.text.toBe('Wrong')    // negated
+  .count.toBe(1);            // NOT negated
+
+// .throws(msg) attaches to the most recently queued assertion
+await steps.on('btn', 'Page')
+  .text.toBe('Primary').throws('primary button must have correct label')
+  .visible.toBeTrue();
+
+// .timeout(ms) mixes long and short per-matcher in one chain
+await steps.on('slowThenFast', 'Page')
+  .text.timeout(5000).toBe('Ready')      // this one may take up to 5s
+  .visible.timeout(100).toBeTrue()       // this one must be visible within 100ms
+  .count.timeout(500).toBe(1);
+```
+
 **Per-call timeout override — `.timeout(ms)`:**
 
 Composes anywhere in the chain. Useful for slow widgets or fast-failing assertions without changing the fixture-level default.
