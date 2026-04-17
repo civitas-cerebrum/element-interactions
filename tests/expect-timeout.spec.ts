@@ -131,6 +131,29 @@ test.describe('timeout() — negative override (short timeout fails fast)', () =
         expect(elapsed).toBeLessThan(2000);
     });
 
+    test('matcher-level .timeout() on a later matcher does NOT retroactively patch an earlier queued assertion', async ({ steps }) => {
+        // Invariant: `.text.timeout(2000).toBe('WRONG').count.timeout(500).toBe(1)` must honor
+        // the 2000ms timeout on the text assertion — the later `.count.timeout(500)` propagates
+        // forward (for subsequent matchers) but must NOT retroactively rewrite the already-queued
+        // text entry's ctx. If the invariant breaks, the text assertion would fail at ~500ms
+        // instead of ~2000ms.
+        //
+        // Builder-level `.timeout()` (`.satisfy(pred).timeout(ms)`) is a separate code path that
+        // IS expected to retroactively patch — exercised elsewhere in this file.
+        const start = Date.now();
+        await expect(
+            steps.expect('primaryButton', 'ButtonsPage')
+                .text.timeout(2000).toBe('WRONG')
+                .count.timeout(500).toBe(1),
+        ).rejects.toThrow(/text to be/);
+        const elapsed = Date.now() - start;
+        // Elapsed should reflect the text assertion's 2000ms timeout, not 500ms.
+        // Allow generous lower bound (1500ms) for scheduling noise while still distinguishing
+        // the correct behavior from the bug (which would resolve in ~500ms).
+        expect(elapsed).toBeGreaterThan(1500);
+        expect(elapsed).toBeLessThan(4000);
+    });
+
     test('timeout() order does not matter: .throws().timeout() and .timeout().throws() both honored', async ({ steps }) => {
         // throws first, then timeout
         await expect(
