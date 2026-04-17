@@ -772,7 +772,7 @@ export class Steps {
      * @param expected - The value to compare against.
      * @param options - Optional. Pass `{ not: true }` to assert the values differ instead.
      */
-    expectValue(actual: string | null, expected: string | null, options?: { not?: boolean }): void {
+    expect(actual: string | null, expected: string | null, options?: { not?: boolean }): void {
         if (options?.not) {
             log.verify('Expecting values to differ: "%s" !== "%s"', actual, expected);
             this.verify.expectNotEqual(actual, expected);

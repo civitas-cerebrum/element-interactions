@@ -373,10 +373,42 @@ export class ElementAction {
         return await this.interactions.extract.screenshot(locator, options);
     }
 
-    /** Assert the element's text equals (or differs from) the expected value. Pass `{ not: true }` to assert inequality. */
-    async expectValue(expected: string | null, options?: { not?: boolean }): Promise<void> {
-        const element = await this.resolve();
-        const actual = await element.action(this.timeout).getText();
+    /**
+     * Extracts a value from the element and asserts it matches the expected value.
+     *
+     * By default, compares against the element's text content. Use options to extract
+     * a specific attribute, input value, or CSS property instead.
+     *
+     * @param expected - The value to compare against.
+     * @param options.not - When true, asserts the extracted value does NOT equal the expected value.
+     * @param options.attribute - Extract the given HTML attribute (e.g. `'href'`, `'data-id'`).
+     * @param options.inputValue - Extract the input field's value instead of its text content.
+     * @param options.cssProperty - Extract the computed CSS property (e.g. `'color'`, `'font-size'`).
+     *
+     * @example
+     * await steps.on('title', 'Page').expect('Welcome');
+     * await steps.on('link', 'Page').expect('/dashboard', { attribute: 'href' });
+     * await steps.on('input', 'Page').expect('hello@example.com', { inputValue: true });
+     * await steps.on('banner', 'Page').expect('rgb(255, 0, 0)', { cssProperty: 'color' });
+     * await steps.on('price', 'Page').expect('$0.00', { not: true });
+     */
+    async expect(
+        expected: string | null,
+        options?: { not?: boolean; attribute?: string; inputValue?: boolean; cssProperty?: string }
+    ): Promise<void> {
+        const locator = await this.resolveLocator();
+        let actual: string | null;
+
+        if (options?.attribute) {
+            actual = await this.interactions.extract.getAttribute(locator, options.attribute);
+        } else if (options?.inputValue) {
+            actual = await this.interactions.extract.getInputValue(locator);
+        } else if (options?.cssProperty) {
+            actual = await this.interactions.extract.getCssProperty(locator, options.cssProperty);
+        } else {
+            actual = await this.interactions.extract.getText(locator);
+        }
+
         if (options?.not) {
             this.interactions.verify.expectNotEqual(actual, expected);
         } else {
