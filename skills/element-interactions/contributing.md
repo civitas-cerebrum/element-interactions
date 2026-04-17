@@ -317,7 +317,16 @@ Steps.timeout (fixture) → ElementAction._timeout → ExpectContext.timeout →
 - `ExpectBuilder.timeout(ms)` mutates `ctx.timeout` and retroactively patches the last queued assertion (so `.satisfy(pred).timeout(500)` applies 500ms to that predicate).
 - Matcher `.timeout(ms)` (e.g. `.text.timeout(500)`) mutates its own ctx AND propagates to the builder for subsequent matchers — but does NOT retroactively patch a prior matcher's queued entry.
 
-**Visibility probe is the one deliberate exception.** `ifVisible(ms?)` has its own short `visibilityTimeout` (default 2000ms) because its whole purpose is fast-skip: a hidden element should abort the action in ~2s, not 30s. Do not unify it into the main timeout.
+**Scope — what `.timeout(ms)` currently affects:**
+1. Every verification/matcher (`.text.toBe`, `.count.toBeGreaterThan`, `.satisfy(pred)`, `.verifyText`, `.verifyCount`, etc.).
+2. Element-routed actions that go through `element.action(this._timeout).X()` on `ElementAction` — `hover`, `fill`, `check`, `uncheck`, `doubleClick`, `typeSequentially`, `clearInput`, `scrollIntoView`, `getText`, `getAttribute`, `getCount`, `getInputValue`.
+
+**What it does NOT currently affect** (open issue — Interactions-routed actions use the fixture-level timeout):
+- `click`, `clickIfPresent`, `rightClick`, `uploadFile`, `dragAndDrop`, `selectDropdown`, `setSliderValue`, `selectMultiple`.
+
+These flow through `this.interactions.interact.*` where `ElementInteractions.interact`'s internal `ELEMENT_TIMEOUT` is set once at construction and never mutated by `ElementAction.timeout()`. Wiring this through requires threading `timeout` into every `Interactions.*` signature — tracked as a follow-up.
+
+**Visibility probe is another deliberate exception.** `ifVisible(ms?)` has its own short `visibilityTimeout` (default 2000ms) because its whole purpose is fast-skip: a hidden element should abort the action in ~2s, not 30s. Do not unify it into the main timeout.
 
 Other builder state (queue, pendingNot) also mutates, but stays scoped: each `.expect()` / `.on()` call returns a fresh builder, so mutation doesn't leak across chains. `.not` is one-shot — it flips the next matcher only, then resets.
 
@@ -391,19 +400,21 @@ Don't smuggle web-only methods onto `Element` with throw-stubs on `PlatformEleme
 
 ### 12. Error message format
 
-User-facing assertion failures follow a consistent format:
+User-facing assertion failures follow a consistent header format:
 
 ```
-expected <PageName>.<elementName> <field> [not ]<verb> <expected>, got <actual>
+expected <PageName>.<elementName> <field> [not ]<verb> <expected>
 ```
 
 Examples:
-- `expected ProductPage.price text to be "$19.99", got "$24.99"`
-- `expected CheckoutPage.submitBtn count not to be 5, got 5`
+- `expected ProductPage.price text to be "$19.99"`
+- `expected CheckoutPage.submitBtn count not to be 5`
 
-Use the `describeFailure(ctx, field, verb, expected, actual, negated)` helper in `ExpectMatchers.ts`. Don't hand-roll error strings.
+The actual value comes from Playwright's built-in "Expected / Received" diff block appended below the header — we pass the header string as the `message` argument to `expect(locator, message).<matcher>()`, and Playwright prepends it to its own assertion output. Don't hand-roll the `got <actual>` suffix — it'll duplicate what Playwright already emits.
 
-For predicate failures, the message includes the full `ElementSnapshot` JSON pretty-printed under the header. Don't truncate or summarize the snapshot — users debug from it.
+Use the `BaseMatcher.msgOpts(ctx, field, verb, expected)` helper in `ExpectMatchers.ts` — it builds `{ negated, timeout, errorMessage }` in the exact shape every Verifications method accepts. Don't hand-roll error strings.
+
+For predicate failures (`satisfy(pred)`), the path is different — we poll a snapshot manually, so there's no Playwright diff block. The message includes the full `ElementSnapshot` JSON pretty-printed under the header. Don't truncate or summarize the snapshot — users debug from it.
 
 ### 13. Logging
 
