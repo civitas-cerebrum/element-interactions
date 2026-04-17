@@ -121,11 +121,11 @@ test.describe('Negative Tests', () => {
     const fast = new ElementInteractions(page, { timeout: NEGATIVE_TIMEOUT });
 
     expect(() => {
-      steps.expectValue('hello', 'world');
+      steps.expect('hello', 'world');
     }).toThrow();
 
     expect(() => {
-      steps.expectValue('hello', 'hello', { not: true });
+      steps.expect('hello', 'hello', { not: true });
     }).toThrow();
 
     expect(() => {

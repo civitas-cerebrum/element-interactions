@@ -257,19 +257,19 @@ test.describe('TC_087: Steps - expectValue', () => {
   test('expectValue passes for equal values and for differing values with { not: true }', async ({ steps }) => {
 
     await test.step('expectValue passes when values are identical', () => {
-      steps.expectValue('$5.99', '$5.99');
+      steps.expect('$5.99', '$5.99');
     });
 
     await test.step('expectValue passes when both values are null', () => {
-      steps.expectValue(null, null);
+      steps.expect(null, null);
     });
 
     await test.step('expectValue with { not: true } passes when values differ', () => {
-      steps.expectValue('$5.99', '$9.99', { not: true });
+      steps.expect('$5.99', '$9.99', { not: true });
     });
 
     await test.step('expectValue with { not: true } passes when actual is null and expected is a string', () => {
-      steps.expectValue(null, 'some value', { not: true });
+      steps.expect(null, 'some value', { not: true });
     });
 
     log('TC_087 expectValue — passed');
