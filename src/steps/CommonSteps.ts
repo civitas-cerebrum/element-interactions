@@ -589,13 +589,18 @@ export class Steps {
 
     /**
      * Asserts that the element is present and visible in the DOM.
+     *
+     * Equivalent to the fluent form `steps.on(elementName, pageName).verifyPresence()` —
+     * both share the same underlying implementation (the matcher tree). Use whichever
+     * form is more readable in the call site.
+     *
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param options - Optional step options for element resolution.
      */
     async verifyPresence(elementName: string, pageName: string, options?: StepOptions): Promise<void> {
         log.verify('Verifying presence of "%s" in "%s"', elementName, pageName);
-        await this.actionWithStrategy(elementName, pageName, options).visible.toBeTrue();
+        await this.actionWithStrategy(elementName, pageName, options).verifyPresence();
     }
 
     /**
@@ -657,14 +662,7 @@ export class Steps {
      */
     async verifyAbsence(elementName: string, pageName: string, options?: StepOptions): Promise<void> {
         log.verify('Verifying absence of "%s" in "%s"', elementName, pageName);
-        // Stays non-delegated: uses Playwright's `expect(locator).toBeHidden()`
-        // which is optimized for the absent case (returns quickly, no 15s repo
-        // resolution wait). The matcher tree's visible.toBeFalse() would work
-        // but pays the full repo-timeout to "fail to find" the element before
-        // even starting the polling loop.
-        void options;
-        const selector = this.repo.getSelector(elementName, pageName);
-        await this.verify.absence(selector);
+        await this.actionWithStrategy(elementName, pageName, options).verifyAbsence();
     }
 
     /**
@@ -672,6 +670,8 @@ export class Steps {
      *
      * Call with no `expectedText` to assert the element has any non-empty text:
      * `await steps.verifyText('status', 'Page');`
+     *
+     * Equivalent to the fluent form `steps.on(elementName, pageName).verifyText(expectedText)`.
      *
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
@@ -684,16 +684,15 @@ export class Steps {
         if (verifyOptions?.notEmpty !== undefined) {
             log.verify('[DEPRECATED] verifyText: the `notEmpty` option is redundant — call verifyText("%s", "%s") with no expectedText to assert "not empty".', elementName, pageName);
         }
-        const notEmpty = verifyOptions?.notEmpty || expectedText === undefined;
-        const logDetail = notEmpty ? 'is not empty' : `matches: "${expectedText}"`;
-        log.verify('Verifying text of "%s" in "%s" %s', elementName, pageName, logDetail);
-        const action = this.actionWithStrategy(elementName, pageName, options);
-        if (notEmpty) await action.text.not.toBe('');
-        else await action.text.toBe(expectedText!);
+        log.verify('Verifying text of "%s" in "%s"%s', elementName, pageName, expectedText === undefined ? ' is not empty' : ` matches: "${expectedText}"`);
+        await this.actionWithStrategy(elementName, pageName, options).verifyText(expectedText, verifyOptions);
     }
 
     /**
      * Asserts the number of elements matching the locator satisfies the given condition.
+     *
+     * Equivalent to `steps.on(elementName, pageName).verifyCount(countOptions)`.
+     *
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param countOptions - Count condition.
@@ -701,15 +700,14 @@ export class Steps {
      */
     async verifyCount(elementName: string, pageName: string, countOptions: CountVerifyOptions, options?: StepOptions): Promise<void> {
         log.verify('Verifying count for "%s" in "%s" with options: %O', elementName, pageName, countOptions);
-        const action = this.actionWithStrategy(elementName, pageName, options);
-        if (countOptions.exactly !== undefined) await action.count.toBe(countOptions.exactly);
-        else if (countOptions.greaterThan !== undefined) await action.count.toBeGreaterThan(countOptions.greaterThan);
-        else if (countOptions.lessThan !== undefined) await action.count.toBeLessThan(countOptions.lessThan);
-        else throw new Error("verifyCount requires 'exactly', 'greaterThan', or 'lessThan' in CountVerifyOptions.");
+        await this.actionWithStrategy(elementName, pageName, options).verifyCount(countOptions);
     }
 
     /**
      * Asserts that all image elements matching the locator have loaded successfully.
+     *
+     * Equivalent to `steps.on(elementName, pageName).verifyImages(scroll)`.
+     *
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param scroll - Whether to scroll each image into view before checking. Defaults to `true`.
@@ -717,12 +715,14 @@ export class Steps {
      */
     async verifyImages(elementName: string, pageName: string, scroll: boolean = true, options?: StepOptions): Promise<void> {
         log.verify('Verifying images for "%s" in "%s" (scroll: %s)', elementName, pageName, scroll);
-        const locator = toLocator(await this.repo.get(elementName, pageName, this.toAllResolutionOptions(options)));
-        await this.verify.images(locator, scroll);
+        await this.actionWithStrategy(elementName, pageName, options).verifyImages(scroll);
     }
 
     /**
      * Asserts that an element's text content contains the specified substring.
+     *
+     * Equivalent to `steps.on(elementName, pageName).verifyTextContains(expectedText)`.
+     *
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param expectedText - The substring expected to be found within the element's text.
@@ -730,15 +730,18 @@ export class Steps {
      */
     async verifyTextContains(elementName: string, pageName: string, expectedText: string, options?: StepOptions): Promise<void> {
         log.verify('Verifying "%s" in "%s" contains text: "%s"', elementName, pageName, expectedText);
-        await this.actionWithStrategy(elementName, pageName, options).text.toContain(expectedText);
+        await this.actionWithStrategy(elementName, pageName, options).verifyTextContains(expectedText);
     }
 
     /**
      * Asserts that an element is in the specified state.
+     *
+     * Equivalent to `steps.on(elementName, pageName).verifyState(state)`.
+     *
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param state - The expected state.
-     * @param timeout - Optional timeout in milliseconds.
+     * @param timeout - Optional timeout in milliseconds. When omitted, the fixture default is used.
      */
     async verifyState(
         elementName: string,
@@ -747,12 +750,16 @@ export class Steps {
         timeout?: number
     ): Promise<void> {
         log.verify('Verifying "%s" in "%s" is %s', elementName, pageName, state);
-        const locatorString = this.repo.getSelector(elementName, pageName);
-        await this.verify.state(locatorString, state, timeout);
+        const action = this.on(elementName, pageName);
+        if (timeout !== undefined) action.timeout(timeout);
+        await action.verifyState(state);
     }
 
     /**
      * Asserts that an element has a specific HTML attribute with the expected value.
+     *
+     * Equivalent to `steps.on(elementName, pageName).verifyAttribute(attributeName, expectedValue)`.
+     *
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param attributeName - The name of the HTML attribute to check.
@@ -761,7 +768,7 @@ export class Steps {
      */
     async verifyAttribute(elementName: string, pageName: string, attributeName: string, expectedValue: string, options?: StepOptions): Promise<void> {
         log.verify('Verifying "%s" in "%s" has attribute "%s" = "%s"', elementName, pageName, attributeName, expectedValue);
-        await this.actionWithStrategy(elementName, pageName, options).attributes.get(attributeName).toBe(expectedValue);
+        await this.actionWithStrategy(elementName, pageName, options).verifyAttribute(attributeName, expectedValue);
     }
 
     /**
@@ -775,6 +782,9 @@ export class Steps {
 
     /**
      * Asserts that an input, textarea, or select element has the expected value.
+     *
+     * Equivalent to `steps.on(elementName, pageName).verifyInputValue(expectedValue)`.
+     *
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param expectedValue - The expected value of the input.
@@ -782,7 +792,7 @@ export class Steps {
      */
     async verifyInputValue(elementName: string, pageName: string, expectedValue: string, options?: StepOptions): Promise<void> {
         log.verify('Verifying input value of "%s" in "%s" matches: "%s"', elementName, pageName, expectedValue);
-        await this.actionWithStrategy(elementName, pageName, options).value.toBe(expectedValue);
+        await this.actionWithStrategy(elementName, pageName, options).verifyInputValue(expectedValue);
     }
 
     /**
@@ -823,6 +833,9 @@ export class Steps {
     /**
      * Asserts that the text contents of all elements matching the locator appear
      * in the exact order specified.
+     *
+     * Equivalent to `steps.on(elementName, pageName).verifyOrder(expectedTexts)`.
+     *
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param expectedTexts - The expected text values in their expected order.
@@ -830,12 +843,14 @@ export class Steps {
      */
     async verifyOrder(elementName: string, pageName: string, expectedTexts: string[], options?: StepOptions): Promise<void> {
         log.verify('Verifying order of "%s" in "%s": %O', elementName, pageName, expectedTexts);
-        const element = await this.repo.get(elementName, pageName, this.toAllResolutionOptions(options));
-        await this.verify.order(element, expectedTexts);
+        await this.actionWithStrategy(elementName, pageName, options).verifyOrder(expectedTexts);
     }
 
     /**
      * Asserts that a computed CSS property of an element matches the expected value.
+     *
+     * Equivalent to `steps.on(elementName, pageName).verifyCssProperty(property, expectedValue)`.
+     *
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param property - The CSS property name.
@@ -844,12 +859,15 @@ export class Steps {
      */
     async verifyCssProperty(elementName: string, pageName: string, property: string, expectedValue: string, options?: StepOptions): Promise<void> {
         log.verify('Verifying CSS "%s" of "%s" in "%s" = "%s"', property, elementName, pageName, expectedValue);
-        await this.actionWithStrategy(elementName, pageName, options).css(property).toBe(expectedValue);
+        await this.actionWithStrategy(elementName, pageName, options).verifyCssProperty(property, expectedValue);
     }
 
     /**
      * Asserts that the text contents of all elements matching the locator are sorted
      * in the specified direction.
+     *
+     * Equivalent to `steps.on(elementName, pageName).verifyListOrder(direction)`.
+     *
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param direction - `'asc'` for ascending or `'desc'` for descending.
@@ -857,8 +875,7 @@ export class Steps {
      */
     async verifyListOrder(elementName: string, pageName: string, direction: 'asc' | 'desc', options?: StepOptions): Promise<void> {
         log.verify('Verifying "%s" in "%s" is sorted %s', elementName, pageName, direction);
-        const element = await this.repo.get(elementName, pageName, this.toAllResolutionOptions(options));
-        await this.verify.listOrder(element, direction);
+        await this.actionWithStrategy(elementName, pageName, options).verifyListOrder(direction);
     }
 
     // ==========================================
