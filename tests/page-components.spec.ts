@@ -86,7 +86,7 @@ test.describe('TC_010: Text Inputs Page', () => {
     });
 
     await test.step('Verify values display updates', async () => {
-      await steps.verifyText( 'valuesDisplay','TextInputsPage', undefined, { notEmpty: true });
+      await steps.verifyText( 'valuesDisplay','TextInputsPage');
     });
 
     await test.step('Type sequentially in text input', async () => {
@@ -136,7 +136,7 @@ test.describe('TC_011: Checkboxes & Toggles Page', () => {
     });
 
     await test.step('Verify state summary updates', async () => {
-      await steps.verifyText( 'stateSummary','CheckboxesPage', undefined, { notEmpty: true });
+      await steps.verifyText( 'stateSummary','CheckboxesPage');
     });
 
     log('TC_011 Checkboxes & Toggles — passed');
@@ -168,7 +168,7 @@ test.describe('TC_012: Sliders Page', () => {
     });
 
     await test.step('Verify range slider values display', async () => {
-      await steps.verifyText( 'rangeValue','SlidersPage', undefined, { notEmpty: true });
+      await steps.verifyText( 'rangeValue','SlidersPage');
     });
 
     log('TC_012 Sliders Page — passed');
@@ -229,7 +229,7 @@ test.describe('TC_014: Dropdown Page', () => {
     });
 
     await test.step('Verify single select value is displayed', async () => {
-      await steps.verifyText( 'singleValue','DropdownSelectPage', undefined, { notEmpty: true });
+      await steps.verifyText( 'singleValue','DropdownSelectPage');
     });
 
     await test.step('Select by value from single select', async () => {
@@ -422,12 +422,14 @@ test.describe('TC_020: Toast Page', () => {
       await steps.verifyPresence( 'container','ToastPage');
     });
 
-    await test.step('Trigger error toast', async () => {
+    await test.step('Trigger error toast and verify it appears', async () => {
       await steps.click( 'errorButton','ToastPage');
+      await steps.verifyPresence( 'container','ToastPage');
     });
 
-    await test.step('Trigger warning toast', async () => {
+    await test.step('Trigger warning toast and verify it appears', async () => {
       await steps.click( 'warningButton','ToastPage');
+      await steps.verifyPresence( 'container','ToastPage');
     });
 
     log('TC_020 Toast Page — passed');

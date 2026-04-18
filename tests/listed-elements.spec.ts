@@ -44,6 +44,9 @@ test.describe('TC_051: clickListedElement', () => {
         attribute: { name: 'data-testid', value: 'table-row-1' },
         child: 'td:nth-child(2)'
       });
+      // clickListedElement has no observable side-effect on the table cell —
+      // assert the targeted row remains present after the click.
+      await steps.verifyPresence( 'rows','TablePage');
     });
 
     log('TC_051 clickListedElement — passed');

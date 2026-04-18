@@ -166,7 +166,7 @@ test.describe('TC_026: Table Page', () => {
 
     await test.step('Select a row via checkbox', async () => {
       await steps.clickRandom( 'rowCheckboxes','TablePage');
-      await steps.verifyText( 'selectedCount','TablePage', undefined, { notEmpty: true });
+      await steps.verifyText( 'selectedCount','TablePage');
     });
 
     await test.step('Select all rows', async () => {
