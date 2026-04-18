@@ -270,6 +270,56 @@ test.describe('Enhanced Selectors — Issue Fixes #61-#65', () => {
     await steps.on('alwaysHidden', 'EnhancedSelectorsPage').isVisible({ timeout: 500 }).text.toBe('anything');
   });
 
+  test('#70: isVisible — containsText filter gates the action (not just the probe)', async ({ steps }) => {
+    // clickIfPresent has an observable return value (true when executed, fallback
+    // false when the gate skips) that distinguishes "action ran" from "action
+    // skipped" without relying on DOM side effects. Proves containsText drives
+    // the gate decision, not just the boolean probe.
+    await test.step('containsText matches → gate executes, clickIfPresent returns true', async () => {
+      const ran = await steps
+        .isVisible('promoBanner', 'EnhancedSelectorsPage', { containsText: '50% off' })
+        .clickIfPresent();
+      expect(ran).toBe(true);
+    });
+
+    await test.step('containsText does not match → gate skips, clickIfPresent returns false', async () => {
+      const skipped = await steps
+        .isVisible('promoBanner', 'EnhancedSelectorsPage', { containsText: 'nonexistent-copy' })
+        .clickIfPresent();
+      expect(skipped).toBe(false);
+    });
+  });
+
+  test('#70: isVisible — fluent probe honors containsText filter', async ({ steps }) => {
+    // Probe coverage so far only exercises containsText via the top-level
+    // `steps.isVisible(...)`. Verify the fluent `steps.on(...).isVisible(opts)`
+    // entry point applies the same filter — symmetry matters because the two
+    // entry points share implementation but wire the options differently.
+    const match = await steps
+      .on('promoBanner', 'EnhancedSelectorsPage')
+      .isVisible({ containsText: '50% off' });
+    expect(match).toBe(true);
+
+    const noMatch = await steps
+      .on('promoBanner', 'EnhancedSelectorsPage')
+      .isVisible({ containsText: 'nonexistent-copy' });
+    expect(noMatch).toBe(false);
+  });
+
+  test('#70: isVisible — probe on hidden element respects caller timeout (no 15s repo wait)', async ({ steps }) => {
+    // VisibleChain.probe() constructs a WebElement directly from
+    // `repo.getSelector(...)` to avoid the 15s repository-resolution default
+    // that `repo.get(...)` would otherwise impose. Without this fast path, a
+    // `{ timeout: 500 }` probe on a hidden element would still pay the full
+    // 15s wait. Lock the invariant with a wall-clock assertion: the probe
+    // should resolve within a small multiple of its requested timeout.
+    const start = Date.now();
+    const result = await steps.isVisible('alwaysHidden', 'EnhancedSelectorsPage', { timeout: 500 });
+    const elapsed = Date.now() - start;
+    expect(result).toBe(false);
+    expect(elapsed).toBeLessThan(3000);
+  });
+
 
   // ============================================================
   // #62 — Iframe / Cross-Frame Scope
