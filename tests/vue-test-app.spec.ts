@@ -23,6 +23,7 @@ test.describe('Vue Test App v2 - Homepage Tests', () => {
     });
 
     await test.step('Verify title text', async () => {
+      await steps.verifyText( 'pageTitle','HomePage');
       const title = await steps.getText( 'pageTitle','HomePage');
       log('Title: %s', title);
     });

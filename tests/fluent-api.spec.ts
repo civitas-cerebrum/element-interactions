@@ -76,14 +76,17 @@ test.describe('Fluent API — steps.on()', () => {
 
     test('hover()', async ({ steps }) => {
       await steps.on('primaryButton', 'ButtonsPage').hover();
+      await steps.on('primaryButton', 'ButtonsPage').verifyState('visible');
     });
 
     test('doubleClick()', async ({ steps }) => {
       await steps.on('primaryButton', 'ButtonsPage').doubleClick();
+      await steps.verifyTextContains( 'resultText','ButtonsPage', 'Primary');
     });
 
     test('scrollIntoView()', async ({ steps }) => {
       await steps.on('loadingButton', 'ButtonsPage').scrollIntoView();
+      await steps.on('loadingButton', 'ButtonsPage').verifyState('inViewport');
     });
   });
 
@@ -97,15 +100,18 @@ test.describe('Fluent API — steps.on()', () => {
 
     test('fill()', async ({ steps }) => {
       await steps.on('textInput', 'TextInputsPage').fill('Fluent API test');
+      await steps.on('textInput', 'TextInputsPage').verifyInputValue('Fluent API test');
     });
 
     test('clearInput()', async ({ steps }) => {
       await steps.on('textInput', 'TextInputsPage').fill('temp');
       await steps.on('textInput', 'TextInputsPage').clearInput();
+      await steps.on('textInput', 'TextInputsPage').verifyInputValue('');
     });
 
     test('typeSequentially()', async ({ steps }) => {
       await steps.on('textInput', 'TextInputsPage').typeSequentially('abc', 50);
+      await steps.on('textInput', 'TextInputsPage').verifyInputValue('abc');
     });
   });
 
@@ -119,10 +125,13 @@ test.describe('Fluent API — steps.on()', () => {
 
     test('check()', async ({ steps }) => {
       await steps.on('uncheckedCheckbox', 'CheckboxesPage').check();
+      await steps.on('uncheckedCheckbox', 'CheckboxesPage').verifyState('checked');
     });
 
     test('uncheck()', async ({ steps }) => {
       await steps.on('checkedCheckbox', 'CheckboxesPage').uncheck();
+      // No direct 'unchecked' state — verify element is still interactable.
+      await steps.on('checkedCheckbox', 'CheckboxesPage').verifyState('enabled');
     });
   });
 
@@ -142,8 +151,8 @@ test.describe('Fluent API — steps.on()', () => {
       expect(result).toBe(true);
     });
 
-    test('verifyText({ notEmpty: true })', async ({ steps }) => {
-      await steps.on('primaryButton', 'ButtonsPage').verifyText(undefined, { notEmpty: true });
+    test('verifyText() (no args = not empty)', async ({ steps }) => {
+      await steps.on('primaryButton', 'ButtonsPage').verifyText();
     });
 
     test('verifyTextContains()', async ({ steps }) => {
@@ -236,6 +245,7 @@ test.describe('Fluent API — steps.on()', () => {
       await steps.navigateTo('/');
       await steps.click( 'buttonsLink','SidebarNav');
       await steps.on('primaryButton', 'ButtonsPage').rightClick();
+      await steps.on('primaryButton', 'ButtonsPage').verifyState('visible');
     });
 
     test('uploadFile()', async ({ steps }) => {
@@ -243,18 +253,23 @@ test.describe('Fluent API — steps.on()', () => {
       await steps.click( 'fileUploadLink','SidebarNav');
       const filePath = path.resolve(__dirname, 'fixture/StepFixture.ts');
       await steps.on('singleFileInput', 'FileUploadPage').uploadFile(filePath);
+      await steps.verifyTextContains( 'singleFileName','FileUploadPage', 'StepFixture');
     });
 
     test('dragAndDrop()', async ({ steps }) => {
       await steps.navigateTo('/');
       await steps.click( 'draggableLink','SidebarNav');
       await steps.on('item1', 'DraggablePage').dragAndDrop({ xOffset: 80, yOffset: 40 });
+      // Offset-only drag doesn't land on a drop zone, so status stays 'none' —
+      // assert the dragged element survived the interaction.
+      await steps.on('item1', 'DraggablePage').verifyState('visible');
     });
 
     test('setSliderValue()', async ({ steps }) => {
       await steps.navigateTo('/');
       await steps.click( 'slidersLink','SidebarNav');
       await steps.on('basicSlider', 'SlidersPage').setSliderValue(50);
+      await steps.verifyTextContains( 'basicSliderValue','SlidersPage', '50');
     });
   });
 

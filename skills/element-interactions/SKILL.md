@@ -404,9 +404,10 @@ Show the user the exact JSON entries you want to add:
 2. **Add approved selectors** to `page-repository.json` (if not already done).
 3. **Read `references/api-reference.md`** — load the full API reference before writing any test code. Do not write from memory.
 4. **Write the test file** using the Steps API. Every interaction goes through `steps.*` methods — no raw `page.locator()` calls.
-5. **Run the test** with `npx playwright test <test-file>`.
-6. **If the test fails:** invoke the `failure-diagnosis` protocol — collect evidence (screenshot, DOM, error context), group failures by root cause, classify (test issue vs app bug vs ambiguous), check edge cases, then fix test issues autonomously with stability validation (3-5 passing runs) or report app bugs with full evidence. If the fix requires new selectors, use Playwright MCP to inspect the DOM, propose the new entry, and get approval before editing.
-7. **If the test passes:** commit immediately.
+5. **Every test MUST end with a verification of the action's effect.** A test that performs actions (click, fill, drag, hover, check, upload, setSliderValue, etc.) and never asserts a resulting state is not a test — it's a smoke call that only catches thrown exceptions. Before declaring a test done, confirm the final meaningful statement is a `verify*`, a matcher-tree assertion (`.text.toBe`, `.visible.toBeTrue`, `.satisfy`, …), or a typed `expect(extractedValue)` that reflects what the action was supposed to change. If the exercised action has no observable side-effect in the app under test (rare — usually a framework-level smoke case), state that in a one-line comment and fall back to the weakest defensible check (`verifyState('visible')` on the target element). Never leave a test trailing on an action.
+6. **Run the test** with `npx playwright test <test-file>`.
+7. **If the test fails:** invoke the `failure-diagnosis` protocol — collect evidence (screenshot, DOM, error context), group failures by root cause, classify (test issue vs app bug vs ambiguous), check edge cases, then fix test issues autonomously with stability validation (3-5 passing runs) or report app bugs with full evidence. If the fix requires new selectors, use Playwright MCP to inspect the DOM, propose the new entry, and get approval before editing.
+8. **If the test passes:** commit immediately.
 
 ### Skip-to-Stage-3 (Fix/Edit Mode)
 
@@ -433,7 +434,8 @@ For each test file, verify:
 7. **No raw Playwright calls** — no `page.locator()`, `page.click()`, `page.fill()`, or other raw Playwright methods where a `steps.*` equivalent exists.
 8. **Fixture usage** — the test destructures only fixtures provided by `baseFixture` (`steps`, `repo`, `interactions`, `contextStore`, `page`) plus any custom fixtures defined in the project's `base.ts`.
 9. **Waiting methods** — correct state strings (`'visible'`, `'hidden'`, `'attached'`, `'detached'`) and correct usage of `waitForResponse` callback pattern.
-10. **Verification methods** — correct option shapes (`{ exactly }`, `{ greaterThan }`, `{ lessThan }` for `verifyCount`; `verifyText()` with no args asserts not empty).
+10. **Verification methods** — correct option shapes (`{ exactly }`, `{ greaterThan }`, `{ lessThan }` for `verifyCount`; `verifyText()` with no args asserts not empty). The 4-arg form `verifyText(el, page, undefined, { notEmpty: true })` and the `TextVerifyOptions.notEmpty` flag are deprecated — use `verifyText(el, page)` (or `.on(el, page).verifyText()` fluent) instead.
+11. **Every test ends with a verification.** No test may finish on an action (`click`, `fill`, `drag`, `hover`, `check`, `upload`, `setSliderValue`, etc.) with no trailing assertion of the resulting state. If a test's final statement is an action, flag it and add the appropriate `verify*` / matcher-tree / `expect(extractedValue)` assertion. Pure smoke-shape exercises are allowed only when explicitly justified in a comment AND they still include the weakest defensible check (e.g. `verifyState('visible')` on the target). "The action didn't throw" is not a verification.
 
 ### Process
 

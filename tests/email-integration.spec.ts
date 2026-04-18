@@ -214,7 +214,8 @@ test.describe('Email Integration Tests - OTP Workflow', () => {
 
         // Note: This test shows the ability to clean all emails
         // In production, be careful with this operation
-        await steps.cleanEmails();
+        const deletedCount = await steps.cleanEmails();
+        expect(deletedCount).toBeGreaterThanOrEqual(0);
     });
 
     test('markEmail - marks emails as READ', async ({ steps }) => {

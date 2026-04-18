@@ -93,7 +93,7 @@ test.describe('TC_037: Pinia Counter Page', () => {
 
     await test.step('History tracks operations', async () => {
       await steps.verifyPresence( 'history','PiniaCounterPage');
-      await steps.verifyText( 'history','PiniaCounterPage', undefined, { notEmpty: true });
+      await steps.verifyText( 'history','PiniaCounterPage');
     });
 
     log('TC_037 Pinia Counter Page — passed');

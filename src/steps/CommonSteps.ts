@@ -669,13 +669,21 @@ export class Steps {
 
     /**
      * Asserts that an element's text content matches the expected value.
+     *
+     * Call with no `expectedText` to assert the element has any non-empty text:
+     * `await steps.verifyText('status', 'Page');`
+     *
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
-     * @param expectedText - The exact text to match against.
-     * @param verifyOptions - Optional verification options (e.g. `{ notEmpty: true }`).
+     * @param expectedText - The exact text to match against. Omit to assert "not empty".
+     * @param verifyOptions - Optional verification options.
+     *   @deprecated Passing `{ notEmpty: true }` is redundant — omit `expectedText` instead.
      * @param options - Optional step options for element resolution.
      */
     async verifyText(elementName: string, pageName: string, expectedText?: string, verifyOptions?: TextVerifyOptions, options?: StepOptions): Promise<void> {
+        if (verifyOptions?.notEmpty !== undefined) {
+            log.verify('[DEPRECATED] verifyText: the `notEmpty` option is redundant — call verifyText("%s", "%s") with no expectedText to assert "not empty".', elementName, pageName);
+        }
         const notEmpty = verifyOptions?.notEmpty || expectedText === undefined;
         const logDetail = notEmpty ? 'is not empty' : `matches: "${expectedText}"`;
         log.verify('Verifying text of "%s" in "%s" %s', elementName, pageName, logDetail);

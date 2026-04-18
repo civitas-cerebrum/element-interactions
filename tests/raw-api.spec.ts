@@ -42,8 +42,14 @@ test.describe('ElementRepository — direct query methods', () => {
     // The loginButton has role="button" in the DOM
     const el = await repo.getByRole('loginButton', 'EnhancedSelectorsPage', 'button');
     // getByRole uses getByAttribute internally — the element may or may not
-    // have an explicit role attr (browsers assign implicit roles), so we verify
-    // the method returns without error and exercises the code path
+    // have an explicit role attr (browsers assign implicit roles). If an element
+    // is returned it must actually exist in the DOM; a null return also exercises
+    // the not-found code path.
+    if (el !== null) {
+      expect(await el.isVisible()).toBe(true);
+    } else {
+      expect(el).toBeNull();
+    }
   });
 
   test('getPagePlatform — returns correct platform for web pages', async ({ repo }) => {

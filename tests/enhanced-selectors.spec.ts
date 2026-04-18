@@ -45,6 +45,7 @@ test.describe('Enhanced Selectors — Issue Fixes #61-#65', () => {
   test('#61: role + name — textbox with label', async ({ steps }) => {
     await test.step('Fill email textbox resolved by role + accessible name', async () => {
       await steps.fill('emailTextbox', 'EnhancedSelectorsPage', 'test@example.com');
+      await steps.verifyInputValue('emailTextbox', 'EnhancedSelectorsPage', 'test@example.com');
     });
   });
 
@@ -240,6 +241,7 @@ test.describe('Enhanced Selectors — Issue Fixes #61-#65', () => {
   test('#62: iframe — fill input inside iframe', async ({ steps }) => {
     await test.step('Fill input inside iframe', async () => {
       await steps.fill('iframeInput', 'SimpleIframe', 'Hello from outside!');
+      await steps.verifyInputValue('iframeInput', 'SimpleIframe', 'Hello from outside!');
     });
   });
 
@@ -250,6 +252,7 @@ test.describe('Enhanced Selectors — Issue Fixes #61-#65', () => {
 
     await test.step('Fill expiry inside card iframe', async () => {
       await steps.fill('expiryInput', 'CardIframe', '12/28');
+      await steps.verifyInputValue('expiryInput', 'CardIframe', '12/28');
     });
   });
 });

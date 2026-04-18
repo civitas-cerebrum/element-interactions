@@ -266,8 +266,18 @@ export class ElementAction {
         await element.action(this._timeout).verifyAbsence();
     }
 
-    /** Assert the element's text content. If no expected text is given, asserts the element is not empty. */
+    /**
+     * Assert the element's text content. Call with no argument to assert "not empty".
+     *
+     * @param expected - Expected exact text. Omit to assert the element has any non-empty text.
+     * @param options - Optional verification options.
+     *   @deprecated Passing `{ notEmpty: true }` is redundant — omit `expected` instead.
+     */
     async verifyText(expected?: string, options?: TextVerifyOptions): Promise<void> {
+        if (options?.notEmpty !== undefined) {
+            // eslint-disable-next-line no-console
+            console.warn('[DEPRECATED] verifyText: the `notEmpty` option is redundant — call .verifyText() with no argument to assert "not empty".');
+        }
         const builder = this.expectBuilder();
         const notEmpty = options?.notEmpty || expected === undefined;
         if (notEmpty) await builder.text.not.toBe('');

@@ -206,6 +206,29 @@ When you add a new method:
 2. Run `npx test-coverage --format=github-plain` locally to confirm 100%.
 3. The CI coverage job will fail otherwise.
 
+### In-package smoke tests must still verify
+
+100% API coverage is a floor, not a ceiling. The coverage tool only checks that every public method is *called* from at least one test — it doesn't check that the test *asserts* anything after calling it. A test like
+
+```ts
+test('hover()', async ({ steps }) => {
+  await steps.on('primaryButton', 'ButtonsPage').hover();   // ❌ no assertion
+});
+```
+
+satisfies the coverage tool but is indistinguishable from a no-op: it only catches thrown exceptions, not behavioural regressions.
+
+**Rule:** every test in `tests/` — including the smoke-style files that exercise the API surface (`fluent-api.spec.ts`, `step-options.spec.ts`, `raw-api.spec.ts`, `core-api.spec.ts`, `steps-api.spec.ts`, etc.) — must end with a verification of the action's effect. Acceptable forms:
+
+- a `steps.verify*` call (`verifyText`, `verifyInputValue`, `verifyState`, `verifyCount`, …)
+- a matcher-tree assertion (`.text.toBe`, `.visible.toBeTrue`, `.attributes.get('x').toBe`, `.satisfy(...)`, …)
+- a typed `expect(...)` on an extracted value (`expect(await steps.getText(...)).toBe(...)`)
+- for Playwright's self-asserting actions (`check`, `uncheck`) where no negation state exists, a weakest-defensible follow-up like `verifyState('visible')` or `verifyState('enabled')` on the same element, with a one-line comment explaining why
+
+If the exercised method has genuinely no observable side-effect at the element level (extremely rare — usually only the matcher tree's own self-tests), document that inline and still add the weakest defensible check. "The method didn't throw" is not a verification.
+
+When reviewing a PR, grep the diff for `await steps.*\.\(click|fill|drag|hover|check|uncheck|type|upload|setSliderValue|scrollIntoView|rightClick|doubleClick)\(` as the *last* line of a test body — every hit is a missing assertion.
+
 ### No mocked unit tests
 
 Every test in this repo runs against the **real Vue test app** at `https://civitas-cerebrum.github.io/vue-test-app/` via Playwright. We do **not** use mocked locators / mock Steps / spy fixtures.

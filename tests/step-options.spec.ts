@@ -35,6 +35,7 @@ test.describe('StepOptions — element resolution + modifiers', () => {
 
   test('hover with StepOptions', async ({ steps }) => {
     await steps.hover( 'primaryButton','ButtonsPage', { strategy: 'first' });
+    await steps.verifyState( 'primaryButton','ButtonsPage', 'visible', { strategy: 'first' });
   });
 
   test('verifyPresence with StepOptions', async ({ steps }) => {
@@ -60,11 +61,13 @@ test.describe('StepOptions — element resolution + modifiers', () => {
     await steps.navigateTo('/');
     await steps.click( 'textInputsLink','SidebarNav');
     await steps.fill( 'textInput','TextInputsPage', 'StepOptions test', { strategy: 'first' });
+    await steps.verifyInputValue( 'textInput','TextInputsPage', 'StepOptions test', { strategy: 'first' });
   });
 
   test('check with StepOptions', async ({ steps }) => {
     await steps.navigateTo('/');
     await steps.click( 'checkboxesLink','SidebarNav');
     await steps.check( 'uncheckedCheckbox','CheckboxesPage', { strategy: 'first' });
+    await steps.verifyState( 'uncheckedCheckbox','CheckboxesPage', 'checked', { strategy: 'first' });
   });
 });
