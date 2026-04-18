@@ -33,30 +33,33 @@ export class Utils {
      * If the resolver yields multiple elements (strict mode violation),
      * the wait is retried automatically on the first matched element.
      *
-     * @param target - An `Element` or Playwright `Locator` to wait on.
-     * @param state  - The state to wait for. Defaults to `'visible'`.
+     * @param target  - An `Element` or Playwright `Locator` to wait on.
+     * @param state   - The state to wait for. Defaults to `'visible'`.
+     * @param timeout - Per-call timeout override. Falls back to the instance timeout when omitted.
      */
     async waitForState(
         target: Waitable,
         state: 'visible' | 'attached' | 'hidden' | 'detached' = 'visible',
+        timeout?: number,
     ): Promise<void> {
+        const effectiveTimeout = timeout ?? this.timeout;
         const element = toElement(target);
         try {
-            await element.waitFor({ state, timeout: this.timeout });
+            await element.waitFor({ state, timeout: effectiveTimeout });
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
 
             if (message.includes('strict mode violation')) {
                 console.warn('Locator resolved to multiple elements. Waiting on first element instead.');
                 try {
-                    await element.first().waitFor({ state, timeout: this.timeout });
+                    await element.first().waitFor({ state, timeout: effectiveTimeout });
                 } catch {
-                    log.warn(`First element failed to reach state '${state}' within ${this.timeout}ms...`);
+                    log.warn(`First element failed to reach state '${state}' within ${effectiveTimeout}ms...`);
                 }
                 return;
             }
 
-            log.warn(`Element failed to reach state '${state}' within ${this.timeout}ms...`);
+            log.warn(`Element failed to reach state '${state}' within ${effectiveTimeout}ms...`);
         }
     }
 }

@@ -23,6 +23,19 @@ export interface DropdownSelectOptions {
     value?: string;
     /** The index of the option to select (Required if type is INDEX). */
     index?: number;
+    /** Per-call timeout override in milliseconds. Falls back to the Interactions default when omitted. */
+    timeout?: number;
+}
+
+/**
+ * Minimal options for action methods that only need a per-call timeout
+ * (`rightClick`, `uploadFile`, `setSliderValue`, `selectMultiple`).
+ * Use the dedicated option bags (`ClickOptions`, `DropdownSelectOptions`,
+ * `DragAndDropOptions`) when there are other modifiers.
+ */
+export interface ActionTimeoutOptions {
+    /** Per-call timeout override in milliseconds. Falls back to the Interactions default when omitted. */
+    timeout?: number;
 }
 
 /**
@@ -64,6 +77,8 @@ export interface DragAndDropOptions {
     xOffset?: number;
     /** The vertical offset from the center of the element (positive moves down). */
     yOffset?: number;
+    /** Per-call timeout override in milliseconds. Falls back to the Interactions default when omitted. */
+    timeout?: number;
 }
 
 /**
@@ -165,6 +180,8 @@ export interface ClickOptions {
     ifPresent?: boolean;
     /** Force the click, bypassing Playwright's pointer-interception checks. Useful for elements obscured by parent overlays. */
     force?: boolean;
+    /** Per-call timeout override in milliseconds. Falls back to the Interactions default when omitted. */
+    timeout?: number;
 }
 
 /**

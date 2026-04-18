@@ -340,16 +340,16 @@ Steps.timeout (fixture) → ElementAction._timeout → ExpectContext.timeout →
 - `ExpectBuilder.timeout(ms)` mutates `ctx.timeout` and retroactively patches the last queued assertion (so `.satisfy(pred).timeout(500)` applies 500ms to that predicate).
 - Matcher `.timeout(ms)` (e.g. `.text.timeout(500)`) mutates its own ctx AND propagates to the builder for subsequent matchers — but does NOT retroactively patch a prior matcher's queued entry.
 
-**Scope — what `.timeout(ms)` currently affects:**
+**Scope — what `.timeout(ms)` affects:**
 1. Every verification/matcher (`.text.toBe`, `.count.toBeGreaterThan`, `.satisfy(pred)`, `.verifyText`, `.verifyCount`, etc.).
 2. Element-routed actions that go through `element.action(this._timeout).X()` on `ElementAction` — `hover`, `fill`, `check`, `uncheck`, `doubleClick`, `typeSequentially`, `clearInput`, `scrollIntoView`, `getText`, `getAttribute`, `getCount`, `getInputValue`.
+3. Interactions-routed actions — `click`, `clickIfPresent`, `rightClick`, `uploadFile`, `dragAndDrop`, `selectDropdown`, `setSliderValue`, `selectMultiple`. `ElementAction` passes `this._timeout` through the option bag of each `interactions.interact.*` call, which then uses it for both the pre-action `Utils.waitForState(...)` and the Playwright primitive (`element.click({ timeout })`, etc.).
 
-**What it does NOT currently affect** (open issue — Interactions-routed actions use the fixture-level timeout):
-- `click`, `clickIfPresent`, `rightClick`, `uploadFile`, `dragAndDrop`, `selectDropdown`, `setSliderValue`, `selectMultiple`.
+When adding a new Interactions-routed action, extend its option bag with `timeout?: number` (or accept an `ActionTimeoutOptions` parameter for modifier-free methods) and plumb it to the same two places — pre-wait and primitive. The `ElementAction` call site passes `{ timeout: this._timeout }` into the bag.
 
-These flow through `this.interactions.interact.*` where `ElementInteractions.interact`'s internal `ELEMENT_TIMEOUT` is set once at construction and never mutated by `ElementAction.timeout()`. Wiring this through requires threading `timeout` into every `Interactions.*` signature — tracked as a follow-up.
+**Repo resolution has its own timeout.** `repo.get(...)` pays `ElementRepository.defaultTimeout` (configured by `repoTimeout` on the fixture, 15000ms default) waiting for the element to reach `attached`. This is upstream of `ElementAction._timeout` — the chain-level `.timeout(ms)` only governs action + verification, not resolution. If you need to bound resolution too, use `repo.setDefaultTimeout(ms)` on the fixture or in a `beforeEach`.
 
-**Visibility probe is another deliberate exception.** `ifVisible(ms?)` has its own short `visibilityTimeout` (default 2000ms) because its whole purpose is fast-skip: a hidden element should abort the action in ~2s, not 30s. Do not unify it into the main timeout.
+**Visibility probe is a deliberate exception.** `ifVisible(ms?)` has its own short `visibilityTimeout` (default 2000ms) because its whole purpose is fast-skip: a hidden element should abort the action in ~2s, not 30s. Do not unify it into the main timeout.
 
 Other builder state (queue, pendingNot) also mutates, but stays scoped: each `.expect()` / `.on()` call returns a fresh builder, so mutation doesn't leak across chains. `.not` is one-shot — it flips the next matcher only, then resets.
 
