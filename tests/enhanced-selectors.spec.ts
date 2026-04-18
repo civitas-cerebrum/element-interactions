@@ -346,6 +346,27 @@ test.describe('Enhanced Selectors — Issue Fixes #61-#65', () => {
     expect(values).toEqual([]);
   });
 
+  test('#70: isVisible — remaining action-method and matcher-tree proxies skip cleanly on hidden element', async ({ steps }) => {
+    // Sweep every VisibleChain entry point that the #70 block has not
+    // individually exercised. A hidden element must make all of them no-op
+    // without throwing — if any proxy were wired incorrectly (wrong signature,
+    // missing await, forwarding to the underlying action outside the gate),
+    // the call would throw against `alwaysHidden` instead of returning silently.
+    const chain = () => steps.isVisible('alwaysHidden', 'EnhancedSelectorsPage', { timeout: 500 });
+
+    // void action-method proxies
+    await chain().clearInput();
+    await chain().dragAndDrop({ target: { x: 0, y: 0 } });
+    await chain().setSliderValue(50);
+    await chain().typeSequentially('ignored', 10);
+    await chain().uploadFile('/tmp/ignored.txt');
+
+    // matcher-tree proxies — gated via conditionalVisible, so the assertion
+    // short-circuits on hidden.
+    await chain().css('display').toBe('impossible-value');
+    await chain().satisfy(() => false);
+  });
+
 
   // ============================================================
   // #62 — Iframe / Cross-Frame Scope
