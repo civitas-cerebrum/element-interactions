@@ -246,24 +246,27 @@ export class ElementAction {
 
     // -- Terminal actions: verifications --
     //
-    // These legacy `verify*` methods are thin delegations to the matcher tree.
-    // The tree is the single source of truth for assertion behavior and error
-    // formatting; `verify*` stays on the public surface for backwards compat.
+    // `verify*` is the canonical fluent form. The top-level `Steps.verifyX(el, page, ...)`
+    // methods are thin wrappers that route through these — one implementation, two
+    // entry points. Internally each delegates to the matcher tree (which is the single
+    // source of truth for retry/timeout/negation mechanics) or to the raw verification
+    // layer when a specialized fast path exists (e.g. `verifyAbsence` via `toBeHidden`).
 
-    /** Assert the element is visible. */
+    /** Assert the element is visible. Delegates to the matcher tree's `.visible.toBeTrue()`. */
     async verifyPresence(): Promise<void> {
         await this.expectBuilder().visible.toBeTrue();
     }
 
     /**
-     * Assert the element is hidden or detached. Stays non-delegated — uses
-     * Playwright's `expect(locator).toBeHidden()` which is optimized for the
-     * absent case and returns quickly, unlike the matcher tree's
-     * `visible.toBeFalse()` which pays the full repo resolution timeout.
+     * Assert the element is hidden or detached. Uses Playwright's
+     * `expect(locator).toBeHidden()` on the raw selector — never calls
+     * `repo.get(...)` because that would pay the 15s repo-resolution wait
+     * waiting for the element to become attached, which is the opposite of
+     * what we want when asserting absence.
      */
     async verifyAbsence(): Promise<void> {
-        const element = await this.resolve();
-        await element.action(this._timeout).verifyAbsence();
+        const selector = this.repo.getSelector(this.elementName, this.pageName);
+        await this.interactions.verify.absence(selector);
     }
 
     /**
@@ -284,12 +287,12 @@ export class ElementAction {
         else await builder.text.toBe(expected!);
     }
 
-    /** Assert text contains a substring. */
+    /** Assert text contains a substring. Delegates to the matcher tree's `.text.toContain(...)`. */
     async verifyTextContains(expected: string): Promise<void> {
         await this.expectBuilder().text.toContain(expected);
     }
 
-    /** Assert the element count. */
+    /** Assert the element count. Delegates to the matcher tree's count matchers. */
     async verifyCount(options: CountVerifyOptions): Promise<void> {
         const builder = this.expectBuilder();
         if (options.exactly !== undefined) await builder.count.toBe(options.exactly);
@@ -327,20 +330,24 @@ export class ElementAction {
         }
     }
 
-    /** Assert an attribute value. */
+    /** Assert an attribute value. Delegates to the matcher tree's `.attributes.get(name).toBe(value)`. */
     async verifyAttribute(attributeName: string, expectedValue: string): Promise<void> {
         await this.expectBuilder().attributes.get(attributeName).toBe(expectedValue);
     }
 
-    /** Assert input value. */
+    /** Assert input value. Delegates to the matcher tree's `.value.toBe(expectedValue)`. */
     async verifyInputValue(expectedValue: string): Promise<void> {
         await this.expectBuilder().value.toBe(expectedValue);
     }
 
-    /** Verify images loaded correctly. */
+    /**
+     * Assert every matched image has a real `src`, non-zero `naturalWidth`, and
+     * decodes successfully. Collection-level — resolves with
+     * `SelectionStrategy.ALL` regardless of any strategy selector.
+     */
     async verifyImages(scroll: boolean = true): Promise<void> {
-        const locator = await this.resolveLocator();
-        await this.interactions.verify.images(locator, scroll);
+        const element = await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL });
+        await this.interactions.verify.images(toLocator(element), scroll);
     }
 
     /** Assert element state. */
@@ -349,21 +356,32 @@ export class ElementAction {
         await this.interactions.verify.state(selector, state);
     }
 
-    /** Assert CSS property value. */
+    /** Assert CSS property value. Delegates to the matcher tree's `.css(property).toBe(value)`. */
     async verifyCssProperty(property: string, expectedValue: string): Promise<void> {
         await this.expectBuilder().css(property).toBe(expectedValue);
     }
 
-    /** Assert elements are in the expected text order. */
+    /**
+     * Assert all matched elements appear in the exact text order specified.
+     *
+     * Collection-level — ignores any `.first()` / `.nth()` / `.random()` strategy
+     * on the chain and resolves with `SelectionStrategy.ALL` so the full list is
+     * compared against `expectedTexts`.
+     */
     async verifyOrder(expectedTexts: string[]): Promise<void> {
-        const locator = await this.resolveLocator();
-        await this.interactions.verify.order(locator, expectedTexts);
+        const element = await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL });
+        await this.interactions.verify.order(toLocator(element), expectedTexts);
     }
 
-    /** Assert list is sorted. */
+    /**
+     * Assert all matched elements are sorted in the given direction.
+     *
+     * Collection-level — resolves with `SelectionStrategy.ALL` regardless of any
+     * strategy selector on the chain.
+     */
     async verifyListOrder(direction: 'asc' | 'desc'): Promise<void> {
-        const locator = await this.resolveLocator();
-        await this.interactions.verify.listOrder(locator, direction);
+        const element = await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL });
+        await this.interactions.verify.listOrder(toLocator(element), direction);
     }
 
     // -- Terminal actions: extractions --

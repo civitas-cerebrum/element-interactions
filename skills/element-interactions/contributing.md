@@ -276,7 +276,20 @@ Every public method that reaches the DOM/driver is `async`. No synchronous eleme
 - **Assertions** extend the matcher tree (`steps.expect(el, page).field.matcher(value)`). New assertions add to `ExpectMatchers.ts`, not new flat `verifyX` on `Steps`.
 - **Actions** stay flat on `Steps` (`steps.click`, `steps.fill`, `steps.dragAndDrop`). Composite workflows (`steps.fillForm`, `steps.retryUntil`) stay flat too.
 
-The legacy `verify*` family on `Steps` is kept for backwards compatibility — don't grow it; route new assertions through the matcher tree.
+Every element-scoped `verify*` is exposed in **two forms that share one implementation**:
+
+1. **Fluent form on `ElementAction`** — `steps.on(el, page).verifyX(...)`. This is the canonical implementation. Each method is either a thin wrapper over the matcher tree (for `verifyPresence`, `verifyText`, `verifyTextContains`, `verifyCount`, `verifyAttribute`, `verifyInputValue`, `verifyCssProperty`) or a direct call into `Verifications` where a specialized fast path is needed (`verifyAbsence` via `toBeHidden`, `verifyState`, `verifyImages`, `verifyOrder`, `verifyListOrder`).
+2. **Standalone form on `Steps`** — `steps.verifyX(el, page, ...)`. This is a thin delegate that constructs the fluent builder via `actionWithStrategy(...)` and calls the matching `ElementAction.verifyX(...)`. One implementation, two entry points.
+
+This is the invariant to preserve when adding a new verification:
+- Add the method on `ElementAction` (or grow `Verifications` first if the underlying primitive doesn't exist).
+- Add the matching standalone method on `Steps` that delegates via `this.actionWithStrategy(elementName, pageName, options).verifyX(...)`. Keep the logging on the Steps side so `tester:verify` output stays consistent.
+
+A handful of verifications only make sense as page-level or filter-then-match shapes and only exist on `Steps`:
+- **`verifyUrlContains`, `verifyTabCount`** — page-level, not element-scoped; the tree starts at an element.
+- **`verifyListedElement`** — filter-then-match; the fluent tree operates on a single resolved element.
+
+The matcher tree (`.text.toBe`, `.count.toBeGreaterThan`, etc.) remains the place to grow **new** assertion shapes — chainable negation, regex, substring, custom predicates, etc. When a matcher-tree shape lands that subsumes an existing `verify*` form, don't deprecate the `verify*`; the two coexist as equally valid entry points.
 
 ### 3a. Implementation lives in the `Interactions` / `Verifications` / `Extractions` layer. Everything else is a facade.
 
