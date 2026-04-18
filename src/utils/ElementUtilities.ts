@@ -1,14 +1,5 @@
-import { Locator } from '@playwright/test';
-import { Element, WebElement } from '@civitas-cerebrum/element-repository';
+import { Element } from '@civitas-cerebrum/element-repository';
 import { log } from '../logger/Logger';
-
-/** Accepts either a Playwright `Locator` or an element-repository `Element`. */
-type Waitable = Locator | Element;
-
-function toElement(target: Waitable): Element {
-    if ('_type' in target) return target as Element;
-    return new WebElement(target as Locator);
-}
 
 /**
  * Utility class to handle standardized waiting logic across the framework.
@@ -33,17 +24,16 @@ export class Utils {
      * If the resolver yields multiple elements (strict mode violation),
      * the wait is retried automatically on the first matched element.
      *
-     * @param target  - An `Element` or Playwright `Locator` to wait on.
+     * @param element - An `Element` to wait on.
      * @param state   - The state to wait for. Defaults to `'visible'`.
      * @param timeout - Per-call timeout override. Falls back to the instance timeout when omitted.
      */
     async waitForState(
-        target: Waitable,
+        element: Element,
         state: 'visible' | 'attached' | 'hidden' | 'detached' = 'visible',
         timeout?: number,
     ): Promise<void> {
         const effectiveTimeout = timeout ?? this.timeout;
-        const element = toElement(target);
         try {
             await element.waitFor({ state, timeout: effectiveTimeout });
         } catch (error) {

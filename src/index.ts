@@ -5,7 +5,6 @@ export * from './enum/Options';
 export { Navigation } from './interactions/Navigation';
 export { Verifications } from './interactions/Verification';
 export { Interactions } from './interactions/Interaction';
-export type { Target } from './interactions/Interaction';
 export { Extractions } from './interactions/Extraction';
 
 // Utilities
