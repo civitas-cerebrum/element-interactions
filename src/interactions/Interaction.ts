@@ -2,6 +2,7 @@ import { Page } from '@playwright/test';
 import { ClickOptions, DropdownSelectOptions, DropdownSelectType, DragAndDropOptions, ListedElementMatch, ActionTimeoutOptions, TextMatcher } from '../enum/Options';
 import { Utils } from '../utils/ElementUtilities';
 import { Element, WebElement } from '@civitas-cerebrum/element-repository';
+import { log } from '../logger/Logger';
 
 /**
  * Normalizes a `TextMatcher` into a string (for substring matching) or
@@ -91,6 +92,7 @@ export class Interactions {
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error);
             if (message.includes('intercepts pointer events')) {
+                log.warn('click intercepted by another element — retrying via dispatchEvent(\'click\')');
                 await element.dispatchEvent('click');
             } else {
                 await element.click({ timeout });
