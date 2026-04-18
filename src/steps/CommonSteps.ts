@@ -613,36 +613,41 @@ export class Steps {
     }
 
     /**
-     * Non-throwing visibility probe. Returns `true` if the element is visible
-     * within the given timeout, `false` otherwise. Optionally filters by text content.
+     * Unified visibility entry point. Returns a `VisibleChain` that is both:
      *
-     * Unlike `isPresent`, this method supports a custom timeout (default 2000ms)
-     * and an optional `containsText` filter that requires the element's text to
-     * include the given substring.
+     * - **awaitable as `Promise<boolean>`** — the probe, never throws. Backwards
+     *   compatible with the old `isVisible(): Promise<boolean>` signature —
+     *   `await steps.isVisible('banner', 'Page', { timeout: 500 })` still
+     *   resolves to a boolean at runtime.
+     * - **chainable with action methods and the matcher tree** — the gate,
+     *   silently skips when the element is hidden. Replaces `steps.on(...).ifVisible()`.
+     *
+     * Every probe and gate decision is logged under `tester:visible` with a
+     * `[probe]` or `[gate]` tag so silently-skipped actions stay debuggable.
      *
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
-     * @param options - Optional probe settings.
-     * @returns `true` if the element is visible (and matches text, if specified), `false` otherwise.
+     * @param options - `{ timeout?: 2000, containsText?: string }`.
+     *
+     * @example
+     * ```ts
+     * // Probe — returns boolean
+     * const ok = await steps.isVisible('banner', 'Page', { timeout: 500 });
+     *
+     * // Gate — skips when hidden
+     * await steps.isVisible('cookieBanner', 'Page').click();
+     *
+     * // Gate + containsText
+     * await steps.isVisible('promo', 'Page', { containsText: '50% off' }).click();
+     *
+     * // Matcher tree — silently skipped when hidden
+     * await steps.isVisible('banner', 'Page').text.toBe('Hello');
+     * ```
      */
-    async isVisible(elementName: string, pageName: string, options?: IsVisibleOptions): Promise<boolean> {
+    isVisible(elementName: string, pageName: string, options?: IsVisibleOptions) {
         const timeout = options?.timeout ?? 2000;
         log.verify('Probing visibility of "%s" in "%s" (timeout: %dms)', elementName, pageName, timeout);
-        try {
-            // Use getSelector + construct a WebElement directly so the caller-supplied
-            // timeout is the only wait in play — repo.get() would block on its own
-            // repository resolution timeout (15s default) before our waitFor runs.
-            const selector = this.repo.getSelector(elementName, pageName);
-            const element = new WebElement(this.page.locator(selector).first());
-            await element.waitFor({ state: 'visible', timeout });
-            if (options?.containsText) {
-                const text = await element.textContent().catch(() => null);
-                return text !== null && text.includes(options.containsText);
-            }
-            return true;
-        } catch {
-            return false;
-        }
+        return this.on(elementName, pageName).isVisible(options);
     }
 
     /**

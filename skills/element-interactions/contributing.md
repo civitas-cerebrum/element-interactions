@@ -362,7 +362,9 @@ When adding a new Interactions-routed action, extend its option bag with `timeou
 
 **Repo resolution has its own timeout.** `repo.get(...)` pays `ElementRepository.defaultTimeout` (configured by `repoTimeout` on the fixture, 15000ms default) waiting for the element to reach `attached`. This is upstream of `ElementAction._timeout` — the chain-level `.timeout(ms)` only governs action + verification, not resolution. If you need to bound resolution too, use `repo.setDefaultTimeout(ms)` on the fixture or in a `beforeEach`.
 
-**Visibility probe is a deliberate exception.** `ifVisible(ms?)` has its own short `visibilityTimeout` (default 2000ms) because its whole purpose is fast-skip: a hidden element should abort the action in ~2s, not 30s. Do not unify it into the main timeout.
+**Visibility probe/gate is another deliberate exception.** `isVisible(options?)` (the unified replacement for the old `ifVisible()` / boolean `isVisible()` pair) and its older aliases use a short `visibilityTimeout` (default 2000ms) because their whole purpose is fast-skip: a hidden element should abort the action in ~2s, not 30s. Do not unify it into the main timeout.
+
+`isVisible(options?)` returns a `VisibleChain` that is both awaitable (`Promise<boolean>`) and chainable (`.click()`, `.text.toBe(...)`, etc.). The probe constructs a `WebElement` directly from `repo.getSelector(...)` rather than going through `repo.get(...)` — otherwise the 15s repository-resolution wait would swallow the caller's short timeout. Every probe and gate decision is logged under `tester:visible` with a `[probe]` or `[gate]` tag.
 
 Other builder state (queue, pendingNot) also mutates, but stays scoped: each `.expect()` / `.on()` call returns a fresh builder, so mutation doesn't leak across chains. `.not` is one-shot — it flips the next matcher only, then resets.
 

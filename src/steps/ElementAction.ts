@@ -6,6 +6,7 @@ import {
     ExpectBuilder,
     ExpectContext,
 } from './ExpectMatchers';
+import { VisibleChain } from './VisibleChain';
 
 /**
  * Fluent builder for performing actions on a repository element.
@@ -91,6 +92,10 @@ export class ElementAction {
      * await steps.on('cookieBanner', 'Page').ifVisible().click();
      * await steps.on('promoPopup', 'Page').ifVisible(500).click();
      * ```
+     *
+     * @deprecated Prefer `await steps.on(el, page).isVisible({ timeout }).click()`.
+     * `isVisible()` is the unified replacement for both `ifVisible()` (modifier)
+     * and the old boolean `isVisible()` probe. Will be removed in a future major release.
      */
     ifVisible(timeout?: number): this {
         this.conditionalVisible = true;
@@ -310,22 +315,36 @@ export class ElementAction {
     }
 
     /**
-     * Non-throwing visibility probe with optional text filtering and custom timeout.
-     * Returns `true` if the element is visible (and matches text if specified), `false` otherwise.
+     * Unified visibility entry point. Returns a `VisibleChain` that is both:
+     *
+     * - **awaitable as `Promise<boolean>`** — the probe, never throws. Backwards
+     *   compatible with the old `isVisible(): Promise<boolean>` signature —
+     *   `await steps.on(el, page).isVisible({ timeout: 500 })` still resolves
+     *   to a boolean at runtime.
+     * - **chainable with action methods and the matcher tree** — the gate,
+     *   silently skips when the element is hidden. Replaces `ifVisible()`.
+     *
+     * Every probe and gate decision is logged under `tester:visible` with a
+     * `[probe]` or `[gate]` tag so silently-skipped actions stay debuggable.
+     *
+     * @param options - `{ timeout?: 2000, containsText?: string }`. When
+     *   `containsText` is provided, the probe is `true` only if the element is
+     *   visible AND its text contains the given substring. Note: matcher-tree
+     *   gates (`.isVisible().text.toBe(...)`) only honor the visibility check —
+     *   `containsText` applies to probe + action-gate paths.
+     *
+     * @example
+     * ```ts
+     * // Probe
+     * if (await steps.on('banner', 'Page').isVisible({ timeout: 500 })) { … }
+     *
+     * // Gate
+     * await steps.on('cookieBanner', 'Page').isVisible().click();
+     * await steps.on('promo', 'Page').isVisible({ timeout: 500 }).text.toBe('Promo');
+     * ```
      */
-    async isVisible(options?: IsVisibleOptions): Promise<boolean> {
-        const timeout = options?.timeout ?? 2000;
-        try {
-            const element = await this.resolve();
-            await element.waitFor({ state: 'visible', timeout });
-            if (options?.containsText) {
-                const text = await element.textContent().catch(() => null);
-                return text !== null && text.includes(options.containsText);
-            }
-            return true;
-        } catch {
-            return false;
-        }
+    isVisible(options?: IsVisibleOptions): VisibleChain {
+        return new VisibleChain(this, options);
     }
 
     /** Assert an attribute value. Delegates to the matcher tree's `.attributes.get(name).toBe(value)`. */
