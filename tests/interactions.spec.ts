@@ -190,9 +190,12 @@ test.describe('TC_032: Loading States Page', () => {
     });
 
     await test.step('Click loading button — enters loading state', async () => {
+      // Clicking the loading button puts it into a disabled "loading" state
+      // in the Vue test app. Verifying `disabled` proves the click triggered
+      // the state change — `verifyPresence` would pass whether the click fired
+      // or not.
       await steps.click( 'loadingButton','LoadingStatesPage');
-      // Button should show loading state (text changes or spinner appears)
-      await steps.verifyPresence( 'loadingButton','LoadingStatesPage');
+      await steps.verifyState( 'loadingButton','LoadingStatesPage', 'disabled');
     });
 
     log('TC_032 Loading States Page — passed');

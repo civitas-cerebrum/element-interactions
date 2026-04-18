@@ -38,16 +38,22 @@ test.describe('TC_051: clickListedElement', () => {
     });
 
     await test.step('Click by attribute + child CSS selector', async () => {
+      // Verify the targeting is actually correct by extracting text from the
+      // SAME child selector + attribute match, proving the cell we'd click
+      // contains the expected row's name — a tautological `verifyPresence` on
+      // rows would pass whether this resolution targeted anything or not.
       await steps.navigateTo('/');
       await steps.click( 'tableLink','SidebarNav');
       await steps.verifyUrlContains('/table');
+      const cellText = await steps.getListedElementData( 'rows','TablePage', {
+        attribute: { name: 'data-testid', value: 'table-row-1' },
+        child: 'td:nth-child(2)'
+      });
+      expect(cellText).toBe('Alice Martin');
       await steps.clickListedElement( 'rows','TablePage', {
         attribute: { name: 'data-testid', value: 'table-row-1' },
         child: 'td:nth-child(2)'
       });
-      // clickListedElement has no observable side-effect on the table cell —
-      // assert the targeted row remains present after the click.
-      await steps.verifyPresence( 'rows','TablePage');
     });
 
     log('TC_051 clickListedElement — passed');
