@@ -5,6 +5,7 @@
 .DS_Store
 /playwright-report
 /.playwright-mcp
+/.claude
 api-coverage-report.txt
 
 .env
