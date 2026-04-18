@@ -93,7 +93,7 @@ test.describe('E2E Facade Implementation Suite', () => {
 
       await steps.dragAndDropListedElement( 'sortableItems','SortablePage', 'Item A', { target: dropZone! });
 
-      await interactions.verify.textContains((dropZone as WebElement).locator, 'Item A');
+      await interactions.verify.textContains(dropZone!, 'Item A');
     });
 
     log('TC_002 Drag and Drop Interactions — passed');

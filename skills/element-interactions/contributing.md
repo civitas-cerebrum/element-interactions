@@ -82,7 +82,7 @@ The framework is split across **two packages** for a reason. Understand the spli
 | `Steps` | Top-level facade users call | Holding state across calls, exposing `Locator` in return types |
 | `ElementAction` | Fluent builder for `steps.on(...)` chains | Long-lived state (only in-flight chain state); exposing raw Playwright |
 | `ExpectMatchers` | Chain-style assertion tree | Mocking, side-effects beyond the awaited assertion |
-| `Interactions` / `Verifications` / `Extractions` | Internal helpers — accept `Element \| Locator`, route everything through `Element` | Calling raw `locator.X()` after the input is normalized |
+| `Interactions` / `Verifications` / `Extractions` | Internal helpers — accept `Element` only (no Locator). Wrap raw Locators in `new WebElement(locator)` at the seam if you must. | Calling raw `locator.X()` instead of going through `Element` |
 | `BaseFixture` | Constructs Steps with the right deps; auto-attaches failure screenshots | Test-specific logic |
 | `Element` interface | Cross-platform element abstraction | Concept that doesn't exist on one of the platforms |
 | `WebElement` | Playwright impl + web-only methods | Anything that's not a thin Playwright delegation |
@@ -395,7 +395,7 @@ If your new method doesn't fit one of these, reconsider the shape — the naming
 
 `steps.click`, `steps.verifyText`, `steps.on(...).fill`, the matcher tree shape — all the entry points users have written tests against — stay stable across patch and minor versions. Internal refactors are fine; signature changes on user-facing methods need a major bump and a clear migration note in the PR description.
 
-The current public `Target` type (`Locator | Element`) accepting raw Locators is held for backwards compatibility (see issue #74). Don't tighten this without coordination.
+The public `Target` type on `Interactions`, `Verifications`, `Extractions`, and `Utils` is `Element` (no Locator union). Consumers with custom Playwright locators wrap them via `new WebElement(locator)` at the seam — that's the single documented bridging point.
 
 ### 9. Action methods presence-detect
 

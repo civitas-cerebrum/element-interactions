@@ -1,4 +1,3 @@
-import { Locator } from '@playwright/test';
 import { Element } from '@civitas-cerebrum/element-repository';
 
 /**
@@ -71,8 +70,8 @@ export type CountVerifyOptions =
  * You must provide either a `targetLocator` OR both `xOffset` and `yOffset`.
  */
 export interface DragAndDropOptions {
-    /** The destination element to drop the dragged element onto. Accepts a Playwright Locator or an Element from the repository. */
-    target?: Locator | Element;
+    /** The destination `Element` to drop the dragged element onto. */
+    target?: Element;
     /** The horizontal offset from the center of the element (positive moves right). */
     xOffset?: number;
     /** The vertical offset from the center of the element (positive moves down). */

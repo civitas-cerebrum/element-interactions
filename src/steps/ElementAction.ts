@@ -1,4 +1,3 @@
-import { Locator } from '@playwright/test';
 import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
 import { ElementInteractions } from '../interactions/facade/ElementInteractions';
 import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ScreenshotOptions, IsVisibleOptions } from '../enum/Options';
@@ -7,10 +6,6 @@ import {
     ExpectBuilder,
     ExpectContext,
 } from './ExpectMatchers';
-
-function toLocator(element: Element): Locator {
-    return (element as WebElement).locator;
-}
 
 /**
  * Fluent builder for performing actions on a repository element.
@@ -124,17 +119,13 @@ export class ElementAction {
         return this.repo.get(this.elementName, this.pageName, this.resolutionOptions);
     }
 
-    private async resolveLocator(): Promise<Locator> {
-        return toLocator(await this.resolve());
-    }
-
     // -- Terminal actions: interactions --
 
     /** Click the resolved element. Skips silently if `ifVisible()` was set and element is hidden. */
     async click(options?: { withoutScrolling?: boolean; force?: boolean }): Promise<void> {
         if (!await this.shouldProceed()) return;
-        const locator = toLocator(await this.resolve());
-        await this.interactions.interact.click(locator, {
+        const element = await this.resolve();
+        await this.interactions.interact.click(element, {
             withoutScrolling: options?.withoutScrolling,
             force: options?.force,
             timeout: this._timeout,
@@ -145,8 +136,7 @@ export class ElementAction {
     async clickIfPresent(options?: { withoutScrolling?: boolean; force?: boolean }): Promise<boolean> {
         const element = await this.resolve();
         if (await element.isVisible()) {
-            const locator = toLocator(element);
-            await this.interactions.interact.click(locator, {
+            await this.interactions.interact.click(element, {
                 withoutScrolling: options?.withoutScrolling,
                 ifPresent: true,
                 force: options?.force,
@@ -180,8 +170,8 @@ export class ElementAction {
 
     /** Select a dropdown option. */
     async selectDropdown(options?: DropdownSelectOptions): Promise<string> {
-        const locator = await this.resolveLocator();
-        return await this.interactions.interact.selectDropdown(locator, {
+        const element = await this.resolve();
+        return await this.interactions.interact.selectDropdown(element, {
             ...options,
             timeout: options?.timeout ?? this._timeout,
         });
@@ -221,14 +211,14 @@ export class ElementAction {
 
     /** Upload a file to a file input. */
     async uploadFile(filePath: string): Promise<void> {
-        const locator = await this.resolveLocator();
-        await this.interactions.interact.uploadFile(locator, filePath, { timeout: this._timeout });
+        const element = await this.resolve();
+        await this.interactions.interact.uploadFile(element, filePath, { timeout: this._timeout });
     }
 
     /** Drag and drop the resolved element. */
     async dragAndDrop(options: DragAndDropOptions): Promise<void> {
-        const locator = await this.resolveLocator();
-        await this.interactions.interact.dragAndDrop(locator, {
+        const element = await this.resolve();
+        await this.interactions.interact.dragAndDrop(element, {
             ...options,
             timeout: options.timeout ?? this._timeout,
         });
@@ -242,14 +232,14 @@ export class ElementAction {
 
     /** Set slider value. */
     async setSliderValue(value: number): Promise<void> {
-        const locator = await this.resolveLocator();
-        await this.interactions.interact.setSliderValue(locator, value, { timeout: this._timeout });
+        const element = await this.resolve();
+        await this.interactions.interact.setSliderValue(element, value, { timeout: this._timeout });
     }
 
     /** Select multiple options from a multi-select. */
     async selectMultiple(values: string[]): Promise<string[]> {
-        const locator = await this.resolveLocator();
-        return await this.interactions.interact.selectMultiple(locator, values, { timeout: this._timeout });
+        const element = await this.resolve();
+        return await this.interactions.interact.selectMultiple(element, values, { timeout: this._timeout });
     }
 
     // -- Terminal actions: verifications --
@@ -355,7 +345,7 @@ export class ElementAction {
      */
     async verifyImages(scroll: boolean = true): Promise<void> {
         const element = await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL });
-        await this.interactions.verify.images(toLocator(element), scroll);
+        await this.interactions.verify.images(element, scroll);
     }
 
     /** Assert element state. */
@@ -378,7 +368,7 @@ export class ElementAction {
      */
     async verifyOrder(expectedTexts: string[]): Promise<void> {
         const element = await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL });
-        await this.interactions.verify.order(toLocator(element), expectedTexts);
+        await this.interactions.verify.order(element, expectedTexts);
     }
 
     /**
@@ -389,7 +379,7 @@ export class ElementAction {
      */
     async verifyListOrder(direction: 'asc' | 'desc'): Promise<void> {
         const element = await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL });
-        await this.interactions.verify.listOrder(toLocator(element), direction);
+        await this.interactions.verify.listOrder(element, direction);
     }
 
     // -- Terminal actions: extractions --
@@ -414,8 +404,8 @@ export class ElementAction {
 
     /** Get all text contents from matching elements. */
     async getAllTexts(): Promise<string[]> {
-        const locator = await this.resolveLocator();
-        return await this.interactions.extract.getAllTexts(locator);
+        const element = await this.resolve();
+        return await this.interactions.extract.getAllTexts(element);
     }
 
     /** Get input value. */
@@ -432,8 +422,8 @@ export class ElementAction {
 
     /** Take a screenshot of the element. */
     async screenshot(options?: ScreenshotOptions): Promise<Buffer> {
-        const locator = await this.resolveLocator();
-        return await this.interactions.extract.screenshot(locator, options);
+        const element = await this.resolve();
+        return await this.interactions.extract.screenshot(element, options);
     }
 
     // -- Expect matcher tree + predicate escape hatch --

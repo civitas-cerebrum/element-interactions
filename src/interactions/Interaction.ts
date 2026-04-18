@@ -1,21 +1,15 @@
-import { Page, Locator } from '@playwright/test';
+import { Page } from '@playwright/test';
 import { ClickOptions, DropdownSelectOptions, DropdownSelectType, DragAndDropOptions, ListedElementMatch, ActionTimeoutOptions } from '../enum/Options';
 import { Utils } from '../utils/ElementUtilities';
 import { Element, WebElement } from '@civitas-cerebrum/element-repository';
-
-/** A Playwright Locator or an Element wrapper from the repository. */
-export type Target = Locator | Element;
-
-/** Normalizes a `Target` into an `Element`. All internal interactions route through element-repository. */
-function toElement(target: Target): Element {
-    if ('_type' in target) return target as Element;
-    return new WebElement(target as Locator);
-}
 
 /**
  * The `Interactions` class provides a robust set of methods for interacting
  * with DOM elements. All operations route through element-repository's
  * `Element` interface, keeping this class framework-agnostic.
+ *
+ * Every method takes an `Element` from the repository. Wrap raw Playwright
+ * Locators via `new WebElement(locator)` at the call site if you need to bridge.
  */
 export class Interactions {
     private ELEMENT_TIMEOUT: number;
@@ -27,11 +21,10 @@ export class Interactions {
     }
 
     /**
-     * Performs a standard click on the given target.
+     * Performs a standard click on the given element.
      * Automatically waits for the element to be attached, visible, stable, and actionable.
      */
-    async click(target: Target, options?: ClickOptions): Promise<boolean | void> {
-        const element = toElement(target);
+    async click(element: Element, options?: ClickOptions): Promise<boolean | void> {
         const useDispatch = options?.force || options?.withoutScrolling;
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
 
@@ -86,18 +79,16 @@ export class Interactions {
      * Clicks only if the element is present and visible. Returns true if clicked,
      * false if the element was absent — does not throw.
      */
-    async clickIfPresent(target: Target, options?: ActionTimeoutOptions): Promise<boolean> {
-        return await this.click(target, { ifPresent: true, timeout: options?.timeout }) as boolean;
+    async clickIfPresent(element: Element, options?: ActionTimeoutOptions): Promise<boolean> {
+        return await this.click(element, { ifPresent: true, timeout: options?.timeout }) as boolean;
     }
 
-    async fill(target: Target, text: string): Promise<void> {
-        const element = toElement(target);
+    async fill(element: Element, text: string): Promise<void> {
         await this.utils.waitForState(element, 'visible');
         await element.fill(text, { timeout: this.ELEMENT_TIMEOUT });
     }
 
-    async uploadFile(target: Target, filePath: string, options?: ActionTimeoutOptions): Promise<void> {
-        const element = toElement(target);
+    async uploadFile(element: Element, filePath: string, options?: ActionTimeoutOptions): Promise<void> {
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
         await this.utils.waitForState(element, 'attached', timeout);
         await element.setInputFiles(filePath, { timeout });
@@ -108,20 +99,20 @@ export class Interactions {
      * If no options are provided, safely defaults to randomly selecting an enabled, non-empty option.
      */
     async selectDropdown(
-        target: Target,
+        element: Element,
         options: DropdownSelectOptions = { type: DropdownSelectType.RANDOM }
     ): Promise<string> {
-        // selectOption is a web-only method (HTML `<select>`); narrow to WebElement.
-        const element = toElement(target) as WebElement;
         const timeout = options.timeout ?? this.ELEMENT_TIMEOUT;
         await this.utils.waitForState(element, 'visible', timeout);
+        // selectOption is a web-only method (HTML `<select>`); narrow to WebElement.
+        const web = element as WebElement;
         const type = options.type ?? DropdownSelectType.RANDOM;
 
         if (type === DropdownSelectType.VALUE) {
             if (options.value === undefined) {
                 throw new Error('[Action] Error -> "value" must be provided when using DropdownSelectType.VALUE.');
             }
-            const selected = await element.selectOption({ value: options.value }, { timeout });
+            const selected = await web.selectOption({ value: options.value }, { timeout });
             return selected[0];
         }
 
@@ -129,14 +120,14 @@ export class Interactions {
             if (options.index === undefined) {
                 throw new Error('[Action] Error -> "index" must be provided when using DropdownSelectType.INDEX.');
             }
-            const selected = await element.selectOption({ index: options.index }, { timeout });
+            const selected = await web.selectOption({ index: options.index }, { timeout });
             return selected[0];
         }
 
         // Random path — look for enabled, non-empty <option> descendants.
         // `locateChild` composes a CSS selector underneath the current element;
         // this is part of the Element contract, not a raw locator call.
-        const enabledOptions = element.locateChild('option:not([disabled]):not([value=""])');
+        const enabledOptions = web.locateChild('option:not([disabled]):not([value=""])');
 
         await this.utils.waitForState(enabledOptions.first(), 'attached', timeout).catch(() => { });
 
@@ -152,18 +143,16 @@ export class Interactions {
             throw new Error(`[Action] Error -> Option at index ${randomIndex} is missing a "value" attribute.`);
         }
 
-        const selected = await element.selectOption({ value: valueToSelect }, { timeout });
+        const selected = await web.selectOption({ value: valueToSelect }, { timeout });
         return selected[0];
     }
 
-    async hover(target: Target): Promise<void> {
-        const element = toElement(target);
+    async hover(element: Element): Promise<void> {
         await this.utils.waitForState(element, 'visible');
         await element.hover({ timeout: this.ELEMENT_TIMEOUT });
     }
 
-    async scrollIntoView(target: Target): Promise<void> {
-        const element = toElement(target);
+    async scrollIntoView(element: Element): Promise<void> {
         await this.utils.waitForState(element, 'attached');
         await element.scrollIntoView({ timeout: this.ELEMENT_TIMEOUT });
     }
@@ -173,13 +162,12 @@ export class Interactions {
      * Absolute-offset drags use the page's mouse API (no Element equivalent
      * exists today); all other paths route through `Element.dragTo`.
      */
-    async dragAndDrop(target: Target, options: DragAndDropOptions): Promise<void> {
-        const element = toElement(target);
+    async dragAndDrop(element: Element, options: DragAndDropOptions): Promise<void> {
         const timeout = options.timeout ?? this.ELEMENT_TIMEOUT;
         await this.utils.waitForState(element, 'visible', timeout);
 
         if (options.target) {
-            const dropElement = toElement(options.target);
+            const dropElement = options.target;
             await this.utils.waitForState(dropElement, 'visible', timeout);
 
             if (options.xOffset !== undefined && options.yOffset !== undefined) {
@@ -230,25 +218,23 @@ export class Interactions {
     }
 
     /**
-     * Filters a locator list and returns the first element matching the given text.
-     * Uses Element.filter composition (which delegates to Playwright's filter under the hood).
+     * Filters an element list and returns the first match for the given text.
+     * Uses Element.filter composition.
      */
     public async getByText(
-        baseTarget: Target,
+        base: Element,
         desiredText: string,
         strict: boolean = false,
-    ): Promise<Locator | null> {
-        const base = toElement(baseTarget);
-
+    ): Promise<Element | null> {
         const caseSensitive = base.filter({ hasText: desiredText }).first();
         if ((await caseSensitive.count()) > 0) {
-            return (caseSensitive as WebElement).locator;
+            return caseSensitive;
         }
 
         const escaped = desiredText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const caseInsensitive = base.filter({ hasText: new RegExp(escaped, 'i') }).first();
         if ((await caseInsensitive.count()) > 0) {
-            return (caseInsensitive as WebElement).locator;
+            return caseInsensitive;
         }
 
         const all = await base.all();
@@ -260,40 +246,34 @@ export class Interactions {
         return null;
     }
 
-    async typeSequentially(target: Target, text: string, delay: number = 100): Promise<void> {
-        const element = toElement(target);
+    async typeSequentially(element: Element, text: string, delay: number = 100): Promise<void> {
         await this.utils.waitForState(element, 'visible');
         await element.pressSequentially(text, delay, { timeout: this.ELEMENT_TIMEOUT });
     }
 
-    /** Right-click (context menu) on the given target. Web-only. */
-    async rightClick(target: Target, options?: ActionTimeoutOptions): Promise<void> {
-        const element = toElement(target) as WebElement;
+    /** Right-click (context menu) on the given element. Web-only. */
+    async rightClick(element: Element, options?: ActionTimeoutOptions): Promise<void> {
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
         await this.utils.waitForState(element, 'visible', timeout);
-        await element.rightClick({ timeout });
+        await (element as WebElement).rightClick({ timeout });
     }
 
-    async doubleClick(target: Target): Promise<void> {
-        const element = toElement(target);
+    async doubleClick(element: Element): Promise<void> {
         await this.utils.waitForState(element, 'visible');
         await element.doubleClick({ timeout: this.ELEMENT_TIMEOUT });
     }
 
-    async check(target: Target): Promise<void> {
-        const element = toElement(target);
+    async check(element: Element): Promise<void> {
         await this.utils.waitForState(element, 'visible');
         await element.check({ timeout: this.ELEMENT_TIMEOUT });
     }
 
-    async uncheck(target: Target): Promise<void> {
-        const element = toElement(target);
+    async uncheck(element: Element): Promise<void> {
         await this.utils.waitForState(element, 'visible');
         await element.uncheck({ timeout: this.ELEMENT_TIMEOUT });
     }
 
-    async setSliderValue(target: Target, value: number, options?: ActionTimeoutOptions): Promise<void> {
-        const element = toElement(target);
+    async setSliderValue(element: Element, value: number, options?: ActionTimeoutOptions): Promise<void> {
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
         await this.utils.waitForState(element, 'visible', timeout);
         await element.fill(String(value), { timeout });
@@ -303,48 +283,44 @@ export class Interactions {
         await this.page.keyboard.press(key);
     }
 
-    async clearInput(target: Target): Promise<void> {
-        const element = toElement(target);
+    async clearInput(element: Element): Promise<void> {
         await this.utils.waitForState(element, 'visible');
         await element.clear({ timeout: this.ELEMENT_TIMEOUT });
     }
 
-    async selectMultiple(target: Target, values: string[], options?: ActionTimeoutOptions): Promise<string[]> {
-        // selectOption is web-only; narrow to WebElement.
-        const element = toElement(target) as WebElement;
+    async selectMultiple(element: Element, values: string[], options?: ActionTimeoutOptions): Promise<string[]> {
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
         await this.utils.waitForState(element, 'visible', timeout);
-        return element.selectOption(values.map(v => ({ value: v })), { timeout });
+        // selectOption is web-only; narrow to WebElement.
+        return (element as WebElement).selectOption(values.map(v => ({ value: v })), { timeout });
     }
 
     /**
      * Resolves a specific element from a list by matching visible text or an attribute,
      * with optional child-element drill-down.
      *
-     * Returns a Playwright `Locator` because callers downstream need it for
-     * `expect(locator).X()` assertions and child-selector composition that
-     * doesn't fit the Element abstraction (e.g. `.and()`). Internally, match
-     * discovery uses Element methods where possible.
+     * Returns an `Element` — pass it into any `interact`/`verify`/`extract` method,
+     * or cast to `WebElement` to reach the raw Playwright `Locator` for Playwright-specific
+     * composition (e.g. `.and()`, `.or()`).
      */
     async getListedElement(
-        baseTarget: Target,
+        base: Element,
         options: ListedElementMatch,
         repo?: { getSelector(elementName: string, pageName: string): string },
-    ): Promise<Locator> {
-        const baseElement = toElement(baseTarget);
+    ): Promise<Element> {
         let matched: Element;
 
         if (options.text) {
-            const caseSensitive = baseElement.filter({ hasText: options.text }).first();
+            const caseSensitive = base.filter({ hasText: options.text }).first();
             if ((await caseSensitive.count()) > 0) {
                 matched = caseSensitive;
             } else {
                 const escaped = options.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                matched = baseElement.filter({ hasText: new RegExp(escaped, 'i') }).first();
+                matched = base.filter({ hasText: new RegExp(escaped, 'i') }).first();
             }
         } else if (options.attribute) {
-            // Locator.and() composition has no Element equivalent today — drop to Locator.
-            const baseLocator = (baseElement as WebElement).locator;
+            // Locator.and() composition has no Element equivalent today — drop to Locator internally.
+            const baseLocator = (base as WebElement).locator;
             matched = new WebElement(
                 baseLocator
                     .and(this.page.locator(`[${options.attribute.name}="${options.attribute.value}"]`))
@@ -357,17 +333,17 @@ export class Interactions {
         await this.utils.waitForState(matched, 'visible');
 
         if (!options.child) {
-            return (matched as WebElement).locator;
+            return matched;
         }
 
         if (typeof options.child === 'string') {
-            return (matched.locateChild(options.child) as WebElement).locator;
+            return matched.locateChild(options.child);
         }
 
         if (!repo) {
             throw new Error('An ElementRepository instance is required when "child" is a page-repository reference.');
         }
         const childSelector = repo.getSelector(options.child.elementName, options.child.pageName);
-        return (matched.locateChild(childSelector) as WebElement).locator;
+        return matched.locateChild(childSelector);
     }
 }

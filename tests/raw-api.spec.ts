@@ -4,8 +4,14 @@
  * Exercises the raw interaction classes (ElementRepository, Verifications,
  * Navigation) directly, verifying they produce correct results against
  * the live vue-test-app — not just that they don't throw.
+ *
+ * As of v0.2.6 the Verifications/Interactions/Extractions classes only accept
+ * `Element`, not raw Playwright Locators. These tests construct `WebElement`
+ * wrappers at the seam — the one place in the codebase where bridging from a
+ * `page.locator(...)` into an `Element` is still expected.
  */
 import { test, expect } from './fixture/StepFixture';
+import { WebElement } from '@civitas-cerebrum/element-repository';
 
 test.describe('ElementRepository — direct query methods', () => {
 
@@ -95,28 +101,29 @@ test.describe('Verifications — direct method validation', () => {
     const { Verifications } = await import('../src/interactions/Verification');
     const shortVerify = new Verifications(page, 2000);
 
-    await shortVerify.presence(page.locator('[data-testid="btn-primary"]'));
+    await shortVerify.presence(new WebElement(page.locator('[data-testid="btn-primary"]')));
 
     await expect(async () => {
-      await shortVerify.presence(page.locator('[data-testid="nonexistent"]'));
+      await shortVerify.presence(new WebElement(page.locator('[data-testid="nonexistent"]')));
     }).rejects.toThrow();
   });
 
   test('attribute — validates correct attribute value', async ({ page, steps, interactions }) => {
     await steps.navigateTo('/buttons');
-    const locator = page.locator('[data-testid="btn-primary"]');
-    await interactions.verify.attribute(locator, 'data-testid', 'btn-primary');
+    const el = new WebElement(page.locator('[data-testid="btn-primary"]'));
+    await interactions.verify.attribute(el, 'data-testid', 'btn-primary');
   });
 
   test('attribute — fails for wrong attribute value', async ({ page, steps }) => {
     await steps.navigateTo('/buttons');
     const { Verifications } = await import('../src/interactions/Verification');
     const shortVerify = new Verifications(page, 2000);
+    const el = new WebElement(page.locator('[data-testid="btn-primary"]'));
 
-    await shortVerify.attribute(page.locator('[data-testid="btn-primary"]'), 'data-testid', 'btn-primary');
+    await shortVerify.attribute(el, 'data-testid', 'btn-primary');
 
     await expect(async () => {
-      await shortVerify.attribute(page.locator('[data-testid="btn-primary"]'), 'data-testid', 'wrong-value');
+      await shortVerify.attribute(el, 'data-testid', 'wrong-value');
     }).rejects.toThrow();
   });
 
@@ -131,7 +138,7 @@ test.describe('Verifications — direct method validation', () => {
     const locator = page.locator('#name');
     await locator.waitFor({ state: 'visible' });
     await locator.fill('Verified Value');
-    await interactions.verify.inputValue(locator, 'Verified Value');
+    await interactions.verify.inputValue(new WebElement(locator), 'Verified Value');
   });
 
   test('inputValue — fails when value does not match', async ({ page, steps }) => {
@@ -142,23 +149,24 @@ test.describe('Verifications — direct method validation', () => {
     const locator = page.locator('#name');
     await locator.waitFor({ state: 'visible' });
     await locator.fill('Actual');
-    await shortVerify.inputValue(locator, 'Actual');
+    const el = new WebElement(locator);
+    await shortVerify.inputValue(el, 'Actual');
 
     await expect(async () => {
-      await shortVerify.inputValue(locator, 'Expected');
+      await shortVerify.inputValue(el, 'Expected');
     }).rejects.toThrow();
   });
 
   test('cssProperty — verifies computed CSS matches expected value', async ({ page, steps, interactions }) => {
     await steps.navigateTo('/buttons');
-    const locator = page.locator('[data-testid="btn-primary"]');
-    const display = await interactions.extract.getCssProperty(locator, 'display');
-    await interactions.verify.cssProperty(locator, 'display', display);
+    const el = new WebElement(page.locator('[data-testid="btn-primary"]'));
+    const display = await interactions.extract.getCssProperty(el, 'display');
+    await interactions.verify.cssProperty(el, 'display', display);
   });
 
   test('text/value/attribute variants — contains / matches / startsWith / endsWith', async ({ page, steps, interactions }) => {
     await steps.navigateTo('/buttons');
-    const btn = page.locator('[data-testid="btn-primary"]');
+    const btn = new WebElement(page.locator('[data-testid="btn-primary"]'));
 
     await interactions.verify.textContains(btn, 'rim');
     await interactions.verify.textMatches(btn, /^Prim/);
@@ -169,9 +177,10 @@ test.describe('Verifications — direct method validation', () => {
     await interactions.verify.attributeMatches(btn, 'data-testid', /^btn-/);
 
     await steps.navigateTo('/forms');
-    const input = page.locator('#name');
-    await input.waitFor({ state: 'visible' });
-    await input.fill('Alice Example');
+    const inputLocator = page.locator('#name');
+    await inputLocator.waitFor({ state: 'visible' });
+    await inputLocator.fill('Alice Example');
+    const input = new WebElement(inputLocator);
     await interactions.verify.inputValueContains(input, 'lice');
     await interactions.verify.inputValueMatches(input, /^Alice/);
     await interactions.verify.inputValueStartsWith(input, 'Alice');
@@ -204,14 +213,14 @@ test.describe('Verifications — direct method validation', () => {
     await steps.navigateTo('/product-carousel');
     const locator = page.locator('[data-testid="product-image-0"]');
     await locator.waitFor({ state: 'visible', timeout: 5000 });
-    await interactions.verify.images(locator);
+    await interactions.verify.images(new WebElement(locator));
   });
 
   test('order — verifies elements appear in expected text order', async ({ page, steps, interactions }) => {
     await steps.navigateTo('/buttons');
     // First two buttons in the variants section
     const locator = page.locator('.btn-row .btn').first();
-    await interactions.verify.order(locator, ['Primary']);
+    await interactions.verify.order(new WebElement(locator), ['Primary']);
   });
 
   test('listOrder — verifies list elements are sorted', async ({ page, steps, interactions }) => {
@@ -221,7 +230,7 @@ test.describe('Verifications — direct method validation', () => {
     const count = await locator.count();
     if (count > 1) {
       try {
-        await interactions.verify.listOrder(locator, 'asc');
+        await interactions.verify.listOrder(new WebElement(locator), 'asc');
       } catch {
         // List may not be sorted ascending — the method is exercised with real data
       }

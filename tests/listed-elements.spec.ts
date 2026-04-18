@@ -1,4 +1,5 @@
 import { test, expect } from './fixture/StepFixture';
+import { WebElement } from '@civitas-cerebrum/element-repository';
 import { createLogger } from '../src/logger/Logger';
 
 const log = createLogger('tests');
@@ -191,16 +192,16 @@ test.describe('TC_054: getListedElement (raw) — child variants and error cases
       await steps.verifyUrlContains('/table');
     });
 
+    const baseElement = () => new WebElement(page.locator(repo.getSelector('rows', 'TablePage')));
+
     await test.step('getListedElement with text match', async () => {
-      const baseLocator = page.locator(repo.getSelector('rows', 'TablePage'));
-      const row = await interactions.interact.getListedElement(baseLocator, { text: 'Alice' }, repo);
+      const row = await interactions.interact.getListedElement(baseElement(), { text: 'Alice' }, repo);
       const text = await row.textContent();
       expect(text).toContain('Alice');
     });
 
     await test.step('getListedElement with attribute match', async () => {
-      const baseLocator = page.locator(repo.getSelector('rows', 'TablePage'));
-      const row = await interactions.interact.getListedElement(baseLocator, {
+      const row = await interactions.interact.getListedElement(baseElement(), {
         attribute: { name: 'data-testid', value: 'table-row-1' }
       }, repo);
       const text = await row.textContent();
@@ -208,8 +209,7 @@ test.describe('TC_054: getListedElement (raw) — child variants and error cases
     });
 
     await test.step('getListedElement with child as page-repo reference', async () => {
-      const baseLocator = page.locator(repo.getSelector('rows', 'TablePage'));
-      const child = await interactions.interact.getListedElement(baseLocator, {
+      const child = await interactions.interact.getListedElement(baseElement(), {
         text: 'Alice',
         child: { pageName: 'TablePage', elementName: 'rowCheckboxes' }
       }, repo);
@@ -217,10 +217,9 @@ test.describe('TC_054: getListedElement (raw) — child variants and error cases
     });
 
     await test.step('getListedElement throws when child is page-repo ref but no repo provided', async () => {
-      const baseLocator = page.locator(repo.getSelector('rows', 'TablePage'));
       let errorThrown = false;
       try {
-        await interactions.interact.getListedElement(baseLocator, {
+        await interactions.interact.getListedElement(baseElement(), {
           text: 'Alice',
           child: { pageName: 'TablePage', elementName: 'rowCheckboxes' }
         });
@@ -232,10 +231,9 @@ test.describe('TC_054: getListedElement (raw) — child variants and error cases
     });
 
     await test.step('getListedElement throws when neither text nor attribute provided', async () => {
-      const baseLocator = page.locator(repo.getSelector('rows', 'TablePage'));
       let errorThrown = false;
       try {
-        await interactions.interact.getListedElement(baseLocator, {}, repo);
+        await interactions.interact.getListedElement(baseElement(), {}, repo);
       } catch (e: unknown) {
         errorThrown = true;
         expect((e as Error).message).toContain('requires either "text" or "attribute"');
