@@ -112,7 +112,8 @@ Once loaded, Claude Code will:
 * **Role + accessible name selectors** — `{ "role": "button", "name": "Log in" }` resolves via `page.getByRole()` with regex support.
 * **Regex text selectors** — `{ "text": { "regex": "pattern", "flags": "i" } }` for matching dynamic content.
 * **Iframe-scoped pages** — Elements inside iframes are resolved transparently via `frame` property on page definitions.
-* **Cross-platform** — Enhanced selectors resolve natively on Android (UiSelector) and iOS (predicate strings).
+
+> **Looking for mobile / desktop support?** Cross-platform testing (web + Android + iOS + Windows/Mac) lives in [`@civitas-cerebrum/singularity-engine`](https://www.npmjs.com/package/@civitas-cerebrum/singularity-engine) — same Steps API shape, platform-agnostic.
 
 ---
 
@@ -159,7 +160,6 @@ Each selector object supports `css`, `xpath`, `id`, or `text` as the locator str
 ```
 
 Supports `frameIndex` (`"first"`, `"last"`, or zero-based number) and nested frames (array of frame selectors).
-Cross-platform: role and regex selectors resolve via UiSelector on Android and predicate strings on iOS.
 
 **Naming conventions:**
 - `name` — PascalCase page identifier, e.g. `CheckoutPage`, `ProductDetailsPage`
