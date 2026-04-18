@@ -320,6 +320,32 @@ test.describe('Enhanced Selectors — Issue Fixes #61-#65', () => {
     expect(elapsed).toBeLessThan(3000);
   });
 
+  test('#70: isVisible — matcher tree .count proxy silently skips when hidden', async ({ steps }) => {
+    // Extends matcher-tree coverage beyond `.text` — `.count` is a numeric
+    // assertion proxy, a distinct code path from string comparators. A hidden
+    // element should short-circuit the assertion without throwing, same as
+    // `.text.toBe(...)` does.
+    await steps.on('alwaysHidden', 'EnhancedSelectorsPage').isVisible({ timeout: 500 }).count.toBe(999);
+  });
+
+  test('#70: isVisible — gateReturning fallbacks for selectDropdown and selectMultiple', async ({ steps }) => {
+    // Three action methods go through `gateReturning()` with a non-boolean
+    // fallback — clickIfPresent → false is covered above. The other two
+    // (selectDropdown → '', selectMultiple → []) share the same helper but
+    // different fallback types. Calling them on a hidden non-dropdown element
+    // also doubles as proof that the gate skips BEFORE the underlying action
+    // executes — otherwise selectDropdown on a hidden <div> would throw.
+    const value = await steps
+      .isVisible('alwaysHidden', 'EnhancedSelectorsPage', { timeout: 500 })
+      .selectDropdown();
+    expect(value).toBe('');
+
+    const values = await steps
+      .isVisible('alwaysHidden', 'EnhancedSelectorsPage', { timeout: 500 })
+      .selectMultiple(['anything']);
+    expect(values).toEqual([]);
+  });
+
 
   // ============================================================
   // #62 — Iframe / Cross-Frame Scope
