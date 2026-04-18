@@ -137,6 +137,7 @@ export class ElementAction {
         await this.interactions.interact.click(locator, {
             withoutScrolling: options?.withoutScrolling,
             force: options?.force,
+            timeout: this._timeout,
         });
     }
 
@@ -149,6 +150,7 @@ export class ElementAction {
                 withoutScrolling: options?.withoutScrolling,
                 ifPresent: true,
                 force: options?.force,
+                timeout: this._timeout,
             });
             return true;
         }
@@ -179,7 +181,10 @@ export class ElementAction {
     /** Select a dropdown option. */
     async selectDropdown(options?: DropdownSelectOptions): Promise<string> {
         const locator = await this.resolveLocator();
-        return await this.interactions.interact.selectDropdown(locator, options);
+        return await this.interactions.interact.selectDropdown(locator, {
+            ...options,
+            timeout: options?.timeout ?? this._timeout,
+        });
     }
 
     /** Check a checkbox or radio button. Skips silently if `ifVisible()` was set and element is hidden. */
@@ -205,7 +210,7 @@ export class ElementAction {
     /** Right-click the resolved element. */
     async rightClick(): Promise<void> {
         const element = await this.resolve();
-        await this.interactions.interact.rightClick(element);
+        await this.interactions.interact.rightClick(element, { timeout: this._timeout });
     }
 
     /** Type text character by character. */
@@ -217,13 +222,16 @@ export class ElementAction {
     /** Upload a file to a file input. */
     async uploadFile(filePath: string): Promise<void> {
         const locator = await this.resolveLocator();
-        await this.interactions.interact.uploadFile(locator, filePath);
+        await this.interactions.interact.uploadFile(locator, filePath, { timeout: this._timeout });
     }
 
     /** Drag and drop the resolved element. */
     async dragAndDrop(options: DragAndDropOptions): Promise<void> {
         const locator = await this.resolveLocator();
-        await this.interactions.interact.dragAndDrop(locator, options);
+        await this.interactions.interact.dragAndDrop(locator, {
+            ...options,
+            timeout: options.timeout ?? this._timeout,
+        });
     }
 
     /** Clear the input value. */
@@ -235,13 +243,13 @@ export class ElementAction {
     /** Set slider value. */
     async setSliderValue(value: number): Promise<void> {
         const locator = await this.resolveLocator();
-        await this.interactions.interact.setSliderValue(locator, value);
+        await this.interactions.interact.setSliderValue(locator, value, { timeout: this._timeout });
     }
 
     /** Select multiple options from a multi-select. */
     async selectMultiple(values: string[]): Promise<string[]> {
         const locator = await this.resolveLocator();
-        return await this.interactions.interact.selectMultiple(locator, values);
+        return await this.interactions.interact.selectMultiple(locator, values, { timeout: this._timeout });
     }
 
     // -- Terminal actions: verifications --

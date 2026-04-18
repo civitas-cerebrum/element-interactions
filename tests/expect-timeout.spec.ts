@@ -172,3 +172,100 @@ test.describe('timeout() — negative override (short timeout fails fast)', () =
         ).rejects.toThrow(/msg B/);
     });
 });
+
+/**
+ * Issue #76 — `ElementAction.timeout()` now threads through Interactions-routed
+ * actions (click, clickIfPresent, rightClick, uploadFile, dragAndDrop,
+ * selectDropdown, setSliderValue, selectMultiple).
+ *
+ * Each test below targets an element that exists in the page-repository but is
+ * NOT attached to the DOM of the current page (we stay on `/` and use elements
+ * from other pages). The pre-action `waitForState('visible')` inside
+ * `Interactions` will time out; we assert the failure bubbles within the
+ * override window rather than the fixture default (30_000ms).
+ *
+ * Without the fix, each of these would take ~30s; with it, each times out in ~500ms.
+ */
+test.describe('ElementAction.timeout() — Interactions-routed actions', () => {
+    const TIMEOUT = 500;
+    // Tight bound: distinguishes the fixed behavior (~500ms action + fast repo
+    // resolution ≈ under 3s) from the pre-fix behavior (~30s default action
+    // timeout regardless of the chain override).
+    const UPPER_BOUND = 5000;
+
+    test.beforeEach(async ({ steps, repo }) => {
+        // Shorten repo resolution timeout so the action-side timeout dominates
+        // elapsed time. Without this, each test would wait the full 15s default
+        // inside StrategyResolver before the action-level timeout kicks in.
+        repo.setDefaultTimeout(1000);
+        // Land on home. The elements targeted below are from other pages —
+        // their selectors won't resolve to attached DOM nodes here.
+        await steps.navigateTo('/');
+    });
+
+    test('click() honors the chain timeout', async ({ steps }) => {
+        const start = Date.now();
+        await expect(
+            steps.on('primaryButton', 'ButtonsPage').timeout(TIMEOUT).click(),
+        ).rejects.toThrow();
+        expect(Date.now() - start).toBeLessThan(UPPER_BOUND);
+    });
+
+    test('clickIfPresent() returns false quickly regardless of chain timeout', async ({ steps }) => {
+        // clickIfPresent short-circuits when the element isn't visible. The
+        // timeout doesn't extend that path — we just assert the signature
+        // accepts a chain timeout and the call resolves without throwing.
+        const start = Date.now();
+        const result = await steps.on('primaryButton', 'ButtonsPage').timeout(TIMEOUT).clickIfPresent();
+        expect(result).toBe(false);
+        expect(Date.now() - start).toBeLessThan(UPPER_BOUND);
+    });
+
+    test('rightClick() honors the chain timeout', async ({ steps }) => {
+        const start = Date.now();
+        await expect(
+            steps.on('primaryButton', 'ButtonsPage').timeout(TIMEOUT).rightClick(),
+        ).rejects.toThrow();
+        expect(Date.now() - start).toBeLessThan(UPPER_BOUND);
+    });
+
+    test('uploadFile() honors the chain timeout', async ({ steps }) => {
+        const start = Date.now();
+        await expect(
+            steps.on('singleFileInput', 'FileUploadPage').timeout(TIMEOUT).uploadFile('tests/test-files/test-upload.txt'),
+        ).rejects.toThrow();
+        expect(Date.now() - start).toBeLessThan(UPPER_BOUND);
+    });
+
+    test('dragAndDrop() honors the chain timeout', async ({ steps }) => {
+        const start = Date.now();
+        await expect(
+            steps.on('item1', 'DraggablePage').timeout(TIMEOUT).dragAndDrop({ xOffset: 10, yOffset: 10 }),
+        ).rejects.toThrow();
+        expect(Date.now() - start).toBeLessThan(UPPER_BOUND);
+    });
+
+    test('selectDropdown() honors the chain timeout', async ({ steps }) => {
+        const start = Date.now();
+        await expect(
+            steps.on('singleSelect', 'DropdownSelectPage').timeout(TIMEOUT).selectDropdown(),
+        ).rejects.toThrow();
+        expect(Date.now() - start).toBeLessThan(UPPER_BOUND);
+    });
+
+    test('setSliderValue() honors the chain timeout', async ({ steps }) => {
+        const start = Date.now();
+        await expect(
+            steps.on('basicSlider', 'SlidersPage').timeout(TIMEOUT).setSliderValue(50),
+        ).rejects.toThrow();
+        expect(Date.now() - start).toBeLessThan(UPPER_BOUND);
+    });
+
+    test('selectMultiple() honors the chain timeout', async ({ steps }) => {
+        const start = Date.now();
+        await expect(
+            steps.on('multiSelect', 'DropdownSelectPage').timeout(TIMEOUT).selectMultiple(['Australia']),
+        ).rejects.toThrow();
+        expect(Date.now() - start).toBeLessThan(UPPER_BOUND);
+    });
+});
