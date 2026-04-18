@@ -27,9 +27,18 @@ export interface DropdownSelectOptions {
 
 /**
  * Configuration options for the `text` verification method.
+ *
+ * @deprecated The `notEmpty` flag is redundant — calling `verifyText()` with no
+ * `expectedText` now asserts "not empty" on its own. Prefer `verifyText(element, page)`
+ * (or `.on(element, page).verifyText()` in the fluent API) over passing
+ * `undefined, { notEmpty: true }`. This interface will be removed in a future
+ * major release.
  */
 export interface TextVerifyOptions {
-    /** Asserts that the element has text content, ignoring 'expectedText'. */
+    /**
+     * Asserts that the element has text content, ignoring 'expectedText'.
+     * @deprecated Redundant — omit `expectedText` to get the same behavior.
+     */
     notEmpty?: boolean;
 }
 
