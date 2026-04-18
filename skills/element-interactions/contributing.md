@@ -206,9 +206,13 @@ When you add a new method:
 2. Run `npx test-coverage --format=github-plain` locally to confirm 100%.
 3. The CI coverage job will fail otherwise.
 
-### In-package smoke tests must still verify
+### In-package smoke tests must still verify — and the verification must be causally meaningful
 
-100% API coverage is a floor, not a ceiling. The coverage tool only checks that every public method is *called* from at least one test — it doesn't check that the test *asserts* anything after calling it. A test like
+100% API coverage is a floor, not a ceiling. The coverage tool only checks that every public method is *called* from at least one test — it doesn't check that the test *asserts* anything after calling it, let alone that the assertion proves the action did something.
+
+Two levels of failure to avoid:
+
+**Level 1 — no assertion at all.** A test like
 
 ```ts
 test('hover()', async ({ steps }) => {
@@ -216,18 +220,43 @@ test('hover()', async ({ steps }) => {
 });
 ```
 
-satisfies the coverage tool but is indistinguishable from a no-op: it only catches thrown exceptions, not behavioural regressions.
+satisfies coverage but is indistinguishable from a no-op — it only catches thrown exceptions.
 
-**Rule:** every test in `tests/` — including the smoke-style files that exercise the API surface (`fluent-api.spec.ts`, `step-options.spec.ts`, `raw-api.spec.ts`, `core-api.spec.ts`, `steps-api.spec.ts`, etc.) — must end with a verification of the action's effect. Acceptable forms:
+**Level 2 — tautological assertion.** Worse than no assertion, because it looks like coverage:
 
-- a `steps.verify*` call (`verifyText`, `verifyInputValue`, `verifyState`, `verifyCount`, …)
-- a matcher-tree assertion (`.text.toBe`, `.visible.toBeTrue`, `.attributes.get('x').toBe`, `.satisfy(...)`, …)
-- a typed `expect(...)` on an extracted value (`expect(await steps.getText(...)).toBe(...)`)
-- for Playwright's self-asserting actions (`check`, `uncheck`) where no negation state exists, a weakest-defensible follow-up like `verifyState('visible')` or `verifyState('enabled')` on the same element, with a one-line comment explaining why
+```ts
+test('clickListedElement with regex alternation', async ({ steps }) => {
+  await steps.clickListedElement('rows', 'TablePage', { text: { regex: 'A|B|C' } });
+  await steps.verifyPresence('rows', 'TablePage');  // ❌ list was there before the click
+});
 
-If the exercised method has genuinely no observable side-effect at the element level (extremely rare — usually only the matcher tree's own self-tests), document that inline and still add the weakest defensible check. "The method didn't throw" is not a verification.
+test('hover', async ({ steps }) => {
+  await steps.on('btn', 'Page').hover();
+  await steps.on('btn', 'Page').verifyState('visible');  // ❌ it was visible to be hovered
+});
 
-When reviewing a PR, grep the diff for `await steps.*\.\(click|fill|drag|hover|check|uncheck|type|upload|setSliderValue|scrollIntoView|rightClick|doubleClick)\(` as the *last* line of a test body — every hit is a missing assertion.
+test('fill', async ({ steps }) => {
+  await steps.fill('input', 'Page', 'hello');
+  await steps.verifyPresence('input', 'Page');  // ❌ inputs don't disappear when filled
+});
+```
+
+These pass even if the action silently does nothing.
+
+**Rule:** every test in `tests/` must end with an assertion that would *fail under a no-op*. Ask yourself: **"If the exercised method had been replaced with an empty function body, would this test still pass?"** If yes, the assertion is tautological — rewrite it.
+
+Acceptable verification forms (ordered by strength):
+
+1. **Direct effect on a feedback element** — the action updates a `resultText`, `status`, `stateSummary`, `selectedCount`, etc. Verify that specific element's text/attribute.
+2. **Navigation** — click a listed element that navigates; `verifyUrlContains(...)` or `verifyAbsence(...)` on an element only present before the click.
+3. **Extraction + assertion** — `expect(await steps.getInputValue(...)).toBe('filled')` for `fill`; `expect(cellText).toMatch(/pattern/)` for regex filters.
+4. **State-change verification** — `verifyState('checked')` after `check()`, `verifyState('disabled')` after a submit that disables the button, etc.
+5. **Fallback** — `verifyState('visible')` or `verifyPresence(...)` on the target is acceptable ONLY when (a) the method has genuinely no observable side-effect at any layer, and (b) a one-line comment explains why. Framework-only smoke cases qualify; feature tests do not.
+
+When reviewing a PR:
+
+1. `grep` the diff for `await steps.*\.\(click|fill|drag|hover|check|uncheck|type|upload|setSliderValue|scrollIntoView|rightClick|doubleClick|clickListedElement)\(` as the *last* line of a test body — every hit is a missing assertion (Level 1).
+2. For every `verifyPresence` / `verifyState('visible')` / `verifyState('enabled')` added in the diff, ask whether the element was in that state *before* the action. If yes, it's a tautology (Level 2). The fix is usually to reach for a feedback element (`resultText`, `status`, etc.) instead.
 
 ### No mocked unit tests
 

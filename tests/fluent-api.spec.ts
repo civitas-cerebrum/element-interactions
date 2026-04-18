@@ -75,6 +75,11 @@ test.describe('Fluent API — steps.on()', () => {
     });
 
     test('hover()', async ({ steps }) => {
+      // The Vue test app's primary button has no JS-observable hover feedback
+      // (no tooltip / no result element updated on hover). This is the documented
+      // "no observable side-effect" framework-smoke case per contributing.md —
+      // the test only proves the hover() call shape doesn't throw. A meaningful
+      // hover test lives in enhanced-selectors.spec.ts (hover + tooltip).
       await steps.on('primaryButton', 'ButtonsPage').hover();
       await steps.on('primaryButton', 'ButtonsPage').verifyState('visible');
     });
@@ -128,10 +133,14 @@ test.describe('Fluent API — steps.on()', () => {
       await steps.on('uncheckedCheckbox', 'CheckboxesPage').verifyState('checked');
     });
 
-    test('uncheck()', async ({ steps }) => {
+    test('uncheck()', async ({ steps, repo }) => {
       await steps.on('checkedCheckbox', 'CheckboxesPage').uncheck();
-      // No direct 'unchecked' state — verify element is still interactable.
-      await steps.on('checkedCheckbox', 'CheckboxesPage').verifyState('enabled');
+      // verifyState() has no 'unchecked' variant; reach into the Element directly
+      // and confirm .isChecked() returns false. This proves the uncheck took
+      // effect — a tautological verifyState('enabled') would pass even if
+      // uncheck() had silently done nothing.
+      const el = await repo.get('checkedCheckbox', 'CheckboxesPage');
+      expect(await el.isChecked()).toBe(false);
     });
   });
 
@@ -244,6 +253,10 @@ test.describe('Fluent API — steps.on()', () => {
     test('rightClick()', async ({ steps }) => {
       await steps.navigateTo('/');
       await steps.click( 'buttonsLink','SidebarNav');
+      // The Vue test app's primary button doesn't intercept contextmenu events —
+      // the browser shows the native context menu, not a JS-observable result.
+      // This is the documented "no observable side-effect" framework-smoke case
+      // per contributing.md — proves the rightClick() call shape doesn't throw.
       await steps.on('primaryButton', 'ButtonsPage').rightClick();
       await steps.on('primaryButton', 'ButtonsPage').verifyState('visible');
     });
@@ -256,13 +269,17 @@ test.describe('Fluent API — steps.on()', () => {
       await steps.verifyTextContains( 'singleFileName','FileUploadPage', 'StepFixture');
     });
 
-    test('dragAndDrop()', async ({ steps }) => {
+    test('dragAndDrop() — targeted drop verifies via status text', async ({ steps, repo }) => {
+      // Offset-only drags don't land on any drop zone in the Vue test app
+      // (status stays 'none'). For a real verification we drag onto the first
+      // drop zone and assert the Droppable page's zone count updates —
+      // the action's direct observable effect.
       await steps.navigateTo('/');
-      await steps.click( 'draggableLink','SidebarNav');
-      await steps.on('item1', 'DraggablePage').dragAndDrop({ xOffset: 80, yOffset: 40 });
-      // Offset-only drag doesn't land on a drop zone, so status stays 'none' —
-      // assert the dragged element survived the interaction.
-      await steps.on('item1', 'DraggablePage').verifyState('visible');
+      await steps.click( 'droppableLink','SidebarNav');
+      await steps.verifyTextContains( 'redZoneCount','DroppablePage', '0');
+      const redZone = await repo.get('redZone', 'DroppablePage');
+      await steps.on('redItem1', 'DroppablePage').dragAndDrop({ target: redZone });
+      await steps.verifyTextContains( 'redZoneCount','DroppablePage', '1');
     });
 
     test('setSliderValue()', async ({ steps }) => {
