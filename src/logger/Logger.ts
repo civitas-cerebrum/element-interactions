@@ -152,3 +152,24 @@ export const log = {
    */
   important: logger('important'),
 };
+
+/**
+ * Domain-sliced loggers for the Steps API. Each key corresponds to a
+ * conceptual area — importers should pick the one that matches what they're
+ * reporting. Centralized here so splits of `Steps` into semantic facades don't
+ * each redeclare the same namespaces.
+ *
+ * @example
+ * ```ts
+ * import { stepLog } from '../logger/Logger';
+ * stepLog.interact('Clicking on "%s" in "%s"', elementName, pageName);
+ * ```
+ */
+export const stepLog = {
+  navigate: logger('navigate'),
+  interact: logger('interact'),
+  extract: logger('extract'),
+  verify: logger('verify'),
+  email: logger('email'),
+  wait: logger('wait'),
+};

@@ -4,18 +4,9 @@ import { ElementInteractions } from '../interactions/facade/ElementInteractions'
 import { Utils } from '../utils/ElementUtilities';
 import { EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions } from '../enum/Options';
-import { logger } from '../logger/Logger';
+import { stepLog as log } from '../logger/Logger';
 import { ElementAction } from './ElementAction';
 import { ExpectBuilder } from './ExpectMatchers';
-
-const log = {
-    navigate: logger('navigate'),
-    interact: logger('interact'),
-    extract: logger('extract'),
-    verify: logger('verify'),
-    email: logger('email'),
-    wait: logger('wait'),
-};
 
 /**
  * The `Steps` class serves as a unified Facade for test orchestration.

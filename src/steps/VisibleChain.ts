@@ -66,9 +66,7 @@ export class VisibleChain implements PromiseLike<boolean> {
      * repository-resolution default that `repo.get(...)` would impose.
      */
     private async probe(): Promise<boolean> {
-        const el = this.action['elementName'] as string;
-        const pg = this.action['pageName'] as string;
-        const repo = this.action['repo'] as { getSelector: (e: string, p: string) => string; driver: { locator: (s: string) => { first: () => import('@playwright/test').Locator } } };
+        const { elementName: el, pageName: pg, repo } = this.action;
         const timeout = this.options.timeout ?? 2000;
         const containsText = this.options.containsText;
         try {
@@ -199,8 +197,7 @@ export class VisibleChain implements PromiseLike<boolean> {
     // ──────────────────────────────────────────────────────────────────────
 
     private async gate(name: string, exec: () => Promise<unknown>): Promise<void> {
-        const el = this.action['elementName'] as string;
-        const pg = this.action['pageName'] as string;
+        const { elementName: el, pageName: pg } = this.action;
         if (!(await this.probe())) {
             log('[gate] skipping %s() on "%s" @ "%s" — not visible', name, el, pg);
             return;
@@ -210,8 +207,7 @@ export class VisibleChain implements PromiseLike<boolean> {
     }
 
     private async gateReturning<T>(name: string, fallback: T, exec: () => Promise<T>): Promise<T> {
-        const el = this.action['elementName'] as string;
-        const pg = this.action['pageName'] as string;
+        const { elementName: el, pageName: pg } = this.action;
         if (!(await this.probe())) {
             log('[gate] skipping %s() on "%s" @ "%s" — not visible (returning fallback)', name, el, pg);
             return fallback;

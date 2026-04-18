@@ -25,14 +25,23 @@ export class ElementAction {
     private visibilityTimeout: number = 2000;
 
     constructor(
-        private repo: ElementRepository,
-        private elementName: string,
-        private pageName: string,
+        private _repo: ElementRepository,
+        private _elementName: string,
+        private _pageName: string,
         private interactions: ElementInteractions,
         private timeoutMs?: number,
     ) {
         this._timeout = timeoutMs ?? 30000;
     }
+
+    /** Repository this chain resolves elements against. Readonly — set at construction. */
+    get repo(): ElementRepository { return this._repo; }
+
+    /** Element name on the target page. Readonly — set at construction. */
+    get elementName(): string { return this._elementName; }
+
+    /** Page name in the repository. Readonly — set at construction. */
+    get pageName(): string { return this._pageName; }
 
     /**
      * Override the retry timeout for any subsequent matcher or predicate call
