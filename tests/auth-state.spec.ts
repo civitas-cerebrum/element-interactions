@@ -43,7 +43,7 @@ test.describe('TC_036: Login Form Page', () => {
 
     await test.step('Correct login succeeds', async () => {
       await steps.fill( 'usernameInput','LoginFormPage', 'admin');
-      await steps.fill( 'passwordInput','LoginFormPage', 'demo-pass');
+      await steps.fill( 'passwordInput','LoginFormPage', 'password123');
       await steps.click( 'signInButton','LoginFormPage');
       const success = page.locator("[data-testid='login-success']");
       await success.waitFor({ state: 'visible', timeout: 5000 });
