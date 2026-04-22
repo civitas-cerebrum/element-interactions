@@ -311,6 +311,18 @@ If any P0 journey has less than 100% step coverage, the test suite is **not comp
 
 ---
 
+## Invocation options
+
+This skill accepts one optional parameter via the `args` string when invoked through the Skill tool. The default (`phases: 'full'`) matches the original behaviour.
+
+| Mode | Behaviour |
+|---|---|
+| `phases: 'full'` (default) | Run Phases 1–5 as documented above. |
+| `phases: 'phase-1-only'` | Run Phase 1 (Page Discovery) only. Write a sentinel-bearing `journey-map.md` whose body contains the site map and empty `## User Journeys` / `## Gated Areas` / `## Coverage Checkpoint Template` headings for a later invocation to fill in. Do not run Phases 2, 3, 4, or 5. Commit with the message `docs: initial app-context and site map` if the caller is `onboarding`. |
+| `phases: 'phases-2-4'` | Require that `tests/e2e/docs/journey-map.md` already exists and carries the sentinel on line 1. Read its Phase-1 site map. Run Phases 2, 3, and 4, overwriting the file in place with the full journey map (sentinel preserved). Do not re-run Phase 1 or Phase 5. |
+
+Parameter parsing: the Skill tool passes `args` as a free-form string; the skill should recognise the literal substrings `phase-1-only`, `phases-2-4`, or `full` anywhere in `args`. If none appear, default to `full`. Reject conflicting combinations (e.g. both `phase-1-only` and `phases-2-4`) with a clear error, do nothing, and return.
+
 ## Integration with Other Skills
 
 ### element-interactions (main orchestrator)
