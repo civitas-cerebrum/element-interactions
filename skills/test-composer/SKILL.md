@@ -330,3 +330,42 @@ Do NOT dispatch multiple subagents that modify the same file (especially page-re
 **Over-mocking:** E2E tests should exercise the real application. Don't mock APIs, don't intercept network requests, don't stub components. If a feature needs external data, use `test.skip()` instead of faking it.
 
 **Giant spec files:** Keep spec files under 200 lines. Split by area, not by "I kept adding tests to the same file."
+
+---
+
+## Invocation options
+
+When invoked without arguments, test-composer runs its full iterative cycle against the entire app. When invoked with a `passScope` directive in `args`, it limits a single pass to the specified priority and depths.
+
+### passScope grammar
+
+The caller encodes a pass scope in `args` using this shape (literal string, one line):
+
+```
+passScope: priority=<P0|P1|P2|P3> depth=<csv of depth tokens>
+```
+
+Valid `depth` tokens:
+
+| Token | Meaning |
+|---|---|
+| `happy-path` | Full journey tests from entry to exit. |
+| `error-states` | Validation, network failure, session expiry, and negative flows. |
+| `edge-cases` | Boundary inputs, unusual timing, empty/overflow data. |
+| `mobile` | Mobile viewport + responsive checks. |
+| `cross-feature` | Two-tab/two-role interactions, filter-across-feature flows. |
+| `data-lifecycle` | Create/edit/delete across sessions, draft persistence, bulk ops. |
+
+Example: `args: "passScope: priority=P1 depth=happy-path,error-states"`.
+
+### Pass behaviour when passScope is present
+
+1. Inventory existing tests as usual.
+2. Restrict the coverage matrix (Step 1 of the cycle) to journeys whose priority matches `priority` plus any journeys of higher priority that still have uncovered steps of any listed `depth` token. Rationale: a P1 pass with `depth=error-states` should also backfill P0 error states if they are missing — this is what "depth accumulates" means.
+3. Run Steps 2–7 of the cycle against that restricted matrix only. Do not touch out-of-scope journeys.
+4. When the pass ends, emit a one-line summary of tests added per depth token plus any new entries written to `app-context.md` and `journey-map.md` (which the skill already updates).
+5. Commit as usual but use the caller-supplied commit suffix if present: `test: coverage pass <N/5> — <passScope summary>`.
+
+### Default (no passScope)
+
+Full iterative cycle across all journeys, unchanged from the existing behaviour.
