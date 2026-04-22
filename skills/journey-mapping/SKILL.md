@@ -91,6 +91,26 @@ If the Playwright MCP is unavailable, stop and tell the user. Do not fall back t
 5. **Note state variations** — does the page look different when empty, loading, errored, or with different data? Document each state.
 6. **Note gated pages** — pages behind login, roles, or paywalls. Document what's gated and what credentials/setup would be needed to access them.
 
+### Parallel discovery
+
+For apps with multiple known entry points, Phase 1 parallelizes. This is the default; only fall back to sequential crawl when fewer than two entry points are known or MCP isolation is unavailable.
+
+**Protocol:**
+
+1. Enumerate entry points: homepage (`/`), login page, and any other known top-level URLs (dashboard, known subsystem roots, explicitly user-listed starting points).
+2. For each entry point, dispatch a discovery subagent. Each subagent gets:
+   - Its assigned entry point URL.
+   - An **isolated Playwright MCP browser instance** (see "Isolated MCP instances for parallel subagents" in the `element-interactions` orchestrator).
+   - Its own fresh context window — no prior session content.
+   - A terse brief: crawl the subtree breadth-first, capture snapshots, return a structured list of discovered pages + interactive elements.
+3. Parent journey-mapping agent merges each subagent's returned page list into `tests/e2e/docs/app-context.md` and the flat site map. Parent does **not** paste raw DOM snapshots or MCP transcripts into its own context.
+4. Deduplicate pages discovered by multiple subagents (common boundary pages show up twice; keep one entry with merged metadata).
+5. Once all subagents return, proceed to Phase 2 with the consolidated site map.
+
+**Subagent dispatch cap:** default 4 parallel subagents. Raise or lower based on available isolated MCP instances.
+
+**Fallback:** if isolated MCP instances cannot be provisioned, serialize the crawl — do not try to share one browser across subagents.
+
 ### Discovery Scope Rules
 
 - **Follow internal links only.** External links (social media, third-party services) are noted but not followed.
