@@ -158,6 +158,58 @@ If none of the above fit, **stop and discuss** before writing code. There's prob
 
 ## 🚨 Hard rules — don't violate
 
+### Before filing an issue or opening a PR — check existing work and sync status
+
+Two duplicate-prevention checks are **mandatory** before creating any new GitHub issue or PR. Skipping them wastes maintainer time and has produced duplicate issues / PRs against already-fixed code.
+
+**1. Search existing issues and PRs first.** Both open AND closed — a closed issue often contains the resolution you need:
+
+```bash
+# Issues matching the topic
+gh issue list --state all --search "<keyword>" --repo civitas-cerebrum/element-interactions
+gh issue list --state all --search "<keyword>" --repo civitas-cerebrum/element-repository
+
+# PRs matching the topic
+gh pr list --state all --search "<keyword>" --repo civitas-cerebrum/element-interactions
+gh pr list --state all --search "<keyword>" --repo civitas-cerebrum/element-repository
+```
+
+If a matching **open** issue/PR exists, comment on it — don't open a duplicate. If a matching **closed** one exists, read the resolution first; the fix may already be on `main` (see check #2).
+
+**2. Diff local vs. latest upstream before claiming a gap.** "Missing API" / "this is broken" reports filed from stale local branches are the single largest source of false-positive issues. Before filing anything:
+
+```bash
+git fetch origin
+git log --oneline HEAD..origin/main           # commits you don't have locally
+git diff HEAD origin/main -- src/             # source changes you're missing
+```
+
+If there are incoming commits, pull/rebase first, rebuild, and re-verify the gap still exists before filing.
+
+**3. For cross-package gaps, also check the published dependency version.** When the report is "element-interactions doesn't expose X" but X is really an `Element` capability, the fix may already be in a newer element-repository release you simply haven't bumped to:
+
+```bash
+# Currently pinned version in this repo
+grep -E '"@civitas-cerebrum/element-(repository|interactions)"' package.json
+
+# Latest published version
+npm view @civitas-cerebrum/element-repository version
+npm view @civitas-cerebrum/element-interactions version
+
+# Diff of what landed since your pinned version
+npm view @civitas-cerebrum/element-repository versions --json
+```
+
+If the capability landed in a newer version, bump the dep and re-verify — don't file "missing" against an outdated pin.
+
+**Report the check results in the issue/PR body** so maintainers don't have to redo them. One line each:
+
+```
+Searched existing issues/PRs: gh issue list / gh pr list — no matches for "<keyword>" in either repo.
+Local vs. origin/main: in sync (or: rebased onto <sha> and re-verified).
+Dependency version: element-repository pinned at 1.4.2; latest is 1.4.2.
+```
+
 ### No raw `locator.*()` in element-interactions src/
 
 Every `locator.click()`, `locator.fill()`, `locator.evaluate()`, etc. that creeps into `src/` is a regression. If you need a primitive Playwright doesn't expose through `Element`, **add it to the Element interface in element-repository first**.
@@ -600,14 +652,16 @@ Stop. The right path:
 
 1. **Check if the framework already supports it.** Read `skills/element-interactions/references/api-reference.md` end-to-end. The matcher tree, predicate form, `.css(prop)`, and `interactions` raw escape hatch cover most needs.
 
-2. **If it's truly missing:**
-   - Open an issue on `civitas-cerebrum/element-interactions` describing the use case.
+2. **Run the duplicate-prevention checks** from the "Before filing an issue or opening a PR" hard rule above — search existing issues/PRs (open + closed) in both repos, diff local vs. `origin/main`, and confirm your pinned dependency version is the latest. A large share of "missing API" reports are already fixed on main or in a newer published version.
+
+3. **If it's genuinely missing after those checks:**
+   - Open an issue on `civitas-cerebrum/element-interactions` describing the use case. Include the check results (see the hard rule's reporting template).
    - If it's a generic element capability (CSS variable, custom property, drag with timing), it belongs in element-repository's `Element` interface first.
    - If it's an assertion shape, it belongs on the matcher tree.
 
-3. **If you need to ship NOW**, the documented escape hatch is `interactions.interact.*`, `interactions.verify.*`, `interactions.extract.*` — they accept either `Locator` or `Element`. Use these for the one-off, but file the issue so the proper API can land.
+4. **If you need to ship NOW**, the documented escape hatch is `interactions.interact.*`, `interactions.verify.*`, `interactions.extract.*` — they accept either `Locator` or `Element`. Use these for the one-off, but file the issue so the proper API can land.
 
-4. **Never** check raw `locator.*()` calls into a test file or into the element-interactions src/. The audit grep above will catch it in code review.
+5. **Never** check raw `locator.*()` calls into a test file or into the element-interactions src/. The audit grep above will catch it in code review.
 
 ---
 
@@ -615,6 +669,9 @@ Stop. The right path:
 
 Before opening a PR on element-interactions:
 
+- [ ] Searched existing issues + PRs (both repos, open + closed) for duplicates — none found, or linked to related work in the PR body
+- [ ] Local branch is up-to-date with `origin/main` (`git fetch && git log HEAD..origin/main` is empty, or rebased)
+- [ ] Dependency versions (`@civitas-cerebrum/element-repository`) checked against `npm view` — pinned to latest or intentionally older with a reason
 - [ ] Tests pass: `npm run test` shows all tests passing
 - [ ] Coverage 100%: `npx test-coverage --format=github-plain` shows ✅
 - [ ] No raw Playwright leak: `grep -rn "locator\.\(click\|fill\|...\)" src/ --include="*.ts"` returns zero matches in non-`Element`-impl code
@@ -625,6 +682,8 @@ Before opening a PR on element-interactions:
 
 If you're adding to element-repository first:
 
+- [ ] Searched existing issues + PRs on `civitas-cerebrum/element-repository` (open + closed) — no duplicate
+- [ ] Local branch is up-to-date with `origin/main` on element-repository
 - [ ] New method on `Element` interface (cross-platform) OR `WebElement` only (with rationale comment)
 - [ ] `WebElement` implementation included
 - [ ] `PlatformElement` implementation included if cross-platform
