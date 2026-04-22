@@ -1,69 +1,65 @@
 ---
 name: test-composer
 description: >
-  Use this skill when asked to "increase coverage", "add more tests", "cover the whole app",
-  "think like a QA", "expand the test suite", "add more scenarios", or any request for iterative,
-  comprehensive E2E test development. Triggers on requests to systematically expand an existing
-  Playwright test suite across an entire application. Do NOT use for writing a single test scenario.
+  Use this skill to compose the full test portfolio for **one** user journey —
+  happy path, error states, edge cases, mobile, negative flows, and data-lifecycle
+  variants — and to drive that journey to high test coverage. Triggers on requests
+  like "write all tests for the login journey", "compose tests for journey X", or
+  when invoked by coverage-expansion with a journey reference. Do NOT use for
+  iterating across an entire application — that is coverage-expansion. Do NOT use
+  for writing a single test scenario — this skill composes the journey's whole
+  variant set.
 ---
 
-# Test Composer — Stage 5: Iterative Test Suite Expansion
+# Test Composer — Stage 5 Atom: One Journey's Full Test Portfolio
 
-The fifth stage of the element-interactions workflow. After writing initial automation (Stages 1-4), this stage systematically expands coverage through iterative cycles of scenario generation, implementation, stabilization, review, and gap analysis.
+Stage 5 of the element-interactions workflow as the atomic unit of coverage. Given one mapped user journey, compose its complete test portfolio, stabilize, API-compliance-review, verify coverage is exhaustive for that journey, and return.
 
-This stage is designed for building comprehensive E2E test suites that cover an entire web application, not just individual scenarios.
+**Scope:** exactly one journey per invocation. The iterative loop over all journeys in an app lives in the `coverage-expansion` skill.
+
+**Coverage ownership:** this skill is responsible for achieving exhaustive test coverage of its assigned journey. Every step, every branch, and every applicable state variation in the journey's map block must have a corresponding test before this skill returns. The orchestrator (typically `coverage-expansion`) trusts this contract and does not re-check per-journey coverage itself.
 
 ---
 
 ## When to Use
 
-Activate this stage when:
-- The user asks to "increase coverage", "add more tests", "cover the whole app", "think like a QA"
-- An initial test suite exists (from Stages 1-4) and needs expansion
-- The user wants autonomous test development across an application
+Activate this skill when:
+- A caller (user or `coverage-expansion` skill) asks to compose tests for one specific journey.
+- The caller supplies a `journey=<id>` reference to an entry in a sentinel-bearing `journey-map.md`.
 
-Do NOT use this for writing a single test scenario — that's Stages 1-4.
-
----
-
-## The Cycle
-
-Each iteration follows this exact sequence. Do not skip steps.
-
-```
-┌─────────────────────────────────────────────┐
-│  1. INVENTORY — what exists, what's missing │
-│  2. DISCOVER — inspect live pages via MCP   │
-│  3. IMPLEMENT — write tests in batches      │
-│  4. STABILIZE — run, fix, run until green   │
-│  5. DOCUMENT — write plain English scenarios│
-│  6. REVIEW — senior QA gap analysis         │
-│  7. DECIDE — satisfied? commit : next cycle │
-└─────────────────────────────────────────────┘
-```
-
-Repeat until 100% coverage is reached — every page, every user flow, every interactive element must have test coverage. The only acceptable gaps are those requiring external setup (test data, third-party services) that cannot be created within tests.
+Do NOT use this for:
+- Iterating across many journeys or expanding coverage across an entire app → `coverage-expansion`.
+- A single ad-hoc scenario with no journey context → Stages 1–4 of the main workflow.
 
 ---
 
-## Step 1: Inventory & Prioritize
+## Mandatory stages per invocation
 
-List every test that currently exists. If a journey map exists (`tests/e2e/docs/journey-map.md`), verify the first line is the sentinel `<!-- journey-mapping:generated -->` before trusting it — only a sentinel-bearing file is considered a valid journey map produced by the `journey-mapping` skill. If no journey map exists, or the file is present but missing the sentinel, invoke the `journey-mapping` skill first and do not proceed until it returns a sentinel-bearing map. Test-composer must not parse or plan against a foreign `journey-map.md`.
+Every invocation performs these stages in order, inside this subagent's own context. Do not return to the caller until all four complete cleanly.
 
-**How to inventory:**
-```bash
-npx playwright test --list
-```
+1. **Compose** (Steps 2–3 below) — write the full variant set for the journey, adding selectors to `page-repository.json` as needed.
+2. **Stabilize** (Step 4) — run, fix, re-run until 100% of new tests pass.
+3. **API compliance review** (Step 6) — run the Stage 4 API review protocol on the freshly-written tests. Fix any non-compliance and re-stabilize if needed.
+4. **Coverage verification** (Step 7) — check every step, branch, and applicable state variation from the journey's map block against the composed tests. Loop back to Compose for any missing coverage; only exit when coverage is exhaustive or each remaining gap has an explicit justification.
 
-**Map tests against the journey map.** For each journey, check which steps have test coverage:
+The multi-journey iterative cycle (inventory, cross-app gap analysis, multi-pass decide) is documented in `coverage-expansion`. This skill owns the per-journey work items only.
 
-| Journey | Priority | Steps | Covered | Missing |
-|---------|----------|-------|---------|---------|
-| Visitor to Contact | P0 | 6 | 4 | Step 5-6 (booking) |
-| Content Discovery | P2 | 3 | 3 | — |
-| ... | ... | ... | ... | ... |
+---
 
-**Implementation order follows priority:** P0 journeys first (full coverage including error states and mobile), then P1, P2, P3. Within a priority level, implement by user flow depth so selectors build up naturally.
+## Step 1: Load journey context
+
+The caller (user or `coverage-expansion`) passes `journey=<id>` referencing an entry in `tests/e2e/docs/journey-map.md`. Before composing anything:
+
+1. Verify `journey-map.md` exists and line 1 is `<!-- journey-mapping:generated -->`. If the sentinel is missing or the file is absent, stop and return an error pointing the caller at the `journey-mapping` skill.
+2. Locate the `### j-<id>: <name>` block in the map. Load **only** that block plus any `sj-<slug>` blocks it references under `Sub-journey refs:`.
+3. Note the journey's `Priority`, `Pages touched:`, and `Test expectations:`. These determine which variants to compose:
+   - **P0** → happy-path + error-states + edge-cases + mobile + negative flows + any data-lifecycle variants in the expectations list.
+   - **P1** → happy-path + error-states + edge-cases + mobile (if expectations list it).
+   - **P2** → happy-path + one error-state + one data-verification check.
+   - **P3** → smoke test (loads, key elements present).
+4. List existing tests that already cover any step of this journey (from `npx playwright test --list`). These are the starting point — add variants, do not duplicate.
+
+Do NOT read other journey blocks. Do NOT hold the whole map in context. Do NOT compute cross-app priority or gap analysis — that is the caller's job.
 
 ---
 
@@ -113,35 +109,20 @@ Write tests in batches of 5-15 per spec file, organized by area.
 6. **Responsive tests** — verify layout at different viewports
 7. **Security tests** — XSS, injection, session handling
 
-### Implementation Approach: User Journey Layers (Required)
+### Implementation order within this journey
 
-Build tests in order of user flow depth, so each layer adds selectors that the next layer inherits. Do NOT implement areas in isolation — follow the natural user journey through the application.
+Compose variants in this order so selectors build up cleanly and each variant inherits from the previous one:
 
-**How it works:**
+1. **Happy path end-to-end.** Walk every step of the journey, introducing selectors for every page the journey touches. Every later variant inherits these selectors.
+2. **Error-state variants.** Validation errors, network failures, session expiry, invalid input at each step.
+3. **Edge-case variants.** Boundary inputs, unusual timing, empty or overflow data.
+4. **Mobile variant** (P0/P1 only). The happy path at mobile viewport (375x812).
+5. **Negative flows.** Permission-denied, unauthorized access, out-of-order step execution.
+6. **Data-lifecycle variants** (where `Test expectations:` lists them): create → read → update → delete across sessions, draft persistence, bulk operations.
 
-1. **Identify the user journey flows** through the application (e.g., Browse → Product Detail → Cart → Checkout, or Login → Dashboard → Settings).
-2. **Order flows by depth** — start with the shallowest entry point (e.g., homepage/landing) and progress deeper into the app.
-3. **Implement one flow at a time, in order.** Each flow:
-   - Discovers and adds selectors for the pages it touches
-   - Writes tests for those pages
-   - Stabilizes before moving to the next flow
-4. **Later flows inherit earlier selectors.** By the time you reach a deeper page, all selectors from pages visited in earlier flows already exist in `page-repository.json`.
+Each variant is its own `test(...)` inside one describe block for the journey — or split into a small cluster of describe blocks if the file grows beyond ~200 lines.
 
-**Example — E-commerce app:**
-
-| Order | Flow | Pages Touched | New Selectors Added |
-|-------|------|---------------|---------------------|
-| 1 | Browse Products | HomePage, CategoryPage, ProductListPage | All homepage + listing selectors |
-| 2 | Product Detail | ProductListPage → ProductDetailPage | PDP selectors (listing selectors already exist) |
-| 3 | Add to Cart | ProductDetailPage → CartPage | Cart selectors (PDP selectors already exist) |
-| 4 | Checkout | CartPage → CheckoutPage → ConfirmationPage | Checkout selectors (cart selectors already exist) |
-| 5 | User Account | LoginPage → AccountPage → OrderHistoryPage | Account selectors |
-
-**Why this works:** Each step builds on the previous `page-repository.json` entries. By the time you reach Cart, you already have PDP selectors. By Checkout, you already have Cart selectors. This means minimal re-inspection of pages, fewer selector conflicts, and a natural progression that mirrors how real users interact with the app.
-
-**Parallelization within layers:** Flows that share no pages can be implemented in parallel (e.g., "User Account" and "Admin Panel" if they don't overlap). But flows that share pages MUST be implemented in order so selectors are built up correctly.
-
-**Batch strategy for subagents:** When dispatching subagents, assign each subagent a complete flow (not a random area). Include the current `page-repository.json` so the subagent knows which selectors already exist. Do NOT dispatch multiple subagents that would need to add selectors for the same page.
+Cross-journey ordering (which journey to tackle first among many) is the caller's concern, not this skill's.
 
 ---
 
@@ -176,96 +157,64 @@ Save to `docs/e2e-test-scenarios.md` (or a path the user specifies).
 
 ---
 
-## Step 6: Review as Senior QA
+## Step 6: API compliance review
 
-Read the plain English scenarios document. Think like a senior QA engineer. Ask:
+Run the Stage 4 API review protocol on the freshly-written tests for this journey. The full protocol is documented in `skills/element-interactions/SKILL.md` under the API compliance review stage. Scope the review to the tests composed in this invocation, not the whole suite.
 
-**Coverage questions:**
-- Is every page in the app visited by at least one test?
-- Is every interactive element (button, input, link, tab, dropdown) exercised?
-- Is every form validated with both valid and invalid input?
-- Is every navigation path tested (sidebar, breadcrumbs, CTAs, back button)?
-- Are error states tested (404, empty states, expired sessions)?
+If any non-compliance is found (wrong argument order, deprecated APIs, missing options, incorrect types, direct selector usage instead of the Steps API, inline selectors outside `page-repository.json`, fixture misuse), fix it and re-run Step 4 (Stabilize). Do not proceed to Step 7 until the tests are both green and API-compliant.
 
-**Depth questions:**
-- Do tests verify actual data values, or just element presence?
-- Are form submissions tested end-to-end (fill → submit → verify result)?
-- Are CRUD operations tested (create → read → update → delete)?
-- Is the happy path tested as a complete user journey (not just isolated pages)?
-- Are edge cases covered (special characters, empty inputs, boundary values)?
+A lightweight self-review checklist for this journey only:
 
-**Quality questions:**
-- Are tests independent (no ordering dependencies)?
-- Are tests resilient to data state changes?
-- Do tests use proper waits (not arbitrary timeouts)?
-- Are selectors stable (not dependent on implementation details)?
-
-**Responsive coverage questions (P0 and P1 pages only):**
-- Has the highest-priority journey been walked end-to-end at mobile viewport (375x812)?
-- Does the mobile navigation work (hamburger menu opens, links navigate)?
-- Are all primary action buttons reachable on mobile after scrolling?
-- Are forms fully usable on mobile (fields focusable, keyboard doesn't obscure submit)?
-
-To test at a different viewport:
-```ts
-test.describe('Homepage — Mobile', () => {
-  test.use({ viewport: { width: 375, height: 812 } });
-  test('mobile nav works', async ({ steps }) => { ... });
-});
-```
-
-Three viewport tiers: Mobile (375x812), Tablet (768x1024), Desktop (1280x720). Desktop is baseline. Mobile is where breakage lives — test mobile first for P0 pages.
-
-**Performance baseline questions (P0 pages only):**
-- Does the P0 entry page load within 5 seconds?
-- Are there any obvious layout shifts during load?
-
-Lightweight performance check pattern:
-```ts
-test('homepage loads within performance budget', async ({ page, steps }) => {
-  const start = Date.now();
-  await steps.navigateTo('/');
-  await steps.verifyPresence('heroHeading', 'HomePage');
-  expect(Date.now() - start).toBeLessThan(5000);
-});
-```
-
-Do not over-invest in performance testing — one load-time assertion per P0 entry page is sufficient. Performance testing is a discipline of its own; this is a smoke check.
-
-**Produce a gap table:**
-
-| Priority | Gap | Area | Effort |
-|----------|-----|------|--------|
-| P0 | No logout test | Auth | Low |
-| P1 | Form validation untested | API Keys | Medium |
-| P2 | Mobile viewport missing | Job Detail | Low |
+- Every test uses the Steps API from `./fixtures/base` (no raw `page.locator(...)` in test files).
+- Every element selector lives in `page-repository.json` (no inline selectors in spec files).
+- Verification methods use correct option shapes (`{ exactly, greaterThan, lessThan }` for `verifyCount`; bare `verifyText()` for "not empty").
+- No use of deprecated methods or option shapes flagged in the API reference.
+- Every test ends with a verification that proves the action's effect — not a tautology.
+- `test.describe.configure({ timeout: 60_000 })` on every describe block composed for this journey.
 
 ---
 
-## Step 7: Decide
+## Step 7: Coverage verification
 
-At the end of each cycle, assess:
+Before returning, verify the journey is exhaustively covered. This is the coverage-ownership contract:
 
-**Commit if:**
-- All tests pass (0 failures)
-- Coverage increased meaningfully since last cycle
-- The gap table has no P0 items remaining
+1. Re-read the assigned journey block's `Steps:`, `Branches:`, and `State variations:` lists.
+2. Build a coverage matrix: each listed item × the tests that exercise it.
+3. If any step, branch, or applicable state variation has zero tests, loop back to Step 3 (Implement) to add missing coverage, then re-stabilize (Step 4) and re-review (Step 6).
+4. Only exit the loop when every item is covered or each remaining gap has an explicit justification (e.g., "branch X requires a seeded database row that cannot be created in tests — documented as external-setup gap").
 
-**Continue if:**
-- P0 or P1 gaps remain that can be implemented without external setup
-- Coverage is below 100%
-- Any page, flow, or interactive element lacks test coverage
+This skill owns the coverage outcome for its assigned journey. The orchestrator will not re-check.
 
-**Stop if:**
-- Remaining gaps require external setup (test data, third-party APIs, specific user roles)
-- 100% coverage is verified — every page, flow, and element is covered
+---
 
-**Commit message format:**
+## Step 8: Return
+
+Emit a structured report to the caller. Do not paste test source, DOM snapshots, or MCP transcripts into the return — the caller will not read them.
+
+Format:
+
 ```
-feat(e2e): [cycle description] — [key additions]
-
-- [bullet point per area changed]
-- [total test count], all passing
+journey: j-<id>
+tests added:
+  - tests/<file>.spec.ts :: <describe> :: <test name>
+  - ...
+coverage:
+  steps: <covered>/<total>
+  branches: <covered>/<total>
+  state-variations: <covered>/<total>
+  justified gaps:
+    - <item> — <reason>
+new discoveries:
+  branches:
+    - <branch description, page, from-step>
+  sub-journeys:
+    - <potential sub-journey observed>
+  pages:
+    - <new url, why discovered>
+  elements:
+    - <new selector added to page-repository.json, page, role>
+api compliance: clean | <specific issue resolved>
+stabilization: <N runs> green
 ```
 
 ---
@@ -308,14 +257,9 @@ Do not ask questions back.
 
 ## Parallelization
 
-When implementing multiple independent areas, dispatch subagent per area. Each subagent needs:
+Cross-journey parallelization (dispatching subagents for multiple journeys at once) is `coverage-expansion`'s responsibility, not this skill's. A single `test-composer` invocation stays focused on one journey.
 
-1. Full page snapshot from MCP discovery
-2. Current page-repository.json content
-3. Existing test patterns to follow
-4. Clear file path for the new spec
-
-Do NOT dispatch multiple subagents that modify the same file (especially page-repository.json). Instead, have one subagent do all page-repository updates, or batch them sequentially.
+Within a journey, variants (happy path, error states, edge cases, mobile, negative flows, data lifecycle) are composed sequentially so each variant inherits from the selectors added by the previous one.
 
 ---
 
@@ -335,37 +279,14 @@ Do NOT dispatch multiple subagents that modify the same file (especially page-re
 
 ## Invocation options
 
-When invoked without arguments, test-composer runs its full iterative cycle against the entire app. When invoked with a `passScope` directive in `args`, it limits a single pass to the specified priority and depths.
+test-composer accepts a single required parameter:
 
-### passScope grammar
-
-The caller encodes a pass scope in `args` using this shape (literal string, one line):
-
-```
-passScope: priority=<P0|P1|P2|P3> depth=<csv of depth tokens>
-```
-
-Valid `depth` tokens:
-
-| Token | Meaning |
+| Parameter | Meaning |
 |---|---|
-| `happy-path` | Full journey tests from entry to exit. |
-| `error-states` | Validation, network failure, session expiry, and negative flows. |
-| `edge-cases` | Boundary inputs, unusual timing, empty/overflow data. |
-| `mobile` | Mobile viewport + responsive checks. |
-| `cross-feature` | Two-tab/two-role interactions, filter-across-feature flows. |
-| `data-lifecycle` | Create/edit/delete across sessions, draft persistence, bulk ops. |
+| `journey=<j-slug>` | The ID of a journey in `tests/e2e/docs/journey-map.md`. This is the only journey composed during this invocation. |
 
-Example: `args: "passScope: priority=P1 depth=happy-path,error-states"`.
+Example: `args: "journey=j-book-demo"`.
 
-### Pass behaviour when passScope is present
+### Backward compatibility
 
-1. Inventory existing tests as usual.
-2. Restrict the coverage matrix (Step 1 of the cycle) to journeys whose priority matches `priority` plus any journeys of higher priority that still have uncovered steps of any listed `depth` token. Rationale: a P1 pass with `depth=error-states` should also backfill P0 error states if they are missing — this is what "depth accumulates" means.
-3. Run Steps 2–7 of the cycle against that restricted matrix only. Do not touch out-of-scope journeys.
-4. When the pass ends, emit a one-line summary of tests added per depth token plus any new entries written to `app-context.md` and `journey-map.md` (which the skill already updates).
-5. Commit as usual but use the caller-supplied commit suffix if present: `test: coverage pass <N/5> — <passScope summary>`.
-
-### Default (no passScope)
-
-Full iterative cycle across all journeys, unchanged from the existing behaviour.
+The legacy `passScope: priority=<Pn> depth=<tokens>` form is **deprecated**. If a caller still passes it, emit a one-line deprecation warning directing them at `coverage-expansion mode: breadth` (which is the proper home for priority/depth sweeps) and then compose against the highest-priority journey with uncovered steps matching the listed depths. Remove this fallback in a future major release.

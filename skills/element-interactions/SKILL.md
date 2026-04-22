@@ -27,7 +27,9 @@ This skill is the orchestrator for a group of testing skills. It handles Stages 
 
 | Skill | Activates when | What it does |
 |---|---|---|
-| `test-composer` | User asks to expand coverage, or Stage 5 reached | Iterative test suite expansion across the full app |
+| `journey-mapping` | Before coverage work; map missing or stale | Discovers pages, identifies user journeys, produces the sentinel-bearing `journey-map.md` |
+| `coverage-expansion` | User asks to expand coverage, or Stage 5 reached | Iterative journey-by-journey coverage growth (default `mode: depth`, three passes) or a one-pass breadth sweep (`mode: breadth`) |
+| `test-composer` | Compose tests for one specific journey (usually called by `coverage-expansion`) | Atomic single-journey scope: happy path + variants, stabilize, API review, coverage verification |
 | `bug-discovery` | Automatically after Stage 5 achieves 100% coverage | Adversarial bug hunting after tests pass |
 | `test-repair` | User reports a broken/rotted/flaky suite, OR auto-escalated from `failure-diagnosis` / `test-composer` / `bug-discovery` when a run produces many failures at once | Batch repair pipeline: baseline 3× → pattern cluster → adaptive verification → delegate per cluster to `failure-diagnosis` → post-heal verification → summary |
 | `agents-vs-agents` | App has AI features, or user mentions AI guardrails/red-teaming/bias testing | Adversarial AI testing with LLM-powered attacker + judge |
@@ -136,6 +138,36 @@ Every time you navigate to a new page or discover a new component (via Playwrigh
 - When you discover a new route, component, or state variation
 
 **Why this matters:** Without accumulated context, every new session starts from zero. This file lets future sessions understand the app's structure, known states, and edge cases without re-inspecting every page. It also serves as the source of truth for identifying test coverage gaps.
+
+### 11. Isolated MCP instances for parallel subagents
+
+Any skill that dispatches **parallel** subagents using the Playwright MCP must provide each subagent with an **isolated MCP browser instance**. Two subagents sharing one browser fight over the active tab and corrupt each other's snapshots — discovery results become non-deterministic and tests compose against stale state.
+
+Implementation guidance for skill authors:
+
+- **Preferred:** spawn a fresh Playwright MCP process per subagent on an isolated port with its own state directory. Requires the subagent dispatch mechanism to accept custom MCP server configuration.
+- **Acceptable:** a single MCP that supports per-subagent browser context isolation (independent contexts, each with its own tabs and storage).
+- **Fallback:** if neither of the above is available in the current environment, serialize the work. Do not try to share one browser across parallel agents.
+
+Skills currently affected:
+- `journey-mapping` Phase 1 — parallel page discovery across entry points.
+- `coverage-expansion` — parallel per-journey test composition.
+
+Orchestrator's role: before dispatching parallel MCP-using subagents, confirm isolation is available. If not, log a `[mcp-isolation: serializing]` progress line and fall back to sequential dispatch. Never silently share a browser.
+
+### 12. Orchestrator context discipline
+
+Orchestrator skills (`coverage-expansion`, `onboarding`, this orchestrator) hold only **index-level state** in their own context:
+
+- Identifiers, names, priorities, page lists, counters, dispatch rosters.
+
+They do NOT hold:
+- Full journey step lists, branches, or state variations beyond what is needed to dispatch.
+- Any DOM snapshot or MCP transcript from subagent work.
+- Any subagent's produced test source.
+- Any stabilization transcript.
+
+Parallel subagents own their own context windows. Context weight lives with the worker, not the conductor. This is how the skill architecture scales to many journeys without blowing the orchestrator's token budget.
 
 ### Workflow
 - **Run the tests** to validate your work. Do not skip this.
@@ -297,6 +329,9 @@ Only show the greeting menu if the user's message is vague or just says somethin
 ### Routing
 
 - **Onboarding intent** — phrases like "onboard this project", "set up element-interactions", "start from scratch", "automate this app from zero", OR a vague message on a project whose cascade detector (see below) reports a non-onboarded state → invoke the `onboarding` companion skill. Do not run Stages 1–4 inline.
+- **Coverage expansion intent (deep)** — phrases like "increase coverage", "deeper coverage", "add more scenarios", "iterative test expansion", "expand tests", "deep coverage pass" → invoke `coverage-expansion` with default `mode: depth` (three passes, journey-by-journey, parallel where independent).
+- **Coverage expansion intent (breadth)** — phrases like "quick coverage", "fast coverage", "breadth coverage", "sweep coverage" → invoke `coverage-expansion` with `mode: breadth`.
+- **Compose tests for one journey** — phrases like "compose tests for journey X", "tests for j-<slug>", "test this journey" → invoke `test-composer` with `args: "journey=<j-id>"`.
 - **User already described a scenario** — Skip the greeting. Go directly to Stage 1 (fast path if scenario is complete, full discovery if vague).
 - **API question** — Answer directly from the API Reference section below. No stages needed.
 - **Fix or edit a test** — Skip to Stage 3 (Fix/Edit Mode).

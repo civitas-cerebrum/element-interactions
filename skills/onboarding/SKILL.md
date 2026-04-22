@@ -103,11 +103,10 @@ Examples:
 [onboarding] Journey mapping — 7 journeys identified (2 P0, 3 P1, 2 P2)
 [onboarding] Happy path test written, stabilizing…
 [onboarding] Happy path green — committed
-[onboarding] Coverage pass 1/5 (P0 happy paths) — 6 tests added, 6 green, 0 skipped
-[onboarding] Coverage pass 2/5 (P1 + P0 error states) — 9 tests added, 8 green, 1 skipped (data seed)
-[onboarding] Coverage pass 3/5 (P2 + P0/P1 edge cases) — 7 tests added, 7 green
-[onboarding] Coverage pass 4/5 (P3 + mobile) — 4 tests added, 4 green
-[onboarding] Coverage pass 5/5 (residual gaps) — 5 tests added, 5 green
+[onboarding] Coverage expansion starting (mode: depth, 3 passes)
+[onboarding] Coverage expansion pass 1/3 complete — 27 tests added, 3 branches discovered
+[onboarding] Coverage expansion pass 2/3 complete — 14 tests added, 1 sub-journey promoted
+[onboarding] Coverage expansion pass 3/3 complete — 8 tests added, cross-journey interactions covered
 [onboarding] Bug-hunt 1/2 (element probing) — 2 issues logged
 [onboarding] Bug-hunt 2/2 (flow probing) — 3 issues logged
 [onboarding] Generating work-summary-deck
@@ -167,37 +166,15 @@ The companion reads the existing sentinel-bearing Phase-1 map and fills in Phase
 
 **Commit:** `docs: journey map — <N> journeys prioritized`.
 
-### Phase 5 — Coverage expansion (five passes)
+### Phase 5 — Coverage expansion (three passes, depth mode)
 
-Five sequential invocations of `test-composer`, one per pass. Between every invocation run the refresh step (below) so each pass plans against the most recent `app-context.md` and `journey-map.md`.
+**Delegate to:** `coverage-expansion` with `args: "mode: depth"`.
 
-| Pass | `args` |
-|---|---|
-| 1 | `passScope: priority=P0 depth=happy-path` |
-| 2 | `passScope: priority=P1 depth=happy-path,error-states` |
-| 3 | `passScope: priority=P2 depth=happy-path,error-states,edge-cases` |
-| 4 | `passScope: priority=P3 depth=happy-path,mobile` |
-| 5 | `passScope: priority=P3 depth=cross-feature,data-lifecycle` |
+That skill runs three journey-by-journey passes internally, parallelising subagent dispatch for independent journeys, picking a model per journey (sonnet/opus) by size and complexity, and reconciling map growth between passes. Onboarding's role here is simply to invoke it and relay `[coverage-expansion]` progress lines upstream — no per-pass orchestration at this layer.
 
-(Pass 5 uses P3 as the priority to cast the widest net; the `depth` tokens direct the pass toward residual cross-cutting gaps. The skill's own gap analysis picks up anything not yet covered.)
+Between and after the three passes, `coverage-expansion` itself refreshes its view of `app-context.md` and `journey-map.md`; onboarding does not need its own refresh step at this phase. When the skill returns, append a "Coverage expansion — new knowledge" section to `onboarding-report.md` summarising total tests added, new journeys discovered, and any sub-journeys promoted.
 
-**Refresh step (run before every pass and after every pass):**
-
-```
-1. Read tests/e2e/docs/app-context.md (take a snapshot of the content).
-2. Read tests/e2e/docs/journey-map.md. Verify the sentinel on line 1.
-3. List all spec files under tests/e2e/ and group by journey.
-4. Compute coverage matrix: journey × step → covered / missing.
-5. Compute gap set: missing steps ordered by priority, then by depth token.
-6. Pass the matrix + gap set into the next test-composer invocation via args.
-7. After the pass returns:
-   a. Read the updated app-context.md and journey-map.md.
-   b. Diff against the pre-pass snapshot.
-   c. Append a "Pass <N> — new knowledge" section to onboarding-report.md
-      summarising what was added.
-```
-
-**Commit:** after each pass, `test: coverage pass <N/5> — <priority + depth summary>`.
+**Commits:** `coverage-expansion` commits once per pass (`test: coverage expansion pass <N>/3 — <summary>`). Onboarding adds no extra commit here.
 
 ### Phase 6 — Bug hunts (two passes)
 

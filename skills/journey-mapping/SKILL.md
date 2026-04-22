@@ -91,6 +91,26 @@ If the Playwright MCP is unavailable, stop and tell the user. Do not fall back t
 5. **Note state variations** — does the page look different when empty, loading, errored, or with different data? Document each state.
 6. **Note gated pages** — pages behind login, roles, or paywalls. Document what's gated and what credentials/setup would be needed to access them.
 
+### Parallel discovery
+
+For apps with multiple known entry points, Phase 1 parallelizes. This is the default; only fall back to sequential crawl when fewer than two entry points are known or MCP isolation is unavailable.
+
+**Protocol:**
+
+1. Enumerate entry points: homepage (`/`), login page, and any other known top-level URLs (dashboard, known subsystem roots, explicitly user-listed starting points).
+2. For each entry point, dispatch a discovery subagent. Each subagent gets:
+   - Its assigned entry point URL.
+   - An **isolated Playwright MCP browser instance** (see "Isolated MCP instances for parallel subagents" in the `element-interactions` orchestrator).
+   - Its own fresh context window — no prior session content.
+   - A terse brief: crawl the subtree breadth-first, capture snapshots, return a structured list of discovered pages + interactive elements.
+3. Parent journey-mapping agent merges each subagent's returned page list into `tests/e2e/docs/app-context.md` and the flat site map. Parent does **not** paste raw DOM snapshots or MCP transcripts into its own context.
+4. Deduplicate pages discovered by multiple subagents (common boundary pages show up twice; keep one entry with merged metadata).
+5. Once all subagents return, proceed to Phase 2 with the consolidated site map.
+
+**Subagent dispatch cap:** default 4 parallel subagents. Raise or lower based on available isolated MCP instances.
+
+**Fallback:** if isolated MCP instances cannot be provisioned, serialize the crawl — do not try to share one browser across subagents.
+
 ### Discovery Scope Rules
 
 - **Follow internal links only.** External links (social media, third-party services) are noted but not followed.
@@ -202,11 +222,43 @@ The flow list from Phase 2, now with priorities assigned:
 
 ---
 
+## Phase 3.5: Redundancy Revision
+
+Before writing the journey map, scan the prioritised journey list for redundancy. Overlap between journeys is expected — real users traverse shared pages — but unmanaged overlap bloats the map and makes downstream parallel test composition harder. Revision rebalances the list.
+
+### Checks
+
+1. **Shared-segment extraction.** Any two journeys that share three or more consecutive steps on the same pages: extract the shared segment as a named sub-journey (`sj-<slug>`) and reference it from both parent journeys.
+2. **Variant collapse.** Any two journeys that differ only in their final step or final page: consider merging as one journey with labelled variant exits.
+3. **Decomposition.** Any single journey that chains multiple distinct user goals (e.g., "browse → purchase → manage account"): split into smaller journeys and record the cross-journey entry points explicitly.
+4. **Explicit overlap annotation.** Where two journeys legitimately pass through the same page for different goals, annotate the page's role per journey on the journey blocks rather than silently.
+
+### Process
+
+1. Build a page × journey matrix from the Phase 2 flow list.
+2. Scan row-by-row and column-by-column for the patterns above.
+3. For each match, propose a revision and apply it to the journey list.
+4. Emit a one-line revision log entry per change (e.g., "extracted sj-login from j-book-demo and j-request-quote").
+
+### Output
+
+A revised journey list where:
+- Shared segments live as reusable sub-journeys (`sj-<slug>`).
+- Each remaining journey has a stable ID (`j-<slug>`).
+- Each journey's `Pages touched:` list is concrete.
+- Every overlap between journeys is either routed through a sub-journey or explicitly annotated.
+
+This revised list feeds Phase 4.
+
+---
+
 ## Phase 4: Journey Map Document
 
 Write the complete journey map to `tests/e2e/docs/journey-map.md`. This is the blueprint that test-composer uses to determine what to implement and in what order.
 
 ### Document Structure
+
+Each journey is a self-contained block so a downstream subagent can be handed **only** its assigned journey (plus referenced sub-journeys) with zero cross-section reading.
 
 ```markdown
 <!-- journey-mapping:generated -->
@@ -222,39 +274,51 @@ Write the complete journey map to `tests/e2e/docs/journey-map.md`. This is the b
 ## Site Map
 [flat URL list from Phase 1]
 
-## User Journeys
+## Sub-journeys (reusable segments)
 
-### P0 — Revenue / Core Conversion
+### sj-<slug>: <name>
+- **Pages:** [list]
+- **Steps:**
+  1. ...
+- **Used by:** [j-slug, j-slug, ...]
 
-#### [Journey Name]
-**Entry:** [page]
+## Journeys
+
+### j-<slug>: <name>
+**Priority:** P0 | P1 | P2 | P3
+**Category:** Conversion | Core experience | Content | Account | Error recovery | Return visitor
+**Entry:** /path
+**Pages touched:** [comma-separated list of URLs or page names from the site map]
+**Sub-journey refs:** [sj-slug, ...]
 **Steps:**
 1. [action] → [page]
-2. [action] → [page]
 ...
-**Exit:** [outcome]
 **Branches:** [alternative paths]
+**State variations:** [empty, loading, errored, with data]
+**Exit:** [outcome]
 **Test expectations:**
 - Full journey test (entry to exit)
 - Error state: [what if step N fails?]
 - Edge case: [unusual input, timing, etc.]
-- Mobile: [does this flow work on mobile?]
+- Mobile: [applicable? yes / no]
 
-### P1 — Core Experience
-...
-
-### P2 — Supporting Content
-...
-
-### P3 — Peripheral
+### j-<slug>: <next journey>
 ...
 
 ## Gated Areas (Not Mapped)
 [pages behind auth, paywalls, etc. with notes on what's needed to access]
 
 ## Coverage Checkpoint Template
-[filled in during Phase 5, after test-composer completes]
+[filled in during Phase 5, after coverage-expansion completes]
 ```
+
+**Formatting rules for downstream parseability:**
+
+- Every journey has a stable `j-<slug>` ID (`j-book-demo`, `j-reset-password`, etc.).
+- Every sub-journey has a stable `sj-<slug>` ID.
+- `Pages touched:` is a comma-separated list of concrete URL paths or page names matching the site map. `coverage-expansion` uses this field to build the journey independence graph.
+- Journey blocks appear in priority order (all P0 blocks, then all P1, etc.) — priority is carried in each block's `Priority:` field rather than in section headings, so the file is flat and every `j-<slug>` heading is addressable the same way.
+- No cross-journey shorthand: every reference to another journey uses its full ID.
 
 ### Signature Marker
 
