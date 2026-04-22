@@ -258,6 +258,8 @@ Write the complete journey map to `tests/e2e/docs/journey-map.md`. This is the b
 
 ### Document Structure
 
+Each journey is a self-contained block so a downstream subagent can be handed **only** its assigned journey (plus referenced sub-journeys) with zero cross-section reading.
+
 ```markdown
 <!-- journey-mapping:generated -->
 # Journey Map — [App Name]
@@ -272,39 +274,51 @@ Write the complete journey map to `tests/e2e/docs/journey-map.md`. This is the b
 ## Site Map
 [flat URL list from Phase 1]
 
-## User Journeys
+## Sub-journeys (reusable segments)
 
-### P0 — Revenue / Core Conversion
+### sj-<slug>: <name>
+- **Pages:** [list]
+- **Steps:**
+  1. ...
+- **Used by:** [j-slug, j-slug, ...]
 
-#### [Journey Name]
-**Entry:** [page]
+## Journeys
+
+### j-<slug>: <name>
+**Priority:** P0 | P1 | P2 | P3
+**Category:** Conversion | Core experience | Content | Account | Error recovery | Return visitor
+**Entry:** /path
+**Pages touched:** [comma-separated list of URLs or page names from the site map]
+**Sub-journey refs:** [sj-slug, ...]
 **Steps:**
 1. [action] → [page]
-2. [action] → [page]
 ...
-**Exit:** [outcome]
 **Branches:** [alternative paths]
+**State variations:** [empty, loading, errored, with data]
+**Exit:** [outcome]
 **Test expectations:**
 - Full journey test (entry to exit)
 - Error state: [what if step N fails?]
 - Edge case: [unusual input, timing, etc.]
-- Mobile: [does this flow work on mobile?]
+- Mobile: [applicable? yes / no]
 
-### P1 — Core Experience
-...
-
-### P2 — Supporting Content
-...
-
-### P3 — Peripheral
+### j-<slug>: <next journey>
 ...
 
 ## Gated Areas (Not Mapped)
 [pages behind auth, paywalls, etc. with notes on what's needed to access]
 
 ## Coverage Checkpoint Template
-[filled in during Phase 5, after test-composer completes]
+[filled in during Phase 5, after coverage-expansion completes]
 ```
+
+**Formatting rules for downstream parseability:**
+
+- Every journey has a stable `j-<slug>` ID (`j-book-demo`, `j-reset-password`, etc.).
+- Every sub-journey has a stable `sj-<slug>` ID.
+- `Pages touched:` is a comma-separated list of concrete URL paths or page names matching the site map. `coverage-expansion` uses this field to build the journey independence graph.
+- Journey blocks appear in priority order (all P0 blocks, then all P1, etc.) — priority is carried in each block's `Priority:` field rather than in section headings, so the file is flat and every `j-<slug>` heading is addressable the same way.
+- No cross-journey shorthand: every reference to another journey uses its full ID.
 
 ### Signature Marker
 
