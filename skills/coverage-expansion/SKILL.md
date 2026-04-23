@@ -154,7 +154,7 @@ Every `test-composer` subagent dispatched by this skill must:
 
 1. Receive an **isolated context window** — no prior session content, no other journey's data.
 2. Receive only: its assigned journey block + any `sj-<slug>` sub-journey blocks it references + the current `page-repository.json` slice for the pages that journey touches.
-3. Have access to an **isolated Playwright MCP browser instance** (see the `element-interactions` orchestrator's "Isolated MCP instances for parallel subagents" rule). Parallel subagents never share one browser.
+3. Have access to an **isolated Playwright MCP browser instance**. On Claude Code this is automatic: dispatch each subagent via the **Agent tool** with `mcp__plugin_playwright_playwright__*` tools named in its prompt — each Agent-tool dispatch runs in its own agent session with its own MCP connection, giving per-subagent browser isolation by default. See the `element-interactions` orchestrator's "Isolated MCP instances for parallel subagents" rule for the full tier list (default = Agent-tool dispatch; alternative = custom MCP process; fallback = serialize). Parallel subagents never share one browser, and serialization is the fallback, not the expected path.
 4. Not return until stabilization green, API compliance review clean, and coverage verified exhaustive (enforced inside `test-composer`).
 5. Return a structured discovery report only — no pasted test source, no DOM snapshots, no MCP transcripts.
 

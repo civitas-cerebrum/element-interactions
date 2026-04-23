@@ -93,23 +93,46 @@ If the Playwright MCP is unavailable, stop and tell the user. Do not fall back t
 
 ### Parallel discovery
 
-For apps with multiple known entry points, Phase 1 parallelizes. This is the default; only fall back to sequential crawl when fewer than two entry points are known or MCP isolation is unavailable.
+For apps with multiple known entry points, Phase 1 parallelizes. **Parallel is the default**; only fall back to sequential crawl when fewer than two entry points are known or the current environment genuinely cannot run Agent-tool subagents with Playwright MCP in scope. Do not default-fallback to serial — on Claude Code, Agent-tool dispatch provides per-subagent MCP isolation out of the box.
 
 **Protocol:**
 
 1. Enumerate entry points: homepage (`/`), login page, and any other known top-level URLs (dashboard, known subsystem roots, explicitly user-listed starting points).
-2. For each entry point, dispatch a discovery subagent. Each subagent gets:
+2. For each entry point, dispatch a discovery subagent **via the Agent tool**. Each subagent gets:
    - Its assigned entry point URL.
-   - An **isolated Playwright MCP browser instance** (see "Isolated MCP instances for parallel subagents" in the `element-interactions` orchestrator).
+   - An **isolated Playwright MCP browser instance** — on Claude Code this is automatic: each Agent-tool dispatch runs in its own agent session with its own MCP connection (see "Isolated MCP instances for parallel subagents" in the `element-interactions` orchestrator).
    - Its own fresh context window — no prior session content.
    - A terse brief: crawl the subtree breadth-first, capture snapshots, return a structured list of discovered pages + interactive elements.
 3. Parent journey-mapping agent merges each subagent's returned page list into `tests/e2e/docs/app-context.md` and the flat site map. Parent does **not** paste raw DOM snapshots or MCP transcripts into its own context.
 4. Deduplicate pages discovered by multiple subagents (common boundary pages show up twice; keep one entry with merged metadata).
 5. Once all subagents return, proceed to Phase 2 with the consolidated site map.
 
-**Subagent dispatch cap:** default 4 parallel subagents. Raise or lower based on available isolated MCP instances.
+**Concrete dispatch shape (Claude Code):**
 
-**Fallback:** if isolated MCP instances cannot be provisioned, serialize the crawl — do not try to share one browser across subagents.
+For each entry point, dispatch via the Agent tool:
+
+```
+Agent({
+  description: "Discover <subtree>",
+  prompt: `
+    Crawl <entry-point-URL> breadth-first. Capture a snapshot of each page,
+    record URL, purpose, key sections, interactive elements, and outbound links.
+    Return a structured list of discovered pages and interactive elements.
+    Do not paste raw DOM into the return — summarize.
+
+    Use mcp__plugin_playwright_playwright__browser_navigate,
+    mcp__plugin_playwright_playwright__browser_snapshot,
+    mcp__plugin_playwright_playwright__browser_click, and related
+    mcp__plugin_playwright_playwright__* tools as needed.
+  `,
+})
+```
+
+Dispatch N of these in parallel (one per entry point, up to the cap). Each dispatched agent opens its own MCP browser in its own session; the parent does **not** share its browser with the children and must not issue its own `browser_*` calls during the parallel phase.
+
+**Subagent dispatch cap:** default 4 parallel subagents. Raise or lower based on the number of distinct entry points and the host's concurrency budget.
+
+**Fallback (last resort only):** if the current environment genuinely cannot dispatch Agent-tool subagents with Playwright MCP in scope, serialize the crawl and emit a `[mcp-isolation: serializing]` progress line. Do not try to share one browser across subagents, and do not treat serialization as the expected path.
 
 ### Discovery Scope Rules
 
