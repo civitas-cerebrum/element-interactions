@@ -8,6 +8,33 @@ services:
       - "7457:8080"
     networks:
       - vue-network
+
+  bookhive-mongodb:
+    image: mongo:7
+    restart: always
+    networks:
+      - bookhive-network
+    volumes:
+      - bookhive-mongo-data:/data/db
+
+  bookhive-backend:
+    image: umutayb/book-hive-backend:latest
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      - bookhive-mongodb
+    environment:
+      SPRING_DATA_MONGODB_URI: mongodb://bookhive-mongodb:27017/bookhive
+      JWT_SECRET: element-interactions-test-secret-key-at-least-sixty-four-bytes-long
+    networks:
+      - bookhive-network
+
 networks:
   vue-network:
     driver: bridge
+  bookhive-network:
+    driver: bridge
+
+volumes:
+  bookhive-mongo-data:
