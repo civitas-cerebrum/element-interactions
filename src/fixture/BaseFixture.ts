@@ -47,6 +47,26 @@ export interface BaseFixtureOptions {
      * Default: `{ fullPage: true }`
      */
     screenshotOnFailure?: boolean | { fullPage?: boolean };
+    /**
+     * Base URL for the default API client. When set, `steps.apiGet/apiPost/...`
+     * can be called without a provider name and will dispatch against this URL.
+     *
+     * @example `apiBaseUrl: 'https://api.example.com'`
+     */
+    apiBaseUrl?: string;
+    /**
+     * Named API providers for multi-service testing. Each entry creates a
+     * separate `WasapiClient` accessible by name: `steps.apiGet('billing', '/users')`.
+     *
+     * @example
+     * ```ts
+     * apiProviders: {
+     *   billing: 'https://billing.example.com',
+     *   auth: 'https://auth.example.com',
+     * }
+     * ```
+     */
+    apiProviders?: Record<string, string>;
 }
 
 /**
@@ -77,7 +97,12 @@ export function baseFixture<T extends {}>(
             await use(new ElementRepository(page, locatorPath, options?.repoTimeout));
         },
         steps: async ({ repo }, use) => {
-            await use(new Steps(repo, { emailCredentials: options?.emailCredentials, timeout: options?.timeout }));
+            await use(new Steps(repo, {
+                emailCredentials: options?.emailCredentials,
+                timeout: options?.timeout,
+                apiBaseUrl: options?.apiBaseUrl,
+                apiProviders: options?.apiProviders,
+            }));
         },
         interactions: async ({ page }, use) => {
             await use(new ElementInteractions(page, { emailCredentials: options?.emailCredentials, timeout: options?.timeout }));

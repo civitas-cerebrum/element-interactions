@@ -3,6 +3,7 @@ import { ElementRepository, Element, WebElement, ElementResolutionOptions, Selec
 import { ElementInteractions } from '../interactions/facade/ElementInteractions';
 import { Utils } from '../utils/ElementUtilities';
 import { EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
+import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
 import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions } from '../enum/Options';
 import { stepLog as log } from '../logger/Logger';
 import { ElementAction } from './ElementAction';
@@ -22,20 +23,26 @@ export class Steps {
     private verify;
     private utils;
     private email;
+    private apiClients: Map<string, WasapiClient>;
     private timeout?: number;
 
     /**
      * Initializes the Steps class with the element repository.
      * The Playwright Page is obtained from the repository's driver.
      * @param repo - An initialized instance of `ElementRepository` containing your locators and the bound driver.
-     * @param options - Optional configuration: emailCredentials and/or timeout.
+     * @param options - Optional configuration: emailCredentials, timeout, apiBaseUrl, and/or apiProviders.
      */
     constructor(
         private repo: ElementRepository,
-        options?: { emailCredentials?: EmailClientConfig; timeout?: number }
+        options?: {
+            emailCredentials?: EmailClientConfig;
+            timeout?: number;
+            apiBaseUrl?: string;
+            apiProviders?: Record<string, string>;
+        }
     ) {
         this.page = repo.driver;
-        const { emailCredentials, timeout } = options ?? {};
+        const { emailCredentials, timeout, apiBaseUrl, apiProviders } = options ?? {};
         const interactions = new ElementInteractions(this.page, { emailCredentials, timeout });
         this.interact = interactions.interact;
         this.navigate = interactions.navigate;
@@ -44,6 +51,16 @@ export class Steps {
         this.timeout = timeout;
         this.utils = new Utils(timeout);
         this.email = interactions.email;
+        this.apiClients = new Map();
+
+        if (apiBaseUrl) {
+            this.apiClients.set('default', new WasapiClient.Builder().setBaseUrl(apiBaseUrl).setLogHeaders(false).buildRaw());
+        }
+        if (apiProviders) {
+            for (const [name, url] of Object.entries(apiProviders)) {
+                this.apiClients.set(name, new WasapiClient.Builder().setBaseUrl(url).setLogHeaders(false).buildRaw());
+            }
+        }
     }
 
     /**
@@ -1195,5 +1212,178 @@ export class Steps {
         const result = await this.email.mark(markOptions);
         log.email('Successfully marked %d email(s)', result);
         return result;
+    }
+
+    // ==========================================
+    // API INTERACTION STEPS
+    // ==========================================
+
+    /**
+     * Resolves the named `WasapiClient` from the internal registry. Defaults to
+     * the `'default'` client (configured via `apiBaseUrl`). Named providers come
+     * from `apiProviders` on the fixture options.
+     */
+    private getApiClient(name?: string): WasapiClient {
+        const clientName = name ?? 'default';
+        const client = this.apiClients.get(clientName);
+        if (!client) {
+            if (clientName === 'default') {
+                throw new Error('API client is not configured. Pass apiBaseUrl to baseFixture() options when setting up your test fixture.');
+            }
+            throw new Error(`API provider "${clientName}" is not configured. Pass it in apiProviders to baseFixture() options. Available: ${[...this.apiClients.keys()].join(', ')}`);
+        }
+        return client;
+    }
+
+    /**
+     * Issues an HTTP GET against the default API client, or the named provider
+     * when the first argument matches a key in `apiProviders`.
+     *
+     * @example
+     * ```ts
+     * const res = await steps.apiGet<User>('/users/42');
+     * const res = await steps.apiGet<User[]>('billing', '/users', { query: { active: 'true' } });
+     * ```
+     */
+    async apiGet<T>(pathOrProvider: string, pathOrOptions?: string | { query?: Record<string, string>; headers?: Record<string, string> }, maybeOptions?: { query?: Record<string, string>; headers?: Record<string, string> }): Promise<ApiResponse<T>> {
+        const { client, path, options } = this.resolveApiArgs(pathOrProvider, pathOrOptions, maybeOptions);
+        log.api('GET %s', path);
+        return await client.execute<T>({
+            method: 'GET',
+            path,
+            queryParams: options?.query,
+            headers: options?.headers,
+        });
+    }
+
+    /**
+     * Issues an HTTP POST with an optional JSON body against the default API
+     * client, or the named provider when the first argument matches a key in
+     * `apiProviders`.
+     */
+    async apiPost<T>(pathOrProvider: string, bodyOrPath?: unknown, optionsOrBody?: unknown, maybeOptions?: { pathParams?: Record<string, string>; query?: Record<string, string>; headers?: Record<string, string> }): Promise<ApiResponse<T>> {
+        const { client, path, body, options } = this.resolveApiArgsWithBody(pathOrProvider, bodyOrPath, optionsOrBody, maybeOptions);
+        log.api('POST %s', path);
+        return await client.execute<T>({
+            method: 'POST',
+            path,
+            body,
+            pathParams: options?.pathParams,
+            queryParams: options?.query,
+            headers: options?.headers,
+        });
+    }
+
+    /**
+     * Issues an HTTP PUT with an optional JSON body against the default API
+     * client, or the named provider when the first argument matches a key in
+     * `apiProviders`.
+     */
+    async apiPut<T>(pathOrProvider: string, bodyOrPath?: unknown, optionsOrBody?: unknown, maybeOptions?: { pathParams?: Record<string, string>; headers?: Record<string, string> }): Promise<ApiResponse<T>> {
+        const { client, path, body, options } = this.resolveApiArgsWithBody(pathOrProvider, bodyOrPath, optionsOrBody, maybeOptions);
+        log.api('PUT %s', path);
+        return await client.execute<T>({
+            method: 'PUT',
+            path,
+            body,
+            pathParams: options?.pathParams,
+            headers: options?.headers,
+        });
+    }
+
+    /**
+     * Issues an HTTP DELETE against the default API client, or the named
+     * provider when the first argument matches a key in `apiProviders`.
+     */
+    async apiDelete<T>(pathOrProvider: string, pathOrOptions?: string | { pathParams?: Record<string, string>; headers?: Record<string, string> }, maybeOptions?: { pathParams?: Record<string, string>; headers?: Record<string, string> }): Promise<ApiResponse<T>> {
+        const { client, path, options } = this.resolveApiArgs(pathOrProvider, pathOrOptions, maybeOptions);
+        log.api('DELETE %s', path);
+        return await client.execute<T>({
+            method: 'DELETE',
+            path,
+            pathParams: options?.pathParams,
+            headers: options?.headers,
+        });
+    }
+
+    /**
+     * Issues an HTTP PATCH with an optional JSON body against the default API
+     * client, or the named provider when the first argument matches a key in
+     * `apiProviders`.
+     */
+    async apiPatch<T>(pathOrProvider: string, bodyOrPath?: unknown, optionsOrBody?: unknown, maybeOptions?: { pathParams?: Record<string, string>; headers?: Record<string, string> }): Promise<ApiResponse<T>> {
+        const { client, path, body, options } = this.resolveApiArgsWithBody(pathOrProvider, bodyOrPath, optionsOrBody, maybeOptions);
+        log.api('PATCH %s', path);
+        return await client.execute<T>({
+            method: 'PATCH',
+            path,
+            body,
+            pathParams: options?.pathParams,
+            headers: options?.headers,
+        });
+    }
+
+    /**
+     * Issues an HTTP HEAD and returns the response headers as a flat record.
+     */
+    async apiHead(pathOrProvider: string, maybePath?: string): Promise<Record<string, string>> {
+        let client: WasapiClient;
+        let path: string;
+        if (maybePath !== undefined) {
+            client = this.getApiClient(pathOrProvider);
+            path = maybePath;
+        } else {
+            client = this.getApiClient();
+            path = pathOrProvider;
+        }
+        log.api('HEAD %s', path);
+        const response = await client.execute<unknown>({ method: 'HEAD', path });
+        return response.headers;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private resolveApiArgs(pathOrProvider: string, pathOrOptions?: any, maybeOptions?: any): { client: WasapiClient; path: string; options?: any } {
+        if (typeof pathOrOptions === 'string') {
+            return { client: this.getApiClient(pathOrProvider), path: pathOrOptions, options: maybeOptions };
+        }
+        return { client: this.getApiClient(), path: pathOrProvider, options: pathOrOptions };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private resolveApiArgsWithBody(pathOrProvider: string, bodyOrPath?: any, optionsOrBody?: any, maybeOptions?: any): { client: WasapiClient; path: string; body?: unknown; options?: any } {
+        if (typeof bodyOrPath === 'string') {
+            return { client: this.getApiClient(pathOrProvider), path: bodyOrPath, body: optionsOrBody, options: maybeOptions };
+        }
+        return { client: this.getApiClient(), path: pathOrProvider, body: bodyOrPath, options: optionsOrBody };
+    }
+
+    /**
+     * Asserts that an `ApiResponse` returned the expected HTTP status code.
+     * Throws with the response body embedded on failure.
+     */
+    async verifyApiStatus(response: ApiResponse<unknown>, expectedStatus: number): Promise<void> {
+        log.verify('Verifying API response status is %d (actual: %d)', expectedStatus, response.status);
+        if (response.status !== expectedStatus) {
+            throw new Error(`Expected API status ${expectedStatus} but got ${response.status}. Body: ${response.rawBody}`);
+        }
+    }
+
+    /**
+     * Asserts that an `ApiResponse` contains the given header (case-insensitive),
+     * and optionally matches the expected value exactly.
+     */
+    async verifyApiHeader(response: ApiResponse<unknown>, headerName: string, expectedValue?: string): Promise<void> {
+        const lowerName = headerName.toLowerCase();
+        const actual = Object.entries(response.headers).find(([k]) => k.toLowerCase() === lowerName);
+
+        if (!actual) {
+            throw new Error(`Expected API response to contain header "${headerName}" but it was not found. Headers: ${JSON.stringify(response.headers)}`);
+        }
+
+        log.verify('Verifying API header "%s" is present (value: "%s")', headerName, actual[1]);
+
+        if (expectedValue !== undefined && actual[1] !== expectedValue) {
+            throw new Error(`Expected header "${headerName}" to be "${expectedValue}" but got "${actual[1]}"`);
+        }
     }
 }
