@@ -103,10 +103,12 @@ Examples:
 [onboarding] Journey mapping — 7 journeys identified (2 P0, 3 P1, 2 P2)
 [onboarding] Happy path test written, stabilizing…
 [onboarding] Happy path green — committed
-[onboarding] Coverage expansion starting (mode: depth, 3 passes)
-[onboarding] Coverage expansion pass 1/3 complete — 27 tests added, 3 branches discovered
-[onboarding] Coverage expansion pass 2/3 complete — 14 tests added, 1 sub-journey promoted
-[onboarding] Coverage expansion pass 3/3 complete — 8 tests added, cross-journey interactions covered
+[onboarding] Coverage expansion starting (mode: depth, 5 passes)
+[onboarding] Coverage expansion pass 1/5 complete — 27 tests added, 3 branches discovered
+[onboarding] Coverage expansion pass 2/5 complete — 14 tests added, 1 sub-journey promoted
+[onboarding] Coverage expansion pass 3/5 complete — 8 tests added, cross-journey interactions covered
+[onboarding] Coverage expansion pass 4/5 complete — 6 adversarial tests added, 2 edge cases surfaced
+[onboarding] Coverage expansion pass 5/5 complete — 4 adversarial tests added, ledger dedup applied
 [onboarding] Bug-hunt 1/2 (element probing) — 2 issues logged
 [onboarding] Bug-hunt 2/2 (flow probing) — 3 issues logged
 [onboarding] Generating work-summary-deck
@@ -166,15 +168,15 @@ The companion reads the existing sentinel-bearing Phase-1 map and fills in Phase
 
 **Commit:** `docs: journey map — <N> journeys prioritized`.
 
-### Phase 5 — Coverage expansion (three passes, depth mode)
+### Phase 5 — Coverage expansion (five passes, depth mode)
 
 **Delegate to:** `coverage-expansion` with `args: "mode: depth"`.
 
-That skill runs three journey-by-journey passes internally, parallelising subagent dispatch for independent journeys, picking a model per journey (sonnet/opus) by size and complexity, and reconciling map growth between passes. Onboarding's role here is simply to invoke it and relay `[coverage-expansion]` progress lines upstream — no per-pass orchestration at this layer.
+That skill runs five journey-by-journey passes internally (3 compositional via test-composer + 2 adversarial via bug-discovery), parallelising subagent dispatch for independent journeys, picking a model per journey (sonnet/opus) by size and complexity, and reconciling map growth between passes. Onboarding's role here is simply to invoke it and relay `[coverage-expansion]` progress lines upstream — no per-pass orchestration at this layer.
 
-Between and after the three passes, `coverage-expansion` itself refreshes its view of `app-context.md` and `journey-map.md`; onboarding does not need its own refresh step at this phase. When the skill returns, append a "Coverage expansion — new knowledge" section to `onboarding-report.md` summarising total tests added, new journeys discovered, and any sub-journeys promoted.
+Between and after the five passes, `coverage-expansion` itself refreshes its view of `app-context.md` and `journey-map.md`; onboarding does not need its own refresh step at this phase. When the skill returns, append a "Coverage expansion — new knowledge" section to `onboarding-report.md` summarising total tests added, new journeys discovered, and any sub-journeys promoted.
 
-**Commits:** `coverage-expansion` commits once per pass (`test: coverage expansion pass <N>/3 — <summary>`). Onboarding adds no extra commit here.
+**Commits:** `coverage-expansion` commits once per pass (`test: coverage expansion pass <N>/5 — <summary>`). Onboarding adds no extra commit here.
 
 ### Phase 6 — Bug hunts (two passes)
 
