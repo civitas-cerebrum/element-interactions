@@ -10,6 +10,7 @@ The following sections document the full API available for writing tests in Stag
 - [Accessing the Repository Directly](#accessing-the-repository-directly)
 - [Raw Interactions API](#raw-interactions-api)
 - [Email API](#email-api) (setup, sending, receiving, marking, cleaning)
+- [HTTP API Steps](#http-api-steps) (fixture setup, default & named providers, methods, verifications)
 
 ---
 
@@ -691,3 +692,85 @@ await steps.cleanEmails(); // delete all
 ```
 
 Filter types: `SUBJECT`, `FROM`, `TO`, `CONTENT` (body text/HTML), `SINCE` (Date).
+
+## HTTP API Steps
+
+Direct HTTP calls against one or more backends, co-located with UI tests. Powered by `@civitas-cerebrum/wasapi` — no Playwright `request` fixture required. Use these for contract testing, cross-service setup/teardown, or hybrid UI+API scenarios.
+
+### Fixture Setup
+
+Both `apiBaseUrl` and `apiProviders` are optional. Configure either, both, or neither. Testing multiple backends in the same test is first-class:
+
+```ts
+export const test = baseFixture(base, 'tests/data/page-repository.json', {
+  apiBaseUrl: 'https://api.example.com',
+  apiProviders: {
+    billing: 'https://billing.example.com',
+    auth:    'https://auth.example.com',
+  },
+});
+```
+
+- `apiBaseUrl` registers the `default` client. Steps called without a provider name use it.
+- `apiProviders` registers additional named clients. The first argument of any `api*` step then becomes the provider name.
+- Calling an `api*` step with no configuration throws a clear "API client is not configured" error.
+
+### Methods
+
+Every method returns an `ApiResponse<T>` (except `apiHead`, which returns a flat `Record<string, string>` of headers).
+
+```ts
+// Default client
+const res = await steps.apiGet<User>('/users/42');
+const created = await steps.apiPost<User>('/users', { name: 'Ada' });
+const updated = await steps.apiPut<User>('/users/42', { name: 'Ada L.' });
+const patched = await steps.apiPatch<User>('/users/42', { active: true });
+await steps.apiDelete('/users/42');
+const headers = await steps.apiHead('/users/42');
+
+// Named provider (first arg)
+const invoices = await steps.apiGet<Invoice[]>('billing', '/invoices', { query: { status: 'open' } });
+await steps.apiPost('auth', '/login', { email, password });
+
+// Query params, path params, headers
+await steps.apiGet('/search', { query: { q: 'hello', page: '2' }, headers: { 'X-Trace': 'abc' } });
+await steps.apiPut('/users/:id', { active: false }, { pathParams: { id: '42' } });
+```
+
+### ApiResponse Shape
+
+```ts
+interface ApiResponse<T> {
+  status: number;
+  headers: Record<string, string>;
+  body: T;          // parsed JSON when content-type is JSON
+  rawBody: string;  // raw text always available
+  // ...
+}
+```
+
+Inspect `status`, `headers`, and `body` directly. Assertions have dedicated step helpers:
+
+### Verifications
+
+```ts
+await steps.verifyApiStatus(res, 200);
+await steps.verifyApiHeader(res, 'content-type');                        // presence
+await steps.verifyApiHeader(res, 'content-type', 'application/json');    // exact value (case-insensitive name)
+```
+
+For shape/schema verification, combine with Playwright's `expect` on the parsed `body`:
+
+```ts
+const res = await steps.apiGet<User>('/users/42');
+await steps.verifyApiStatus(res, 200);
+expect(res.body).toMatchObject({ id: expect.any(Number), name: expect.any(String) });
+```
+
+### When to Use
+
+- ✅ Contract-style tests (status codes, headers, schema shape on real endpoints) — see the `contract-testing` companion skill
+- ✅ Cross-service setup/teardown (seed data via API, drive UI through `steps`, tear down via API)
+- ✅ Mixed-protocol flows (create resource via API, verify rendering via UI)
+- ❌ Deep business-logic validation of internal services (keep those in the service's own test suite)
+- ❌ Load testing (wrong tool)

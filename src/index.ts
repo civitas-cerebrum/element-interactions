@@ -51,3 +51,8 @@ export type {
     EmailMarkOptions,
 } from '@civitas-cerebrum/email-client';
 export { EmailFilterType, EmailMarkAction } from '@civitas-cerebrum/email-client';
+
+// Re-exports from @civitas-cerebrum/wasapi
+export { WasapiClient, ApiCall, ApiResponse, ResponsePair, FailedCallException, WasapiException, HttpMethod } from '@civitas-cerebrum/wasapi';
+export type { RequestConfig, ClientConfig, CallOptions } from '@civitas-cerebrum/wasapi';
+export { GET, POST, PUT, DELETE, PATCH, HTTP } from '@civitas-cerebrum/wasapi';
