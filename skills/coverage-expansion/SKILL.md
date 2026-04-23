@@ -35,6 +35,21 @@ Do NOT use this for:
 
 ---
 
+## Non-negotiables for depth mode
+
+These rules close the loopholes that a 2026-04-23 onboarding run exploited (Pass 1 ran; passes 2–5 and ledger dedup were silently "deferred for budget"; Phase 5 was reported complete anyway). Read them as hard rules — not guidance.
+
+- When invoked with `mode: depth` (or with no args, since depth is the default), the orchestrator **MUST complete 3 compositional passes + 2 adversarial passes + ledger dedup, in order**. No exceptions. "Only Pass 1 ran" is never a valid completion state for depth mode.
+- **Pass 1 alone is NOT coverage-expansion — it is one-fifth of the pipeline.** Any progress line, summary, or upstream report that conflates "ran Pass 1" with "ran coverage-expansion" is wrong and must be corrected before returning to the caller. The same goes for "ran passes 1–3 (compositional only)" — that is three-fifths of the pipeline; the adversarial passes + cleanup are part of the contract, not optional.
+- **If context budget threatens completion mid-pipeline**, the orchestrator MUST:
+  1. Commit whatever the most recent pass produced (do not lose subagent work).
+  2. Write state to `tests/e2e/docs/coverage-expansion-state.json` containing at minimum: the journey index (IDs, priorities, pages-touched), the set of completed passes, the set of pending journeys within any in-flight pass, and the current pass number.
+  3. **STOP with a clear "resume needed" message** to the caller naming the state-file path, the passes completed, and the passes still pending. Do NOT silently skip remaining passes and claim the pipeline is done.
+- **On resume**, the orchestrator reads `coverage-expansion-state.json`, verifies that each previously-reported-completed pass actually landed as a commit (not just scaffolded in state), and continues from the first incomplete pass. A pass that was marked complete in the state file but whose commit is missing from git history is treated as incomplete and re-run.
+- **"Structural-only" / "blocked with skipped placeholder" tests** count as coverage ONLY when the blocker is a documented tenant-data or environment constraint (e.g., "requires admin seed user not present in demo tenant"). Structural-only tests MUST appear in a separate column from fully-automated tests in any coverage report — never rolled into the automated total. Structural-only tests NEVER satisfy a Pass 4 or Pass 5 adversarial-probe requirement: a skipped placeholder is not an adversarial finding, a verified boundary, or a regression test.
+
+---
+
 ## Prerequisites
 
 1. `tests/e2e/docs/journey-map.md` must exist with `<!-- journey-mapping:generated -->` on line 1. If missing, stop and invoke `journey-mapping` first.
@@ -85,6 +100,19 @@ Every pass in depth mode runs this pipeline; steps 4 and 6 differ between compos
 | 5 — adversarial consolidation | adversarial + regression | Second adversarial turn. Each subagent reads its journey's pass-4 ledger section, attempts complementary/compound probes, and writes **passing** regression tests for every verified boundary (pass 4 + pass 5 combined) into `j-<slug>-regression.spec.ts`. Suspected bugs remain ledger-only — never committed as `test.fail()`. |
 
 After pass 5: one single-dispatch cleanup subagent dedupes the ledger. See §"Ledger dedup" below.
+
+### Per-pass completion criteria
+
+A pass is complete only when **every** criterion for that pass is met. "Ran some journeys, ran out of budget" is not complete — see §"Non-negotiables for depth mode" for the resume-state contract.
+
+- **Pass 1** complete = `test-composer` has been dispatched for and has returned on **every** journey in the map. Not "enough journeys", not "the P0/P1 tier", not "the journeys that fit the budget". Every journey.
+- **Pass 2** complete = `test-composer` has been re-dispatched and returned for every journey, AND the map has been reconciled with any newly-promoted branches or sub-journeys surfaced in pass 1 or 2, AND the reconciliation commit (map edits) has landed.
+- **Pass 3** complete = cross-journey and data-lifecycle variants have been dispatched for every journey whose `Test expectations:` calls for them, AND any journey that returned residual coverage gaps in passes 1 or 2 has been re-attempted, AND the pass commit has landed.
+- **Pass 4** complete = the adversarial-probe subagent has run per journey with `pass=4`, and each subagent's findings have been appended to `tests/e2e/docs/adversarial-findings.md`. If no probes landed for a given journey (e.g., the subagent found nothing to probe or was gated), the orchestrator records `"no boundaries probed — <reason>"` for that journey in the ledger — it does NOT silently skip the journey. An empty ledger section for a journey is a bug, not a pass-4 completion state.
+- **Pass 5** complete = every verified pass-4 finding has either a committed regression test in `j-<slug>-regression.spec.ts` OR an explicit decline-with-reason line in the ledger ("no regression written — finding classified as suspected bug / ambiguous / duplicate of cross-cutting #N"). Regression-test files are committed per journey.
+- **Cleanup** complete = one cleanup subagent has run once, cross-cutting findings are consolidated into the top-level section with backrefs in each journey's section, and the commit `docs: adversarial-findings — dedupe cross-cutting findings` has landed.
+
+Only when **all** of the above are true may the orchestrator report depth-mode coverage-expansion complete to its caller. Anything less is a partial run and must be reported as such (see the resume-state contract).
 
 ### Journey independence graph
 
@@ -220,7 +248,7 @@ Never hold in context:
 
 One bounded exception for pass 5: when dispatching a pass-5 subagent, the orchestrator does read the journey's pass-4 ledger section from the ledger file and pass it along as an input. This is strictly bounded to one journey's section for one subagent; the orchestrator releases it from context as soon as the dispatch is sent.
 
-If orchestrator context approaches a budget boundary mid-pass, write state to `docs/superpowers/state/coverage-expansion.json` and resume on next invocation.
+If orchestrator context approaches a budget boundary mid-pass, follow the resume-state contract in §"Non-negotiables for depth mode": commit what landed, write state to `tests/e2e/docs/coverage-expansion-state.json`, and stop with a clear "resume needed" message. Do not silently defer remaining passes.
 
 ---
 
