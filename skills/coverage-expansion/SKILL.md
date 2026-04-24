@@ -424,42 +424,28 @@ The re-pass mode's contribution is **disciplined justification**, not speed. Eve
 
 ### Batched dispatch for P3 peripheral journeys
 
-Adjacent low-impact journeys (typically P3 smoke tests or admin-portal siblings that share a single Playwright project) may be covered by one subagent in a single brief, **cap 7 journeys per brief**. Batching is a dispatch optimisation, not scope compression — each journey in the batch still receives the same contract (probe / re-pass / regression, per the pass), with its own section in the return.
+Adjacent low-impact journeys (typically P3 smoke or admin-portal siblings sharing one Playwright project) may have Stage A batched into a single brief, cap 7 journeys per brief. Dual-stage narrows this:
 
-**When batching is allowed:**
-
-- Priority is P3 (or P2 smoke when the journeys share every non-universal page with a sibling already in the batch).
-- The journeys share a Playwright project (so one subagent / one MCP instance is sufficient).
-- None of the journeys has a pending stabilization failure, coverage-gap flag, or sibling-bug regression candidate from a prior pass — those trigger individual re-pass dispatches regardless of priority.
-- Up to 7 journeys per brief. Past 7, split into multiple batches.
-
-**When batching is NOT allowed:**
-
-- P0 or P1 journeys — always dispatched individually.
-- Journeys on different Playwright projects (distinct MCP instances needed).
-- Any journey flagged by any of the three re-pass triggers in §"Re-pass mode for compositional passes 2–3".
-
-**Examples — allowed:**
-
-- Pass 4 adversarial sweep of five admin-portal add-* journeys (`j-manager-add-caregiver`, `j-manager-add-location`, `j-manager-add-group`, `j-manager-add-administrator`, `j-manager-add-administrator-api-gebruiker`) — all P3, all on the admin-portal project, no prior failures → one batched brief, 5 journeys.
-- Pass 3 consolidation across seven P3 smoke journeys on the public marketing project → one batched brief (capped at 7).
-
-**Examples — not allowed:**
-
-- Mixing a P1 checkout journey into a P3 admin-portal batch → dispatch the P1 individually.
-- Eight P3 journeys in one brief → must be split into two briefs (e.g., 5 + 3), never one brief past the cap.
-
-Batching cuts dispatches for peripheral work by roughly half without touching per-journey fidelity. The per-expectation mapping, the three-trigger check (for passes 2–3), and the probe/regression contract (for passes 4–5) still apply to every journey in the batch. The return must include one clearly-labelled section per journey — no merged summaries.
+- **Stage A may still be batched** for eligible P3 journeys (shared project, no pending gap flags, same priority tier, cap 7 per brief — criteria from PR #108).
+- **Stage B is never batched.**
+  Each journey in a batched Stage A still gets its own dedicated Stage B reviewer — never one reviewer judging 7 journeys at once.
+  The reviewer reads only its assigned journey's slice of the batched Stage A return; the reviewer itself is never responsible for multiple journeys.
+- Batching is accepted ONLY when every journey in the batch's cycle-1 Stage B returns `greenlight`. `greenlight-with-notes` for any journey is also accepted-in-place.
+- If any journey's cycle-1 Stage B returns `improvements-needed`: split the batch. From cycle 2 onward, the affected journey breaks out and runs its own per-journey Stage A plus its own Stage B. The batched cycle-1 Stage A return is retained as history input to the broken-out cycle-2 Stage A brief. The remaining greenlit journeys in the batch stay accepted at cycle 1 and proceed.
 
 **Rationalizations to reject:**
 
 | Excuse | Reality |
 |--------|---------|
-| "This 8th journey is almost identical to the 7 in the batch, I'll include it" | Cap 7 is not negotiable. Split the batch (5 + 3, 4 + 4, etc). The cap bounds brief size and per-journey attention — "one more" compounds across batches and dilutes discipline. |
+| "This 8th journey is almost identical to the 7 in the batch, I'll include it" | Cap 7 is not negotiable. Split the batch (5 + 3, etc). The cap bounds brief size and per-journey attention. |
 | "All these journeys are P3 and share a project, and this admin journey *could* be grouped — skip the P1 carve-out" | P0 / P1 always dispatch individually. Priority is load-bearing; a journey at P1 deserves its own brief even if it happens to share pages with P3 siblings. |
 | "The journeys share most pages, same project, roughly P3 — skip the 'shared Playwright project' check" | Different Playwright projects require different MCP instances; batching across projects introduces browser-swap complexity that defeats the dispatch optimisation. |
 | "Batching is faster so I'll batch everything that isn't explicitly forbidden" | Batching is allowed, not preferred. P0/P1 individual dispatch is the default; batching is specifically for P3 peripheral sweeps. Defaulting to batch on P2 quietly compresses scope. |
 | "One journey in the batch has a coverage-gap flag from Pass 1, but the gap is trivial" | Any flag in the three re-pass triggers kicks the journey out of the batch into individual dispatch. "Trivial" is the subagent's judgement after reading Pass-1 returns — which cannot happen inside a batched brief. |
+| "All P3 same project, I'll batch Stage B too to save a dispatch" | Stage B per-journey isolation is load-bearing for fresh-eyes review. One reviewer judging 7 journeys is not fresh-eyes; it's batched rubber-stamping. |
+| "Cycle-1 Stage B greenlit 6 of 7 journeys, I'll greenlight the 7th too since it's similar" | The 7th journey's reviewer returned `improvements-needed` for a reason. Split out cycle-2 for that journey; the reason does not carry to the greenlit 6. |
+| "Any flag on any journey kills the whole batch — too expensive, I'll keep batching" | Only the flagged journey breaks out. The greenlit journeys stay batched-and-accepted; no rework for them. |
+| "I'll batch Stage A across P1+P3 journeys if they share a project" | P0/P1 never batch, period. Priority is load-bearing; shared-project is necessary but not sufficient. |
 
 ---
 
