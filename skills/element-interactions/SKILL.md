@@ -142,23 +142,29 @@ Every time you navigate to a new page or discover a new component (via Playwrigh
 
 ### 11. Isolated MCP instances for parallel subagents
 
-Any skill that dispatches **parallel** subagents using the Playwright MCP must provide each subagent with an **isolated MCP browser instance**. Two subagents sharing one browser fight over the active tab and corrupt each other's snapshots — discovery results become non-deterministic and tests compose against stale state.
+Any skill that dispatches **parallel** subagents using the Playwright MCP must provide each subagent with an **isolated MCP browser instance**. Two subagents sharing one browser fight over the active tab and corrupt each other's snapshots — discovery results become non-deterministic, tests compose against stale state, and the parent's own context fills with corrupted transcripts.
 
-Implementation guidance for skill authors (ordered from the easy default to rarer edge cases):
+**Agent-owned prerequisite.** Before dispatching any parallel MCP-using subagents, the agent running this orchestrator **must confirm that per-subagent browser isolation is achievable in the current environment**. This is the agent's responsibility, not an assumption about the host. If the agent cannot confirm isolation, it must fall back to serial and log the fallback — it must not dispatch in parallel and hope for the best. Failing this prerequisite silently is what causes the context failures this rule exists to prevent.
 
-- **Default (Claude Code):** dispatch each subagent via the **Agent tool** with `mcp__plugin_playwright_playwright__*` in scope in the subagent's prompt. Each Agent-tool dispatch runs in its **own agent session with its own MCP connection**, which provides per-subagent browser isolation automatically. **No extra configuration needed** — this is the practical default on Claude Code, and it is how parallel dispatch is expected to work. Do not assume isolation is hard to provision; on Claude Code it is the out-of-the-box behavior.
+Before dispatching, confirm **at least one** of the following holds (ordered from the easy default to rarer edge cases):
 
-  Concretely: the parent names the Playwright MCP tools in each subagent's prompt (so the subagent knows it may call `browser_navigate`, `browser_snapshot`, `browser_click`, etc.) and dispatches N subagents in parallel via the Agent tool. The parent itself does **not** share its browser with the children.
+- **Default — subagent-session dispatch with per-session MCP:** the agent's subagent-dispatch primitive runs each subagent in its **own agent session with its own MCP connection**. In that case, the agent names the `mcp__plugin_playwright_playwright__*` tools in each subagent's prompt and dispatches N subagents in parallel — per-subagent browser isolation comes from the session boundary, no extra configuration needed. The parent itself does **not** share its browser with the children. **This is the expected path.** Do not assume isolation is hard to provision; when the dispatch primitive gives each subagent its own session, isolation is the out-of-the-box behavior.
 
-- **Alternative (custom MCP server / non-Claude-Code platforms):** on platforms without Agent-tool session isolation, spawn a fresh Playwright MCP process per subagent on an isolated port with its own state directory. Requires the dispatch mechanism to accept custom MCP server configuration.
+- **Alternative — custom MCP server per subagent:** on dispatch primitives without per-session MCP, the agent must spawn a fresh Playwright MCP process per subagent on an isolated port with its own state directory, and wire each subagent's MCP configuration to its own port. Requires the dispatch mechanism to accept custom MCP server configuration.
 
-- **Fallback (last resort):** if neither of the above is available in the current environment, serialize the work. Emit a `[mcp-isolation: serializing]` progress line and run the crawl sequentially. Do not try to share one browser across parallel agents. Serialization is the **fallback**, not the expected path.
+- **Fallback (last resort) — serialize:** if the agent cannot confirm either of the above in the current environment, it must serialize the work, emit a `[mcp-isolation: serializing]` progress line, and run the crawl sequentially. Serialization is the **fallback**, not the expected path. Never try to share one browser across parallel agents.
 
 Skills currently affected:
 - `journey-mapping` Phase 1 — parallel page discovery across entry points.
 - `coverage-expansion` — parallel per-journey test composition and adversarial probing.
 
-Orchestrator's role: on Claude Code, parallel Agent-tool dispatch is the default — proceed. Only fall back to sequential dispatch with the `[mcp-isolation: serializing]` log line if the current environment genuinely cannot run Agent-tool subagents with Playwright MCP tools in scope. Never silently share a browser across parallel subagents.
+**Orchestrator's responsibility, step by step:**
+
+1. Before the parallel phase, the agent verifies which of the three conditions above holds in the current environment.
+2. If the default condition holds, the agent proceeds with parallel dispatch.
+3. If only the alternative holds, the agent provisions the per-subagent MCP processes first and only then dispatches.
+4. If neither holds, the agent logs `[mcp-isolation: serializing]` and runs the work sequentially.
+5. Never silently share a browser across parallel subagents, and never default-fallback to serial without checking the prerequisites first — default-fallback is how the regression this rule addresses keeps happening.
 
 ### 12. Orchestrator context discipline
 
