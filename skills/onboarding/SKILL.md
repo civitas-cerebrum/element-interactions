@@ -103,7 +103,14 @@ Wait for the user's reply. On `y` / `yes` / `proceed` / equivalent affirmative, 
 
 **Populating the scope preview — pre-Phase-1 estimation.** The gate renders BEFORE Phase-1 discovery, so the scope-preview numbers are projections based on signals available at gate time, not measurements. Derive each value as follows:
 
-- `<N_low>–<N_high>` = `journeys_low × 5 + cleanup` to `journeys_high × 5 + cleanup`, where `journeys_low`/`journeys_high` is a journey-count band estimated from:
+- `<N_low>–<N_high>` for Phase-5 dispatch count (dual-stage expanded):
+  - Best case (every journey cycle-1 greenlights): `journeys_low × 2 × 5 + cleanup` to `journeys_high × 2 × 5 + cleanup` (one Stage A + one Stage B per journey per pass, 5 passes, plus cleanup subagent).
+  - Realistic case (average 1.5 cycles per journey per pass): `journeys_low × 3 × 5` to `journeys_high × 3 × 5`.
+  - Worst case (cycle-cap on every journey every pass): `journeys_low × 14 × 5` to `journeys_high × 14 × 5`.
+
+  The scope preview reports the realistic band (×3/pass) and footnotes the worst-case ceiling. The best case (×2/pass) is reported as the floor — every journey gets at least one Stage A + one Stage B per pass under the no-skip contract.
+
+  `journeys_low`/`journeys_high` is a journey-count band estimated from:
   - the user-provided happy-path description (≥1 journey per major flow named),
   - the top-level nav/link count on the app's homepage (one MCP fetch before the gate, counted as discovery preamble), and
   - a fallback band of 15–40 if neither signal is reliable.
@@ -259,6 +266,8 @@ Between and after the five passes, `coverage-expansion` itself refreshes its vie
 **Commits:** `coverage-expansion` commits once per pass (`test: coverage expansion pass <N>/5 — <summary>`). Onboarding adds no extra commit here.
 
 **No stage may be silently skipped.** Onboarding has seven phases and each phase has its own internal stages (element-interactions has Stages 1–4; coverage-expansion has Passes 1–5 + cleanup; bug-discovery has Phases 1a and 1b). Partial-phase completion is reportable; partial-phase completion disguised as full-phase completion is a contract violation. The onboarding-report and any summary deck MUST state partial status explicitly when applicable — "Phase 5: Pass 1 complete (44/44), Pass 2 partial (3/44), Pass 3–5 pending" — not "Phase 5 complete."
+
+**Dual-stage completion extension.** Phase 5 is complete only when every journey has a terminal `review_status` (`greenlight`, `greenlight-with-notes`, `blocked-cycle-stalled`, or `blocked-cycle-exhausted`) for every pass, not only when every journey has returned from Stage A. A pass where every journey's Stage A ran but some journeys have no `review_status` field in the state file is **incomplete**, per the extended no-skip contract. The onboarding-report's Phase-5 section must surface blocked-review-cycle journeys explicitly: `"Phase 5: Pass N/5 complete (44/44), 3 journeys blocked-cycle-stalled with unresolved review findings (see state file for details)"`.
 
 ### Phase 6 — Bug hunts (two passes)
 
