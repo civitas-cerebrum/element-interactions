@@ -249,19 +249,17 @@ Each pass runs a journey-by-journey pipeline with parallel dispatch where indepe
 Every pass in depth mode runs this pipeline; steps 4 and 7 differ between compositional (1–3) and adversarial (4–5) passes.
 
 1. **Read the map** (sentinel-verified). Build an in-memory index: `[(j-id, priority, pages-touched, test-expectations)]`. Read **only** these fields per journey — not full step lists, branches, or state variations.
-2. **Recompute priority ordering.** Honour the map's priorities, but if a journey's `Test expectations` or pages touched have changed since the last pass (because a prior pass reconciled new branches into the map), adjust position.
-3. **Build the journey independence graph** (see §"Journey independence graph" below). The graph is the same across compositional and adversarial passes — journey co-residence on pages determines parallelism either way.
-4. **Emit the per-pass scope preview** (see §"Per-pass scope preview" below). This is declarative, not interactive — no confirmation prompt, no timeout, no abort option. The preview exists so mid-pass rationalisation is visible against the declared scope.
-5. **Dispatch subagents** — parallel for independent journeys, sequential for dependent ones. Model chosen per the heuristic below.
-   - **Compositional passes (1–3):** each invocation dispatches `test-composer` with `args: "journey=<j-id>"`. For passes 2–3, pass `mode: re-pass` (see §"Re-pass mode for compositional passes 2–3" below).
-   - **Adversarial passes (4–5):** each invocation dispatches the adversarial probe subagent per `references/adversarial-subagent-contract.md`, passing the journey ID and the pass number. The subagent internally invokes `bug-discovery` scoped to its journey.
-6. **Collect subagent returns.** Each return is a structured discovery report — for compositional passes per `test-composer`'s return format, for adversarial passes per the adversarial subagent contract's return shape.
+2. **Recompute priority ordering.** Honour the map's priorities, but if a journey's `Test expectations` or pages touched have changed since the last pass, adjust position.
+3. **Build the journey independence graph.** The graph is the same across compositional and adversarial passes.
+4. **Emit the per-pass scope preview** (see §"Per-pass scope preview"). Declarative only; no confirmation prompt. The scope preview names the dual-stage dispatch band (see that section).
+5. **Run the per-journey dual-stage retry loop** for every journey in the map — parallel for independent journeys, sequential for dependent ones, per §"Parallelism". Each journey's A↔B loop follows §"Retry loop (orchestrator, per journey per pass)". The loop terminates when the journey has one of the four terminal `review_status` values.
+   - Model selection per §"Model selection" — default opus for both stages.
+   - P3 batching narrowed per §"Batched dispatch for P3 peripheral journeys" — Stage A may be batched; Stage B never is.
+6. **Collect all journey outputs.** Each journey contributes: its committed test files (from the final greenlit or blocked-with-tests-landed Stage A cycle), its `review_status`, its cycle counts, and (if blocked) its final `must-fix` list. The orchestrator does NOT hold Stage A test source or Stage B review bodies — only structured summaries and the on-disk file paths.
 7. **Reconcile artefacts.**
    - **Compositional passes:** reconcile the map. Append new branches to existing journey blocks. Add new `j-<slug>` or `sj-<slug>` blocks for newly-discovered journeys or sub-journeys. Append new pages/elements to `app-context.md`. Run a mini Phase 3.5 revision (see `journey-mapping`) if the pass introduced new overlaps.
    - **Adversarial passes:** the map is NOT reconciled. The ledger file is authoritative; its content is already written by the subagents during their append step. Aggregate the return summaries into the orchestrator's running adversarial-totals counter (journeys probed, boundaries verified, suspected-bug count by severity, regression tests added).
-8. **Commit.** One commit per journey (compositional passes) or per journey per pass (adversarial passes). See **Commit-message conventions** below for the exact templates.
-
-   After the commit lands, rewrite `tests/e2e/docs/coverage-expansion-state.json` with the new pass counter, completed-journey set, and (for adversarial passes) updated adversarial totals. Then run the auto-compaction check (see §"Auto-compaction between passes" below) before the next pass's dispatch.
+8. **Commit, then update state file.** One commit per journey (compositional passes) or per journey per pass (adversarial passes). See §"Commit-message conventions" below for the exact templates. After the commit lands, rewrite `tests/e2e/docs/coverage-expansion-state.json` with the new pass counter, per-journey `dispatches[]` entries (including `stage_a_cycles`, `stage_b_cycles`, `review_status`, `final_must_fix`), and adversarial totals. Then run the auto-compaction check (§"Auto-compaction between passes") before the next pass's dispatch.
 
 ### Pass differences
 
