@@ -91,22 +91,51 @@ Unmatched tests go into an "Unmapped" bucket in the catalogue — visible so the
 
 ### Phase 3 — Categorise
 
-Primary grouping is **portal** (read from journey-map Entry URL prefix or the file-name prefix):
-- Manager portal
-- Administrator portal
-- Cross-cutting (sub-journeys, regression-only specs spanning both)
+The catalogue is grouped on **two axes**:
 
-Within each portal, sort by **priority tier** (P0 → P3). Within a tier, sort **alphabetically by journey ID**.
+1. **Primary (outer) grouping — portal.** Read from the journey-map Entry URL prefix or file-name convention:
+   - Manager portal
+   - Administrator portal
+   - Cross-cutting (sub-journeys, regression-only specs spanning both)
 
-Every active scenario gets a `type` label inferred from the test name keywords:
-- happy path (the first non-error test in a non-regression spec)
-- error state (name contains `error`, `invalid`, `reject`, `blank`, `duplicate`, `unauthorized`, `401`, `403`)
-- edge case (name contains `edge`, `boundary`, `empty`, `max`, `min`, `overflow`, `timeout`, `concurrent`)
-- mobile (name or `@tag` contains `mobile`, `iPad`, `small screen`)
-- structural (sub-journey / smoke nav)
-- regression (file in `-regression.spec.ts`)
+2. **Secondary (inner) grouping — page section.** Within each portal, group by the part of the application the scenarios exercise (e.g., Login / Auth, Clients, Locations, Groups, Caregivers, Administrators, Organisation settings, Orders, Medication administration, Double-control, Account / Profile). **Never group by priority tier.** Stakeholders care about "what parts of the app are covered," not "which priority bucket does the test sit in." Priority stays visible as a per-scenario chip (see below) — it does not drive the grouping.
 
-When a test matches more than one rule, pick the **most specific** one (mobile > edge > error > structural > regression > happy path).
+Within a page section, sort **alphabetically by journey ID**.
+
+#### Deriving the page-section taxonomy
+
+The taxonomy is never hardcoded. Derive it per project by reading three sources:
+
+1. **`journey-map.md` `Pages touched:` lines** — every journey lists concrete URL paths or page names. Cluster these.
+2. **`app-context.md` section headings** — if the page-discovery skill recorded section names, those are the canonical human labels.
+3. **Spec file naming and `describe()` blocks** — often reveal the intended section (`clients.spec.ts`, `describe('Groups — manager')`).
+
+Algorithm:
+
+1. Enumerate every distinct URL path / page name from `Pages touched:` across all journeys.
+2. Cluster by URL-path prefix (e.g., `/clients/*`, `/locations/*`, `/users/*`). One cluster = one candidate section.
+3. For each cluster, assign the human label from `app-context.md` if available, otherwise infer from the URL segment (`/caregivers` → "Caregivers").
+4. Fold singleton clusters (≤1 journey) into the closest sibling section — or into a catch-all "Miscellaneous" section if none fits. Do not leave a section with a single journey unless the project genuinely has a standalone section.
+5. Target **10–14 total sections** across both portals. Fewer than 8 means the taxonomy is too coarse to be useful; more than 18 means it's too granular to scan. Adjust by merging adjacent singletons or splitting overly broad sections.
+
+The result is a derived, project-specific taxonomy. Write it out in the skill's return summary so reviewers can see what was chosen. Present the final section list on the catalogue's contents page with journey count per section, so a reader can see coverage density at a glance.
+
+If the journey map is sparse or missing, fall back to clustering by spec-file name prefix — this is less accurate but produces a usable taxonomy without the map.
+
+#### Per-scenario labels (chips)
+
+Each scenario row shows:
+- **Priority chip** — P0 (crit red), P1 (high orange), P2 (medium yellow), P3 (low grey). Always visible, never the grouping axis.
+- **Type chip** — inferred from test-name keywords:
+  - happy path (the first non-error test in a non-regression spec)
+  - error state (name contains `error`, `invalid`, `reject`, `blank`, `duplicate`, `unauthorized`, `401`, `403`)
+  - edge case (name contains `edge`, `boundary`, `empty`, `max`, `min`, `overflow`, `timeout`, `concurrent`)
+  - mobile (name or `@tag` contains `mobile`, `iPad`, `small screen`)
+  - structural (sub-journey / smoke nav)
+  - regression (file in `-regression.spec.ts`)
+  
+  When a test matches more than one rule, pick the **most specific** one (mobile > edge > error > structural > regression > happy path).
+- **Status chip** — Active / Skipped (with reason) / Failing-expected.
 
 ### Phase 4 — Render HTML
 
@@ -136,27 +165,69 @@ Styling rules:
 
 ### Phase 5 — Render PDF
 
-Use Playwright Chromium (already a project dep for element-interactions projects):
+Chromium's single-pass PDF engine truncates documents that push past its rendering limits — observed in practice at ~25–30k CSS pixels of stacked content (e.g., a 37-slide catalogue truncates to 8 PDF pages). **Always render in small batches and merge.** A monolithic `page.pdf()` call is unsafe for any catalogue longer than ~15 slides.
+
+**Required approach:** per-slide rendering + PDF merge.
+
+1. Each `<section class="slide">` in the generated HTML must carry a `data-slide-id="<integer>"` attribute. The build script emits this during HTML generation.
+2. Install `pdf-lib` (pure-JS, no native deps) once per project: `npm install --save-dev pdf-lib`.
+3. The renderer:
+   - Launches Chromium with viewport `1123 × 794`.
+   - Navigates to the HTML file; `waitUntil: 'networkidle'`.
+   - Awaits `document.fonts.ready` before rendering.
+   - Emulates print media.
+   - For each `data-slide-id`, injects a style tag that hides every other slide (`display: none !important`) and shows only the current slide (`display: flex !important`). Then calls `page.pdf()` with explicit `width: '1123px', height: '794px'` → single-page PDF buffer.
+   - Removes the injected style tag before the next iteration.
+   - Merges every single-page buffer into one output PDF via `pdf-lib`'s `PDFDocument.create()` / `copyPages()` / `addPage()`.
+4. **Verification (mandatory):** after merge, read the output PDF's page count and compare against the slide count. If they differ, throw — the render is corrupt. This catches the truncation bug in CI and prevents shipping a broken deliverable.
+
+Example skeleton (`scripts/render-catalogue-pdf.js`):
 
 ```js
 const { chromium } = require('@playwright/test');
-const browser = await chromium.launch();
-const page = await browser.newPage();
-await page.goto('file://' + htmlPath, { waitUntil: 'networkidle' });
-await page.emulateMedia({ media: 'print' });
-await page.pdf({
-  path: pdfPath,
-  format: 'A4',
-  landscape: true,
-  printBackground: true,
-  margin: { top: 0, right: 0, bottom: 0, left: 0 },
-});
-await browser.close();
+const { PDFDocument } = require('pdf-lib');
+const fs = require('fs');
+
+(async () => {
+  const browser = await chromium.launch();
+  const ctx = await browser.newContext({ viewport: { width: 1123, height: 794 } });
+  const page = await ctx.newPage();
+  await page.goto('file://' + htmlPath, { waitUntil: 'networkidle' });
+  await page.emulateMedia({ media: 'print' });
+  await page.evaluate(() => document.fonts.ready);
+
+  const ids = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('[data-slide-id]')).map(el => el.dataset.slideId)
+  );
+
+  const out = await PDFDocument.create();
+  for (const id of ids) {
+    const styleHandle = await page.addStyleTag({
+      content: `.slide{display:none!important}.slide[data-slide-id="${id}"]{display:flex!important}`,
+    });
+    const buf = await page.pdf({
+      width: '1123px', height: '794px',
+      printBackground: true, margin: { top: 0, right: 0, bottom: 0, left: 0 },
+    });
+    await page.evaluate(el => el.remove(), styleHandle);
+    const src = await PDFDocument.load(buf);
+    const [p] = await out.copyPages(src, [0]);
+    out.addPage(p);
+  }
+  fs.writeFileSync(pdfPath, await out.save());
+  await browser.close();
+
+  // MANDATORY verification
+  const finalDoc = await PDFDocument.load(fs.readFileSync(pdfPath));
+  if (finalDoc.getPageCount() !== ids.length) {
+    throw new Error(`PDF has ${finalDoc.getPageCount()} pages but HTML has ${ids.length} slides`);
+  }
+})();
 ```
 
-If the project already has `scripts/render-deck-pdf.js`, extend it or write a sibling `scripts/render-catalogue-pdf.js` — do not duplicate the chromium wiring in the skill's own assets when an in-project renderer exists.
+Do not fall back to a monolithic `page.pdf()` call even for small catalogues — keep one code path. The per-slide approach is equally fast at small sizes (each render is sub-second) and is the only approach that scales.
 
-After render, read the first page of the PDF back (`Read` tool with `pages: "1-1"`) to confirm the cover page renders with dark background intact.
+After the page-count check passes, read a few PDF pages back (`Read` tool with a `pages:` range) to visually confirm the cover, a mid-document table, and the final skipped-with-reason page all render with dark background intact.
 
 ---
 
