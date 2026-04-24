@@ -79,12 +79,63 @@ I will then, autonomously and without further prompts:
   • 2 bug-hunt passes (element probing, then flow probing)
   • Work summary deck + onboarding-report.md
 
-Expected runtime: tens of minutes to several hours.
+Scope preview — based on the journey count discovered in Phase-1, this run will dispatch:
+  • Phase 5 depth mode: ~<N> subagent dispatches across 5 passes + cleanup
+    (every journey, every pass — no skips)
+  • Phase 6 bug hunts: ~<M> dispatches
+  • Parallel peak: <P> agents depending on credential availability
+  • Model mix: sonnet for P2/P3 journeys with ≤8 steps; opus for P0/P1 and
+    complex journeys (per the skill's dispatch heuristic)
+  • Expected wall-clock: ~<H1>–<H2> h active
 
-Proceed? (y / describe changes)
+The scope preview is informational only. The skill's contract is full coverage; the
+preview exists for transparency so the user knows what they're committing to. There is
+no "reduce scope to save money" prompt — if the user wants a narrower run they invoke
+`mode: breadth` or ask explicitly for a priority-tier limit.
+
+Proceed? (y / cancel)
 ```
 
-Wait for the user's reply. On `y` / `yes` / `proceed` / equivalent affirmative, move to the pipeline. On any other reply, treat it as a scope change request: restate the gate with the change applied and ask again. Do not move past the gate without an explicit affirmative.
+Wait for the user's reply. On `y` / `yes` / `proceed` / equivalent affirmative, move to the pipeline. On `cancel` or equivalent, stop without running any phase. Do not offer a "reduce scope" option and do not treat arbitrary replies as scope-change requests — the only valid responses are `y` (proceed with full coverage) or `cancel`.
+
+**Populating the scope preview.** Derive the numbers from Phase-1 discovery before rendering the gate:
+
+- `<N>` = journey count from Phase-1 × 5 (passes) + cleanup-pass estimate.
+- `<M>` = ~1 dispatch per P0/P1 journey for bug-hunt passes 1a and 1b combined.
+- `<P>` = min(4, credential-count-per-role) unless the shared-resource audit (below) reports a parallelism cap.
+- `<H1>–<H2>` = wall-clock band derived from `<N>` at `<P>`-way parallel.
+
+These are projections, not commitments. The skill proceeds at full coverage regardless of whether the actuals land at the low or high end of the band.
+
+### Shared-resource audit
+
+Before the user confirms the gate, the orchestrator runs a shared-resource audit against the target app and renders the findings as an additional informational block inside the gate message. The audit's job is not to block the run — it makes contention constraints **visible before** they become mid-pass flakiness.
+
+Run the checklist below and, for each row with a positive detection, emit a one-line constraint into the gate's "Shared-resource audit" block.
+
+| Constraint | Detection | Mitigation the user should consider |
+|---|---|---|
+| Single credential per role (OAuth or form) | Phase-0 credential count ≤ 1 per role | Pre-seed 3+ throwaway accounts per parallel-eligible role |
+| Global rate limits (per-IP or per-tenant) | Probe login endpoint for 429 behaviour | Confirm rate-limit ceiling vs. planned parallel-dispatch peak |
+| CSRF tokens tied to session (concurrent POSTs fail) | Static scan of form handlers for `csrf` / `antiforgery` patterns | File-level serial on mutating specs + throwaway accounts per worker |
+| Shared tenant/workspace state | Single-tenant app with no per-user partition | Throwaway tenant for the run, or mandatory teardown hooks |
+| No UI delete for created entities | Static scan for `Delete`/`Verwijder` action absence on add-* pages | API-backdoor cleanup helper |
+
+Rendered example of the audit block inside the gate:
+
+```
+Shared-resource audit:
+  • Single Care Manager credential → manager-portal parallelism capped at 1 until seeding resolved.
+  • CSRF tokens session-bound → mandatory `test.describe.configure({ mode: 'serial' })` on mutating specs.
+  • No UI delete for caregivers/locations → tenant pollution expected; API-backdoor cleanup required.
+```
+
+The audit output has two downstream effects, both informational-to-the-user but load-bearing for the pipeline:
+
+1. **Onboarding report.** The audit block is copied verbatim into `tests/e2e/docs/onboarding-report.md` under a "Shared-resource audit" heading at Phase 7.
+2. **Constraint tag for later phases.** Each positive detection becomes a constraint tag attached to the run (e.g. `parallelism-capped:manager-portal=1`, `mandatory-serial:mutating-specs`, `missing-ui-delete:caregiver,location`). Phase 5's `coverage-expansion` invocation reads these tags when selecting per-pass model/dispatch caps and when deciding whether to force `mode: 'serial'` on mutating spec files. The tags do not change the full-coverage contract — they change *how* it is executed.
+
+The audit does not introduce a new prompt. The user still only sees `y / cancel`.
 
 ---
 
@@ -141,6 +192,14 @@ Do **not** add, remove, or upgrade any other dependencies. Do **not** modify the
 - `page-repository.json` — `{}` at the repo root (or `tests/e2e/page-repository.json`; follow existing convention if partial scaffold exists).
 - `tests/e2e/` — directory created if missing.
 - `tests/e2e/docs/` — directory created if missing.
+- `screenshots/` — directory created at the repo root if missing. All screenshot artifacts produced during the run (probe evidence, adversarial captures, failure snapshots) must be written here — never to the repo root, never with bare basenames.
+- `.gitignore` — add `screenshots/failures/` so transient Playwright failure captures stay untracked. Probe-evidence screenshots in `screenshots/` root remain tracked so reviewers can open the ledger and see what the subagent saw.
+
+**Screenshot-path contract for dispatched subagents.** Every subagent brief this skill writes — Phase-3 happy-path agent, Phase-5 `coverage-expansion` subagents, Phase-6 `bug-discovery` subagents — must restate the following rule verbatim:
+
+> All screenshot artifacts write to `screenshots/<descriptive-name>.png`. Never bare basenames. This applies to MCP `browser_take_screenshot({ filename: ... })`, Playwright `page.screenshot({ path: ... })`, and any ledger reference citing a screenshot as evidence. Playwright failure screenshots write to `screenshots/failures/<test-name>-<timestamp>.png` (gitignored).
+
+This is a pure-hygiene rule enforced at the skill-brief level — bare-basename screenshots litter the repo root and break ledger references whose resolution depends on Node's CWD.
 
 **Commit:** `chore: scaffold element-interactions framework`.
 
@@ -251,6 +310,16 @@ Every failure — in any phase — routes through `failure-diagnosis`. Four clas
 | MCP / infra error | Halt. Commit what is stable. Print a clear stop reason with the last progress line. |
 
 The only halt conditions are infra errors. The pipeline never halts on test or app failures.
+
+### MCP watchdog heartbeat
+
+Subagents driving long-running MCP probes (Phase-3 happy-path stabilization, Phase-5 adversarial passes, Phase-6 bug-hunts, Phase-7 deck generation) risk tripping the MCP watchdog's 600s no-output kill when a single tool call stalls or when analysis between calls runs long. A 10-minute stall loses all in-flight progress and forces a fresh dispatch with a narrower brief.
+
+Skill-level guidance, included verbatim in every subagent brief that uses MCP:
+
+> When the MCP has not produced output for ~120s, emit a heartbeat step — a trivial `browser_snapshot` or `browser_evaluate(() => Date.now())` — before continuing the main probe. This keeps the watchdog awake and prevents the silent 600s kill. The heartbeat is not a checkpoint and is not persisted to the ledger; its only purpose is to reset the watchdog clock.
+
+This is skill-level guidance, not a config knob. No flag to toggle, no threshold to tune — subagents emit the heartbeat when they notice the 120s window closing, and the orchestrator does not need to track it.
 
 ---
 
