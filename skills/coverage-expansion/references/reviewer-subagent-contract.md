@@ -59,6 +59,7 @@ Task: Review the Stage A output for journey j-<slug>, pass <N>, cycle <C>.
 Inputs:
 - Journey block: <paste the ### j-<slug> block verbatim>
 - Sub-journey refs: <paste any referenced sj-<slug> blocks, or "none">
+- Adversarial ledger section (passes 4–5 only): <paste the journey's current section of tests/e2e/docs/adversarial-findings.md, or "n/a" for passes 1–3>
 - Page-repo slice: <paste page-repository.json entries for the pages the journey touches>
 - App-context slice: <paste the relevant sections of app-context.md>
 - Stage A return (cycle <C>): <paste the full Stage A return>
@@ -68,8 +69,10 @@ Inputs:
 
 Procedure:
 1. Verify isolated MCP availability per element-interactions Rule 11.
-2. Read the on-disk test files Stage A wrote or modified (paths in the Stage A return).
-3. Navigate the live app via MCP. Inspect each page the tests claim to exercise.
+2. Read Stage A's output:
+   - Passes 1–3: read the .spec.ts files Stage A wrote or modified (paths in the Stage A return).
+   - Passes 4–5: read the ledger entries Stage A appended this cycle and any regression-test files Stage A wrote (paths in the Stage A return).
+3. Navigate the live app via MCP. Inspect each page the tests claim to exercise. For passes 4–5, additionally attempt 2–3 adversarial probes Stage A did not try this cycle — pick categories under-represented in Stage A's probe list.
 4. Classify findings per §2.4 of the canonical return schema.
 5. Apply must-fix calibration per the reviewer contract.
 6. Detect stalled loops — if your must-fix list matches the prior cycle, flag stalled:true.
