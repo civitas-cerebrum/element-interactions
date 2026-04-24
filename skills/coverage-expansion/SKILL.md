@@ -126,6 +126,66 @@ The dual-stage design addresses a concrete failure mode: a single subagent that 
 
 **No-skip extension.** Under dual-stage, the no-skip contract (PR #105) extends: every journey must receive both Stage A and Stage B in every pass. A journey with Stage A but no Stage B is incomplete. The terminal review status set gains two subagent-returned blocked values — `blocked (review-cycle-stalled)` and `blocked (review-cycle-exhausted)` — per §"Retry loop" termination conditions.
 
+### Retry loop (orchestrator, per journey per pass)
+
+For each journey in the current pass's roster, the orchestrator runs:
+
+```
+stage_a_input = base_brief                             # initial cycle-1 input
+history = []
+
+for cycle in 1..7:
+  a_return = dispatch Stage A with stage_a_input
+  b_return = dispatch Stage B (fresh ctx, fresh MCP) to review a_return
+
+  if b_return.status == "greenlight":
+    review_status = "greenlight"
+    break
+
+  must_fix = [f for f in b_return.findings if f.priority == "must-fix"]
+
+  if must_fix is empty:
+    review_status = "greenlight-with-notes"
+    break
+
+  if b_return.stalled == true or (history and must_fix == history[-1].must_fix):
+    review_status = "blocked-cycle-stalled"
+    break
+
+  history.append({"cycle": cycle, "must_fix": must_fix})
+  stage_a_input = base_brief + b_return.findings
+
+if cycle == 7 and review_status is unset:
+  review_status = "blocked-cycle-exhausted"
+
+record journey review_status + cycle count + final must_fix list in state file
+```
+
+**Termination conditions:**
+
+| Condition | `review_status` | Action |
+|---|---|---|
+| Reviewer returns `greenlight` | `greenlight` | Accept, commit this journey's work this pass. |
+| Reviewer returns `improvements-needed` but only `nice-to-have` | `greenlight-with-notes` | Accept, log notes to state file. |
+| Reviewer's `must-fix` list matches the prior cycle's (or reviewer sets `stalled: true`) | `blocked-cycle-stalled` | Escalate — Stage A cannot fix this list. Commit whatever Stage A landed; log the unresolved list. |
+| Cycle 7 reached without greenlight | `blocked-cycle-exhausted` | Escalate — retry budget spent. Commit whatever Stage A landed; log the unresolved list. |
+
+Both blocked statuses are valid terminal values under the no-skip contract (PR #105). They are **not** pass failures — they are visible deferrals. The orchestrator records the `must-fix` list to the state file and carries it forward to the next pass as an explicit Stage A input (see §"Re-pass mode" trigger 4).
+
+**Why 7 cycles.** Gives genuine room for adversarial iteration: first review catches obvious gaps, second fills subtler ones, third addresses what the reviewer missed the first read. The bounded cap prevents runaway loops while leaving enough slack that exhaustion is the exception rather than the common case.
+
+**Fresh reviewer every cycle.** Every Stage B dispatch is a fresh subagent with a fresh MCP browser — no context inheritance from the prior cycle's reviewer, no context inheritance from the paired Stage A. The fresh-eyes property is load-bearing; if the reviewer carries state across cycles, it will start agreeing with Stage A.
+
+**Rationalizations to reject:**
+
+| Excuse | Reality |
+|--------|---------|
+| "Cycle 3 has the same must-fix list but I think Stage A could fix them with one more try" | If the list is identical, Stage A has already failed to address these items with the same inputs twice. `blocked-cycle-stalled` is the correct terminal state; human or follow-up-pass attention is the next step. |
+| "Reviewer returned improvements-needed but the must-fix list is small; I'll skip the retry" | A single `must-fix` item is enough to block greenlight. Retry with the findings appended. |
+| "I'll compact findings from cycles 1–4 into one summary string for cycle 5's input" | Compressed findings lose the surgical specificity Stage A needs to fix them. Pass the full findings through verbatim. |
+| "Cycle 7 exhausted and I'll just call it greenlit to keep the pass moving" | `blocked-cycle-exhausted` is the correct terminal. Marking it greenlit when it isn't corrupts the state file and the next pass's trigger-4 input. |
+| "Reviewer disagrees with itself between cycles 1 and 2; I'll pick the more lenient one" | Each cycle's reviewer is fresh and independent. Take each cycle's output as-is; the retry-loop logic handles divergence via the stalled/exhausted checks. |
+
 ---
 
 ## Prerequisites
