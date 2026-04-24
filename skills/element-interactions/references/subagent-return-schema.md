@@ -136,6 +136,7 @@ status: greenlight
 journey: j-<slug>
 pass: <N>
 cycle: <cycle-number>
+summary: <one sentence — e.g., "All 8 test-expectations covered, craft clean, live DOM matches assertions.">
 ````
 
 Return body for `greenlight-with-notes` (only `nice-to-have` findings):
@@ -145,6 +146,7 @@ status: greenlight-with-notes
 journey: j-<slug>
 pass: <N>
 cycle: <cycle-number>
+summary: <one sentence naming both the greenlighted content and the nice-to-have notes — e.g., "All 8 test-expectations covered and craft clean; 2 nice-to-have adversarial scenarios logged as notes.">
 
 notes:
   - **<FINDING-ID>** [nice-to-have] — <one-line title>
