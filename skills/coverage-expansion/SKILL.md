@@ -106,6 +106,28 @@ This subsection extends §"Per-pass completion criteria" (see below). A pass's c
 
 ---
 
+## Dual-stage per-pass contract
+
+Every one of the 5 passes runs **per journey** as two sequential stages:
+
+- **Stage A — Compose / Probe.** The existing `test-composer` (passes 1–3) or adversarial probe subagent (passes 4–5). Dispatch contract unchanged from the single-stage era.
+- **Stage B — Adversarial Review.** A fresh staff-level-QA reviewer subagent, per journey, with its own isolated context and its own isolated Playwright MCP browser. Reads Stage A's output and the live app; returns `greenlight`, `greenlight-with-notes`, or `improvements-needed`. Never writes tests, never appends to the ledger, never modifies files.
+
+The dual-stage design addresses a concrete failure mode: a single subagent that both does the work AND self-certifies it misses scenarios a fresh independent reviewer would catch. Stage B is that independent reviewer. It exists to catch what Stage A missed.
+
+**Per journey per pass**, Stage A and Stage B alternate in a bounded retry loop up to 7 A↔B cycles (see §"Retry loop" below). Worst case: 7 A dispatches + 7 B dispatches = 14 per journey per pass.
+
+**Contracts:**
+- Stage A: unchanged from its skill (see `test-composer` for compositional passes, `references/adversarial-subagent-contract.md` for adversarial passes).
+- Stage B: see `references/reviewer-subagent-contract.md` for the full contract and dispatch-brief template.
+- Return shape: both stages use the canonical subagent-return-schema. Stage B's return states (`greenlight`, `greenlight-with-notes`, `improvements-needed`) are additions; Stage A's existing states are unchanged.
+
+**Cost posture.** This skill is **cost-blind**. The optimisation targets are completeness and speed, not dispatch cost. Default opus for every dispatch in every stage. The sonnet-for-P2/P3 heuristic from the prior design is removed; a narrow sonnet exception for cycle-1 Stage B confirmation on previously-greenlit journeys is documented in §"Model selection".
+
+**No-skip extension.** Under dual-stage, the no-skip contract (PR #105) extends: every journey must receive both Stage A and Stage B in every pass. A journey with Stage A but no Stage B is incomplete. The terminal review status set gains two subagent-returned blocked values — `blocked (review-cycle-stalled)` and `blocked (review-cycle-exhausted)` — per §"Retry loop" termination conditions.
+
+---
+
 ## Prerequisites
 
 1. `tests/e2e/docs/journey-map.md` must exist with `<!-- journey-mapping:generated -->` on line 1. If missing, stop and invoke `journey-mapping` first.
