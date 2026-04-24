@@ -266,7 +266,7 @@ Effect: batching remains available for genuinely trivial P3 sweeps but can never
 - The existing `result` field follows the no-skip enum; `review_status` is the new parallel field specific to dual-stage.
 
 ### 9.6 Commit discipline
-- Still one commit per pass. The commit aggregates the journey A-rounds that greenlit or greenlit-with-notes this pass.
+- Still one commit per pass. The commit aggregates the journey A-rounds whose `review_status` is `greenlight` or `greenlight-with-notes` this pass.
 - Stage B returns do NOT produce their own commits — review artifacts are captured only in the state file's per-journey fields.
 - Blocked journeys (cycle-stalled or cycle-exhausted) have their partial Stage A work committed anyway (if any tests landed), with the blocked `review_status` recorded — the no-skip contract requires visibility, not rollback.
 
