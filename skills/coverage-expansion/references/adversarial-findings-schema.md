@@ -46,6 +46,20 @@ _(Populated by the post-pass-5 cleanup subagent. Until then, leave the section p
 - **Pass 5:** <comma-separated probe categories> (N probes total)
 ```
 
+### Empty-probe pass-4 journeys (required — do not silently skip)
+
+If a pass-4 subagent returns with zero probes landed for a journey (no adversarial surface found, subagent gated by credentials, `bug-discovery` produced no usable attack categories, etc.), the ledger MUST still contain a journey section with the reason recorded under `### Probes attempted`:
+
+```markdown
+## j-<slug>
+
+### Probes attempted
+
+- **Pass 4:** no boundaries probed — <reason: "no state-changing surface in this journey" | "journey gated by admin seed user not available in demo tenant" | "bug-discovery returned no probe categories after N attempts" | etc.>
+```
+
+This is the only acceptable pass-4 completion state for a journey with zero probes. An empty or missing journey section is a bug in the orchestrator's aggregation, not a valid "nothing to probe" signal. On pass 5, the orchestrator re-attempts these journeys only when the recorded reason describes something transient (e.g., credential availability); permanent reasons ("no state-changing surface") propagate forward unchanged and the pass-5 line reads `no boundaries probed — <same reason as pass 4>`.
+
 ## Probe category vocabulary (non-exhaustive)
 
 Subagents pick categories based on the journey's flow. The vocabulary below gives a common naming surface so the ledger and the cleanup-pass dedup step are consistent:
