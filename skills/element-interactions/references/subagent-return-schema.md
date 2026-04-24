@@ -59,6 +59,8 @@ No finding may escalate above `info` if it is not visible in a screenshot. That 
 
 A compositional or adversarial pass subagent may end a journey without producing new tests. When that happens, it MUST pick one of the two return states below. The distinction is binding.
 
+**Relationship to the broader return-state enum.** The full no-skip contract (see `coverage-expansion` §"No-skip contract") defines four possible subagent return types: `new-tests-landed`, `covered-exhaustively` (replaces the legacy `no-new-tests`), `blocked (reason)`, and `skipped (reason + who-authorized)`. The two states documented in this section (§2.1 and §2.2) apply specifically to the "journey was inspected and ended without new tests" fork. `blocked` and `skipped` are **separate return types** governed by the no-skip contract, not covered here — a subagent that cannot inspect (tenant data missing, credentials unavailable, malformed journey block) returns `blocked` with a reason, not `covered-exhaustively`.
+
 ### 2.1 `status: covered-exhaustively`
 
 Only valid when the subagent **inspected** the journey. Required evidence:
@@ -84,6 +86,10 @@ This state describes the failure mode where a subagent punts on the dispatch, ra
 
 Legacy skills that previously used `status: no-new-tests` MUST rename to `covered-exhaustively` and attach the mapping table. The unqualified phrase "no new tests" is banned as a status value.
 
+### 2.3 Malformed-input escape hatch
+
+If the subagent cannot produce the mapping table because the input itself is unusable — the journey block is missing, `Test expectations:` is blank or unreadable, the referenced `sj-<slug>` sub-journey blocks cannot be located, etc. — the subagent MUST return `blocked (malformed-input: <reason>)`, **not** `covered-exhaustively` and **not** `no-new-tests-by-rationalisation`. The orchestrator treats `blocked (malformed-input: …)` as actionable: it fixes the input (usually by re-running `journey-mapping` for that journey) and re-dispatches. This prevents the failure mode where a subagent with no input conspires with the schema to return "covered" — the schema requires evidence that doesn't exist.
+
 ---
 
 ## 3. Strict ledger schema — `tests/e2e/docs/adversarial-findings.md`
@@ -91,6 +97,8 @@ Legacy skills that previously used `status: no-new-tests` MUST rename to `covere
 The adversarial findings ledger is enforced, not conventional. Every subagent that appends to the ledger MUST validate its append against the schema below **before committing**. Schema violations are contract violations; the subagent corrects the append or re-emits.
 
 The ledger lives at `tests/e2e/docs/adversarial-findings.md`. It is created on the first Pass-4 subagent invocation.
+
+**Relationship to `skills/coverage-expansion/references/adversarial-findings-schema.md`.** This section replaces the **structural** portions of that file (header layout, per-journey block, finding block shape, pass summary line). The existing file is retained only for the **probe-category vocabulary** (`auth-tamper`, `input-tamper`, `price-tamper`, etc.) and the **severity rubric** referenced by subagents. When the two files overlap on structure, this file wins. A single cleanup follow-up will move the vocabulary into this file and delete the legacy schema; until then, callers cite both files explicitly in their dispatch briefs.
 
 ### 3.1 File header (written once, by the first Pass-4 subagent)
 
@@ -204,6 +212,18 @@ Every caller (`coverage-expansion`, `test-composer`, `bug-discovery`) MUST:
    - re-dispatch with a stricter brief that names the specific schema violation, or
    - surface the violation to the user when re-dispatch is not possible.
 4. Never invent new severities, new finding-ID schemes, or new ledger block shapes. One schema, one file.
+5. **No "one extra field" extensions.** A caller that adds an informational bullet, sub-line, or suffix to the finding block is forking the schema. If a new field is genuinely necessary, open a follow-up that extends this file; do not ship the extension in a caller's SKILL.md as a de-facto override.
+
+### 4.1 Minimal conformance check (what the caller should look for)
+
+Callers do not run a parser — they grep the return for a short, fixed list of shape signals. A minimal check that catches the common violations:
+
+- **Finding blocks:** one or more lines matching `^- \*\*[a-z0-9-]+-\d+-\d+\*\* \[(?:critical|high|medium|low|info)\]` (for in-pass findings) or the analogous out-of-pass form, followed by the four sub-bullets `scope:` / `expected:` / `observed:` / `coverage:`.
+- **`covered-exhaustively` returns:** the literal string `status: covered-exhaustively`, a table header row `| Expectation | Covering spec | Test name |`, and at least one data row per `Test expectations:` entry in the journey block.
+- **Banned tokens:** the literal strings `no-new-tests-by-rationalisation`, `no-new-tests` (unqualified), `AF-`, `P4-`, `REG-` (legacy finding-ID prefixes), and any `[p0]` / `[blocker]` / `[no-impact]` severity bracket.
+- **Ledger append:** the `**Pass <N> — <kind> (YYYY-MM-DD)**` header line, the `Scope:` line, and the closing `**Pass <N> summary:** probes=…, boundaries=…, suspected-bugs=…` line, in that order, bracketing the finding blocks.
+
+If any of the above is missing or a banned token is present, the caller re-dispatches with a brief that quotes the specific violation. The grep-based check is sufficient — no AST, no JSON, no parser.
 
 ---
 
