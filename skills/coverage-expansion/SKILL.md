@@ -334,18 +334,17 @@ New: **`host max`** — the orchestrator uses whatever parallel width the dispat
 
 The Phase-0 shared-resource audit (PR #106) still caps parallelism where the app genuinely can't tolerate more (single credential per role, rate limits, CSRF serialization). Those caps override the cost-blind default. The audit's constraint tags apply to Stage A AND Stage B equally — reviewers compete for the same credentials.
 
-### Model selection heuristic
+### Model selection (cost-blind posture)
 
-Orchestrator picks a model per subagent between `sonnet` and `opus` only. Journey-level test composition requires self-stabilization, API compliance review, and coverage verification — haiku is not reliable enough for that workload.
+Default model for every dispatch in every stage in every pass: **opus**.
 
-| Signal | Model |
-|---|---|
-| Steps ≤ 8 AND pages ≤ 4 AND priority ∈ {P1, P2, P3} AND no cross-feature/data-lifecycle variants | `sonnet` |
-| Steps > 8, pages > 4, priority = P0, `Test expectations` lists cross-feature or data-lifecycle, or this journey failed stabilization on a prior pass | `opus` |
+The prior sonnet-for-P2/P3 heuristic is removed. The prior sonnet-for-small-journey override is removed. Model choice does not vary by priority, journey size, step count, or pass number — opus by default, everywhere.
 
-Override: promote from `sonnet` to `opus` on a journey that previously returned a stabilization, API-review, or coverage-verification failure.
+**Narrow exception — cycle-1 Stage B sonnet confirmation.** For a journey that greenlit in the previous pass AND has no map delta since that pass AND no sibling-bug ledger update pointing at it, the cycle-1 Stage B MAY run sonnet as a fast confirmation. If sonnet returns `greenlight`, accept. If sonnet returns `improvements-needed`, immediately re-run the same review on opus — the opus result is authoritative, sonnet's was indicative. This is a latency optimisation, not a cost-reduction mechanism; it exists because a confirmed-greenlit journey's cycle-1 review is often trivially "still looks good" and a sonnet confirmation is fast.
 
-For adversarial passes (4 and 5), default to **opus** regardless of journey size. Adversarial probing requires judgment to recognize subtle boundary failures. Sonnet is acceptable only for the smallest journeys (steps ≤ 4 AND pages ≤ 2 AND priority ∈ {P2, P3}). Any journey that returned a stabilization or coverage-verification failure in passes 1–3 must run on opus in passes 4 and 5.
+**Override: promote on failure.** Any journey that returned a stabilization or coverage-verification failure in a prior pass runs on opus for every dispatch (A and B) in every subsequent pass, regardless of cycle. No sonnet exception applies once a journey has failed.
+
+**For adversarial passes (4 and 5):** always opus, both stages. The sonnet exception above does NOT apply to adversarial passes — adversarial review requires judgment that sonnet reliably under-produces.
 
 ### Per-pass scope preview
 
