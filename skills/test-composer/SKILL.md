@@ -191,10 +191,42 @@ This skill owns the coverage outcome for its assigned journey. The orchestrator 
 
 Emit a structured report to the caller. Do not paste test source, DOM snapshots, or MCP transcripts into the return — the caller will not read them.
 
-Format:
+### Canonical return schema
+
+Every finding reported in the return block (coverage gaps, app-bug flags, new-discovery anomalies) MUST follow the canonical subagent finding-return schema documented in [`../element-interactions/references/subagent-return-schema.md`](../element-interactions/references/subagent-return-schema.md):
+
+```
+- **<FINDING-ID>** [<severity>] — <one-line title>
+  - scope: <what was probed>
+  - expected: <what should happen>
+  - observed: <what happened>
+  - coverage: <existing test or none>
+```
+
+- `FINDING-ID` uses `<journey-slug>-<pass>-<nn>` (when invoked by `coverage-expansion` with a pass number) or `<journey-slug>-<nn>` (standalone).
+- `severity` is one of `critical`, `high`, `medium`, `low`, `info`. No other values.
+- Do not invent alternative ID schemes or severities.
+
+### Return states — covered-exhaustively vs rationalisation
+
+If this invocation produced **zero** new tests, pick one of the two states defined in the canonical schema's §2:
+
+- **`status: covered-exhaustively`** — only valid when the subagent inspected the journey. Required evidence: a per-expectation mapping table (one row per item in the journey's `Test expectations:` list, each mapped to a spec file + test name). Every row must name concrete coverage — no `coverage: none` rows are tolerated under this status.
+- **`status: no-new-tests-by-rationalisation`** — **not a valid return** from any compositional pass. If the only justification is "tests would be redundant" without an inspection, perform the inspection. Orchestrators will reject this return and re-dispatch with a stricter brief.
+
+When invoked by `coverage-expansion` as a re-pass subagent (Pass 2 or 3), the mapping table MUST also include an explicit check against every re-pass trigger:
+
+```
+- trigger 1 (map delta since Pass 1): <none|<delta description>>
+- trigger 2 (Pass-1 coverage gaps or deferred stabilization): <none|<gap>>
+- trigger 3 (sibling-bug regression required here): <none|<sibling finding ID>>
+```
+
+### Return block format
 
 ```
 journey: j-<id>
+status: <in-progress|complete|covered-exhaustively>
 tests added:
   - tests/<file>.spec.ts :: <describe> :: <test name>
   - ...
@@ -203,7 +235,11 @@ coverage:
   branches: <covered>/<total>
   state-variations: <covered>/<total>
   justified gaps:
-    - <item> — <reason>
+    - **<FINDING-ID>** [<severity>] — <title>
+      - scope: <what was probed>
+      - expected: <what should happen>
+      - observed: <what happened>
+      - coverage: none
 new discoveries:
   branches:
     - <branch description, page, from-step>
@@ -216,6 +252,8 @@ new discoveries:
 api compliance: clean | <specific issue resolved>
 stabilization: <N runs> green
 ```
+
+For `status: covered-exhaustively`, append the per-expectation mapping table documented in the canonical schema immediately after the return block. The orchestrator uses the table to audit that the "no new tests" claim is supported by inspection, not rationalised.
 
 ---
 

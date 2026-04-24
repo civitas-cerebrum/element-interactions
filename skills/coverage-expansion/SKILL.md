@@ -19,6 +19,12 @@ The orchestrator for coverage growth. Iterates the user journey map, dispatches 
 
 **Context discipline:** this skill holds only the map index (IDs, names, priorities, `Pages touched`), the independence graph, and the pass counter. All journey-level reasoning happens inside dispatched subagents with isolated context windows.
 
+**Canonical return + ledger schema:** every subagent dispatched by this skill — compositional (`test-composer`) or adversarial — returns findings and writes ledger entries against the canonical schema in [`../element-interactions/references/subagent-return-schema.md`](../element-interactions/references/subagent-return-schema.md). Dispatch briefs include a pointer to that file; the schema is never re-pasted. Key points:
+
+- Finding-IDs use `<journey-slug>-<pass>-<nn>` inside Passes 1–5. Severities are `critical | high | medium | low | info`.
+- `status: covered-exhaustively` requires a per-expectation mapping table. `status: no-new-tests-by-rationalisation` is **not a valid return** from any pass and is treated as a contract violation — the orchestrator re-dispatches with a stricter brief.
+- Adversarial ledger appends (`tests/e2e/docs/adversarial-findings.md`) MUST validate against the ledger schema in §3 of the reference file before releasing the lockfile.
+
 ---
 
 ## When to Use
@@ -156,17 +162,17 @@ Every `test-composer` subagent dispatched by this skill must:
 2. Receive only: its assigned journey block + any `sj-<slug>` sub-journey blocks it references + the current `page-repository.json` slice for the pages that journey touches.
 3. Have access to an **isolated Playwright MCP browser instance** (see the `element-interactions` orchestrator's "Isolated MCP instances for parallel subagents" rule). Parallel subagents never share one browser.
 4. Not return until stabilization green, API compliance review clean, and coverage verified exhaustive (enforced inside `test-composer`).
-5. Return a structured discovery report only — no pasted test source, no DOM snapshots, no MCP transcripts.
+5. Return a structured discovery report only — no pasted test source, no DOM snapshots, no MCP transcripts. Returns follow the canonical return schema in [`../element-interactions/references/subagent-return-schema.md`](../element-interactions/references/subagent-return-schema.md); the dispatch brief includes a pointer to the file rather than re-pasting the schema.
 
 ### Adversarial passes (4–5)
 
 Every adversarial probe subagent dispatched by this skill must:
 
 1. Receive the same isolated context window and isolated Playwright MCP browser as compositional-pass subagents.
-2. Additionally receive: the pass number (4 or 5), the ledger file path (`tests/e2e/docs/adversarial-findings.md`), and the lockfile path (`tests/e2e/docs/.adversarial-findings.lock`).
+2. Additionally receive: the pass number (4 or 5), the ledger file path (`tests/e2e/docs/adversarial-findings.md`), the lockfile path (`tests/e2e/docs/.adversarial-findings.lock`), and a pointer to the canonical schema at `skills/element-interactions/references/subagent-return-schema.md`.
 3. For pass 5 specifically: also receive the journey's pass-4 ledger section (read from the ledger file before dispatch and passed along — the orchestrator's single exception to the "never hold findings content" rule, bounded to one journey's section for one subagent).
-4. Follow the adversarial subagent contract in `references/adversarial-subagent-contract.md` exactly.
-5. Return a structured summary only, matching the return shape in that contract. No probe transcripts, no DOM snapshots, no test source.
+4. Follow the adversarial subagent contract in `references/adversarial-subagent-contract.md` exactly, which mandates conformance to the canonical return + ledger schema.
+5. Return a structured summary only, matching the return shape in that contract. No probe transcripts, no DOM snapshots, no test source. Any per-finding detail inside the return follows the canonical finding-return format.
 
 ### Cleanup subagent (post-pass-5)
 

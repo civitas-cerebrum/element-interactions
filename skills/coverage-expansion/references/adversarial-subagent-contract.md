@@ -2,6 +2,18 @@
 
 Every subagent dispatched by `coverage-expansion` during pass 4 or pass 5 follows this contract. It is analogous to the compositional-pass subagent contract in SKILL.md but covers adversarial probing specifics.
 
+## Canonical return + ledger schema
+
+Every return and every ledger append produced under this contract MUST conform to the canonical subagent schema in [`../../element-interactions/references/subagent-return-schema.md`](../../element-interactions/references/subagent-return-schema.md). Specifically:
+
+- **Finding-return format** — every finding emitted by the subagent (in its return, in the ledger, or both) uses the `- **<FINDING-ID>** [<severity>] — <title>` block with `scope` / `expected` / `observed` / `coverage` sub-bullets.
+- **FINDING-ID scheme** — `<journey-slug>-<pass>-<nn>` for all Pass-4 and Pass-5 findings. Do not use legacy schemes (`AF-*`, `BUG-*`, `P4-*-BUG-NN`, `REG-*`).
+- **Severities** — `critical`, `high`, `medium`, `low`, `info`. No others.
+- **Return states** — if a subagent dispatch ends without new findings, it returns `status: covered-exhaustively` with the per-expectation mapping table from §2 of the reference file. `status: no-new-tests-by-rationalisation` is **not a valid return**.
+- **Ledger schema** — the exact Markdown schema for `tests/e2e/docs/adversarial-findings.md` (see §3 of the reference file). Validate every append in-memory against that schema before releasing the lockfile.
+
+The dispatch brief written by the `coverage-expansion` orchestrator includes a pointer to the reference file. The subagent reads the reference file; it does NOT rely on the schema being re-pasted inside the brief.
+
 ## Inputs (given at dispatch time)
 
 1. The assigned journey's full `### j-<slug>` block from the current `journey-map.md`.
@@ -18,7 +30,7 @@ Every subagent dispatched by `coverage-expansion` during pass 4 or pass 5 follow
 1. Receive an isolated context window and an isolated Playwright MCP browser instance (same rules as compositional-pass subagents — parallel subagents never share a browser).
 2. **Pass 4:** read the map block + page-repo slice + any existing composed tests for the journey. Invoke the `bug-discovery` skill scoped to this one journey. Let that skill drive probe-category selection based on live observation. Classify every finding as `Boundaries verified`, `Suspected bugs`, or `Ambiguous`. Do NOT write any tests.
 3. **Pass 5:** additionally read the journey's existing section in `adversarial-findings.md` (pass-4 findings). Re-invoke `bug-discovery` with instructions to (a) resolve `Ambiguous` findings where possible, (b) attempt compound probes pass 4 did not try, (c) probe follow-ups implied by pass-4 boundary verifications. Write a passing regression test for every `Boundaries verified` finding (pass 4 + pass 5 combined) into `tests/e2e/j-<slug>-regression.spec.ts`. Never write tests for `Suspected bugs` or `Ambiguous` findings.
-4. Append all new findings to the journey's section of the ledger, using the schema in `adversarial-findings-schema.md`. Create the journey section if absent. Create the ledger file with its header if absent.
+4. Append all new findings to the journey's section of the ledger, using the canonical ledger schema in [`../../element-interactions/references/subagent-return-schema.md`](../../element-interactions/references/subagent-return-schema.md) §3. The legacy `adversarial-findings-schema.md` is retained for probe-category vocabulary reference only; **the canonical schema governs structure**. Create the journey section if absent. Create the ledger file with its header if absent. Validate the append in-memory against the canonical schema BEFORE releasing the lockfile — if validation fails, fix the append and re-validate.
 5. Stabilize any regression tests written in pass 5 to 3× green using the normal test-composer stabilization loop. If stabilization fails after 3 cycles, DO NOT commit a `test.fail()` marker; instead move the finding to `Suspected bugs` with note `deterministic-test-not-feasible` and continue.
 6. Return a structured discovery report to the orchestrator. No probe transcripts, no DOM snapshots, no test source.
 
@@ -38,6 +50,9 @@ rmdir tests/e2e/docs/.adversarial-findings.lock
 Holding the lock should take under 500ms per subagent. Read the file, compute the append, write, release. Do not hold the lock during probing or any MCP calls.
 
 ## Return shape (text block, not JSON — orchestrator parses keys)
+
+The top-level return is a summary block with the keys shown below. Any per-finding detail emitted inside the return (e.g. high-severity suspected bugs the orchestrator needs to surface) MUST follow the canonical finding-return schema in the reference file — do not invent alternative finding blocks here.
+
 
 ```
 journey: j-<slug>

@@ -39,6 +39,18 @@ When any of these conditions are met, invoke the Skill tool with the companion s
 
 ---
 
+## Canonical subagent return + ledger schema
+
+Every subagent dispatched by a companion skill (`coverage-expansion`, `test-composer`, `bug-discovery`) returns findings and writes ledger entries against a single canonical schema documented in [`references/subagent-return-schema.md`](references/subagent-return-schema.md). This is the single source of truth for:
+
+- **Finding-return format** — the `<FINDING-ID> [<severity>] — <title>` block with `scope`, `expected`, `observed`, and `coverage` sub-bullets. Finding-IDs follow `<journey-slug>-<pass>-<nn>` or `<journey-slug>-<nn>`. Severities are `critical | high | medium | low | info` — no others.
+- **Return states** — `covered-exhaustively` requires a per-expectation mapping table; `no-new-tests-by-rationalisation` is **not a valid return** from any compositional or adversarial pass.
+- **Ledger schema** — the exact Markdown shape of `tests/e2e/docs/adversarial-findings.md`, including `### j-<slug>`, `**Pass <N> — <kind> (YYYY-MM-DD)**`, `Scope:` line, `#### <FINDING-ID>` blocks, and the `**Pass <N> summary:**` footer.
+
+Companion skills MUST cite `references/subagent-return-schema.md` in their SKILL.md and point their subagent dispatch briefs at it rather than re-pasting the schema. Do not fork the schema per skill. Extensions go in the reference file.
+
+---
+
 ## 🚨 ABSOLUTE RULES — STOP AND READ BEFORE ANY ACTION
 
 **STOP. Do not write any code until you have read and understood every rule below.**

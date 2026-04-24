@@ -16,6 +16,20 @@ Systematic, automated bug discovery that runs after all existing test stages are
 
 ---
 
+## Canonical return + ledger schema
+
+Every finding reported by this skill — whether returned directly to the user or appended to the adversarial-findings ledger by a `coverage-expansion` adversarial subagent — MUST conform to the canonical schema documented in [`../element-interactions/references/subagent-return-schema.md`](../element-interactions/references/subagent-return-schema.md).
+
+- **Finding-return format** — every finding uses `- **<FINDING-ID>** [<severity>] — <title>` with `scope`, `expected`, `observed`, `coverage` sub-bullets.
+- **FINDING-ID** — `<journey-slug>-<pass>-<nn>` when invoked by `coverage-expansion` as a Pass-4 or Pass-5 subagent; `<journey-slug>-<nn>` for standalone invocations. No `AF-*`, `BUG-*`, `P4-*-BUG-NN`, or other legacy schemes.
+- **Severity** — one of `critical`, `high`, `medium`, `low`, `info`. No other values. The "No impact (DOM-only)" classification in this skill's Phase 5 rubric maps to `info` when emitted in the canonical return shape.
+- **Return states** — `covered-exhaustively` requires evidence (per-expectation mapping); `no-new-tests-by-rationalisation` is **not a valid return** from any adversarial pass.
+- **Ledger schema** — when an adversarial subagent appends to `tests/e2e/docs/adversarial-findings.md`, the append MUST validate against the schema in §3 of the reference file (header, `### j-<slug>`, `**Pass <N> — <kind> (YYYY-MM-DD)**`, `Scope:`, `#### <FINDING-ID>` blocks with `expected` / `observed` / `ledger-only` / `coverage` lines, and a `**Pass <N> summary:**` footer). Validate in-memory before releasing the lock.
+
+Do not re-paste the schema when dispatching sub-flows of this skill — point at the reference file instead.
+
+---
+
 ## Prerequisites
 
 Before starting, verify ALL of these:
