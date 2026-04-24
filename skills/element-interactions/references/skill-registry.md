@@ -29,6 +29,10 @@ Names drift silently. A `coverage-expansion` written as `Coverage Expansion` in 
 
 ---
 
+**SKILL.md path convention.** Every skill's main doc lives at `skills/<skill-name>/SKILL.md` — slug the Invocation string to get the path. Reference docs live under `skills/<skill-name>/references/`. For example, `coverage-expansion` → `skills/coverage-expansion/SKILL.md`.
+
+---
+
 ## Non-skill sentinel strings
 
 Some markers in the workflow are not skill names but are case-sensitive and must also be copied verbatim:
@@ -36,13 +40,31 @@ Some markers in the workflow are not skill names but are case-sensitive and must
 | String | Purpose | Where it appears |
 |---|---|---|
 | `<!-- journey-mapping:generated -->` | Sentinel on line 1 of `tests/e2e/docs/journey-map.md`; confirms the map was produced by `journey-mapping` and is in the precise-embedding format. | First line of `tests/e2e/docs/journey-map.md`. |
+| `<!-- coverage-expansion-adversarial:generated -->` | Sentinel on line 1 of `tests/e2e/docs/adversarial-findings.md`; confirms the ledger was produced by a Pass-4 subagent and conforms to the canonical schema. | First line of `tests/e2e/docs/adversarial-findings.md`. |
 | `autonomousMode: true` | Invocation flag passed to `element-interactions` by companion skills to disable hard gates. | `args` when `onboarding` / `coverage-expansion` / `test-composer` invoke `element-interactions`. |
 | `mode: depth` / `mode: breadth` | `coverage-expansion` run-mode selector. | `args` when invoking `coverage-expansion`. |
+| `mode: live` / `mode: static` | `bug-discovery` probing-mode selector. | `args` when invoking `bug-discovery` (static mode is first-class, not a fallback — see that skill's §"Static mode — first-class adversarial probing"). |
+| `mode: re-pass` | `test-composer` pass-2/3 discipline selector. | `args` when `coverage-expansion` dispatches `test-composer` for Pass 2 or Pass 3. |
+
+---
+
+## Companion reference docs
+
+The registry is one of two canonical reference documents in this directory. Callers should treat both as authoritative:
+
+| Reference | Scope |
+|---|---|
+| [`skill-registry.md`](skill-registry.md) (this file) | Canonical skill names, invocation strings, sentinel strings. |
+| [`subagent-return-schema.md`](subagent-return-schema.md) | Canonical subagent finding-return format, return states (`covered-exhaustively`, `no-new-tests-by-rationalisation`), and adversarial-ledger schema. |
+
+Commit-message conventions for every pass in every skill are governed by `coverage-expansion`'s §"Commit-message conventions" (the per-pass table) and referenced from `test-composer` and `bug-discovery`. If a commit template drift is observed, fix the table in `coverage-expansion/SKILL.md` first; the caller skills cite it rather than re-defining it.
 
 ---
 
 ## Maintenance
 
-- **Adding a skill:** add a row to the registry, then add a "Skill names: see registry" note near the top of the new skill's `SKILL.md` pointing here.
+- **Adding a skill:** add a row to the registry, scaffold `skills/<skill-name>/SKILL.md` with YAML frontmatter whose `description` follows the "Use when..." format (per the `superpowers:writing-skills` guidance — triggering conditions only, no workflow summary), and add a "Skill names: see registry" note near the top of the new SKILL.md pointing here.
 - **Renaming a skill:** do NOT. Renaming breaks every caller that copied the old name. If rename is unavoidable, land it as a single PR that updates the registry plus every caller in one commit.
 - **Deprecating a skill:** mark the row with a strikethrough and add a "Deprecated — use `<replacement>` instead" note in the skill's `SKILL.md`. Keep the registry row until the skill is removed.
+- **Changing an invocation string:** same rule as renaming. The invocation string is part of the public contract — do not change it independent of the skill name.
+- **Adding a sentinel string:** append to the "Non-skill sentinel strings" table with a purpose and location. Every sentinel in the codebase that callers rely on belongs in that table; drift in the other direction (sentinel used somewhere but not listed here) is a bug.
