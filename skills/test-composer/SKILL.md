@@ -13,6 +13,8 @@ description: >
 
 # Test Composer — Stage 5 Atom: One Journey's Full Test Portfolio
 
+> **Skill names: see `../element-interactions/references/skill-registry.md`.** Copy skill names from the registry verbatim. Never reconstruct a skill name from memory or recase it.
+
 Stage 5 of the element-interactions workflow as the atomic unit of coverage. Given one mapped user journey, compose its complete test portfolio, stabilize, API-compliance-review, verify coverage is exhaustive for that journey, and return.
 
 **Scope:** exactly one journey per invocation. The iterative loop over all journeys in an app lives in the `coverage-expansion` skill.
@@ -260,6 +262,27 @@ Do not ask questions back.
 Cross-journey parallelization (dispatching subagents for multiple journeys at once) is `coverage-expansion`'s responsibility, not this skill's. A single `test-composer` invocation stays focused on one journey.
 
 Within a journey, variants (happy path, error states, edge cases, mobile, negative flows, data lifecycle) are composed sequentially so each variant inherits from the selectors added by the previous one.
+
+---
+
+## Commit-message conventions
+
+Every test this skill commits MUST use the compositional-pass template:
+
+```
+test(<j-slug>): <variant>
+```
+
+- `<j-slug>` is the journey ID (the `j-<slug>` from `journey-map.md`, without angle brackets).
+- `<variant>` names the variant just committed: `happy-path`, `error-states`, `edge-cases`, `mobile`, `negative-flows`, `data-lifecycle`, or a specific sub-variant (e.g. `happy-path-returning-user`).
+- One journey per commit, one variant per commit. Do not batch multiple variants into a single commit; do not batch multiple journeys into a single commit.
+
+Examples:
+- `test(j-book-demo): happy-path`
+- `test(j-reset-password): error-states`
+- `test(j-manager-add-caregiver): data-lifecycle`
+
+Do NOT use `test(pass<N>): …`, `feat(e2e): …`, or `test(<j1>, <j2>): …` — see the **Commit-message conventions** table in `coverage-expansion/SKILL.md` for the full list of anti-patterns across all passes.
 
 ---
 

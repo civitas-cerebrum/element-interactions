@@ -16,6 +16,8 @@ description: >
 
 # Onboarding — Autonomous Project Setup
 
+> **Skill names: see `../element-interactions/references/skill-registry.md`.** Copy skill names from the registry verbatim. Never reconstruct a skill name from memory or recase it.
+
 The onboarding skill brings a fresh project from zero to a comprehensive test suite. It is the orchestrator that sequences the existing element-interactions, journey-mapping, test-composer, bug-discovery, failure-diagnosis, and work-summary-deck skills behind a single user confirmation.
 
 **Design reference:** `docs/superpowers/specs/2026-04-22-onboarding-skill-design.md`.

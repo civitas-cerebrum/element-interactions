@@ -15,6 +15,8 @@ description: >
 
 # Coverage Expansion — Iterative Journey-by-Journey Test Growth
 
+> **Skill names: see `../element-interactions/references/skill-registry.md`.** Copy skill names from the registry verbatim. Never reconstruct a skill name from memory or recase it.
+
 The orchestrator for coverage growth. Iterates the user journey map, dispatches `test-composer` per journey for compositional passes, dispatches adversarial-probe subagents per journey for adversarial passes, and merges map discoveries between journeys. Depth mode runs 3 compositional passes + 2 adversarial passes + one cleanup/dedup step. Breadth mode runs one sweep.
 
 **Context discipline:** this skill holds only the map index (IDs, names, priorities, `Pages touched`), the independence graph, and the pass counter. All journey-level reasoning happens inside dispatched subagents with isolated context windows.
@@ -69,10 +71,7 @@ Every pass in depth mode runs this pipeline; steps 4 and 6 differ between compos
 6. **Reconcile artefacts.**
    - **Compositional passes:** reconcile the map. Append new branches to existing journey blocks. Add new `j-<slug>` or `sj-<slug>` blocks for newly-discovered journeys or sub-journeys. Append new pages/elements to `app-context.md`. Run a mini Phase 3.5 revision (see `journey-mapping`) if the pass introduced new overlaps.
    - **Adversarial passes:** the map is NOT reconciled. The ledger file is authoritative; its content is already written by the subagents during their append step. Aggregate the return summaries into the orchestrator's running adversarial-totals counter (journeys probed, boundaries verified, suspected-bug count by severity, regression tests added).
-7. **Commit.** One commit per pass. Commit message template:
-   - Compositional: `test: coverage expansion pass <N>/5 — <summary>`
-   - Pass 4: `test: coverage expansion pass 4/5 — adversarial probing (<N> journeys, <B> boundaries, <S> suspected bugs)`. Commit diff is the ledger file only.
-   - Pass 5: `test: coverage expansion pass 5/5 — adversarial consolidation (<N> journeys, <R> regression tests, <B> total boundaries)`. Commit diff is the ledger file plus the new `j-<slug>-regression.spec.ts` files.
+7. **Commit.** One commit per journey (compositional passes) or per journey per pass (adversarial passes). See **Commit-message conventions** below for the exact templates.
 
 ### Pass differences
 
@@ -85,6 +84,23 @@ Every pass in depth mode runs this pipeline; steps 4 and 6 differ between compos
 | 5 — adversarial consolidation | adversarial + regression | Second adversarial turn. Each subagent reads its journey's pass-4 ledger section, attempts complementary/compound probes, and writes **passing** regression tests for every verified boundary (pass 4 + pass 5 combined) into `j-<slug>-regression.spec.ts`. Suspected bugs remain ledger-only — never committed as `test.fail()`. |
 
 After pass 5: one single-dispatch cleanup subagent dedupes the ledger. See §"Ledger dedup" below.
+
+### Commit-message conventions
+
+One journey per commit, one template per pass kind. Agents MUST NOT reinvent the format — the git log has to be filterable by `<j-slug>` and by pass kind.
+
+| Pass / phase | Commit-message template | Notes |
+|---|---|---|
+| Compositional passes (1–3) | `test(<j-slug>): <variant>` | One journey per commit, always. `<variant>` names the variant added (e.g. `happy-path`, `error-states`, `mobile`, `data-lifecycle`). If a single composer invocation adds multiple variants, produce one commit per variant. |
+| Adversarial pass 4 | `docs(ledger): <j-slug> — N probes, M boundaries, K suspected bugs` | One commit per journey. Commit diff is the ledger file only. `N`, `M`, `K` come from the subagent return's structured summary. |
+| Adversarial pass 5 — regression | `test(<j-slug>-regression): lock <boundary-description>` | One commit per verified-boundary regression test authored. `<boundary-description>` is a short phrase naming the boundary being locked (e.g. `empty-cart-checkout-rejected`, `nav-cart-badge-clears-after-checkout`). |
+| Cleanup (post-pass-5 dedup) | `docs(ledger): dedupe cross-cutting findings` | Single commit from the one cleanup subagent. |
+
+Anti-patterns — do NOT use:
+- `test(pass5): j-xxx — <summary>` (pass number goes in the `-regression` suffix, not the scope)
+- `feat(e2e): …` (coverage expansion is never `feat`)
+- `test(j-xxx, j-yyy): …` (one journey per commit — no multi-journey commits even when batched)
+- `fix(…): …` for new tests (use `test(…)`; `fix` is for fixing existing code)
 
 ### Journey independence graph
 
@@ -120,7 +136,7 @@ After pass 5 commits, the orchestrator dispatches one additional, non-per-journe
 3. Consolidate duplicates into the top-level `## Cross-cutting findings` section, listing every journey where each finding surfaced. Leave a short "_See cross-cutting: <title>_" backref in each journey's section (one line per moved finding).
 4. Fix obvious formatting / ordering issues (broken lists, inconsistent severity labels).
 5. Do NOT drop or edit substantive finding content. Do NOT re-classify findings. This is a dedup/consolidation step only.
-6. Commit: `docs: adversarial-findings — dedupe cross-cutting findings`.
+6. Commit: `docs(ledger): dedupe cross-cutting findings` (per the **Commit-message conventions** table above).
 
 ### Cleanup subagent constraints
 

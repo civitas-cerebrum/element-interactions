@@ -10,6 +10,8 @@ description: >
 
 # Bug Discovery — Adversarial Quality Audit
 
+> **Skill names: see `../element-interactions/references/skill-registry.md`.** Copy skill names from the registry verbatim. Never reconstruct a skill name from memory or recase it.
+
 Systematic, automated bug discovery that runs after all existing test stages are complete. The agent probes the live application for bugs across edge cases, user flows, and cross-feature interactions, then cross-references findings against accumulated context and existing tests to produce a prioritized bug report with reproduction tests.
 
 **Core principle — "First time effect":** Probe the live app BEFORE reading any context. Fresh eyes catch things that familiarity blinds you to. Context is used afterward to filter, classify, and derive additional findings.
@@ -356,6 +358,28 @@ After generating the report, ask:
 > "Bug discovery report written to `docs/e2e/bug-discovery-report.md`. Would you also like me to create GitHub issues for the confirmed bugs?"
 
 If the user agrees, create one issue per confirmed bug with the same structure as the report entry, labeled `bug` and `bug-discovery`.
+
+---
+
+## Commit-message conventions
+
+Every adversarial pass this skill produces MUST use the following template when the pass output is committed (whether committed by this skill directly or by the `coverage-expansion` orchestrator):
+
+```
+docs(bug-hunt): <journey-or-phase> — N findings
+```
+
+- `<journey-or-phase>` identifies the scope: a journey slug (`j-<slug>`) when invoked per-journey from `coverage-expansion`, or a phase label (`phase-1a`, `phase-1b`, `full`) when invoked standalone.
+- `N` is the total count of findings written to the report/ledger in this pass.
+
+Examples:
+- `docs(bug-hunt): j-book-demo — 7 findings`
+- `docs(bug-hunt): phase-1a — 23 findings`
+- `docs(bug-hunt): full — 48 findings`
+
+When this skill is invoked from `coverage-expansion` adversarial passes 4 or 5, the orchestrator may use the pass-specific templates from `coverage-expansion/SKILL.md` (`docs(ledger): <j-slug> — N probes, M boundaries, K suspected bugs` for pass 4; `test(<j-slug>-regression): lock <boundary-description>` for pass-5 regression tests). The `docs(bug-hunt): …` template applies to standalone invocations.
+
+Do NOT use `fix(…): …` or `bug(…): …` for bug-hunt output — findings go to the report/ledger, not the code. Use `fix(…): …` only for test-code or app-code changes made to close out a finding.
 
 ---
 

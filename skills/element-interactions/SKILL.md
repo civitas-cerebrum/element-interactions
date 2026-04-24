@@ -21,6 +21,20 @@ description: >
 
 A two-package Playwright framework that decouples **element acquisition** (`@civitas-cerebrum/element-repository`) from **element interaction** (`@civitas-cerebrum/element-interactions`). Tests reference elements by plain strings (`'HomePage'`, `'submitButton'`); raw selectors never appear in test code.
 
+> **Skill names: see `references/skill-registry.md`.** Copy skill names from the registry verbatim. Never reconstruct a skill name from memory or recase it.
+
+## Autonomous-mode invocation cheat-sheet
+
+Companion skills (`onboarding`, `coverage-expansion`, `test-composer`) invoke this orchestrator with `autonomousMode: true` to disable the interactive hard gates. Each caller has its own required-args contract — they are NOT interchangeable.
+
+| Caller | Required args | Optional args |
+|---|---|---|
+| `onboarding` Phase 3 | `autonomousMode: true`, `happyPathDescription: "<sentence>"` | `context: [...]` |
+| `coverage-expansion` pass 1–3 | `autonomousMode: true`, `journey: "<j-id>"` | — |
+| user direct | — (no autonomous flags) | — (full Stage 1–4 interactive flow) |
+
+`happyPathDescription` replaces the Stage-1 discovery conversation; `journey: "<j-id>"` references an entry in `tests/e2e/docs/journey-map.md`. Full semantics in the **Autonomous mode** section further down.
+
 ## Companion Skills
 
 This skill is the orchestrator for a group of testing skills. It handles Stages 1-4 directly, then activates companion skills for advanced stages:
