@@ -213,15 +213,38 @@ State file shape (minimum fields):
 
 ```json
 {
-  "status": "in-progress",            // "in-progress" | "complete"
-  "currentPass": 3,                   // 1..5, or "cleanup"
-  "journeyRoster": ["j-...", ...],    // full roster for currentPass
-  "completedJourneys": ["j-...", ...],// IDs already returned green this pass
-  "inFlightJourneys": ["j-...", ...], // dispatched but not yet returned
-  "adversarialTotals": { ... },       // passes 4–5 only
+  "status": "in-progress",
+  "currentPass": 3,
+  "journeyRoster": ["j-...", ...],
+  "completedJourneys": ["j-...", ...],
+  "inFlightJourneys": ["j-...", ...],
+  "dispatches": [
+    {
+      "journey": "j-<slug>",
+      "stage_a_cycles": 2,
+      "stage_b_cycles": 2,
+      "review_status": "greenlight",
+      "final_must_fix": [],
+      "result": "new-tests-landed",
+      "authorizer": null
+    }
+  ],
+  "adversarialTotals": { ... },
   "updatedAt": "2026-04-24T..."
 }
 ```
+
+**Per-journey dispatch entry fields (dual-stage).** Each entry in `dispatches[]` carries:
+
+- `journey` — the journey ID (`j-<slug>`).
+- `stage_a_cycles` — integer; number of Stage A dispatches for this journey in this pass (1..7).
+- `stage_b_cycles` — integer; number of Stage B dispatches for this journey in this pass (equal to or one less than stage_a_cycles depending on whether cycle 7 exhausted or greenlit early).
+- `review_status` — one of `greenlight | greenlight-with-notes | blocked-cycle-stalled | blocked-cycle-exhausted`.
+- `final_must_fix` — array of finding-IDs. Empty for greenlight statuses; populated for blocked statuses with the list Stage A failed to resolve (carried to next pass's Stage A brief as trigger 4).
+- `result` — the no-skip contract enum value (`new-tests-landed | covered-exhaustively | blocked | skipped`). Runs in parallel with `review_status`; together they describe both Stage A's outcome and Stage B's judgement.
+- `authorizer` — only non-null for `skipped` (requires user authorisation).
+
+A state file missing `stage_a_cycles`, `stage_b_cycles`, or `review_status` for any journey that has run this pass is incomplete — resume logic treats it as corrupt per the existing §"State-file lifecycle" rule.
 
 The state file is rewritten after every per-pass commit (and whenever auto-compaction triggers — see §"Auto-compaction between passes" below).
 
