@@ -413,3 +413,20 @@ These five are illustrative — the subagent applies the same inference pattern 
 ### Why this is first-class, not a fallback
 
 Several environments are static-only by construction: CI runners without a browser, regulated sandboxes that block outbound network, code-review contexts, and offline audits. Running bug-discovery in those contexts is a legitimate use case, not a degraded one. Framing static mode as a first-class probing mode removes the "apology" framing that produces weaker findings and standardises the structured-return shape so the orchestrator can merge static and live findings on the same footing (with the `inferred: true` flag retaining the epistemic distinction).
+
+### Orchestrator-side: no silent deprioritisation
+
+Being first-class is not only framing — it is a constraint on how orchestrators (`coverage-expansion`, `onboarding`, Phase-7 deck generation) handle the findings:
+
+- **Ranking.** Static findings rank by **severity**, not by evidence class. A `severity: high` inferred finding outranks a `severity: low` live-verified finding in any ordered list.
+- **Inclusion in reports and decks.** Static findings appear in the onboarding-report and the summary deck on the same footing as live findings. The `inferred: true` flag is shown explicitly so readers can judge epistemic weight, but the finding is not buried or collapsed.
+- **Follow-up suggestion.** When static findings landed in an earlier run and MCP later becomes available, the orchestrator SHOULD suggest re-running the affected journeys in `mode: live` to confirm or refute each `inferred: true` finding. "Suggest" means a one-line progress note to the caller, not an autonomous re-run.
+
+**Rationalizations to reject:**
+
+| Excuse | Reality |
+|--------|---------|
+| "Inferred findings are weaker so I'll bucket them separately in the deck" | Bucketing by evidence class rather than severity buries high-impact static findings. The flag carries the epistemic weight — ranking stays severity-first. |
+| "Static-mode findings are probably false positives, so I'll drop the low-severity ones" | Every finding's severity is the subagent's judgement; filtering on evidence class on top of severity is double-discounting. |
+| "Live mode ran fine so I can ignore any earlier static findings" | A live pass that failed to reproduce an inferred finding does not refute it — it demotes evidence, but the finding stays in the report unless the live pass reached the specific pattern. The orchestrator marks the inference as `live-unconfirmed`, not deleted. |
+| "MCP is available so there's no reason to run static mode" | Correct for that one run. Static mode is not opportunistic redundancy — it is for environments where live is unavailable. Do not run static mode in parallel with live unless the caller specifically requested a code-audit pass. |
