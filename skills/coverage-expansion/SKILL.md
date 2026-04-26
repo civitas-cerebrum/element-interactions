@@ -307,10 +307,13 @@ One journey per commit, one template per pass kind. Agents MUST NOT reinvent the
 | Adversarial pass 5 — regression | `test(<j-slug>-regression): lock <boundary-description>` | One commit per verified-boundary regression test authored. `<boundary-description>` is a short phrase naming the boundary being locked (e.g. `empty-cart-checkout-rejected`, `nav-cart-badge-clears-after-checkout`). |
 | Cleanup (post-pass-5 dedup) | `docs(ledger): dedupe cross-cutting findings` | Single commit from the one cleanup subagent. |
 
+**Stage B returns do NOT produce their own commits.** Reviewer judgements are captured in the state file's per-journey `review_status` and `final_must_fix` fields — never as commits. The git log records what landed (Stage A's tests, ledger entries, regression locks) but not the review trail; the state file records the review trail. Mixing reviews into commits creates a diff-noisy log that obscures the actual change history.
+
 Anti-patterns — do NOT use:
 - `test(pass5): j-xxx — <summary>` (pass number goes in the `-regression` suffix, not the scope)
 - `feat(e2e): …` (coverage expansion is never `feat`)
 - `test(j-xxx, j-yyy): …` (one journey per commit — no multi-journey commits even when batched)
+- `review(j-xxx): …` or any review-tagged commit (Stage B never commits — see above)
 - `fix(…): …` for new tests (use `test(…)`; `fix` is for fixing existing code)
 
 ### Per-pass completion criteria
@@ -325,6 +328,8 @@ A pass is complete only when **every** criterion for that pass is met. "Ran some
 - **Cleanup** complete = one cleanup subagent has run once, cross-cutting findings are consolidated into the top-level section with backrefs in each journey's section, and the commit `docs: adversarial-findings — dedupe cross-cutting findings` has landed.
 
 Only when **all** of the above are true may the orchestrator report depth-mode coverage-expansion complete to its caller. Anything less is a partial run and must be reported as such (see the resume-state contract).
+
+**Dual-stage extension.** On top of the per-pass criteria above, a pass is complete only when **every journey has a terminal `review_status`** (`greenlight`, `greenlight-with-notes`, `blocked-cycle-stalled`, or `blocked-cycle-exhausted`) recorded in the state file's `dispatches[]` array. A pass where every journey's Stage A returned but some journeys have no `review_status` is **incomplete**, even if the per-pass criteria above appear satisfied. Stage B participation is part of the completion gate, not optional.
 
 ### Parallelism
 
@@ -394,10 +399,12 @@ Between passes — after the per-pass commit and state-file rewrite (step 8), be
 
 If the orchestrator's context is **>70% consumed**:
 
-1. Write full state to `tests/e2e/docs/coverage-expansion-state.json` (journey roster, completed IDs, in-flight IDs, pass counter, adversarial totals — the shape documented in §"Authoritative state file — read first, always").
+1. Write full state to `tests/e2e/docs/coverage-expansion-state.json` (journey roster, completed IDs, in-flight IDs, pass counter, adversarial totals, AND the dual-stage `dispatches[]` per-journey fields — `stage_a_cycles`, `stage_b_cycles`, `review_status`, `final_must_fix` — the shape documented in §"Authoritative state file — read first, always"). The dual-stage fields MUST be written before the compaction crosses; without them the post-compact resume cannot reconstruct which journeys are mid-A↔B-cycle, which are blocked, or which are greenlit.
 2. Emit exactly one line: `[coverage-expansion] context approaching budget — auto-compacting and resuming from state file`.
 3. Invoke `/compact` (or the platform-equivalent compaction primitive exposed to the orchestrator).
-4. On the post-compact turn, the skill's first action — reading the state file — picks up the run exactly where it left off. That's why §"Authoritative state file" is non-negotiable as the first action.
+4. On the post-compact turn, the skill's first action — reading the state file — picks up the run exactly where it left off, including any in-flight A↔B cycles. That's why §"Authoritative state file" is non-negotiable as the first action.
+
+**Mid-cycle compaction.** The 70% threshold is checked between passes by default, but if a single journey's A↔B retry loop pushes context past 70% mid-pass, the same flow applies: write state with the in-progress `stage_a_cycles` / `stage_b_cycles` / latest reviewer findings, then compact. The post-compact resume picks up the journey at its current cycle, not from cycle 1.
 
 **Platform note.** If no programmatic compaction primitive is available to the orchestrator, the skill must still make the seam safe for manual compaction: emit an unambiguous `[coverage-expansion] safe to compact — state is durable at tests/e2e/docs/coverage-expansion-state.json, resume with the same invocation args` line between passes whenever the >70% threshold is crossed. The user can then compact manually without losing progress, and the next turn resumes from the state file the same way.
 

@@ -21,6 +21,8 @@ Stage 5 of the element-interactions workflow as the atomic unit of coverage. Giv
 
 **Coverage ownership:** this skill is responsible for achieving exhaustive test coverage of its assigned journey. Every step, every branch, and every applicable state variation in the journey's map block must have a corresponding test before this skill returns. The orchestrator (typically `coverage-expansion`) trusts this contract and does not re-check per-journey coverage itself.
 
+**Role under dual-stage.** When `coverage-expansion` runs in depth mode, this skill is **Stage A** of a per-journey-per-pass dual-stage pipeline. After this skill returns, a fresh staff-level-QA reviewer (Stage B, see `skills/coverage-expansion/references/reviewer-subagent-contract.md`) inspects the output and either greenlights or returns `improvements-needed` with `must-fix` findings. If improvements are needed, `coverage-expansion` re-dispatches this skill in cycle 2 with the findings appended to the brief — up to 7 A↔B cycles per journey per pass. Nothing about this skill's contract changes; you compose, stabilize, API-review, verify coverage, and return as before. Just be aware that your output WILL be reviewed by an independent reviewer and incomplete coverage WILL be caught — the more thorough your cycle-1 return, the fewer retry cycles the journey burns.
+
 ---
 
 ## When to Use

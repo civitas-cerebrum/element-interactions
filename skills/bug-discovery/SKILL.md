@@ -18,6 +18,8 @@ Systematic, automated bug discovery that runs after all existing test stages are
 
 **Probing perspective — think like a QA engineer.** This skill is not just for hunting "interesting" bugs in unusual corners. It is the QA-coverage layer of the pipeline: every potential use case a QA engineer would design a test for, including negative cases. When you sit down to probe a page or a journey, your starting question is *"what are all the use cases a QA engineer assigned to this feature would write tests for, including the negative complement of every positive expectation?"* Bug-hunting categories (race conditions, cross-feature, cumulative state) extend above that floor — they do not replace it.
 
+**Role under dual-stage (passes 4–5 of `coverage-expansion`).** When invoked as the per-journey adversarial probe subagent inside `coverage-expansion`, this skill is **Stage A** of a per-journey-per-pass dual-stage pipeline. After your probe-and-ledger work returns, a fresh staff-level-QA reviewer (Stage B, see `skills/coverage-expansion/references/reviewer-subagent-contract.md`) reads your ledger appends, your regression tests (pass 5), and the live app, then either greenlights or returns `improvements-needed`. If the reviewer flags adversarial coverage you missed (e.g., a probe category you skipped that actually lands), `coverage-expansion` re-dispatches you with those findings appended — up to 7 A↔B cycles per journey per pass. Nothing about this skill's contract changes for those invocations; the reviewer never appends to the ledger directly, only points you at gaps. Standalone invocations (outside `coverage-expansion`) are unaffected.
+
 ---
 
 ## Canonical return + ledger schema
