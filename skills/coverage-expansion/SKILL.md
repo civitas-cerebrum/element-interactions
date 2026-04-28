@@ -91,7 +91,7 @@ After pass 5: one single-dispatch cleanup subagent dedupes the ledger. See §"Le
 Two journeys are **dependent** if they touch an overlapping set of non-universal pages. Universal pages (e.g., `/login`, homepage, global top-nav) are ignored when computing overlap — otherwise every journey would appear dependent on every other.
 
 - Compute the graph from each journey's `Pages touched:` list minus universal pages.
-- Independent journeys run in parallel up to a dispatch cap (default: 4 concurrent subagents).
+- Independent journeys run in parallel — there is no fixed cap. Dispatch as many concurrent subagents as the independence graph allows (every node with no remaining unresolved dependency in the current pass). Narrow only if the Rule 11 prerequisite check forces serialization.
 - Dependent journeys run sequentially; the later journey inherits the earlier's `page-repository.json` updates.
 
 ### Model selection heuristic
@@ -154,7 +154,7 @@ Every `test-composer` subagent dispatched by this skill must:
 
 1. Receive an **isolated context window** — no prior session content, no other journey's data.
 2. Receive only: its assigned journey block + any `sj-<slug>` sub-journey blocks it references + the current `page-repository.json` slice for the pages that journey touches.
-3. Have access to an **isolated Playwright MCP browser instance** (see the `element-interactions` orchestrator's "Isolated MCP instances for parallel subagents" rule). Parallel subagents never share one browser.
+3. Have access to an **isolated Playwright MCP browser instance**. Before dispatching, the orchestrating agent must confirm per-subagent isolation is achievable — either because the subagent-dispatch primitive runs each subagent in its own agent session with its own MCP connection (default; name the `mcp__plugin_playwright_playwright__*` tools in each subagent's prompt) or because the agent has provisioned a dedicated Playwright MCP process per subagent. See the `element-interactions` orchestrator's "Isolated MCP instances for parallel subagents" rule for the full prerequisite check and tier list. Parallel subagents never share one browser, and if neither prerequisite holds the agent must fall back to serial with a `[mcp-isolation: serializing]` log line rather than dispatch.
 4. Not return until stabilization green, API compliance review clean, and coverage verified exhaustive (enforced inside `test-composer`).
 5. Return a structured discovery report only — no pasted test source, no DOM snapshots, no MCP transcripts.
 
