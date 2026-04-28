@@ -164,7 +164,7 @@ Skills currently affected:
 2. If the default condition holds, the agent proceeds with parallel dispatch.
 3. If only the alternative holds, the agent provisions the per-subagent MCP processes first and only then dispatches.
 4. If neither holds, the agent logs `[mcp-isolation: serializing]` and runs the work sequentially.
-5. Never silently share a browser across parallel subagents, and never default-fallback to serial without checking the prerequisites first — default-fallback is how the regression this rule addresses keeps happening.
+5. Never silently share a browser across parallel subagents, and never default-fallback to serial without checking the prerequisites first. Silent fallback re-introduces the exact corruption this rule prevents — the agent must run the check explicitly and log its decision.
 
 ### 12. Orchestrator context discipline
 

@@ -93,7 +93,7 @@ If the Playwright MCP is unavailable, stop and tell the user. Do not fall back t
 
 ### Parallel discovery
 
-For apps with multiple known entry points, Phase 1 parallelizes. **Parallel is the default**; only fall back to sequential crawl when fewer than two entry points are known or when the agent **cannot confirm** per-subagent MCP isolation in the current environment (see Rule 11 in the `element-interactions` orchestrator). Do not default-fallback to serial without running the check — default-fallback is the regression this protocol exists to prevent.
+For apps with multiple known entry points, Phase 1 parallelizes. **Parallel is the default**; only fall back to sequential crawl when fewer than two entry points are known or when the agent **cannot confirm** per-subagent MCP isolation in the current environment (see Rule 11 in the `element-interactions` orchestrator). Do not default-fallback to serial without running the check — silent fallback masks unprovisioned isolation and is the failure mode this protocol exists to prevent.
 
 **Agent-owned prerequisite (do this before dispatching).** The agent must confirm one of the following holds *before* dispatching parallel subagents, because sharing a browser across parallel agents corrupts snapshots and poisons the parent's context:
 
