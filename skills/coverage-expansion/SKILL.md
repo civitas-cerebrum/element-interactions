@@ -35,9 +35,25 @@ Do NOT use this for:
 
 ---
 
+## Non-negotiables for depth mode
+
+Read these as hard rules, not guidance. They prevent the most common shortcut path — running Pass 1, silently deferring passes 2–5 + cleanup "for budget", and reporting depth mode complete anyway.
+
+- When invoked with `mode: depth` (or with no args, since depth is the default), the orchestrator **MUST complete 3 compositional passes + 2 adversarial passes + ledger dedup, in order**. No exceptions. "Only Pass 1 ran" is never a valid completion state for depth mode.
+- **Pass 1 alone is NOT coverage-expansion — it is one-fifth of the pipeline.** Any progress line, summary, or upstream report that conflates "ran Pass 1" with "ran coverage-expansion" is wrong and must be corrected before returning to the caller. The same goes for "ran passes 1–3 (compositional only)" — that is three-fifths of the pipeline; the adversarial passes + cleanup are part of the contract, not optional.
+- **If context budget threatens completion mid-pipeline**, the orchestrator MUST:
+  1. Commit whatever the most recent pass produced (do not lose subagent work).
+  2. Write state to `tests/e2e/docs/coverage-expansion-state.json` containing at minimum: the journey index (IDs, priorities, pages-touched), the set of completed passes, the set of pending journeys within any in-flight pass, and the current pass number.
+  3. **STOP with a clear "resume needed" message** to the caller naming the state-file path, the passes completed, and the passes still pending. Do NOT silently skip remaining passes and claim the pipeline is done.
+- **On resume**, the orchestrator reads `coverage-expansion-state.json`, verifies that each previously-reported-completed pass actually landed as a commit (not just scaffolded in state), and continues from the first incomplete pass. A pass that was marked complete in the state file but whose commit is missing from git history is treated as incomplete and re-run.
+- **State-file lifecycle.** The state file is a resume marker, not a run log. On **successful completion of all five passes + cleanup**, the orchestrator MUST delete `tests/e2e/docs/coverage-expansion-state.json` as part of the cleanup commit — otherwise the next invocation will mistake a completed run for a resume. On a **fresh invocation**, if the state file is present the orchestrator treats the run as a resume and verifies commit-existence per the previous bullet; it does NOT start from scratch silently. If the file exists but references a journey-map or commit graph that no longer matches reality (e.g., the branch was rebased, or journey IDs changed), the orchestrator stops and reports the conflict to the caller rather than guessing.
+- **"Structural-only" / "blocked with skipped placeholder" tests** count as coverage ONLY when the blocker is a documented tenant-data or environment constraint (e.g., "requires admin seed user not present in demo tenant"). Structural-only tests MUST appear in a separate column from fully-automated tests in any coverage report — never rolled into the automated total. Structural-only tests NEVER satisfy a Pass 4 or Pass 5 adversarial-probe requirement: a skipped placeholder is not an adversarial finding, a verified boundary, or a regression test.
+
+---
+
 ## No-skip contract
 
-This section closes the "scope-to-gap-journeys" loophole that a 2026-04-23 Pass 2 run exposed (Wave 1 dispatched test-composer for 3 of 44 journeys, the orchestrator declared the other 41 "no-op by scoping," and marked Pass 2 complete). It stacks on top of §"Non-negotiables for depth mode" — that section ensures all 5 passes + cleanup run; this section ensures every pass covers every journey. Both sets of rules are hard rules, not guidance.
+This contract closes the "scope-to-gap-journeys" loophole — an orchestrator dispatching only the journeys it judges interesting and marking the pass complete by leaving the rest unrun. It stacks on top of §"Non-negotiables for depth mode" — that section ensures all 5 passes + cleanup run; this contract ensures every pass covers every journey. Both sets of rules are hard rules, not guidance.
 
 1. **Every journey in the map gets a dispatch every compositional pass.** Pass 2 and Pass 3's wording "re-attempt any journey where pass 1 deferred stabilization or returned coverage gaps" names ONE legitimate reason to prioritise; it does NOT authorise skipping un-gapped journeys. Scoping the dispatch to only "interesting" journeys is a shortcut and constitutes partial-pass-completion.
 2. **Every journey in the map gets a dispatch every adversarial pass.** Pass 4 and Pass 5 run bug-discovery per journey — 0 journeys × Pass 4 is not Pass 4. A journey whose adversarial subagent returns "no meaningful boundaries found" must still be recorded in the ledger section with that result — the dispatch happened.
@@ -63,8 +79,9 @@ This contract applies to **both** `mode: depth` and `mode: breadth`. Breadth mod
    remaining 41 had no map-growth so I skipped them."
 
 ✅ RIGHT (compositional): "Pass 2 dispatched test-composer for all 44 journeys in 11 waves
-   of 4 parallel. 38 returned `no-new-tests` (exhaustive), 3 returned `new-tests-landed`,
-   3 returned `blocked (tenant data)`. Pass 2 complete."
+   of parallel dispatch (per the independence graph). 38 returned `no-new-tests`
+   (exhaustive), 3 returned `new-tests-landed`, 3 returned `blocked (tenant data)`.
+   Pass 2 complete."
 
 ❌ WRONG (adversarial): "Pass 4 probed the 9 journeys with state-changing APIs; the other
    35 were read-only so I didn't dispatch."
@@ -132,12 +149,25 @@ Every pass in depth mode runs this pipeline; steps 4 and 6 differ between compos
 
 After pass 5: one single-dispatch cleanup subagent dedupes the ledger. See §"Ledger dedup" below.
 
+### Per-pass completion criteria
+
+A pass is complete only when **every** criterion for that pass is met. "Ran some journeys, ran out of budget" is not complete — see §"Non-negotiables for depth mode" for the resume-state contract.
+
+- **Pass 1** complete = `test-composer` has been dispatched for and has returned on **every** journey in the map. Not "enough journeys", not "the P0/P1 tier", not "the journeys that fit the budget". Every journey.
+- **Pass 2** complete = `test-composer` has been re-dispatched and returned for every journey, AND the map has been reconciled with any newly-promoted branches or sub-journeys surfaced in pass 1 or 2, AND — if the reconciliation produced map edits — the reconciliation commit has landed. If no map edits were needed, the pass still completes, but the orchestrator records `"pass 2 reconciliation — no map edits required"` in the state file / progress log rather than silently skipping the commit.
+- **Pass 3** complete = cross-journey and data-lifecycle variants have been dispatched for every journey whose `Test expectations:` calls for them, AND any journey that returned residual coverage gaps in passes 1 or 2 has been re-attempted, AND the pass commit has landed (if tests were added in this pass).
+- **Pass 4** complete = the adversarial-probe subagent has run per journey with `pass=4`, and each subagent's findings have been appended to `tests/e2e/docs/adversarial-findings.md`. If no probes landed for a given journey (e.g., the subagent found nothing to probe or was gated), the orchestrator records `"no boundaries probed — <reason>"` for that journey in the ledger — it does NOT silently skip the journey. An empty ledger section for a journey is a bug, not a pass-4 completion state.
+- **Pass 5** complete = every verified pass-4 finding has either a committed regression test in `j-<slug>-regression.spec.ts` OR an explicit decline-with-reason line in the ledger ("no regression written — finding classified as suspected bug / ambiguous / duplicate of cross-cutting #N"). Regression-test files are committed per journey.
+- **Cleanup** complete = one cleanup subagent has run once, cross-cutting findings are consolidated into the top-level section with backrefs in each journey's section, and the commit `docs: adversarial-findings — dedupe cross-cutting findings` has landed.
+
+Only when **all** of the above are true may the orchestrator report depth-mode coverage-expansion complete to its caller. Anything less is a partial run and must be reported as such (see the resume-state contract).
+
 ### Journey independence graph
 
 Two journeys are **dependent** if they touch an overlapping set of non-universal pages. Universal pages (e.g., `/login`, homepage, global top-nav) are ignored when computing overlap — otherwise every journey would appear dependent on every other.
 
 - Compute the graph from each journey's `Pages touched:` list minus universal pages.
-- Independent journeys run in parallel up to a dispatch cap (default: 4 concurrent subagents).
+- Independent journeys run in parallel — there is no fixed cap. Dispatch as many concurrent subagents as the independence graph allows (every node with no remaining unresolved dependency in the current pass). Narrow only if the Rule 11 prerequisite check forces serialization.
 - Dependent journeys run sequentially; the later journey inherits the earlier's `page-repository.json` updates.
 
 ### Model selection heuristic
@@ -200,7 +230,7 @@ Every `test-composer` subagent dispatched by this skill must:
 
 1. Receive an **isolated context window** — no prior session content, no other journey's data.
 2. Receive only: its assigned journey block + any `sj-<slug>` sub-journey blocks it references + the current `page-repository.json` slice for the pages that journey touches.
-3. Have access to an **isolated Playwright MCP browser instance** (see the `element-interactions` orchestrator's "Isolated MCP instances for parallel subagents" rule). Parallel subagents never share one browser.
+3. Have access to an **isolated Playwright MCP browser instance**. Before dispatching, the orchestrating agent must confirm per-subagent isolation is achievable — either because the subagent-dispatch primitive runs each subagent in its own agent session with its own MCP connection (default; name the `mcp__plugin_playwright_playwright__*` tools in each subagent's prompt) or because the agent has provisioned a dedicated Playwright MCP process per subagent. See the `element-interactions` orchestrator's "Isolated MCP instances for parallel subagents" rule for the full prerequisite check and tier list. Parallel subagents never share one browser, and if neither prerequisite holds the agent must fall back to serial with a `[mcp-isolation: serializing]` log line rather than dispatch.
 4. Not return until stabilization green, API compliance review clean, and coverage verified exhaustive (enforced inside `test-composer`).
 5. Return a structured discovery report only — no pasted test source, no DOM snapshots, no MCP transcripts.
 
@@ -266,7 +296,7 @@ Never hold in context:
 
 One bounded exception for pass 5: when dispatching a pass-5 subagent, the orchestrator does read the journey's pass-4 ledger section from the ledger file and pass it along as an input. This is strictly bounded to one journey's section for one subagent; the orchestrator releases it from context as soon as the dispatch is sent.
 
-If orchestrator context approaches a budget boundary mid-pass, write state to `docs/superpowers/state/coverage-expansion.json` and resume on next invocation.
+If orchestrator context approaches a budget boundary mid-pass, follow the resume-state contract in §"Non-negotiables for depth mode": commit what landed, write state to `tests/e2e/docs/coverage-expansion-state.json`, and stop with a clear "resume needed" message. Do not silently defer remaining passes.
 
 ---
 

@@ -176,6 +176,8 @@ That skill runs five journey-by-journey passes internally (3 compositional via t
 
 Between and after the five passes, `coverage-expansion` itself refreshes its view of `app-context.md` and `journey-map.md`; onboarding does not need its own refresh step at this phase. When the skill returns, append a "Coverage expansion — new knowledge" section to `onboarding-report.md` summarising total tests added, new journeys discovered, and any sub-journeys promoted.
 
+**The onboarding skill's Phase 5 is not satisfied by Pass 1 alone.** Do not mark Phase 5 complete in the onboarding report, in any task tracker, or in the summary deck until `coverage-expansion` returns from **all five passes + cleanup** (see that skill's §"Per-pass completion criteria"). If the orchestrator is budget-constrained mid-pipeline, it commits what it has, writes resume state per `coverage-expansion`'s state-file contract (`tests/e2e/docs/coverage-expansion-state.json`), and returns to the user with a clear "resume needed" message — it does NOT claim Phase 5 done and silently defer passes 2–5 or the ledger dedup. A Phase 5 report that reads "Pass 1 complete, 2–5 deferred for budget" is honest; a report that reads "Phase 5 complete" when only Pass 1 ran is a bug in the orchestrator's summarisation.
+
 **Commits:** `coverage-expansion` commits once per pass (`test: coverage expansion pass <N>/5 — <summary>`). Onboarding adds no extra commit here.
 
 **No stage may be silently skipped.** Onboarding has seven phases and each phase has its own internal stages (element-interactions has Stages 1–4; coverage-expansion has Passes 1–5 + cleanup; bug-discovery has Phases 1a and 1b). Partial-phase completion is reportable; partial-phase completion disguised as full-phase completion is a contract violation. The onboarding-report and any summary deck MUST state partial status explicitly when applicable — "Phase 5: Pass 1 complete (44/44), Pass 2 partial (3/44), Pass 3–5 pending" — not "Phase 5 complete."
@@ -191,6 +193,8 @@ Two sequential invocations of `bug-discovery`:
 
 Findings go to `tests/e2e/docs/onboarding-report.md` under "App bugs logged". The companion must NOT commit skipped tests for the findings; it logs them and continues.
 
+**Phase 6 is two dedicated bug-discovery passes (element-probing 1a, flow-probing 1b) — not "the bugs we happened to find during coverage."** Organic findings from earlier phases (happy path, coverage-expansion compositional passes, coverage-expansion adversarial passes 4/5) go in the onboarding-report's "App bugs logged" section; Phase 6's two dedicated passes run **in addition to** whatever organic discovery happened in earlier phases. Repackaging organic findings as "the Phase 6 output" is a loophole — the two dedicated passes either ran or they did not. If the orchestrator skips Phase 6's passes (budget, infra halt, explicit user instruction), the onboarding-report and the summary deck MUST say `"Phase 6 deferred — <reason>"` or `"Phase 6 partial — pass 1a only"`, never `"Phase 6 complete"`. Finding count alone is not evidence that Phase 6 ran.
+
 **Commits:** `docs: bug-hunt 1/2 findings` and `docs: bug-hunt 2/2 findings`.
 
 ### Phase 7 — Final summary
@@ -199,6 +203,10 @@ Findings go to `tests/e2e/docs/onboarding-report.md` under "App bugs logged". Th
 2. Finalise `tests/e2e/docs/onboarding-report.md` with the sections in the next heading.
 
 **Commit:** `docs: onboarding report and summary deck`.
+
+### Task-tracking granularity
+
+Use pass-level tasks, not phase-level. A single "Phase 5" task that flips to done is a footgun — use `"Pass 1/5 compositional"`, `"Pass 2/5 compositional"`, `"Pass 3/5 compositional"`, `"Pass 4/5 adversarial"`, `"Pass 5/5 adversarial"`, `"Phase 5 cleanup"`, and a `"Phase 5 overall"` parent that only flips done when all child passes do. Same for Phase 6's two sub-passes (`"Phase 6 pass 1a element-probing"`, `"Phase 6 pass 1b flow-probing"`, `"Phase 6 overall"`). Parent tasks never flip done ahead of their children.
 
 ---
 
