@@ -136,9 +136,9 @@ dispatchSubagent({
 })
 ```
 
-Dispatch N of these in parallel (one per entry point, up to the cap). Each dispatched subagent opens its own MCP browser (either via session-boundary isolation or via its own dedicated MCP process, per the prerequisite check). The parent does **not** share its browser with the children and must not issue its own `browser_*` calls during the parallel phase.
+Dispatch one subagent per entry point, all in parallel. Each dispatched subagent opens its own MCP browser (either via session-boundary isolation or via its own dedicated MCP process, per the prerequisite check). The parent does **not** share its browser with the children and must not issue its own `browser_*` calls during the parallel phase.
 
-**Subagent dispatch cap:** default 4 parallel subagents. Raise or lower based on the number of distinct entry points and the host's concurrency budget.
+**Parallelism:** dispatch as many subagents in parallel as the independence graph allows — there is no fixed cap. In Phase 1, every entry point is an independent root, so dispatch N subagents for N entry points. Only narrow this if the prerequisite check at step 2 forces serialization.
 
 **Fallback (last resort only):** if the prerequisite check at step 2 fails, serialize the crawl and emit a `[mcp-isolation: serializing]` progress line. Do not try to share one browser across subagents, and do not treat serialization as the expected path.
 

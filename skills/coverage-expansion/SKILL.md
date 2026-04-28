@@ -91,7 +91,7 @@ After pass 5: one single-dispatch cleanup subagent dedupes the ledger. See §"Le
 Two journeys are **dependent** if they touch an overlapping set of non-universal pages. Universal pages (e.g., `/login`, homepage, global top-nav) are ignored when computing overlap — otherwise every journey would appear dependent on every other.
 
 - Compute the graph from each journey's `Pages touched:` list minus universal pages.
-- Independent journeys run in parallel up to a dispatch cap (default: 4 concurrent subagents).
+- Independent journeys run in parallel — there is no fixed cap. Dispatch as many concurrent subagents as the independence graph allows (every node with no remaining unresolved dependency in the current pass). Narrow only if the Rule 11 prerequisite check forces serialization.
 - Dependent journeys run sequentially; the later journey inherits the earlier's `page-repository.json` updates.
 
 ### Model selection heuristic
