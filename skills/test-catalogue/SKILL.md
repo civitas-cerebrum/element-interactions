@@ -226,7 +226,54 @@ const fs = require('fs');
 
 Do not fall back to a monolithic `page.pdf()` call even for small catalogues — keep one code path. The per-slide approach is equally fast at small sizes (each render is sub-second) and is the only approach that scales.
 
-After the page-count check passes, read a few PDF pages back (`Read` tool with a `pages:` range) to visually confirm the cover, a mid-document table, and the final skipped-with-reason page all render with dark background intact.
+After the page-count check passes, proceed to **Phase 6 — Exhaustive Visual Inspection** before delivering the catalogue. Phase 5 confirms the PDF is *structurally* complete (right number of pages); Phase 6 confirms each page is *visually* correct. Both gates are mandatory.
+
+### Phase 6 — Exhaustive Visual Inspection (mandatory, before delivery)
+
+The catalogue is a stakeholder-facing deliverable; the stakeholder cannot proof it themselves. Every page must be visually inspected by you before the catalogue is reported as ready. Sampling a handful of pages is not enough — a single broken page in a 30-slide catalogue undermines the whole inventory and the transparency contract that drives this skill.
+
+#### Process
+
+1. **Read every page** of the rendered PDF using the `Read` tool with the `pages:` parameter. The tool accepts ranges (`1-5`, `12`, `20-30`) and is capped at 20 pages per request — for catalogues longer than 20 slides, batch the reads (`pages: "1-20"`, then `pages: "21-40"`, etc.) so every page is actually opened.
+2. **Walk pages in order.** For each page, run the per-page-type checks below. Maintain a one-line note per page so you can cite specific failures in the return summary.
+3. **Per-page checks:**
+
+   | Page type | Mandatory checks |
+   |---|---|
+   | Cover | App name and date correct; every stat tile shows a real number (no `NaN`, `undefined`, `0 of 0` when the suite has tests); brand wordmark renders; dark background fills the entire page (no white margins from a `print-color-adjust` failure). |
+   | Contents | Every section produced by Phase 3 (Categorise) is listed with a starting page number; page numbers monotonically increasing; no missing or duplicated section. |
+   | Portal section header | Portal name + one-liner present; per-portal scenario count matches the portal split shown on the cover; priority-distribution chips render. |
+   | Portal table page | Header row `Journey · Scenario · Type · Status` visible; rows aligned, no horizontal overflow; priority and type chips coloured per palette; zebra striping present; no truncated cells; no "—" in a column that should be populated. |
+   | Adversarial regression section | One row per `*-regression.spec.ts` test that exists in the source; boundary-lock codes attached when `adversarial-findings.md` lists them; no "Unknown boundary" rows that should have been resolved upstream in Phase 2. |
+   | Skipped-with-reason section | When empty: an explicit "No scenarios deferred" block, not a blank page. When non-empty: every row has a human-readable reason — no `TODO`, `tbd`, blank, or `?` reasons. Reasons grouped consistently. |
+   | Every page (cross-cutting) | Page-number footer `NN / TOTAL` monotonically increasing, `TOTAL` constant across every page; brand palette consistent; no page falls back to Chromium light-mode default while neighbours stay dark; header micro-label matches the section the page belongs to. |
+
+4. **Per-page failure handling.** If any check fails, **do NOT deliver**. Diagnose by failure pattern:
+
+   | Symptom | Likely cause | Fix |
+   |---|---|---|
+   | Blank / fully white page | Slide has no `data-slide-id` so the per-slide style toggle hid every slide on that render | Add the missing `data-slide-id` in the HTML generator and re-render |
+   | White background, light-mode look | `-webkit-print-color-adjust: exact; print-color-adjust: exact;` missing or overridden in CSS | Restore the declaration on `html, body, .slide` and re-render |
+   | Overlapping rows / content past the page bottom | Table overflowed without pagination | Split the table in the HTML generator (one journey set per slide) and re-render |
+   | Truncated / clipped text mid-cell | Row height too tight or text exceeds column width | Adjust the column width or wrap the cell in the template; re-render |
+   | Stat tile shows `NaN` / `undefined` | Phase 1 extraction missed a code path or Phase 2 lookup returned null | Fix the extractor / lookup, regenerate HTML, re-render |
+   | Skipped-with-reason row has blank reason | Phase 1 didn't capture a nearby comment for a `test.skip(...)` | Either add the comment to the spec, or accept the gap and surface it in the return summary — do not ship a blank-reason row |
+
+   After fixing, re-run Phase 5 (which re-runs the page-count check) and then Phase 6 in full — partial re-inspection of only the changed pages is not sufficient because a fix can perturb pagination upstream.
+
+5. **Return-summary obligation.** When Phase 6 passes, the skill's return summary must include the line `visual-inspection: PASS (<N> pages reviewed)`. When Phase 6 surfaces an unfixable issue (e.g., a missing journey-map entry that produced an Unmapped row that cannot be resolved without `journey-mapping` re-running), **deliver the catalogue with the issue still present AND surface it explicitly** — for example, `visual-inspection: WARN — 3 Unmapped rows in cross-cutting section, journey-map.md is stale (run journey-mapping)`. Silently shipping a known-broken page violates the catalogue's transparency contract.
+
+6. **Hard rule.** Phase 6 runs every time, including for re-renders after a fix. There is no "I already inspected most of this last iteration" shortcut — repagination from a fix can shift content onto previously-clean pages.
+
+#### Rationalizations to reject (Phase 6)
+
+| Excuse | Reality |
+|--------|---------|
+| "I already spot-checked the cover and a mid-document table; it'll be fine" | Spot-checking is what Phase 5 does; Phase 6 is exhaustive precisely because spot-checking has shipped truncated PDFs and palette regressions in past runs. The cost of reading 30 pages is seconds; the cost of shipping a broken stakeholder deliverable is the engagement. |
+| "The page-count check passed, so the PDF is fine" | The page-count check confirms the merge produced the right number of pages. It cannot detect a blank page, a palette regression, a `NaN` stat tile, or an overflowed table — those are page-content failures, not page-count failures. |
+| "Re-rendering after the fix is wasteful — I'll just re-inspect the page I changed" | A fix that splits one overflowed table into two slides shifts every downstream page-number footer by one; a fix that adds a missing `data-slide-id` changes the slide ordering. Inspection has to be exhaustive on every render or the contract isn't held. |
+| "The Unmapped section has rows but the user said to ship today, so I'll skip Phase 6" | Phase 6 is non-negotiable — but its outcome can be a `WARN` summary that ships the catalogue WITH the known issues surfaced, rather than a `PASS`. Skipping the inspection altogether destroys the transparency signal; running it and surfacing the warning preserves it. |
+| "Reading 30 pages with the Read tool is slow" | Each `Read` call is sub-second; even a 60-page catalogue is two `Read` calls (one for `1-20`, one for `21-40`, etc.). The slow path is shipping a broken catalogue and re-issuing — measure the cost there. |
 
 ---
 
@@ -297,12 +344,14 @@ The registry row is a hard dependency of this skill's discoverability — if the
 **User says:** "produce a test catalogue for the client"
 1. Parse `tests/e2e/**/*.spec.ts`.
 2. Cross-reference `journey-map.md`.
-3. Render `test-catalogue.html` and `test-catalogue.pdf` at repo root.
-4. Report headline numbers (total scenarios, journeys covered, portal breakdown, skipped count).
+3. Render `test-catalogue.html` and `test-catalogue.pdf` at repo root (per-slide render + page-count verify).
+4. **Phase 6: exhaustive visual inspection** — read every page of the PDF in order, run the per-page-type checks, fix and re-render until every page passes.
+5. Report headline numbers (total scenarios, journeys covered, portal breakdown, skipped count) plus the `visual-inspection:` line (PASS or WARN with surfaced issues).
 
 **User says:** "catalogue the suite, brand: spritecloud, output: medicheck-catalogue.pdf"
 1. Same flow, palette forced to spritecloud, output filename overridden.
-2. Report the three-line headline.
+2. Phase 6 runs unchanged.
+3. Report the headline + `visual-inspection:` line.
 
 **User says:** "scenario report including regression coverage"
-1. Same flow. The adversarial-regression section is always included — it is not opt-in.
+1. Same flow. The adversarial-regression section is always included — it is not opt-in. Phase 6 inspects it like any other section.
