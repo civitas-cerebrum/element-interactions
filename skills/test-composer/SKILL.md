@@ -13,6 +13,8 @@ description: >
 
 # Test Composer — Stage 5 Atom: One Journey's Full Test Portfolio
 
+> **Skill names: see `../element-interactions/references/skill-registry.md`.** Copy skill names from the registry verbatim. Never reconstruct a skill name from memory or recase it.
+
 Stage 5 of the element-interactions workflow as the atomic unit of coverage. Given one mapped user journey, compose its complete test portfolio, stabilize, API-compliance-review, verify coverage is exhaustive for that journey, and return.
 
 **Scope:** exactly one journey per invocation. The iterative loop over all journeys in an app lives in the `coverage-expansion` skill.
@@ -97,6 +99,9 @@ Write tests in batches of 5-15 per spec file, organized by area.
 - Every test must use the Steps API from `./fixtures/base`
 - Every element selector goes in `page-repository.json` — no inline selectors in test code
 - Use `test.describe.configure({ timeout: 60_000 })` on every describe block
+- **File-level serial mode is mandatory for tenant-mutating specs.** If the spec issues any POST / PUT / PATCH / DELETE to a mutable endpoint, the file **must** open with `test.describe.configure({ mode: 'serial' })` at the top of the file — before any `test.describe(...)` or `test(...)` block. Rationale: parallel Playwright workers sharing a credential against a single tenant produce random CSRF-token invalidations when concurrent mutating requests race against the session-bound token. Serial mode at the file level eliminates the race without capping global parallelism. Follow-up (not landed in this PR): add a lint rule or pre-commit check that rejects any spec with a mutating request that lacks the serial directive.
+
+  **What counts as a mutable endpoint.** Any request whose server response represents a persistence change against tenant or user data — entity create / update / delete, state transitions (publish, archive, submit), role or permission mutations, file uploads that persist, password or MFA changes. Read-only methods (GET / HEAD / OPTIONS) do NOT trigger the rule, even when they tunnel through a POST for query-payload reasons, **provided** the handler is idempotent and server-side writes are limited to audit-log entries. When in doubt, apply the rule: the cost is one line of configuration per file; the cost of missing it is non-deterministic CI failures that surface later as "flaky auth".
 - Tests that depend on data from other tests must handle both states (e.g., job status could be "draft" or "published")
 - Tests that need specific data should use `test.skip()` when that data isn't found, not fail
 
@@ -121,6 +126,41 @@ Compose variants in this order so selectors build up cleanly and each variant in
 6. **Data-lifecycle variants** (where `Test expectations:` lists them): create → read → update → delete across sessions, draft persistence, bulk operations.
 
 Each variant is its own `test(...)` inside one describe block for the journey — or split into a small cluster of describe blocks if the file grows beyond ~200 lines.
+
+### Tenant cleanup hooks are non-negotiable for add-* journeys
+
+Any journey whose happy path creates a persistent tenant entity (e.g., `j-*-add-caregiver`, `j-*-add-location`, `j-*-add-group`, `j-*-add-administrator`) **must** include an explicit `test.afterAll` teardown attempt in the spec. Accumulated test records across many passes pollute shared tenants and eventually obscure real behaviour.
+
+Two cases, both mandatory:
+
+1. **UI exposes a Delete affordance.** The spec's `test.afterAll` uses the Steps API to delete every entity the suite created. If the teardown step itself fails, the spec must surface that failure in the subagent's structured return rather than swallowing it.
+2. **UI lacks a Delete affordance.** The spec calls the framework-level helper `cleanupViaApiBackdoor(<entity-type>, <id>)` — see contract below. If the helper is unavailable in the current project (e.g., per-tenant API credentials not configured), the subagent does **not** silently skip cleanup. It returns `cleanup: blocked` in its structured summary so the orchestrator can log the tenant-pollution risk explicitly instead of having it hide in the spec.
+
+**Rationalizations to reject:**
+
+| Excuse | Reality |
+|--------|---------|
+| "Cleanup hook errored but the main tests passed, move on" | A swallowed cleanup failure is silent tenant pollution. Surface it in the subagent return; the orchestrator decides. |
+| "I don't have API credentials so I'll log in as the shared admin and call the UI delete" | That bypasses the reason the backdoor exists (UI has no Delete). If the UI has no Delete path, an admin-UI Delete doesn't exist either — you are inventing a workflow the app does not expose. Return `cleanup: blocked`. |
+| "One record per test doesn't matter, the tenant is big" | Per pass × per journey × per variant × 5 compositional passes × 2 adversarial passes = hundreds of records per run. Pollution compounds across runs. |
+| "I'll skip cleanup and add a TODO" | A TODO in a committed spec is a silent commitment to do the work later. It rarely gets done. Return `cleanup: blocked` — the orchestrator's log of blocked cleanups IS the follow-up ledger. |
+| "The backdoor helper isn't implemented yet so I'll skip" | Correct response: write the `cleanupViaApiBackdoor` call as documented, let it fail at runtime, and return `cleanup: blocked` with the runtime error. Do NOT inline ad-hoc cleanup that circumvents the contract. |
+
+#### `cleanupViaApiBackdoor` contract (documentation only — helper is a future follow-up)
+
+> **⚠ Not-yet-implemented helper.** The helper below is contracted here but has no implementation yet. Specs written against this contract today will throw at runtime the first time `cleanupViaApiBackdoor(...)` is called — by design, because the spec's `test.afterAll` catches and returns `cleanup: blocked`. This is the expected behaviour until the framework-level follow-up lands. Do NOT substitute an inline ad-hoc cleanup to make the call succeed; that would mask the pollution risk the return value is meant to surface.
+
+This PR documents the contract. The helper implementation itself is a separate framework-level follow-up; per-tenant API credentials live in env.
+
+```
+cleanupViaApiBackdoor(entityType: string, id: string): Promise<void>
+```
+
+- **Intent.** Delete a tenant entity created during a test when the UI exposes no Delete path. Invoked from `test.afterAll` after the suite's happy-path variant has finished.
+- **Signature.** `entityType` is a framework-recognised entity slug (e.g., `'caregiver'`, `'location'`, `'group'`, `'administrator'`). `id` is the server-assigned identifier captured during the create flow.
+- **Credentials.** Per-tenant API credentials live in env (`<TENANT>_API_TOKEN` or equivalent). The helper reads them; specs never handle raw credentials.
+- **Failure mode.** On non-2xx response, the helper throws; the spec's `test.afterAll` catches and surfaces `cleanup: blocked` in the subagent return.
+- **Status.** Contract only in this PR. The helper implementation, the env-credential convention, and any per-entity endpoint mapping are future follow-up work and out of scope here.
 
 Cross-journey ordering (which journey to tackle first among many) is the caller's concern, not this skill's.
 
@@ -191,10 +231,42 @@ This skill owns the coverage outcome for its assigned journey. The orchestrator 
 
 Emit a structured report to the caller. Do not paste test source, DOM snapshots, or MCP transcripts into the return — the caller will not read them.
 
-Format:
+### Canonical return schema
+
+Every finding reported in the return block (coverage gaps, app-bug flags, new-discovery anomalies) MUST follow the canonical subagent finding-return schema documented in [`../element-interactions/references/subagent-return-schema.md`](../element-interactions/references/subagent-return-schema.md):
+
+```
+- **<FINDING-ID>** [<severity>] — <one-line title>
+  - scope: <what was probed>
+  - expected: <what should happen>
+  - observed: <what happened>
+  - coverage: <existing test or none>
+```
+
+- `FINDING-ID` uses `<journey-slug>-<pass>-<nn>` (when invoked by `coverage-expansion` with a pass number) or `<journey-slug>-<nn>` (standalone).
+- `severity` is one of `critical`, `high`, `medium`, `low`, `info`. No other values.
+- Do not invent alternative ID schemes or severities.
+
+### Return states — covered-exhaustively vs rationalisation
+
+If this invocation produced **zero** new tests, pick one of the two states defined in the canonical schema's §2:
+
+- **`status: covered-exhaustively`** — only valid when the subagent inspected the journey. Required evidence: a per-expectation mapping table (one row per item in the journey's `Test expectations:` list, each mapped to a spec file + test name). Every row must name concrete coverage — no `coverage: none` rows are tolerated under this status.
+- **`status: no-new-tests-by-rationalisation`** — **not a valid return** from any compositional pass. If the only justification is "tests would be redundant" without an inspection, perform the inspection. Orchestrators will reject this return and re-dispatch with a stricter brief.
+
+When invoked by `coverage-expansion` as a re-pass subagent (Pass 2 or 3), the mapping table MUST also include an explicit check against every re-pass trigger:
+
+```
+- trigger 1 (map delta since Pass 1): <none|<delta description>>
+- trigger 2 (Pass-1 coverage gaps or deferred stabilization): <none|<gap>>
+- trigger 3 (sibling-bug regression required here): <none|<sibling finding ID>>
+```
+
+### Return block format
 
 ```
 journey: j-<id>
+status: <in-progress|complete|covered-exhaustively>
 tests added:
   - tests/<file>.spec.ts :: <describe> :: <test name>
   - ...
@@ -203,7 +275,11 @@ coverage:
   branches: <covered>/<total>
   state-variations: <covered>/<total>
   justified gaps:
-    - <item> — <reason>
+    - **<FINDING-ID>** [<severity>] — <title>
+      - scope: <what was probed>
+      - expected: <what should happen>
+      - observed: <what happened>
+      - coverage: none
 new discoveries:
   branches:
     - <branch description, page, from-step>
@@ -216,6 +292,8 @@ new discoveries:
 api compliance: clean | <specific issue resolved>
 stabilization: <N runs> green
 ```
+
+For `status: covered-exhaustively`, append the per-expectation mapping table documented in the canonical schema immediately after the return block. The orchestrator uses the table to audit that the "no new tests" claim is supported by inspection, not rationalised.
 
 ---
 
@@ -260,6 +338,27 @@ Do not ask questions back.
 Cross-journey parallelization (dispatching subagents for multiple journeys at once) is `coverage-expansion`'s responsibility, not this skill's. A single `test-composer` invocation stays focused on one journey.
 
 Within a journey, variants (happy path, error states, edge cases, mobile, negative flows, data lifecycle) are composed sequentially so each variant inherits from the selectors added by the previous one.
+
+---
+
+## Commit-message conventions
+
+Every test this skill commits MUST use the compositional-pass template:
+
+```
+test(<j-slug>): <variant>
+```
+
+- `<j-slug>` is the journey ID (the `j-<slug>` from `journey-map.md`, without angle brackets).
+- `<variant>` names the variant just committed: `happy-path`, `error-states`, `edge-cases`, `mobile`, `negative-flows`, `data-lifecycle`, or a specific sub-variant (e.g. `happy-path-returning-user`).
+- One journey per commit, one variant per commit. Do not batch multiple variants into a single commit; do not batch multiple journeys into a single commit.
+
+Examples:
+- `test(j-book-demo): happy-path`
+- `test(j-reset-password): error-states`
+- `test(j-manager-add-caregiver): data-lifecycle`
+
+Do NOT use `test(pass<N>): …`, `feat(e2e): …`, or `test(<j1>, <j2>): …` — see the **Commit-message conventions** table in `coverage-expansion/SKILL.md` for the full list of anti-patterns across all passes.
 
 ---
 
