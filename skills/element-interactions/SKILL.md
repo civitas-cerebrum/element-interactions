@@ -180,6 +180,10 @@ They do NOT hold:
 
 Parallel subagents own their own context windows. Context weight lives with the worker, not the conductor. This is how the skill architecture scales to many journeys without blowing the orchestrator's token budget.
 
+### 13. No scope compression in any pass, stage, or phase
+
+If the skill contract says "dispatch per journey" or "run both phases," the orchestrator dispatches per journey and runs both phases. An orchestrator that silently narrows scope is violating the contract regardless of budget, time, or perceived no-op likelihood. Budget-constrained runs return early with a resume-needed message; they do not silently narrow.
+
 ### Workflow
 - **Run the tests** to validate your work. Do not skip this.
 - **Commit** after every confirmed success. Do not batch.
