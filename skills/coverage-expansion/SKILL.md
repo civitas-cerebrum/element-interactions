@@ -37,7 +37,7 @@ Do NOT use this for:
 
 ## Non-negotiables for depth mode
 
-These rules close the loopholes that a 2026-04-23 onboarding run exploited (Pass 1 ran; passes 2–5 and ledger dedup were silently "deferred for budget"; Phase 5 was reported complete anyway). Read them as hard rules — not guidance.
+Read these as hard rules, not guidance. They prevent the most common shortcut path — running Pass 1, silently deferring passes 2–5 + cleanup "for budget", and reporting depth mode complete anyway.
 
 - When invoked with `mode: depth` (or with no args, since depth is the default), the orchestrator **MUST complete 3 compositional passes + 2 adversarial passes + ledger dedup, in order**. No exceptions. "Only Pass 1 ran" is never a valid completion state for depth mode.
 - **Pass 1 alone is NOT coverage-expansion — it is one-fifth of the pipeline.** Any progress line, summary, or upstream report that conflates "ran Pass 1" with "ran coverage-expansion" is wrong and must be corrected before returning to the caller. The same goes for "ran passes 1–3 (compositional only)" — that is three-fifths of the pipeline; the adversarial passes + cleanup are part of the contract, not optional.
