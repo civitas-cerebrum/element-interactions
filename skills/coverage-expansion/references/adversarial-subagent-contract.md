@@ -15,7 +15,7 @@ Every subagent dispatched by `coverage-expansion` during pass 4 or pass 5 follow
 
 ## Behavior
 
-1. Receive an isolated context window and an isolated Playwright MCP browser instance (same rules as compositional-pass subagents — parallel subagents never share a browser).
+1. Prepare an isolated context window and an isolated Playwright MCP browser instance (same rules as compositional-pass subagents — the orchestrating agent must confirm per-subagent isolation is achievable before dispatching, per the `element-interactions` orchestrator's "Isolated MCP instances for parallel subagents" rule; parallel subagents never share a browser).
 2. **Pass 4:** read the map block + page-repo slice + any existing composed tests for the journey. Invoke the `bug-discovery` skill scoped to this one journey. Let that skill drive probe-category selection based on live observation. Classify every finding as `Boundaries verified`, `Suspected bugs`, or `Ambiguous`. Do NOT write any tests.
 3. **Pass 5:** additionally read the journey's existing section in `adversarial-findings.md` (pass-4 findings). Re-invoke `bug-discovery` with instructions to (a) resolve `Ambiguous` findings where possible, (b) attempt compound probes pass 4 did not try, (c) probe follow-ups implied by pass-4 boundary verifications. Write a passing regression test for every `Boundaries verified` finding (pass 4 + pass 5 combined) into `tests/e2e/j-<slug>-regression.spec.ts`. Never write tests for `Suspected bugs` or `Ambiguous` findings.
 4. Append all new findings to the journey's section of the ledger, using the schema in `adversarial-findings-schema.md`. Create the journey section if absent. Create the ledger file with its header if absent.

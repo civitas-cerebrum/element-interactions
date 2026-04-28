@@ -97,6 +97,9 @@ Write tests in batches of 5-15 per spec file, organized by area.
 - Every test must use the Steps API from `./fixtures/base`
 - Every element selector goes in `page-repository.json` — no inline selectors in test code
 - Use `test.describe.configure({ timeout: 60_000 })` on every describe block
+- **File-level serial mode is mandatory for tenant-mutating specs.** If the spec issues any POST / PUT / PATCH / DELETE to a mutable endpoint, the file **must** open with `test.describe.configure({ mode: 'serial' })` at the top of the file — before any `test.describe(...)` or `test(...)` block. Rationale: parallel Playwright workers sharing a credential against a single tenant produce random CSRF-token invalidations when concurrent mutating requests race against the session-bound token. Serial mode at the file level eliminates the race without capping global parallelism. Follow-up (not landed in this PR): add a lint rule or pre-commit check that rejects any spec with a mutating request that lacks the serial directive.
+
+  **What counts as a mutable endpoint.** Any request whose server response represents a persistence change against tenant or user data — entity create / update / delete, state transitions (publish, archive, submit), role or permission mutations, file uploads that persist, password or MFA changes. Read-only methods (GET / HEAD / OPTIONS) do NOT trigger the rule, even when they tunnel through a POST for query-payload reasons, **provided** the handler is idempotent and server-side writes are limited to audit-log entries. When in doubt, apply the rule: the cost is one line of configuration per file; the cost of missing it is non-deterministic CI failures that surface later as "flaky auth".
 - Tests that depend on data from other tests must handle both states (e.g., job status could be "draft" or "published")
 - Tests that need specific data should use `test.skip()` when that data isn't found, not fail
 
@@ -121,6 +124,41 @@ Compose variants in this order so selectors build up cleanly and each variant in
 6. **Data-lifecycle variants** (where `Test expectations:` lists them): create → read → update → delete across sessions, draft persistence, bulk operations.
 
 Each variant is its own `test(...)` inside one describe block for the journey — or split into a small cluster of describe blocks if the file grows beyond ~200 lines.
+
+### Tenant cleanup hooks are non-negotiable for add-* journeys
+
+Any journey whose happy path creates a persistent tenant entity (e.g., `j-*-add-caregiver`, `j-*-add-location`, `j-*-add-group`, `j-*-add-administrator`) **must** include an explicit `test.afterAll` teardown attempt in the spec. Accumulated test records across many passes pollute shared tenants and eventually obscure real behaviour.
+
+Two cases, both mandatory:
+
+1. **UI exposes a Delete affordance.** The spec's `test.afterAll` uses the Steps API to delete every entity the suite created. If the teardown step itself fails, the spec must surface that failure in the subagent's structured return rather than swallowing it.
+2. **UI lacks a Delete affordance.** The spec calls the framework-level helper `cleanupViaApiBackdoor(<entity-type>, <id>)` — see contract below. If the helper is unavailable in the current project (e.g., per-tenant API credentials not configured), the subagent does **not** silently skip cleanup. It returns `cleanup: blocked` in its structured summary so the orchestrator can log the tenant-pollution risk explicitly instead of having it hide in the spec.
+
+**Rationalizations to reject:**
+
+| Excuse | Reality |
+|--------|---------|
+| "Cleanup hook errored but the main tests passed, move on" | A swallowed cleanup failure is silent tenant pollution. Surface it in the subagent return; the orchestrator decides. |
+| "I don't have API credentials so I'll log in as the shared admin and call the UI delete" | That bypasses the reason the backdoor exists (UI has no Delete). If the UI has no Delete path, an admin-UI Delete doesn't exist either — you are inventing a workflow the app does not expose. Return `cleanup: blocked`. |
+| "One record per test doesn't matter, the tenant is big" | Per pass × per journey × per variant × 5 compositional passes × 2 adversarial passes = hundreds of records per run. Pollution compounds across runs. |
+| "I'll skip cleanup and add a TODO" | A TODO in a committed spec is a silent commitment to do the work later. It rarely gets done. Return `cleanup: blocked` — the orchestrator's log of blocked cleanups IS the follow-up ledger. |
+| "The backdoor helper isn't implemented yet so I'll skip" | Correct response: write the `cleanupViaApiBackdoor` call as documented, let it fail at runtime, and return `cleanup: blocked` with the runtime error. Do NOT inline ad-hoc cleanup that circumvents the contract. |
+
+#### `cleanupViaApiBackdoor` contract (documentation only — helper is a future follow-up)
+
+> **⚠ Not-yet-implemented helper.** The helper below is contracted here but has no implementation yet. Specs written against this contract today will throw at runtime the first time `cleanupViaApiBackdoor(...)` is called — by design, because the spec's `test.afterAll` catches and returns `cleanup: blocked`. This is the expected behaviour until the framework-level follow-up lands. Do NOT substitute an inline ad-hoc cleanup to make the call succeed; that would mask the pollution risk the return value is meant to surface.
+
+This PR documents the contract. The helper implementation itself is a separate framework-level follow-up; per-tenant API credentials live in env.
+
+```
+cleanupViaApiBackdoor(entityType: string, id: string): Promise<void>
+```
+
+- **Intent.** Delete a tenant entity created during a test when the UI exposes no Delete path. Invoked from `test.afterAll` after the suite's happy-path variant has finished.
+- **Signature.** `entityType` is a framework-recognised entity slug (e.g., `'caregiver'`, `'location'`, `'group'`, `'administrator'`). `id` is the server-assigned identifier captured during the create flow.
+- **Credentials.** Per-tenant API credentials live in env (`<TENANT>_API_TOKEN` or equivalent). The helper reads them; specs never handle raw credentials.
+- **Failure mode.** On non-2xx response, the helper throws; the spec's `test.afterAll` catches and surfaces `cleanup: blocked` in the subagent return.
+- **Status.** Contract only in this PR. The helper implementation, the env-credential convention, and any per-entity endpoint mapping are future follow-up work and out of scope here.
 
 Cross-journey ordering (which journey to tackle first among many) is the caller's concern, not this skill's.
 
