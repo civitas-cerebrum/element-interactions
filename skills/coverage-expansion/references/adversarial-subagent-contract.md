@@ -2,6 +2,10 @@
 
 Every subagent dispatched by `coverage-expansion` during pass 4 or pass 5 follows this contract. It is analogous to the compositional-pass subagent contract in SKILL.md but covers adversarial probing specifics.
 
+**Role under dual-stage.** This is the **Stage A contract for adversarial passes** (4 and 5). Stage A adversarial subagents probe the live app, write findings to the adversarial-findings ledger, and — in pass 5 — write regression tests for verified boundaries.
+
+The **Stage B contract for adversarial passes** — the reviewer's role — is in `reviewer-subagent-contract.md`. A Stage B reviewer does NOT append to the ledger and does NOT write regression tests; it reads the Stage A output and the live app, judges adversarial surface coverage + ledger craft + regression-lock quality, and returns `greenlight` or `improvements-needed`. If the reviewer's `improvements-needed` list includes adversarial-missed findings, Stage A addresses them on the next cycle — the reviewer never appends its own probe findings to the ledger directly.
+
 ## Canonical return + ledger schema
 
 Every return and every ledger append produced under this contract MUST conform to the canonical subagent schema in [`../../element-interactions/references/subagent-return-schema.md`](../../element-interactions/references/subagent-return-schema.md). Specifically:

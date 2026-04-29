@@ -66,6 +66,12 @@ Every subagent dispatched by a companion skill (`coverage-expansion`, `test-comp
 
 Companion skills MUST cite `references/subagent-return-schema.md` in their SKILL.md and point their subagent dispatch briefs at it rather than re-pasting the schema. Do not fork the schema per skill. Extensions go in the reference file.
 
+Related subagent contracts (read alongside the canonical schema):
+
+- Canonical return + ledger schema: [`references/subagent-return-schema.md`](references/subagent-return-schema.md) — the shared return format, severities, Finding-ID convention, and ledger Markdown shape used by every dispatched subagent.
+- Stage A adversarial contract: `skills/coverage-expansion/references/adversarial-subagent-contract.md` — the existing single-stage adversarial subagent's role, inputs, behaviour, and dispatch-brief template. Referenced by `coverage-expansion` adversarial passes.
+- Stage B reviewer contract: `skills/coverage-expansion/references/reviewer-subagent-contract.md` — the dual-stage reviewer's role, inputs, behaviour, must-fix calibration, and dispatch-brief template. Referenced by every `coverage-expansion` invocation that dispatches a reviewer.
+
 ---
 
 ## 🚨 ABSOLUTE RULES — STOP AND READ BEFORE ANY ACTION
