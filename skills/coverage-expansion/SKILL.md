@@ -36,7 +36,7 @@ A new orchestrator implementer or contract-modifier should read these files in d
 1. **This file (`coverage-expansion/SKILL.md`)** — the orchestrator-side contract: passes, retry loop, parallelism, state file, completion criteria. This is the entry point.
 2. **`references/reviewer-subagent-contract.md`** — Stage B contract: role, inputs, must-fix calibration, hard constraints. Read this to understand what the reviewer actually does.
 3. **`references/adversarial-subagent-contract.md`** — Stage A contract for passes 4–5 (probe + ledger + regression). Read for the adversarial-side specifics.
-4. **`../element-interactions/references/subagent-return-schema.md`** — canonical return + ledger schema (§§1–4). The shape both stages produce. §4.1 is the orchestrator's grep-based validation surface.
+4. **`../element-interactions/references/subagent-return-schema.md`** — canonical return + ledger schema. §1 + §2 (incl. §2.4 reviewer-return) + §3 (ledger) define the shape both stages produce. §4 (Caller contract) is the orchestrator's obligations; §4.1 is the grep-based validation surface for both Stage A and Stage B returns.
 5. **`references/2026-04-24-dual-stage-design.md`** — historical design spec. Useful for "why did we choose this?" but not authoritative for current behaviour; if it disagrees with this SKILL.md, the SKILL.md wins.
 
 Stage A skills (`test-composer`, `bug-discovery`) have short "Role under dual-stage" awareness paragraphs near the top of their own SKILL.md files but no dual-stage-specific rules — their behaviour is unchanged from the single-stage era; they just know they will be reviewed.
@@ -162,7 +162,7 @@ The dual-stage design addresses a concrete failure mode: a single subagent that 
 
 **Cost posture.** This skill is **cost-blind**. The optimisation targets are completeness and speed, not dispatch cost. Default opus for every dispatch in every stage. The sonnet-for-P2/P3 heuristic from the prior design is removed; a narrow sonnet exception for cycle-1 Stage B confirmation on previously-greenlit journeys is documented in §"Model selection".
 
-**No-skip extension.** Under dual-stage, the no-skip contract (PR #105) extends: every journey must receive both Stage A and Stage B in every pass. A journey with Stage A but no Stage B is incomplete. The terminal review status set gains three subagent-returned blocked values — `blocked (review-cycle-stalled)`, `blocked (review-cycle-exhausted)`, and `blocked (dispatch-failure)` — per §"Retry loop" termination conditions.
+**No-skip extension.** Under dual-stage, the no-skip contract (PR #105) extends: every journey must receive both Stage A and Stage B in every pass. A journey with Stage A but no Stage B is incomplete. The terminal `review_status` set gains three subagent-evidenced blocked values — `blocked-cycle-stalled`, `blocked-cycle-exhausted`, and `blocked-dispatch-failure` — per §"Retry loop" termination conditions. (These hyphenated forms are the canonical `review_status` enum used in the state file's `dispatches[]` array; the no-skip `result` field's `blocked (reason)` shape may carry these strings as the reason text, but `review_status` itself is the bare hyphenated form.)
 
 **Dual-stage no-skip rationalizations to reject:**
 
@@ -213,17 +213,23 @@ for cycle in 1..7:
 
   # Stall detection — fires on either signal:
   #   (a) reviewer's self-flagged stalled: true (per reviewer-contract step 7), OR
-  #   (b) two consecutive cycles with identical must-fix lists.
-  # Single-cycle equality is NOT enough — a reviewer in cycle N+1 may catch a
-  # finding the cycle-N reviewer missed, then cycle N+2's reviewer matches N+1's.
-  # That's progress, not stall. Require ≥2 consecutive identical lists.
+  #   (b) three cycles in a row with identical must-fix lists (i.e., the
+  #       current cycle and the two immediately-prior cycles all share the
+  #       same must-fix list, meaning Stage A failed to address it across
+  #       two consecutive retry attempts).
+  # One match (current == prior-1) is NOT enough: a reviewer in cycle N+1 may
+  # legitimately catch a finding the cycle-N reviewer missed, then cycle N+2's
+  # reviewer matches N+1's — cycle N+1 was real progress, not stall. Require
+  # current == prior-1 == prior-2 (two consecutive matches, three identical
+  # lists in total). identical_run counts current + each prior that matches,
+  # so the threshold is >= 3.
   identical_run = 1
   for prior in reversed(history):
     if prior.must_fix == must_fix:
       identical_run += 1
     else:
       break
-  if b_return.stalled == true or identical_run >= 2:
+  if b_return.stalled == true or identical_run >= 3:
     review_status = "blocked-cycle-stalled"
     break
 
@@ -248,7 +254,7 @@ record journey review_status + cycle count + final must_fix list in state file
 | Reviewer returns `greenlight` | `greenlight` | Accept, commit this journey's work this pass. |
 | Reviewer returns `improvements-needed` but only `nice-to-have` findings | `greenlight-with-notes` | Accept, log notes to state file. |
 | Reviewer returns `improvements-needed` with **empty** must-fix and nice-to-have, twice in a row | `greenlight` (coerced) | Empty findings = no changes needed; the `improvements-needed` status was malformed. Coerce after one re-dispatch. |
-| Reviewer's `must-fix` list identical for **2+ consecutive cycles** OR reviewer sets `stalled: true` | `blocked-cycle-stalled` | Escalate — Stage A cannot fix this list. Commit whatever Stage A landed; log the unresolved list. **Takes precedence over exhausted** when cycle 7's list also matches the prior cycle. |
+| Reviewer's `must-fix` list identical for **3+ cycles in a row** (current == prior-1 == prior-2) OR reviewer sets `stalled: true` | `blocked-cycle-stalled` | Escalate — Stage A failed to address this list across two consecutive retries. Commit whatever Stage A landed; log the unresolved list. **Takes precedence over exhausted** when cycle 7's list satisfies the same condition. |
 | Cycle 7 reached without greenlight (and not stalled) | `blocked-cycle-exhausted` | Escalate — retry budget spent. Commit whatever Stage A landed; log the unresolved list. |
 | Stage A dispatch fails (transport / timeout / malformed schema), re-dispatch also fails | `blocked-dispatch-failure` | Escalate — infrastructure issue, not a discipline issue. Commit nothing for this journey this pass; carries to next pass with the failure noted in trigger-4 input. |
 

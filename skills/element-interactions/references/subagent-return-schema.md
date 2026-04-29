@@ -24,7 +24,7 @@ Every subagent dispatched by `coverage-expansion`, `test-composer`, or `bug-disc
 | Field | Rule |
 |---|---|
 | `FINDING-ID` | `<journey-slug>-<pass>-<nn>` (inside a numbered pass, Stage A findings) or `<journey-slug>-<nn>` (outside pass numbering). `<nn>` is a two-digit integer, zero-padded. Reviewer findings (Stage B) use the extended subformat `<journey-slug>-<pass>-<cycle>-R-<nn>` — see §2.4. No other alternative ID schemes (`AF-XX-NN`, `P4-XX-BUG-NN`, `REG-XX-NN`) are accepted. |
-| `severity` | One of `critical`, `high`, `medium`, `low`, `info`. No other values. Do not invent new severities (no `no-impact`, `blocker`, `p0`). Map DOM-only / no-impact items to `info`. |
+| `severity` | One of `critical`, `high`, `medium`, `low`, `info`. No other values. Do not invent new severities (no `no-impact`, `blocker`, `p0`). Map DOM-only / no-impact items to `info`. **Applies to Stage A finding blocks only.** Stage B (reviewer) findings use a different bracket semantics — priority (`must-fix` / `nice-to-have`), not severity — per §2.4. The "no other values" rule is scoped to Stage A; §1's bracket position is not meaningful for reviewer returns. |
 | `title` | One line. No trailing period. Describes the finding, not the test. |
 | `scope` | One sentence naming the probe surface — page, endpoint, element, flow step. |
 | `expected` | One sentence describing correct behaviour. |
