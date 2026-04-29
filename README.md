@@ -25,14 +25,27 @@ const submitBtn = page.locator('button[data-test="submit-order"]');
 // Explicitly wait for DOM stability and visibility
 await submitBtn.waitFor({ state: 'visible', timeout: 30000 });
 
-// Perform the interaction
-await submitBtn.click();
+// Log what's happening so failures are debuggable
+console.log('Clicking on "submitButton" in "CheckoutPage"');
+
+// Perform the interaction — and hand-roll a fallback for overlays
+// that intercept pointer events (cookie banners, sticky headers, etc.)
+try {
+  await submitBtn.click({ timeout: 5000 });
+} catch (error) {
+  if (error instanceof Error && error.message.includes('intercepts pointer events')) {
+    await submitBtn.dispatchEvent('click');
+  } else {
+    throw error;
+  }
+}
 ```
 
 **After (@civitas-cerebrum/element-interactions):**
 
 ```ts
-// Locate, wait, and interact — one line
+// Resolve from the page repository, log the action, wait, click,
+// and auto-retry past pointer interception — one line.
 await steps.click('CheckoutPage', 'submitButton');
 ```
 
