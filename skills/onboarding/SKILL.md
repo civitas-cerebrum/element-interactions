@@ -35,16 +35,14 @@ On activation, immediately run the cascade detector (below). Do not prompt the u
 
 ### Cascade detector
 
-Run in order; stop at the first match.
+The cascade detector is the canonical onboarding-state probe used by this skill, the `element-interactions` orchestrator's routing, and `companion-mode` Phase 6. Its full table and per-caller response matrix live in [`../element-interactions/references/cascade-detector.md`](../element-interactions/references/cascade-detector.md). Run it in order; stop at the first match. The four levels are:
 
-| # | Check | Result | Level |
-|---|---|---|---|
-| 1 | Is `@civitas-cerebrum/element-interactions` listed as a dependency in `package.json`? | No | **A** — install + scaffold + pipeline |
-| 2 | Are all of `playwright.config.ts`, `tests/fixtures/base.ts`, and `page-repository.json` present? | Any missing | **B** — scaffold + pipeline |
-| 3 | Does `tests/e2e/docs/journey-map.md` exist **and** have `<!-- journey-mapping:generated -->` on line 1? | No | **C** — pipeline only |
-| 4 | All of the above pass | Yes | **None** — exit with the re-invocation message |
+- **Level A** — `@civitas-cerebrum/element-interactions` not listed in `package.json` → install + scaffold + pipeline.
+- **Level B** — package present, but any of `playwright.config.ts` / `tests/fixtures/base.ts` / `page-repository.json` missing → scaffold + pipeline.
+- **Level C** — scaffold complete, but `tests/e2e/docs/journey-map.md` missing OR missing `<!-- journey-mapping:generated -->` on line 1 → pipeline only.
+- **Level None** — all checks pass → exit with the re-invocation message (below).
 
-Use the Read and Glob tools to check these. Do not use Bash `ls` / `cat` for the detection.
+Use the Read and Glob tools to perform the checks. Do not use Bash `ls` / `cat` for the detection. If a fifth level is ever added (e.g. for a new required scaffold file), it lands in the canonical reference first; this skill must be updated to handle it before the new check ships.
 
 ### Already-onboarded exit message
 

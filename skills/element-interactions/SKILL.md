@@ -25,15 +25,16 @@ A two-package Playwright framework that decouples **element acquisition** (`@civ
 
 ## Autonomous-mode invocation cheat-sheet
 
-Companion skills (`onboarding`, `coverage-expansion`, `test-composer`) invoke this orchestrator with `autonomousMode: true` to disable the interactive hard gates. Each caller has its own required-args contract — they are NOT interchangeable.
+Companion skills (`onboarding`, `coverage-expansion`, `test-composer`, `companion-mode`) invoke this orchestrator with `autonomousMode: true` to disable the interactive hard gates. Each caller has its own required-args contract — they are NOT interchangeable.
 
 | Caller | Required args | Optional args |
 |---|---|---|
 | `onboarding` Phase 3 | `autonomousMode: true`, `happyPathDescription: "<sentence>"` | `context: [...]` |
 | `coverage-expansion` pass 1–3 | `autonomousMode: true`, `journey: "<j-id>"` | — |
+| `companion-mode` Phase-6 graduation | `autonomousMode: true`, `entry: "stage3"`, `bundlePath: "<absolute-path>"` | — |
 | user direct | — (no autonomous flags) | — (full Stage 1–4 interactive flow) |
 
-`happyPathDescription` replaces the Stage-1 discovery conversation; `journey: "<j-id>"` references an entry in `tests/e2e/docs/journey-map.md`. Full semantics in the **Autonomous mode** section further down.
+`happyPathDescription` replaces the Stage-1 discovery conversation; `journey: "<j-id>"` references an entry in `tests/e2e/docs/journey-map.md`; `bundlePath` references a `tests/e2e/evidence/<slug>-<ts>/` directory whose `summary.md` carries task description / pass criterion / app URL and whose `spec.ts` carries the already-discovered selectors. `entry: "stage3"` skips Stages 1 and 2 (companion-mode already did the equivalent). Full per-entry-point contracts, bundle-read schema, malformed-bundle handling, and return shape: [`references/autonomous-mode-callers.md`](references/autonomous-mode-callers.md).
 
 ## Companion Skills
 
@@ -49,6 +50,7 @@ This skill is the orchestrator for a group of testing skills. It handles Stages 
 | `agents-vs-agents` | App has AI features, or user mentions AI guardrails/red-teaming/bias testing | Adversarial AI testing with LLM-powered attacker + judge |
 | `contract-testing` | User mentions contract tests, API contract, schema test, pact, breaking-change detection, or spec conformance — OR before writing any pure-API test that asserts response shape/status | Structured contract-style verification against real endpoints (status / headers / schema / error shape) using `steps.apiGet/Post/Put/Delete/Patch` |
 | `test-catalogue` | User asks for a "test catalogue", "scenario report", "client-ready catalogue", or an inventory of what the suite runs — opt-in only, never mandatory | Parses spec files + journey map, groups scenarios by portal and priority, renders a stakeholder-facing A4-landscape PDF catalogue (plus source HTML) with dedicated regression and skipped-with-reason sections |
+| `companion-mode` | User asks for ad-hoc functional verification with evidence (screenshots, video, trace) — opt-in only, never mandatory | Single-task evidence-first verification: produces an immutable bundle at `tests/e2e/evidence/<slug>-<ts>/`, then on a passed run proactively offers durable-automation graduation back into this orchestrator (Stage 3) or into `onboarding` per the project's cascade-detector level. Full behaviour: `skills/companion-mode/SKILL.md`. |
 
 When any of these conditions are met, invoke the Skill tool with the companion skill name. Do not try to handle their workflows inline — they have their own staged processes.
 
@@ -374,6 +376,7 @@ Only show the greeting menu if the user's message is vague or just says somethin
 - **Coverage expansion intent (deep)** — phrases like "increase coverage", "deeper coverage", "add more scenarios", "iterative test expansion", "expand tests", "deep coverage pass" → invoke `coverage-expansion` with default `mode: depth` (three passes, journey-by-journey, parallel where independent).
 - **Coverage expansion intent (breadth)** — phrases like "quick coverage", "fast coverage", "breadth coverage", "sweep coverage" → invoke `coverage-expansion` with `mode: breadth`.
 - **Compose tests for one journey** — phrases like "compose tests for journey X", "tests for j-<slug>", "test this journey" → invoke `test-composer` with `args: "journey=<j-id>"`.
+- **Companion-mode evidence run** — when the deliverable the user wants is an artifact a human will open (screenshots, video, summary), not a spec they will check in → invoke `companion-mode`. Full trigger list in the registry. Do NOT downshift to Stages 1–4 because it would "be more reusable" — the user asked for evidence, not a durable test.
 - **User already described a scenario** — Skip the greeting. Go directly to Stage 1 (fast path if scenario is complete, full discovery if vague).
 - **API question** — Answer directly from the API Reference section below. No stages needed.
 - **Fix or edit a test** — Skip to Stage 3 (Fix/Edit Mode).
@@ -382,12 +385,14 @@ Only show the greeting menu if the user's message is vague or just says somethin
 
 #### Onboarding cascade detector (quick reference)
 
-| Signal | Level | Action |
-|---|---|---|
-| `@civitas-cerebrum/element-interactions` not in `package.json` | A | Invoke `onboarding` |
-| Package present but any of `playwright.config.ts`, `tests/fixtures/base.ts`, `page-repository.json` missing | B | Invoke `onboarding` |
-| Scaffold present but `tests/e2e/docs/journey-map.md` missing OR missing sentinel on line 1 | C | Invoke `onboarding` |
-| All present | None | No action — greet as normal |
+The detector and its full caller-specific response matrix live in [`references/cascade-detector.md`](references/cascade-detector.md). This orchestrator's routing rule is summarised here for fast scanning:
+
+| Level | Routing action |
+|---|---|
+| A — package not in `package.json` | Invoke `onboarding` |
+| B — package present but scaffold incomplete | Invoke `onboarding` |
+| C — scaffold complete but `journey-map.md` missing or unsanctioned | Invoke `onboarding` |
+| None — all checks pass | No routing action — greet as normal |
 
 ---
 
@@ -395,29 +400,7 @@ Only show the greeting menu if the user's message is vague or just says somethin
 
 When the `onboarding` skill (or any other companion) invokes this orchestrator with `args` containing `autonomousMode: true`, the hard gates are disabled and Stages 1–4 run sequentially without prompts.
 
-### Required companion inputs
-
-When `autonomousMode: true`, the caller MUST provide:
-
-- `happyPathDescription: "<one sentence>"` — replaces the Stage-1 discovery conversation. The orchestrator reformats this into Given/When/Then silently.
-
-### Gate suspension
-
-In autonomous mode:
-
-- Stage-1 scenario approval — skipped. Reformatted scenario is treated as approved.
-- Stage-2 page-repository approval — skipped. Proposed entries are written directly (this is the ONLY exception to Rule 2, and it applies only inside autonomous mode).
-- Stage-3 stage-advancement prompts — skipped.
-- Stage-4 API Compliance Review — still runs, still fixes misuse. A failed review does NOT prompt; it auto-corrects and re-runs.
-- Failure-diagnosis on any test failure — still runs, still classifies. App bugs halt the autonomous flow and surface to the caller.
-
-### Commit discipline
-
-Autonomous mode still commits after each passing + compliant test, same as interactive mode. The caller is responsible for the outer commit boundary (e.g. the `test: happy path — <name>` commit from onboarding).
-
-### Returning control
-
-When Stages 1–4 complete in autonomous mode, the orchestrator returns to the caller with a short summary: `{ status: 'passed' | 'failed', testsWritten: [paths], appBugs: [...] }`. It does NOT advance to Stage 5 or show the Onboarding Completion Gate on its own — the caller decides what happens next.
+Full per-entry-point contracts live in [`references/autonomous-mode-callers.md`](references/autonomous-mode-callers.md): required args, the `stage1` vs `stage3` split, the bundle-read schema for `entry: "stage3"`, malformed-bundle handling, gate suspension, commit discipline, and return shape. Read that file when implementing or reviewing a caller. The cheat-sheet at the top of this `SKILL.md` is the at-a-glance summary; the reference doc is the source of truth.
 
 ---
 

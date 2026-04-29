@@ -16,3 +16,4 @@ test-coverage-report.md
 *.txt
 /docs
 /skills/*-workspace
+/solution-designs
