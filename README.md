@@ -20,7 +20,7 @@ You drive it in plain English. The orchestrators detect project state and route 
 
 > **Tip:** Enable the Playwright MCP plugin in Claude Code (`/plugins` → Playwright) so the harness can inspect the live DOM before writing any locator. This removes the most common source of AI-generated test flakiness.
 
-### What the harness does
+### Features
 
 | Capability | What it does |
 |---|---|
