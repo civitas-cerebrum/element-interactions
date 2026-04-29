@@ -2,19 +2,56 @@
 
 [![NPM Version](https://img.shields.io/npm/v/@civitas-cerebrum/element-interactions?color=rgb(88%2C%20171%2C%2070))](https://www.npmjs.com/package/@civitas-cerebrum/element-interactions)
 
-A robust set of Playwright steps for readable interaction and assertions.
+A Playwright test-authoring framework wrapped in an agentic QA harness.
 
-`@civitas-cerebrum/element-interactions` pairs perfectly with `@civitas-cerebrum/element-repository` to achieve a fully decoupled test automation architecture. By separating **Element Acquisition** from **Element Interaction**, your test scripts become highly readable, easily maintainable, and completely free of raw locators.
+`@civitas-cerebrum/element-interactions` ships two halves. The framework half pairs with `@civitas-cerebrum/element-repository` to keep raw selectors out of test code — element acquisition is decoupled from element interaction, and the unified `Steps` API flattens both into plain-English calls. The harness half is a set of agent skills, bundled with the npm package, that turn an LLM (Claude Code, primarily) into a self-driving QA engineer: onboarding a project from zero, mapping its journeys, expanding coverage, hunting bugs adversarially, repairing rotted suites, producing evidence bundles for daily QA tasks, and shipping stakeholder reports.
 
-### ✨ The Unified Steps API
+This is harness engineering, not autocomplete. Each skill carries narrow triggers, a return contract, and a finding-ledger schema. Orchestrators dispatch isolated subagents per journey so long autonomous runs do not blow the context window — agentic quality assurance shipped as durable artifacts (specs, journey maps, ledgers, decks), not transient chat output.
 
-With the introduction of the `Steps` class, you can now combine your element repository and interactions into a single, flattened facade. This eliminates repetitive locator fetching and transforms your tests into clean, plain-English steps.
+---
 
-### 🧠 AI-Friendly Test Development & Boilerplate Reduction
+## 🤖 Autonomous Quality Assurance
 
-Stop writing the same three lines of code for every single interaction. This library handles the fetching, waiting, and acting automatically.
+The harness ships inside the npm package. When you install `@civitas-cerebrum/element-interactions`, Claude Code picks the skills up from `node_modules` automatically — nothing extra to configure.
 
-Because the API is highly semantic and completely decoupled from the DOM, it is an **ideal framework for AI coding assistants**. AI models can easily generate robust test flows using plain-English strings (`'CheckoutPage'`, `'submitButton'`) without hallucinating complex CSS selectors, writing flaky interactions, or forgetting critical `waitFor` states.
+You drive it in plain English. The orchestrators detect project state and route to the right skill on their own:
+
+> *"Onboard this project — automate https://your-app-url.com from zero."*
+> *"Increase coverage."*
+> *"Find bugs."*
+> *"Repair the suite."*
+> *"Verify the checkout flow with evidence."*
+
+> **Tip:** Enable the Playwright MCP plugin in Claude Code (`/plugins` → Playwright) so the harness can inspect the live DOM before writing any locator. This removes the most common source of AI-generated test flakiness.
+
+### What the harness does
+
+| Capability | What it does |
+|---|---|
+| **Zero-to-suite onboarding** | Installs deps, scaffolds the framework, crawls the app, automates the happy path, completes the journey map, runs priority/depth-tiered coverage passes, runs adversarial bug-hunts, and produces a summary deck — all behind a single confirmation gate, with no further prompts after kickoff. |
+| **Journey mapping** | Discovers pages and user flows, prioritises them by business impact, and writes the journey-map blueprint that every downstream test traces back to. |
+| **Coverage expansion** | Iterates the journey map and grows the suite per journey. *Depth* mode runs three compositional passes plus two adversarial passes per journey; *breadth* mode runs one fast horizontal sweep across all journeys. Independent journeys are dispatched in parallel. |
+| **Per-journey test composition** | For one mapped journey, composes the full portfolio: happy path, error states, edge cases, mobile variants, negative flows, data-lifecycle scenarios. |
+| **Adversarial bug discovery** | Probes the live app first — the "first-time effect", where fresh eyes catch what familiarity blinds you to — then cross-references findings against existing tests. Produces a prioritised, deduplicated bug ledger with reproduction tests. |
+| **Agents-vs-agents AI red-teaming** | Adversarial testing of LLM-integrated features: guardrail verification, bias detection, prompt injection, compliance auditing. One LLM plays the adversary, the application's AI is the target, a third LLM judges the result. |
+| **API contract testing** | Locks the backend surface (status codes, response shape, error envelopes, critical headers) against drift, separately from UI flow tests. |
+| **Failure diagnosis** | When a test fails in any mode, runs evidence-based triage — screenshot analysis, DOM inspection, root-cause hypothesis — then either fixes the test autonomously or flags an app bug with the evidence to back it. |
+| **Suite repair** | When many tests fail at once (suite rot, app drift), batch-clusters failures by shared root cause and heals them per cluster instead of one-by-one — far faster than per-test diagnosis at scale. |
+| **Companion mode** | Single-task evidence-first verification for daily QA. Runs one focused check against the live app and produces a bundle of per-step screenshots, video, Playwright trace, HAR, console log, and a summary — the artifact a developer reads, not a durable suite test. |
+| **Test catalogue** | Stakeholder-facing PDF answering *"what scenarios are we running, and why?"* — A4-landscape, organised by portal and priority, with skipped-with-reason transparency. |
+| **Work summary deck** | Branded HTML deck summarising the QA work delivered, exportable to PDF for managers, product owners, and clients. |
+
+### Working autonomously
+
+Once kicked off, the orchestrators run end-to-end without further prompts. `onboarding` takes a fresh project from no test automation to a complete suite — install, scaffold, crawl, happy path, journey map, five priority/depth-tiered coverage passes, two bug-hunt passes, summary deck — emitting periodic progress updates but requiring no confirmation after the initial gate. `coverage-expansion` and `bug-discovery` follow the same pattern at smaller scope. The agent owns the entire lifecycle of a test suite — discovery, growth, repair, adversarial probing, reporting — and ships its work as durable artifacts rather than transient chat output.
+
+---
+
+## 🏗️ The Test-Authoring Framework
+
+Underneath the harness is a clean test-authoring framework. The `Steps` API and `ElementRepository` decouple element acquisition from element interaction, so raw selectors never appear in test code. Tests reference elements by plain strings (`'CheckoutPage'`, `'submitButton'`) — a `page-repository.json` file is the single source of truth for selectors.
+
+Because the API is semantic and decoupled from the DOM, it is also an ideal authoring surface for LLMs: agents generate robust flows using plain-English strings without hallucinating CSS selectors or forgetting `waitFor` states.
 
 **Before (Raw Playwright):**
 
@@ -49,63 +86,25 @@ try {
 await steps.click('CheckoutPage', 'submitButton');
 ```
 
-Because the API is semantic and decoupled from the DOM, it also works exceptionally well with AI coding assistants. Models can generate robust test flows using plain-English strings (`'CheckoutPage'`, `'submitButton'`) without hallucinating CSS selectors or writing flaky interactions.
-
 ---
 
 ## 📦 Installation
 
 ```bash
-npm i @civitas-cerebrum/element-interactions
+npm i @civitas-cerebrum/element-interactions @civitas-cerebrum/element-repository
 ```
 
 **Peer dependencies:** `@playwright/test` is required. The `Steps` API additionally requires `@civitas-cerebrum/element-repository`.
 
----
-
-## 🤖 Claude Code Integration
-
-`@civitas-cerebrum/element-interactions` ships with a built-in **Claude Code skill** — an agent instruction file that teaches Claude how to use the framework correctly. The skill is included in the npm package, so there's nothing extra to install. When Claude Code detects it in your `node_modules`, it can write, debug, and maintain your Playwright tests using the Steps API, inspect live pages via the Playwright MCP, and manage your page repository — all with guardrails that prevent common AI mistakes like inventing selectors or overwriting config files.
-
-### Quick Start with Claude Code
-
-**1. Initialize a new Playwright project** (skip if you already have one):
+If you don't have a Playwright project yet:
 
 ```bash
 npm init playwright@latest playwright-project
 cd playwright-project
-```
-
-**2. Install the packages:**
-
-```bash
 npm i @civitas-cerebrum/element-interactions @civitas-cerebrum/element-repository
 ```
 
-That's it — the skill is now available to Claude Code. When you ask it to write tests, it will automatically scaffold the fixture file, page repository, and config if they don't exist yet.
-
-**3. Ask Claude to discover your app and automate a scenario:**
-
-Open Claude Code in your project directory and prompt it with something like:
-
-> *"Inspect the repo & explore https://your-app-url.com and automate an example end-to-end scenario."*
-
-Claude will navigate to your site, identify key pages and interactions, scaffold the fixture file and page repository, and write a working test — all in one shot.
-
-> **Tip:** For the best results, connect the Playwright MCP first so Claude can inspect the live DOM and verify selectors against the real page before writing any locators. Run `/plugins` in Claude Code and enable Playwright from the list.
-
-### What the Skill Enables
-
-Once loaded, Claude Code will:
-
-- **Scaffold your project** — creating the fixture file, page repository, and Playwright config on first use.
-- **Write tests using the Steps API** — generating clean, readable test flows with `steps.click()`, `steps.verifyText()`, etc.
-- **Inspect the live DOM before adding locators** — using the Playwright MCP to verify selectors instead of guessing.
-- **Ask before modifying `page-repository.json`** — showing you the exact changes it wants to make.
-- **Inspect failure screenshots** — using the HTML report to diagnose test failures visually before proposing fixes.
-- **Follow project conventions** — PascalCase page names, camelCase element names, no raw selectors in test code.
-
-> **Tip:** For the best experience, ensure `reporter: 'html'` is set in your `playwright.config.ts` so failure screenshots are captured and viewable in the report.
+> **Tip:** Set `reporter: 'html'` in `playwright.config.ts` so failure screenshots are captured and viewable in the HTML report — both the framework's `baseFixture` and the harness's failure-diagnosis flow rely on it.
 
 ---
 
