@@ -37,7 +37,6 @@ A new orchestrator implementer or contract-modifier should read these files in d
 2. **`references/reviewer-subagent-contract.md`** — Stage B contract: role, inputs, must-fix calibration, hard constraints. Read this to understand what the reviewer actually does.
 3. **`references/adversarial-subagent-contract.md`** — Stage A contract for passes 4–5 (probe + ledger + regression). Read for the adversarial-side specifics.
 4. **`../element-interactions/references/subagent-return-schema.md`** — canonical return + ledger schema. §1 + §2 (incl. §2.4 reviewer-return) + §3 (ledger) define the shape both stages produce. §4 (Caller contract) is the orchestrator's obligations; §4.1 is the grep-based validation surface for both Stage A and Stage B returns.
-5. **`references/2026-04-24-dual-stage-design.md`** — historical design spec. Useful for "why did we choose this?" but not authoritative for current behaviour; if it disagrees with this SKILL.md, the SKILL.md wins.
 
 Stage A skills (`test-composer`, `bug-discovery`) have short "Role under dual-stage" awareness paragraphs near the top of their own SKILL.md files but no dual-stage-specific rules — their behaviour is unchanged from the single-stage era; they just know they will be reviewed.
 
