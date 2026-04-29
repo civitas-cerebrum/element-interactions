@@ -25,15 +25,16 @@ A two-package Playwright framework that decouples **element acquisition** (`@civ
 
 ## Autonomous-mode invocation cheat-sheet
 
-Companion skills (`onboarding`, `coverage-expansion`, `test-composer`) invoke this orchestrator with `autonomousMode: true` to disable the interactive hard gates. Each caller has its own required-args contract — they are NOT interchangeable.
+Companion skills (`onboarding`, `coverage-expansion`, `test-composer`, `companion-mode`) invoke this orchestrator with `autonomousMode: true` to disable the interactive hard gates. Each caller has its own required-args contract — they are NOT interchangeable.
 
 | Caller | Required args | Optional args |
 |---|---|---|
 | `onboarding` Phase 3 | `autonomousMode: true`, `happyPathDescription: "<sentence>"` | `context: [...]` |
 | `coverage-expansion` pass 1–3 | `autonomousMode: true`, `journey: "<j-id>"` | — |
+| `companion-mode` Phase-6 graduation | `autonomousMode: true`, `entry: "stage3"`, `bundlePath: "<absolute-path>"` | — |
 | user direct | — (no autonomous flags) | — (full Stage 1–4 interactive flow) |
 
-`happyPathDescription` replaces the Stage-1 discovery conversation; `journey: "<j-id>"` references an entry in `tests/e2e/docs/journey-map.md`. Full semantics in the **Autonomous mode** section further down.
+`happyPathDescription` replaces the Stage-1 discovery conversation; `journey: "<j-id>"` references an entry in `tests/e2e/docs/journey-map.md`; `bundlePath` references a `tests/e2e/evidence/<slug>-<ts>/` directory whose `summary.md` carries the verbatim task description, pass criterion, and app URL, and whose `spec.ts` carries the already-discovered selectors. The orchestrator reads these from the bundle rather than re-discovering. `entry: "stage3"` jumps directly to Stage 3 (write the durable spec) — companion-mode has already done the equivalent of Stage 1 (scenario discovery) and Stage 2 (selector inspection) and the bundle holds those outputs. Full semantics in the **Autonomous mode** section further down.
 
 ## Companion Skills
 
@@ -49,6 +50,7 @@ This skill is the orchestrator for a group of testing skills. It handles Stages 
 | `agents-vs-agents` | App has AI features, or user mentions AI guardrails/red-teaming/bias testing | Adversarial AI testing with LLM-powered attacker + judge |
 | `contract-testing` | User mentions contract tests, API contract, schema test, pact, breaking-change detection, or spec conformance — OR before writing any pure-API test that asserts response shape/status | Structured contract-style verification against real endpoints (status / headers / schema / error shape) using `steps.apiGet/Post/Put/Delete/Patch` |
 | `test-catalogue` | User asks for a "test catalogue", "scenario report", "client-ready catalogue", or an inventory of what the suite runs — opt-in only, never mandatory | Parses spec files + journey map, groups scenarios by portal and priority, renders a stakeholder-facing A4-landscape PDF catalogue (plus source HTML) with dedicated regression and skipped-with-reason sections |
+| `companion-mode` | User asks for ad-hoc functional verification with evidence ("verify this flow with evidence", "screenshot every step", "record this scenario", "QA companion", "companion entry mode") — opt-in only, never mandatory | Single-task evidence-first verification: composes a one-shot Steps API spec under `tests/e2e/evidence/<slug>-<ts>/`, runs it with trace + video + HAR + console + per-step screenshots, and emits a self-contained bundle with a `summary.md` verdict. **On a passed run, Phase 6 proactively offers to automate the task into durable code** — running the same cascade detector `onboarding` uses, then offering "graduate to Stage 3" when fully onboarded, or "(a) just this task / (b) full onboarding" when the project is at Level A/B/C. The bundle is the deliverable; the automation handoff is the next move, gated on explicit user assent (`yes / (a) / (b)`). Companion mode itself only writes outside the evidence directory during the Level-A/B minimum-scaffold remediation step under option (a); all other Phase-6 writes are owned by the receiving skill. |
 
 When any of these conditions are met, invoke the Skill tool with the companion skill name. Do not try to handle their workflows inline — they have their own staged processes.
 
@@ -374,6 +376,7 @@ Only show the greeting menu if the user's message is vague or just says somethin
 - **Coverage expansion intent (deep)** — phrases like "increase coverage", "deeper coverage", "add more scenarios", "iterative test expansion", "expand tests", "deep coverage pass" → invoke `coverage-expansion` with default `mode: depth` (three passes, journey-by-journey, parallel where independent).
 - **Coverage expansion intent (breadth)** — phrases like "quick coverage", "fast coverage", "breadth coverage", "sweep coverage" → invoke `coverage-expansion` with `mode: breadth`.
 - **Compose tests for one journey** — phrases like "compose tests for journey X", "tests for j-<slug>", "test this journey" → invoke `test-composer` with `args: "journey=<j-id>"`.
+- **Companion-mode evidence run** — phrases like "companion mode", "companion entry mode", "QA companion", "verify this flow with evidence", "evidence package for X", "screenshot every step", "record this scenario", "video of this flow", "manual test assistance" → invoke `companion-mode`. Use this when the deliverable the user wants is an artifact a human will open (screenshots/video/PDF/summary), not a spec they will check in. Do NOT downshift a companion-mode request into Stages 1–4 just because it would "be more reusable" — the user asked for evidence, not a durable test.
 - **User already described a scenario** — Skip the greeting. Go directly to Stage 1 (fast path if scenario is complete, full discovery if vague).
 - **API question** — Answer directly from the API Reference section below. No stages needed.
 - **Fix or edit a test** — Skip to Stage 3 (Fix/Edit Mode).
@@ -382,12 +385,14 @@ Only show the greeting menu if the user's message is vague or just says somethin
 
 #### Onboarding cascade detector (quick reference)
 
-| Signal | Level | Action |
-|---|---|---|
-| `@civitas-cerebrum/element-interactions` not in `package.json` | A | Invoke `onboarding` |
-| Package present but any of `playwright.config.ts`, `tests/fixtures/base.ts`, `page-repository.json` missing | B | Invoke `onboarding` |
-| Scaffold present but `tests/e2e/docs/journey-map.md` missing OR missing sentinel on line 1 | C | Invoke `onboarding` |
-| All present | None | No action — greet as normal |
+The detector and its full caller-specific response matrix live in [`references/cascade-detector.md`](references/cascade-detector.md). This orchestrator's routing rule is summarised here for fast scanning:
+
+| Level | Routing action |
+|---|---|
+| A — package not in `package.json` | Invoke `onboarding` |
+| B — package present but scaffold incomplete | Invoke `onboarding` |
+| C — scaffold complete but `journey-map.md` missing or unsanctioned | Invoke `onboarding` |
+| None — all checks pass | No routing action — greet as normal |
 
 ---
 
@@ -397,27 +402,56 @@ When the `onboarding` skill (or any other companion) invokes this orchestrator w
 
 ### Required companion inputs
 
-When `autonomousMode: true`, the caller MUST provide:
+When `autonomousMode: true`, the required inputs branch on `entry:` (which stage the orchestrator picks up at) and on the caller's contract from the cheat-sheet at the top of this file. The two supported entry points today:
 
-- `happyPathDescription: "<one sentence>"` — replaces the Stage-1 discovery conversation. The orchestrator reformats this into Given/When/Then silently.
+#### Entry point: stage-1 (default — discovery from a sentence)
+
+Used by `onboarding` Phase 3 and `coverage-expansion` pass 1–3 (the latter via the `journey:` arg, see below). The caller MUST provide:
+
+- `happyPathDescription: "<one sentence>"` — replaces the Stage-1 discovery conversation. The orchestrator reformats this into Given/When/Then silently and proceeds to Stage 2 (selector inspection) using the Playwright MCP.
+- For `coverage-expansion`: also `journey: "<j-id>"` referencing an entry in `tests/e2e/docs/journey-map.md`. The orchestrator loads only that journey's block, not the whole map.
+
+The orchestrator runs the full Stage 1 → 2 → 3 → 4 sequence under autonomous gates.
+
+#### Entry point: stage-3 (bundle-driven — discovery already done)
+
+Used by `companion-mode` Phase-6 graduation. The caller MUST provide:
+
+- `entry: "stage3"` — explicit signal to skip Stages 1 and 2.
+- `bundlePath: "<absolute-path-to-tests/e2e/evidence/<slug>-<ts>/>"` — the orchestrator reads scenario inputs **from the bundle directory**, NOT from args.
+
+When `entry: "stage3"` is set, the orchestrator MUST read the following from `<bundlePath>`:
+
+| Source file in the bundle | What the orchestrator reads | Maps to which Stage-1/2 output |
+|---|---|---|
+| `summary.md` — H1 heading `# Companion-mode evidence — <task>` | Verbatim task description (used as the durable test name and Given/When/Then refactor) | Stage-1 scenario |
+| `summary.md` — `**Pass criterion (user-supplied):** "<verbatim>"` line | Verbatim pass criterion (used as the final assertion's `expect(...).toBe(...)` and the test's failure message) | Stage-1 acceptance criterion |
+| `summary.md` — `**App URL:** <url>` line | Entry URL for the durable test | Stage-1 environment |
+| `spec.ts` — Steps API calls and their `(elementName, pageName)` arguments | Already-discovered selectors and the page names referenced | Stage-2 page-repository entries |
+
+The orchestrator does **not** re-run Phase 2 discovery (no MCP snapshot, no DOM walk) — companion-mode already did the equivalent work and the bundle holds the result. Selectors that already exist in the project's `page-repository.json` are referenced as-is; selectors that companion-mode inlined in the bundle's `spec.ts` (because the user declined to add them to `page-repository.json` mid-bundle) are proposed for addition during Stage 3 under the autonomous Stage-2 gate-suspension rule (proposed entries are written directly).
+
+Stage 3 then writes the durable spec at the standard `tests/<name>.spec.ts` location (NOT inside the bundle directory — the bundle remains read-only post-Phase-5 per `companion-mode` Rule 2). Stage 4 runs as usual. The commit message references the bundle path: `test: graduate companion-mode bundle <slug>-<ts>`.
+
+If `<bundlePath>` is missing, unreadable, or its `summary.md` does not match the documented schema (no task heading, no pass-criterion line, no app-URL line), the orchestrator stops and returns `{ status: 'failed', error: 'malformed-bundle', bundlePath }` to the caller without writing a durable test. Companion-mode's Phase 5 produces the bundle in the schema documented at `skills/companion-mode/SKILL.md` §"`summary.md` — required sections"; if that schema changes, this section MUST be updated in the same commit.
 
 ### Gate suspension
 
-In autonomous mode:
+In autonomous mode (any entry point):
 
-- Stage-1 scenario approval — skipped. Reformatted scenario is treated as approved.
-- Stage-2 page-repository approval — skipped. Proposed entries are written directly (this is the ONLY exception to Rule 2, and it applies only inside autonomous mode).
+- Stage-1 scenario approval — skipped. Reformatted scenario (or bundle-derived task description, for `entry: "stage3"`) is treated as approved.
+- Stage-2 page-repository approval — skipped. Proposed entries are written directly (this is the ONLY exception to Rule 2, and it applies only inside autonomous mode). For `entry: "stage3"`, no live discovery happens — the proposals come from the bundle's `spec.ts`.
 - Stage-3 stage-advancement prompts — skipped.
 - Stage-4 API Compliance Review — still runs, still fixes misuse. A failed review does NOT prompt; it auto-corrects and re-runs.
 - Failure-diagnosis on any test failure — still runs, still classifies. App bugs halt the autonomous flow and surface to the caller.
 
 ### Commit discipline
 
-Autonomous mode still commits after each passing + compliant test, same as interactive mode. The caller is responsible for the outer commit boundary (e.g. the `test: happy path — <name>` commit from onboarding).
+Autonomous mode still commits after each passing + compliant test, same as interactive mode. The caller is responsible for the outer commit boundary (e.g. the `test: happy path — <name>` commit from onboarding, or the `test: graduate companion-mode bundle <slug>-<ts>` commit on a Phase-6 graduation handoff).
 
 ### Returning control
 
-When Stages 1–4 complete in autonomous mode, the orchestrator returns to the caller with a short summary: `{ status: 'passed' | 'failed', testsWritten: [paths], appBugs: [...] }`. It does NOT advance to Stage 5 or show the Onboarding Completion Gate on its own — the caller decides what happens next.
+When Stages 1–4 complete in autonomous mode, the orchestrator returns to the caller with a short summary: `{ status: 'passed' | 'failed', testsWritten: [paths], appBugs: [...] }`. For `entry: "stage3"` graduation, the same shape applies plus `graduatedFromBundle: <bundlePath>` so the caller can audit the lineage. It does NOT advance to Stage 5 or show the Onboarding Completion Gate on its own — the caller decides what happens next.
 
 ---
 
