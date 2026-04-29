@@ -87,17 +87,17 @@ await steps.click('CheckoutPage', 'submitButton');
 ## 📦 Installation
 
 ```bash
-npm i @civitas-cerebrum/element-interactions @civitas-cerebrum/element-repository
+npm i @civitas-cerebrum/element-interactions
 ```
 
-**Peer dependencies:** `@playwright/test` is required. The `Steps` API additionally requires `@civitas-cerebrum/element-repository`.
+**Peer dependencies:** `@playwright/test` is required.
 
 If you don't have a Playwright project yet:
 
 ```bash
 npm init playwright@latest playwright-project
 cd playwright-project
-npm i @civitas-cerebrum/element-interactions @civitas-cerebrum/element-repository
+npm i @civitas-cerebrum/element-interactions
 ```
 
 > **Tip:** Set `reporter: 'html'` in `playwright.config.ts` so failure screenshots are captured and viewable in the HTML report — both the framework's `baseFixture` and the harness's failure-diagnosis flow rely on it.
