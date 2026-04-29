@@ -21,6 +21,10 @@ Stage 5 of the element-interactions workflow as the atomic unit of coverage. Giv
 
 **Coverage ownership:** this skill is responsible for achieving exhaustive test coverage of its assigned journey. Every step, every branch, and every applicable state variation in the journey's map block must have a corresponding test before this skill returns. The orchestrator (typically `coverage-expansion`) trusts this contract and does not re-check per-journey coverage itself.
 
+**Role under dual-stage.** When `coverage-expansion` runs in depth mode, this skill is **Stage A** of a per-journey-per-pass dual-stage pipeline. After this skill returns, a fresh staff-level-QA reviewer (Stage B, see `skills/coverage-expansion/references/reviewer-subagent-contract.md`) inspects the output and either greenlights or returns `improvements-needed` with `must-fix` findings. If improvements are needed, `coverage-expansion` re-dispatches this skill in cycle 2 with the findings appended to the brief — up to 7 A↔B cycles per journey per pass. Nothing about this skill's contract changes; you compose, stabilize, API-review, verify coverage, and return as before.
+
+**Pre-empting reviewer must-fix items.** Skim §"Must-fix calibration" in `reviewer-subagent-contract.md` before composing — the reviewer will demand: (a) every `Test expectations:` item has a covering test, (b) tests use the Steps API correctly with page-repo selectors (no inline selectors), (c) file-level serial mode on tenant-mutating specs, (d) mobile variant on P0/P1 journeys, (e) test assertions match what the live DOM exposes. Meeting that bar in cycle 1 is the difference between a 1-cycle journey and a 4-cycle journey. The reviewer is not antagonistic — it is consistent, and you can know in advance what it will check.
+
 ---
 
 ## When to Use
@@ -260,7 +264,10 @@ When invoked by `coverage-expansion` as a re-pass subagent (Pass 2 or 3), the ma
 - trigger 1 (map delta since Pass 1): <none|<delta description>>
 - trigger 2 (Pass-1 coverage gaps or deferred stabilization): <none|<gap>>
 - trigger 3 (sibling-bug regression required here): <none|<sibling finding ID>>
+- trigger 4 (unresolved review findings carried forward from prior pass): <none|<finding-ID list>>
 ```
+
+The four-trigger format is non-negotiable — the orchestrator's rejection check (§"Re-pass mode for compositional passes 2–3" in `coverage-expansion/SKILL.md`) greps for the literals "trigger 1" through "trigger 4" and re-dispatches any return missing one of them.
 
 ### Return block format
 

@@ -29,6 +29,43 @@ The orchestrator for coverage growth. Iterates the user journey map, dispatches 
 
 ---
 
+## Reading order for new contributors
+
+A new orchestrator implementer or contract-modifier should read these files in dependency order:
+
+1. **This file (`coverage-expansion/SKILL.md`)** — the orchestrator-side contract: passes, retry loop, parallelism, state file, completion criteria. This is the entry point.
+2. **`references/reviewer-subagent-contract.md`** — Stage B contract: role, inputs, must-fix calibration, hard constraints. Read this to understand what the reviewer actually does.
+3. **`references/adversarial-subagent-contract.md`** — Stage A contract for passes 4–5 (probe + ledger + regression). Read for the adversarial-side specifics.
+4. **`../element-interactions/references/subagent-return-schema.md`** — canonical return + ledger schema. §1 + §2 (incl. §2.4 reviewer-return) + §3 (ledger) define the shape both stages produce. §4 (Caller contract) is the orchestrator's obligations; §4.1 is the grep-based validation surface for both Stage A and Stage B returns.
+
+Stage A skills (`test-composer`, `bug-discovery`) have short "Role under dual-stage" awareness paragraphs near the top of their own SKILL.md files but no dual-stage-specific rules — their behaviour is unchanged from the single-stage era; they just know they will be reviewed.
+
+### Adding a new pass type
+
+If a future contributor needs to add (say) a Pass 6 — accessibility-specific adversarial — the seven decisions to make explicit are:
+
+1. **Position in pipeline** — does it slot before/after existing passes, or replace one?
+2. **Compositional or adversarial shape** — drives Stage A skill choice (test-composer vs bug-discovery vs new) and review_status calibration.
+3. **Stage A skill** — reuse an existing one with a flag, or new skill?
+4. **Commit-message template** — append to §"Commit-message conventions" with the new pass's pattern.
+5. **review_status calibration** — what counts as `must-fix` for this pass's reviewer? Add to `reviewer-subagent-contract.md` §"Must-fix calibration".
+6. **Ledger location** — new ledger file or shared with adversarial-findings?
+7. **Re-pass triggers** — does the new pass have a re-pass equivalent? If so, add a 5th trigger to §"Re-pass mode" (or a new section).
+
+Update the canonical schema (§1 finding-IDs, §2 status enum) only if the new pass needs a return state none of the existing ones expresses. Default position is "reuse existing return states."
+
+### Orchestrator-side validations (single source of truth)
+
+The orchestrator runs three grep-based validation checks. All three live here for discoverability; each links to the authoritative definition:
+
+- **Stage A return shape** — grep per `subagent-return-schema.md` §4.1's "Finding blocks" / "covered-exhaustively returns" / "Banned tokens" / "Ledger append" bullets.
+- **Stage B return shape** — grep per `subagent-return-schema.md` §4.1's "Reviewer returns (§2.4)" bullet (status enum, finding-block regex, summary-line requirement on greenlights).
+- **Re-pass 4-trigger format** — grep per §"Re-pass mode for compositional passes 2–3" below for the literal strings "trigger 1" through "trigger 4" plus mapping-table header and per-expectation entries.
+
+If any check fails, the orchestrator re-dispatches with a brief explicitly quoting the rejected parts. Failures consume one cycle of the 7-cycle budget. Persistent malformed returns terminate as `blocked-dispatch-failure`.
+
+---
+
 ## When to Use
 
 Activate this skill when:
@@ -106,6 +143,133 @@ This subsection extends §"Per-pass completion criteria" (see below). A pass's c
 
 ---
 
+## Dual-stage per-pass contract
+
+Every one of the 5 passes runs **per journey** as two sequential stages:
+
+- **Stage A — Compose / Probe.** The existing `test-composer` (passes 1–3) or adversarial probe subagent (passes 4–5). Dispatch contract unchanged from the single-stage era.
+- **Stage B — Adversarial Review.** A fresh staff-level-QA reviewer subagent, per journey, with its own isolated context and its own isolated Playwright MCP browser. Reads Stage A's output and the live app; returns `greenlight` or `improvements-needed`. Never writes tests, never appends to the ledger, never modifies files.
+
+The dual-stage design addresses a concrete failure mode: a single subagent that both does the work AND self-certifies it misses scenarios a fresh independent reviewer would catch. Stage B is that independent reviewer. It exists to catch what Stage A missed.
+
+**Per journey per pass**, Stage A and Stage B alternate in a bounded retry loop up to 7 A↔B cycles (see §"Retry loop" below). Worst case: 7 A dispatches + 7 B dispatches = 14 per journey per pass.
+
+**Contracts:**
+- Stage A: unchanged from its skill (see `test-composer` for compositional passes, `references/adversarial-subagent-contract.md` for adversarial passes).
+- Stage B: see `references/reviewer-subagent-contract.md` for the full contract and dispatch-brief template.
+- Return shape: both stages use the canonical subagent-return-schema. Stage B's return states (`greenlight`, `improvements-needed`) are additions; Stage A's existing states are unchanged.
+
+**Cost posture.** This skill is **cost-blind**. The optimisation targets are completeness and speed, not dispatch cost. Default opus for every dispatch in every stage. The sonnet-for-P2/P3 heuristic from the prior design is removed; a narrow sonnet exception for cycle-1 Stage B confirmation on previously-greenlit journeys is documented in §"Model selection".
+
+**No-skip extension.** Under dual-stage, the no-skip contract (PR #105) extends: every journey must receive both Stage A and Stage B in every pass. A journey with Stage A but no Stage B is incomplete. The terminal `review_status` set gains three subagent-evidenced blocked values — `blocked-cycle-stalled`, `blocked-cycle-exhausted`, and `blocked-dispatch-failure` — per §"Retry loop" termination conditions. (These hyphenated forms are the canonical `review_status` enum used in the state file's `dispatches[]` array; the no-skip `result` field's `blocked (reason)` shape may carry these strings as the reason text, but `review_status` itself is the bare hyphenated form.)
+
+**Dual-stage no-skip rationalizations to reject:**
+
+| Excuse | Reality |
+|--------|---------|
+| "Stage A returned `covered-exhaustively` with full mapping evidence — no need to dispatch Stage B for this journey" | Stage A's `covered-exhaustively` is one of four valid Stage A returns; it does not authorise skipping Stage B. The reviewer is the verification, not Stage A's self-certification. Dispatch B. |
+| "Cycle 1 Stage B will obviously greenlight this trivial journey, I'll skip it and record `greenlight` in the state file" | Self-certifying greenlights without a reviewer dispatch is exactly the failure mode dual-stage was introduced to close. Dispatch the reviewer; if it really is trivial, sonnet-confirmation is the fast path documented in §"Model selection". |
+| "The journey was greenlit last pass with no map delta — skip the whole A↔B for this pass" | Every journey gets both stages every pass, full stop. Sonnet-confirmation reduces the cost of the trivial-greenlight case but does not eliminate the dispatch. |
+| "The pass is otherwise clean — leaving one journey without a Stage B return is fine, I'll record review_status anyway" | A `review_status` written without a Stage B dispatch having occurred is fabricated state — corrupts the state file, breaks resume, and lies to telemetry. Dispatch B or surface the gap. |
+
+### Retry loop (orchestrator, per journey per pass)
+
+For each journey in the current pass's roster, the orchestrator runs:
+
+```
+stage_a_input = base_brief                             # initial cycle-1 input
+history = []
+
+for cycle in 1..7:
+  try:
+    a_return = dispatch Stage A with stage_a_input
+  except DispatchFailure:                              # transport / timeout / malformed
+    review_status = "blocked-dispatch-failure"
+    break
+
+  if not validates(a_return, schema_§4.1):             # malformed content
+    re-dispatch once with same brief; if it fails again:
+      review_status = "blocked-dispatch-failure"
+      break
+
+  b_return = dispatch Stage B (fresh ctx, fresh MCP) to review a_return
+
+  if b_return.status == "greenlight":
+    review_status = "greenlight"
+    break
+
+  must_fix = b_return.findings  # every reviewer finding is must-fix; no other priority exists
+
+  if must_fix is empty:                               # status was "improvements-needed" but findings empty
+    re-dispatch reviewer once with stricter brief; if same shape returns:
+      coerce to "greenlight" (no findings = no changes needed)
+      review_status = "greenlight"
+      break
+
+  # Stall detection — fires on either signal:
+  #   (a) reviewer's self-flagged stalled: true (per reviewer-contract step 7), OR
+  #   (b) three cycles in a row with identical must-fix lists (i.e., the
+  #       current cycle and the two immediately-prior cycles all share the
+  #       same must-fix list, meaning Stage A failed to address it across
+  #       two consecutive retry attempts).
+  # One match (current == prior-1) is NOT enough: a reviewer in cycle N+1 may
+  # legitimately catch a finding the cycle-N reviewer missed, then cycle N+2's
+  # reviewer matches N+1's — cycle N+1 was real progress, not stall. Require
+  # current == prior-1 == prior-2 (two consecutive matches, three identical
+  # lists in total). identical_run counts current + each prior that matches,
+  # so the threshold is >= 3.
+  identical_run = 1
+  for prior in reversed(history):
+    if prior.must_fix == must_fix:
+      identical_run += 1
+    else:
+      break
+  if b_return.stalled == true or identical_run >= 3:
+    review_status = "blocked-cycle-stalled"
+    break
+
+  history.append({"cycle": cycle, "must_fix": must_fix})
+  stage_a_input = base_brief + b_return.findings
+
+if cycle == 7 and review_status is unset:
+  review_status = "blocked-cycle-exhausted"
+
+# Precedence note: if cycle 7's must_fix matches a stalled run, the loop breaks
+# on blocked-cycle-stalled BEFORE the post-loop check. Stalled wins over exhausted
+# when both apply — different downstream signal (re-pass trigger 4 wording,
+# telemetry calibration). This is intentional.
+
+record journey review_status + cycle count + final must_fix list in state file
+```
+
+**Termination conditions:**
+
+| Condition | `review_status` | Action |
+|---|---|---|
+| Reviewer returns `greenlight` | `greenlight` | Accept, commit this journey's work this pass. |
+| Reviewer returns `improvements-needed` with **empty** findings, twice in a row | `greenlight` (coerced) | Empty findings = no changes needed; the `improvements-needed` status was malformed. Coerce after one re-dispatch. |
+| Reviewer's `must-fix` list identical for **3+ cycles in a row** (current == prior-1 == prior-2) OR reviewer sets `stalled: true` | `blocked-cycle-stalled` | Escalate — Stage A failed to address this list across two consecutive retries. Commit whatever Stage A landed; log the unresolved list. **Takes precedence over exhausted** when cycle 7's list satisfies the same condition. |
+| Cycle 7 reached without greenlight (and not stalled) | `blocked-cycle-exhausted` | Escalate — retry budget spent. Commit whatever Stage A landed; log the unresolved list. |
+| Stage A dispatch fails (transport / timeout / malformed schema), re-dispatch also fails | `blocked-dispatch-failure` | Escalate — infrastructure issue, not a discipline issue. Commit nothing for this journey this pass; carries to next pass with the failure noted in trigger-4 input. |
+
+Both blocked statuses are valid terminal values under the no-skip contract (PR #105). They are **not** pass failures — they are visible deferrals. The orchestrator records the `must-fix` list to the state file and carries it forward to the next pass as an explicit Stage A input (see §"Re-pass mode" trigger 4).
+
+**Why 7 cycles.** Gives genuine room for adversarial iteration: first review catches obvious gaps, second fills subtler ones, third addresses what the reviewer missed the first read. The bounded cap prevents runaway loops while leaving enough slack that exhaustion is the exception rather than the common case. The same numeric value (7) appears as the P3 batch cap in §"Batched dispatch for P3 peripheral journeys" — these two 7s are **independent design choices** that happen to share a number. Changing one does not require changing the other; the rationales are unrelated (cycle cap = adversarial-iteration-budget; batch cap = brief-size-and-per-journey-attention-budget).
+
+**Fresh reviewer every cycle.** Every Stage B dispatch is a fresh subagent with a fresh MCP browser — no context inheritance from the prior cycle's reviewer, no context inheritance from the paired Stage A. The fresh-eyes property is load-bearing; if the reviewer carries state across cycles, it will start agreeing with Stage A.
+
+**Rationalizations to reject:**
+
+| Excuse | Reality |
+|--------|---------|
+| "Cycle 3 has the same must-fix list but I think Stage A could fix them with one more try" | If the list is identical, Stage A has already failed to address these items with the same inputs twice. `blocked-cycle-stalled` is the correct terminal state; human or follow-up-pass attention is the next step. |
+| "Reviewer returned improvements-needed but the must-fix list is small; I'll skip the retry" | A single `must-fix` item is enough to block greenlight. Retry with the findings appended. |
+| "I'll compact findings from cycles 1–4 into one summary string for cycle 5's input" | Compressed findings lose the surgical specificity Stage A needs to fix them. Pass the full findings through verbatim. |
+| "Cycle 7 exhausted and I'll just call it greenlit to keep the pass moving" | `blocked-cycle-exhausted` is the correct terminal. Marking it greenlit when it isn't corrupts the state file and the next pass's trigger-4 input. |
+| "Reviewer disagrees with itself between cycles 1 and 2; I'll pick the more lenient one" | Each cycle's reviewer is fresh and independent. Take each cycle's output as-is; the retry-loop logic handles divergence via the stalled/exhausted checks. |
+
+---
+
 ## Prerequisites
 
 1. `tests/e2e/docs/journey-map.md` must exist with `<!-- journey-mapping:generated -->` on line 1. If missing, stop and invoke `journey-mapping` first.
@@ -131,15 +295,39 @@ State file shape (minimum fields):
 
 ```json
 {
-  "status": "in-progress",            // "in-progress" | "complete"
-  "currentPass": 3,                   // 1..5, or "cleanup"
-  "journeyRoster": ["j-...", ...],    // full roster for currentPass
-  "completedJourneys": ["j-...", ...],// IDs already returned green this pass
-  "inFlightJourneys": ["j-...", ...], // dispatched but not yet returned
-  "adversarialTotals": { ... },       // passes 4–5 only
+  "status": "in-progress",
+  "currentPass": 3,
+  "journeyRoster": ["j-...", ...],
+  "completedJourneys": ["j-...", ...],
+  "inFlightJourneys": ["j-...", ...],
+  "dispatches": [
+    {
+      "journey": "j-<slug>",
+      "stage_a_cycles": 2,
+      "stage_b_cycles": 2,
+      "review_status": "greenlight",
+      "final_must_fix": [],
+      "result": "new-tests-landed",
+      "authorizer": null
+    }
+  ],
+  "adversarialTotals": { ... },
   "updatedAt": "2026-04-24T..."
 }
 ```
+
+**Per-journey dispatch entry fields (dual-stage).** Each entry in `dispatches[]` carries:
+
+- `journey` — the journey ID (`j-<slug>`).
+- `stage_a_cycles` — integer; number of Stage A dispatches for this journey in this pass (1..7).
+- `stage_b_cycles` — integer; number of Stage B dispatches for this journey in this pass (equal to or one less than stage_a_cycles depending on whether cycle 7 exhausted or greenlit early).
+- `review_status` — one of `greenlight | blocked-cycle-stalled | blocked-cycle-exhausted | blocked-dispatch-failure`.
+- `final_must_fix` — array of finding-IDs. Empty for `greenlight`; populated for blocked statuses with the list Stage A failed to resolve (carried to next pass's Stage A brief as trigger 4).
+- `result` — the no-skip contract enum value (`new-tests-landed | covered-exhaustively | blocked | skipped`). `result` describes Stage A's outcome alongside the no-skip enum; `review_status` describes Stage B's judgement; together they describe both stages' outcomes.
+- `authorizer` — only non-null for `skipped` (requires user authorisation).
+- `batch_id` — nullable string. Non-null when this journey was part of a batched Stage A dispatch (per §"Batched dispatch for P3 peripheral journeys"); the `batch_id` value is shared across every journey in the same batch so resume logic can reconstruct the batch grouping. Null for individually-dispatched journeys. When a journey breaks out of a batch mid-cycle (any cycle ≥ 2 after its Stage B returned `improvements-needed`), `batch_id` becomes null from cycle 2 onward — the cycle-1 batched entry retains the original `batch_id`, the cycle-2+ individual entry does not. `stage_a_cycles` is recorded per-journey in both cases.
+
+A state file missing `stage_a_cycles`, `stage_b_cycles`, or `review_status` for any journey that has run this pass is incomplete — resume logic treats it as corrupt per the existing §"State-file lifecycle" rule.
 
 The state file is rewritten after every per-pass commit (and whenever auto-compaction triggers — see §"Auto-compaction between passes" below).
 
@@ -167,19 +355,17 @@ Each pass runs a journey-by-journey pipeline with parallel dispatch where indepe
 Every pass in depth mode runs this pipeline; steps 4 and 7 differ between compositional (1–3) and adversarial (4–5) passes.
 
 1. **Read the map** (sentinel-verified). Build an in-memory index: `[(j-id, priority, pages-touched, test-expectations)]`. Read **only** these fields per journey — not full step lists, branches, or state variations.
-2. **Recompute priority ordering.** Honour the map's priorities, but if a journey's `Test expectations` or pages touched have changed since the last pass (because a prior pass reconciled new branches into the map), adjust position.
-3. **Build the journey independence graph** (see §"Journey independence graph" below). The graph is the same across compositional and adversarial passes — journey co-residence on pages determines parallelism either way.
-4. **Emit the per-pass scope preview** (see §"Per-pass scope preview" below). This is declarative, not interactive — no confirmation prompt, no timeout, no abort option. The preview exists so mid-pass rationalisation is visible against the declared scope.
-5. **Dispatch subagents** — parallel for independent journeys, sequential for dependent ones. Model chosen per the heuristic below.
-   - **Compositional passes (1–3):** each invocation dispatches `test-composer` with `args: "journey=<j-id>"`. For passes 2–3, pass `mode: re-pass` (see §"Re-pass mode for compositional passes 2–3" below).
-   - **Adversarial passes (4–5):** each invocation dispatches the adversarial probe subagent per `references/adversarial-subagent-contract.md`, passing the journey ID and the pass number. The subagent internally invokes `bug-discovery` scoped to its journey.
-6. **Collect subagent returns.** Each return is a structured discovery report — for compositional passes per `test-composer`'s return format, for adversarial passes per the adversarial subagent contract's return shape.
+2. **Recompute priority ordering.** Honour the map's priorities, but if a journey's `Test expectations` or pages touched have changed since the last pass, adjust position.
+3. **Build the journey independence graph.** The graph is the same across compositional and adversarial passes.
+4. **Emit the per-pass scope preview** (see §"Per-pass scope preview"). Declarative only; no confirmation prompt. The scope preview names the dual-stage dispatch band (see that section).
+5. **Run the per-journey dual-stage retry loop** for every journey in the map — parallel for independent journeys, sequential for dependent ones, per §"Parallelism". Each journey's A↔B loop follows §"Retry loop (orchestrator, per journey per pass)". The loop terminates when the journey has one of the four terminal `review_status` values.
+   - Model selection per §"Model selection" — default opus for both stages.
+   - P3 batching narrowed per §"Batched dispatch for P3 peripheral journeys" — Stage A may be batched; Stage B never is.
+6. **Collect all journey outputs.** Each journey contributes: its committed test files (from the final greenlit or blocked-with-tests-landed Stage A cycle), its `review_status`, its cycle counts, and (if blocked) its final `must-fix` list. The orchestrator does NOT hold Stage A test source or Stage B review bodies — only structured summaries and the on-disk file paths.
 7. **Reconcile artefacts.**
    - **Compositional passes:** reconcile the map. Append new branches to existing journey blocks. Add new `j-<slug>` or `sj-<slug>` blocks for newly-discovered journeys or sub-journeys. Append new pages/elements to `app-context.md`. Run a mini Phase 3.5 revision (see `journey-mapping`) if the pass introduced new overlaps.
    - **Adversarial passes:** the map is NOT reconciled. The ledger file is authoritative; its content is already written by the subagents during their append step. Aggregate the return summaries into the orchestrator's running adversarial-totals counter (journeys probed, boundaries verified, suspected-bug count by severity, regression tests added).
-8. **Commit.** One commit per journey (compositional passes) or per journey per pass (adversarial passes). See **Commit-message conventions** below for the exact templates.
-
-   After the commit lands, rewrite `tests/e2e/docs/coverage-expansion-state.json` with the new pass counter, completed-journey set, and (for adversarial passes) updated adversarial totals. Then run the auto-compaction check (see §"Auto-compaction between passes" below) before the next pass's dispatch.
+8. **Commit, then update state file.** One commit per journey (compositional passes) or per journey per pass (adversarial passes). See §"Commit-message conventions" below for the exact templates. After the commit lands, rewrite `tests/e2e/docs/coverage-expansion-state.json` with the new pass counter, per-journey `dispatches[]` entries (including `stage_a_cycles`, `stage_b_cycles`, `review_status`, `final_must_fix`), and adversarial totals. Then run the auto-compaction check (§"Auto-compaction between passes") before the next pass's dispatch.
 
 ### Pass differences
 
@@ -204,10 +390,13 @@ One journey per commit, one template per pass kind. Agents MUST NOT reinvent the
 | Adversarial pass 5 — regression | `test(<j-slug>-regression): lock <boundary-description>` | One commit per verified-boundary regression test authored. `<boundary-description>` is a short phrase naming the boundary being locked (e.g. `empty-cart-checkout-rejected`, `nav-cart-badge-clears-after-checkout`). |
 | Cleanup (post-pass-5 dedup) | `docs(ledger): dedupe cross-cutting findings` | Single commit from the one cleanup subagent. |
 
+**Stage B returns do NOT produce their own commits.** Reviewer judgements are captured in the state file's per-journey `review_status` and `final_must_fix` fields — never as commits. The git log records what landed (Stage A's tests, ledger entries, regression locks) but not the review trail; the state file records the review trail. Mixing reviews into commits creates a diff-noisy log that obscures the actual change history.
+
 Anti-patterns — do NOT use:
 - `test(pass5): j-xxx — <summary>` (pass number goes in the `-regression` suffix, not the scope)
 - `feat(e2e): …` (coverage expansion is never `feat`)
 - `test(j-xxx, j-yyy): …` (one journey per commit — no multi-journey commits even when batched)
+- `review(j-xxx): …` or any review-tagged commit (Stage B never commits — see above)
 - `fix(…): …` for new tests (use `test(…)`; `fix` is for fixing existing code)
 
 ### Per-pass completion criteria
@@ -223,28 +412,58 @@ A pass is complete only when **every** criterion for that pass is met. "Ran some
 
 Only when **all** of the above are true may the orchestrator report depth-mode coverage-expansion complete to its caller. Anything less is a partial run and must be reported as such (see the resume-state contract).
 
-### Journey independence graph
+**Dual-stage extension.** On top of the per-pass criteria above, a pass is complete only when **every journey has a terminal `review_status`** (`greenlight`, `blocked-cycle-stalled`, `blocked-cycle-exhausted`, or `blocked-dispatch-failure`) recorded in the state file's `dispatches[]` array. A pass where every journey's Stage A returned but some journeys have no `review_status` is **incomplete**, even if the per-pass criteria above appear satisfied. Stage B participation is part of the completion gate, not optional.
 
-Two journeys are **dependent** if they touch an overlapping set of non-universal pages. Universal pages (e.g., `/login`, homepage, global top-nav) are ignored when computing overlap — otherwise every journey would appear dependent on every other.
+### Parallelism
 
-- Compute the graph from each journey's `Pages touched:` list minus universal pages.
-- Independent journeys run in parallel — there is no fixed cap. Dispatch as many concurrent subagents as the independence graph allows (every node with no remaining unresolved dependency in the current pass). Narrow only if the Rule 11 prerequisite check forces serialization.
-- Dependent journeys run sequentially; the later journey inherits the earlier's `page-repository.json` updates.
+The parallelism model has three layers:
 
-### Model selection heuristic
+#### Independence graph (unchanged semantics)
 
-Orchestrator picks a model per subagent between `sonnet` and `opus` only. Journey-level test composition requires self-stabilization, API compliance review, and coverage verification — haiku is not reliable enough for that workload.
+Two journeys are **dependent** if they touch a non-universal page in common. Universal pages (login, homepage, global nav) are ignored. Independent journeys can run in parallel; dependent ones must serialize to avoid tab-sharing corruption.
 
-| Signal | Model |
-|---|---|
-| Steps ≤ 8 AND pages ≤ 4 AND priority ∈ {P1, P2, P3} AND no cross-feature/data-lifecycle variants | `sonnet` |
-| Steps > 8, pages > 4, priority = P0, `Test expectations` lists cross-feature or data-lifecycle, or this journey failed stabilization on a prior pass | `opus` |
+Co-residence on pages is the only dependency signal. Two journeys that both touch `/admin/users` are dependent even if one only reads and one mutates — tab sharing is the bug, not data-layer contention.
 
-Override: promote from `sonnet` to `opus` on a journey that previously returned a stabilization, API-review, or coverage-verification failure.
+#### Intra-group pipelining (dual-stage)
 
-For adversarial passes (4 and 5), default to **opus** regardless of journey size. Adversarial probing requires judgment to recognize subtle boundary failures. Sonnet is acceptable only for the smallest journeys (steps ≤ 4 AND pages ≤ 2 AND priority ∈ {P2, P3}). Any journey that returned a stabilization or coverage-verification failure in passes 1–3 must run on opus in passes 4 and 5.
+Within an independence group:
+- All journeys in the group start Stage A concurrently (subject to the parallel cap — see below).
+- Each journey's Stage B fires **as soon as that journey's Stage A returns** and the parallel cap has a slot — not after the whole group's Stage A completes.
+- Each journey's Stage A retry fires **as soon as that journey's Stage B returns with `improvements-needed`** and the cap has a slot.
+- Journeys in the same group ride their own A↔B pipelines in parallel. A journey on cycle 3 and a sibling on cycle 1 coexist.
 
-### Per-pass scope preview
+Across independence groups: groups run in priority order, each group exhausting parallelism before the next group starts.
+
+#### Parallel cap — lifted and jointly applied
+
+Previous: `min(4, credentials-per-role)` with batching for P3.
+New: **`host max`** — the orchestrator uses whatever parallel width the dispatch primitive allows. An explicit user override is accepted (`args: "parallel-cap: 8"`), otherwise no artificial ceiling beyond the shared-resource audit's credential-contention findings (PR #106).
+
+**The cap counts Stage A and Stage B dispatches jointly.** There is one pool of in-flight subagent slots; A and B compete for the same slots within a group. A journey's own A and B never overlap (sequential within a journey), but across journeys any A/B interleaving is possible. When the cap is saturated, new dispatches — whether A, B, or A-retry — queue until a slot frees. Queue order is FIFO; the orchestrator does not prioritise A over B or vice versa.
+
+#### Shared-resource audit interaction
+
+The Phase-0 shared-resource audit (PR #106) still caps parallelism where the app genuinely can't tolerate more (single credential per role, rate limits, CSRF serialization). Those caps override the cost-blind default. The audit's constraint tags apply to Stage A AND Stage B equally — reviewers compete for the same credentials.
+
+### Model selection (cost-blind posture)
+
+Default model for every dispatch in every stage in every pass: **opus**.
+
+The prior sonnet-for-P2/P3 heuristic is removed. The prior sonnet-for-small-journey override is removed. Model choice does not vary by priority, journey size, step count, or pass number — opus by default, everywhere.
+
+**Narrow exception — cycle-1 Stage B sonnet confirmation.** For a journey that greenlit in the previous pass AND has no map delta since that pass AND no sibling-bug ledger update pointing at it, the cycle-1 Stage B MAY run sonnet as a fast confirmation. If sonnet returns `greenlight`, accept. If sonnet returns `improvements-needed`, immediately re-run the same review on opus — the opus result is authoritative, sonnet's was indicative. This is a latency optimisation, not a cost-reduction mechanism; it exists because a confirmed-greenlit journey's cycle-1 review is often trivially "still looks good" and a sonnet confirmation is fast.
+
+**Override: promote on failure.** Any journey that returned a stabilization or coverage-verification failure in a prior pass runs on opus for every dispatch (A and B) in every subsequent pass, regardless of cycle. No sonnet exception applies once a journey has failed.
+
+**For adversarial passes (4 and 5):** always opus, both stages. The sonnet exception above does NOT apply to adversarial passes — adversarial review requires judgment that sonnet reliably under-produces.
+
+**Rationalizations to reject:**
+
+| Excuse | Reality |
+|--------|---------|
+| "The journey was attempted last pass and ended at `blocked-cycle-stalled` / `blocked-cycle-exhausted` / `blocked-dispatch-failure` — that counts as 'previously-greenlit' for the sonnet exception" | A blocked journey is not greenlit. The narrow exception requires explicit `greenlight` in the previous pass, not "attempted." Any blocked-* terminal in the prior pass means opus on cycle 1 of the next pass. |
+| "Pass 4 is just probing, sonnet is good enough for cycle-1 of small journeys" | Pass 4 and Pass 5 are always opus, both stages, full stop. The model-selection cost-blind rule has no priority/size carve-outs. |
+| "I ran sonnet for Stage A and opus for Stage B — that's a hybrid we never explicitly forbade" | Stage A is opus for every dispatch in every pass. The narrow sonnet exception is for cycle-1 Stage B only on previously-greenlit journeys. Hybrid Stage A/Stage B model splits beyond that exception are not authorised. |
 
 Before every pass dispatch (step 4 of the per-pass pipeline), emit a declarative scope preview. The preview is informational only — there is no confirmation prompt, no timeout, no abort option, and no reduce-scope offer. The contract is every journey, every pass; the preview makes that contract explicit so any mid-pass rationalisation is visible against the declared scope.
 
@@ -254,12 +473,12 @@ Template (values filled in per pass, from the map index, independence graph, and
 [coverage-expansion] Pass <N>/5 — dispatching <test-composer | adversarial probe> per journey
   Journeys: <count> (<delta-note, e.g., "3 newly promoted in pass <N-1>">)
   Independence graph: <G> groups, <K>-way parallel dispatch possible (cap <C>)
-  Model mix: <opus-count> opus (P0/P1/complex), <sonnet-count> sonnet (P2/P3/simple)
+  Model mix: opus default for every Stage A and Stage B dispatch; narrow cycle-1 Stage B sonnet-confirmation exception may apply to ~<sonnet-count> previously-greenlit journeys (see §"Model selection").
   Expected wall-clock: ~<H>h at <K>-parallel
   Contract: every journey, this pass. No skips. No batching beyond the explicit P3-batching allowance.
 ```
 
-The model mix numbers come from the existing sonnet/opus heuristic applied to the current roster — do not recompute or soften the rule inside the preview. The wall-clock estimate is a ballpark from the per-subagent run times observed so far this run (or a default of ~20 min per opus dispatch / ~10 min per sonnet dispatch if no prior data exists).
+The model-mix figures derive from §"Model selection" — opus is the default across A and B, so the `<sonnet-count>` reports only the narrow cycle-1 Stage B confirmation exception (previously-greenlit journeys with no map delta). The wall-clock estimate is a ballpark from the per-subagent run times observed so far this run (or a default of ~20 min per opus dispatch if no prior data exists — sonnet-confirmation cycles don't get their own ballpark because they're a fast-path variant of the normal Stage B dispatch).
 
 Completion check: if a pass starts with N journeys and ends with returns from fewer than N, the orchestrator must re-dispatch the missing journeys before claiming the pass is complete. The preview's journey count is the ground truth for the end-of-pass reconciliation.
 
@@ -269,10 +488,14 @@ Between passes — after the per-pass commit and state-file rewrite (step 8), be
 
 If the orchestrator's context is **>70% consumed**:
 
-1. Write full state to `tests/e2e/docs/coverage-expansion-state.json` (journey roster, completed IDs, in-flight IDs, pass counter, adversarial totals — the shape documented in §"Authoritative state file — read first, always").
+1. Write full state to `tests/e2e/docs/coverage-expansion-state.json` (journey roster, completed IDs, in-flight IDs, pass counter, adversarial totals, AND the dual-stage `dispatches[]` per-journey fields — `stage_a_cycles`, `stage_b_cycles`, `review_status`, `final_must_fix` — the shape documented in §"Authoritative state file — read first, always"). The dual-stage fields MUST be written before the compaction crosses; without them the post-compact resume cannot reconstruct which journeys are mid-A↔B-cycle, which are blocked, or which are greenlit.
 2. Emit exactly one line: `[coverage-expansion] context approaching budget — auto-compacting and resuming from state file`.
 3. Invoke `/compact` (or the platform-equivalent compaction primitive exposed to the orchestrator).
-4. On the post-compact turn, the skill's first action — reading the state file — picks up the run exactly where it left off. That's why §"Authoritative state file" is non-negotiable as the first action.
+4. On the post-compact turn, the skill's first action — reading the state file — picks up the run exactly where it left off, including any in-flight A↔B cycles. That's why §"Authoritative state file" is non-negotiable as the first action.
+
+**Mid-cycle compaction.** The 70% threshold is checked between passes by default, but if a single journey's A↔B retry loop pushes context past 70% mid-pass, the same flow applies: write state with the in-progress `stage_a_cycles` / `stage_b_cycles` / latest reviewer findings, then compact.
+
+**In-flight Stage A returns must be persisted before compaction.** §10 of the design spec says the orchestrator never holds Stage A test source or Stage B review bodies in steady state — but during the brief window between Stage A return and Stage B dispatch, the Stage A return body is necessarily in orchestrator memory. If compaction crosses during that window, the return body would be lost. Mitigation: when an A↔B cycle is mid-flight at compaction time, the orchestrator **persists the latest Stage A return to a scratch file** at `tests/e2e/docs/.coverage-expansion-cycle-<journey-slug>-cycle-<N>.json` before compacting. The post-compact resume reads this scratch file as if it were a fresh Stage A return and proceeds to Stage B dispatch. The scratch file is deleted after the cycle terminates (any of the four `review_status` values) and the per-pass commit lands. Mid-cycle restart from Stage A is NOT acceptable — it would re-run a potentially expensive opus dispatch and lose the discipline gain from the prior cycle's reviewer findings.
 
 **Platform note.** If no programmatic compaction primitive is available to the orchestrator, the skill must still make the seam safe for manual compaction: emit an unambiguous `[coverage-expansion] safe to compact — state is durable at tests/e2e/docs/coverage-expansion-state.json, resume with the same invocation args` line between passes whenever the >70% threshold is crossed. The user can then compact manually without losing progress, and the next turn resumes from the state file the same way.
 
@@ -298,10 +521,11 @@ Passes 2 and 3 dispatch `test-composer` with an explicit `mode: re-pass` argumen
 > - The journey map was materially enriched since Pass 1 (look for delta markers against the pre-pass journey block).
 > - The journey's Pass-1 return reported `coverage-gaps: [...]` or `stabilization: deferred`.
 > - A sibling journey surfaced a bug that should be regressed here too.
+> - The prior pass's Stage B reviewer flagged `must-fix` items that Stage A did not resolve (the journey's `review_status` was `blocked-cycle-stalled` or `blocked-cycle-exhausted` last pass). Those unresolved findings are embedded in your brief — address them.
 >
 > You must perform the full inspection regardless — read the current journey block, read the Pass-1 return, read any sibling-bug ledger entries. Only *after* inspection may you return `status: covered-exhaustively` with:
 > - a per-expectation mapping table showing which test covers which Pass-1 expectation,
-> - an explicit check against each of the three triggers above ("trigger 1: no delta markers since Pass 1", "trigger 2: Pass-1 return reported no gaps or deferred stabilization", "trigger 3: sibling-bug ledger contains no regression candidates for this journey"),
+> - an explicit check against each of the four triggers above ("trigger 1: no delta markers since Pass 1", "trigger 2: Pass-1 return reported no gaps or deferred stabilization", "trigger 3: sibling-bug ledger contains no regression candidates for this journey", "trigger 4: no unresolved review findings carried forward from the prior pass"),
 > - no unexplained shorthand.
 >
 > **No tool-use budget. No tool-use cap.** Cost is not the optimisation target; signal quality is. The value of a re-pass is disciplined evidence that Pass 1 was exhaustive. An undisciplined cheap no-op is worse than a thorough no-op.
@@ -318,46 +542,32 @@ The re-pass mode's contribution is **disciplined justification**, not speed. Eve
 | "No tool-use budget means I can spam tool calls freely" | "No budget" is a signal that signal quality matters more than cost; it is NOT an invitation to over-probe. Use the tools needed to satisfy the three triggers and no more. |
 | "Pass 1 was thorough so Pass 2/3 is always `covered-exhaustively`" | The three triggers explicitly include "map delta since Pass 1" and "sibling-bug regression candidate" — conditions that can only be evaluated at Pass 2/3 time, not inherited from Pass 1's confidence. The returning-it-without-inspection shortcut voids the pass. |
 
-**Orchestrator-side rejection check.** When a pass-2 or pass-3 return arrives, the orchestrator greps the return for (a) the literal string "trigger 1", "trigger 2", "trigger 3", (b) a mapping-table header row, and (c) per-expectation entries. If any is missing the orchestrator re-dispatches the journey with a brief explicitly quoting the rejected parts. The orchestrator does NOT accept partial returns as a concession to save re-dispatch cost — the discipline holds on both sides.
+**Orchestrator-side rejection check.** When a pass-2 or pass-3 return arrives, the orchestrator greps the return for (a) the literal strings "trigger 1", "trigger 2", "trigger 3", "trigger 4", (b) a mapping-table header row, and (c) per-expectation entries. If any is missing the orchestrator re-dispatches the journey with a brief explicitly quoting the rejected parts. The orchestrator does NOT accept partial returns as a concession to save re-dispatch cost — the discipline holds on both sides.
 
 ### Batched dispatch for P3 peripheral journeys
 
-Adjacent low-impact journeys (typically P3 smoke tests or admin-portal siblings that share a single Playwright project) may be covered by one subagent in a single brief, **cap 7 journeys per brief**. Batching is a dispatch optimisation, not scope compression — each journey in the batch still receives the same contract (probe / re-pass / regression, per the pass), with its own section in the return.
+Adjacent low-impact journeys (typically P3 smoke or admin-portal siblings sharing one Playwright project) may have Stage A batched into a single brief, cap 7 journeys per brief. Dual-stage narrows this:
 
-**When batching is allowed:**
-
-- Priority is P3 (or P2 smoke when the journeys share every non-universal page with a sibling already in the batch).
-- The journeys share a Playwright project (so one subagent / one MCP instance is sufficient).
-- None of the journeys has a pending stabilization failure, coverage-gap flag, or sibling-bug regression candidate from a prior pass — those trigger individual re-pass dispatches regardless of priority.
-- Up to 7 journeys per brief. Past 7, split into multiple batches.
-
-**When batching is NOT allowed:**
-
-- P0 or P1 journeys — always dispatched individually.
-- Journeys on different Playwright projects (distinct MCP instances needed).
-- Any journey flagged by any of the three re-pass triggers in §"Re-pass mode for compositional passes 2–3".
-
-**Examples — allowed:**
-
-- Pass 4 adversarial sweep of five admin-portal add-* journeys (`j-manager-add-caregiver`, `j-manager-add-location`, `j-manager-add-group`, `j-manager-add-administrator`, `j-manager-add-administrator-api-gebruiker`) — all P3, all on the admin-portal project, no prior failures → one batched brief, 5 journeys.
-- Pass 3 consolidation across seven P3 smoke journeys on the public marketing project → one batched brief (capped at 7).
-
-**Examples — not allowed:**
-
-- Mixing a P1 checkout journey into a P3 admin-portal batch → dispatch the P1 individually.
-- Eight P3 journeys in one brief → must be split into two briefs (e.g., 5 + 3), never one brief past the cap.
-
-Batching cuts dispatches for peripheral work by roughly half without touching per-journey fidelity. The per-expectation mapping, the three-trigger check (for passes 2–3), and the probe/regression contract (for passes 4–5) still apply to every journey in the batch. The return must include one clearly-labelled section per journey — no merged summaries.
+- **Stage A may still be batched** for eligible P3 journeys (shared project, no pending gap flags, same priority tier, cap 7 per brief — criteria from PR #108).
+- **Stage B is never batched.**
+  Each journey in a batched Stage A still gets its own dedicated Stage B reviewer — never one reviewer judging 7 journeys at once.
+  The reviewer reads only its assigned journey's slice of the batched Stage A return; the reviewer itself is never responsible for multiple journeys.
+- Batching is accepted ONLY when every journey in the batch's cycle-1 Stage B returns `greenlight`.
+- If any journey's cycle-1 Stage B returns `improvements-needed`: split the batch. From cycle 2 onward, the affected journey breaks out and runs its own per-journey Stage A plus its own Stage B. The batched cycle-1 Stage A return is retained as history input to the broken-out cycle-2 Stage A brief. The remaining greenlit journeys in the batch stay accepted at cycle 1 and proceed.
 
 **Rationalizations to reject:**
 
 | Excuse | Reality |
 |--------|---------|
-| "This 8th journey is almost identical to the 7 in the batch, I'll include it" | Cap 7 is not negotiable. Split the batch (5 + 3, 4 + 4, etc). The cap bounds brief size and per-journey attention — "one more" compounds across batches and dilutes discipline. |
+| "This 8th journey is almost identical to the 7 in the batch, I'll include it" | Cap 7 is not negotiable. Split the batch (5 + 3, etc). The cap bounds brief size and per-journey attention. |
 | "All these journeys are P3 and share a project, and this admin journey *could* be grouped — skip the P1 carve-out" | P0 / P1 always dispatch individually. Priority is load-bearing; a journey at P1 deserves its own brief even if it happens to share pages with P3 siblings. |
 | "The journeys share most pages, same project, roughly P3 — skip the 'shared Playwright project' check" | Different Playwright projects require different MCP instances; batching across projects introduces browser-swap complexity that defeats the dispatch optimisation. |
 | "Batching is faster so I'll batch everything that isn't explicitly forbidden" | Batching is allowed, not preferred. P0/P1 individual dispatch is the default; batching is specifically for P3 peripheral sweeps. Defaulting to batch on P2 quietly compresses scope. |
 | "One journey in the batch has a coverage-gap flag from Pass 1, but the gap is trivial" | Any flag in the three re-pass triggers kicks the journey out of the batch into individual dispatch. "Trivial" is the subagent's judgement after reading Pass-1 returns — which cannot happen inside a batched brief. |
+| "All P3 same project, I'll batch Stage B too to save a dispatch" | Stage B per-journey isolation is load-bearing for fresh-eyes review. One reviewer judging 7 journeys is not fresh-eyes; it's batched rubber-stamping. |
+| "Cycle-1 Stage B greenlit 6 of 7 journeys, I'll greenlight the 7th too since it's similar" | The 7th journey's reviewer returned `improvements-needed` for a reason. Split out cycle-2 for that journey; the reason does not carry to the greenlit 6. |
+| "Any flag on any journey kills the whole batch — too expensive, I'll keep batching" | Only the flagged journey breaks out. The greenlit journeys stay batched-and-accepted; no rework for them. |
+| "I'll batch Stage A across P1+P3 journeys if they share a project" | P0/P1 never batch, period. Priority is load-bearing; shared-project is necessary but not sufficient. |
 
 ---
 
@@ -437,22 +647,28 @@ The orchestrator does not paste any probe transcripts, DOM snapshots, test sourc
 Emit one line per significant event, prefixed `[coverage-expansion]`:
 
 ```
-[coverage-expansion] Pass 1/5 starting — 14 journeys mapped (3 P0, 6 P1, 4 P2, 1 P3)
-[coverage-expansion] Pass 1/5 — dispatching 4 parallel subagents for j-book-demo, j-reset-password, j-browse-catalog, j-view-pricing
-[coverage-expansion] Pass 1/5 — j-book-demo returned: 6 tests added, 1 new branch, 0 new pages
-[coverage-expansion] Pass 1/5 complete — 27 tests added, 3 branches discovered, committed
-[coverage-expansion] Pass 2/5 starting — 15 journeys (1 sub-journey promoted)
+[coverage-expansion] Pass 1/5 starting — 14 journeys mapped (3 P0, 6 P1, 4 P2, 1 P3), dual-stage A↔B
+[coverage-expansion] Pass 1/5 — dispatching 4 parallel A↔B pipelines for j-book-demo, j-reset-password, j-browse-catalog, j-view-pricing
+[coverage-expansion] Pass 1/5, journey j-book-demo: cycle 1/7, review greenlight (6 tests added)
+[coverage-expansion] Pass 1/5, journey j-reset-password: cycle 2/7, review greenlight (1 retry — mobile variant added per Stage B)
+[coverage-expansion] Pass 1/5, journey j-browse-catalog: cycle 1/7, review greenlight
+[coverage-expansion] Pass 1/5, journey j-view-pricing: cycle 7/7, review blocked-cycle-exhausted (2 must-fix unresolved — carries to Pass 2 trigger 4)
+[coverage-expansion] Pass 1/5 complete — 27 tests added, 3 branches discovered, 1 journey blocked-cycle-exhausted, committed
+[coverage-expansion] Pass 2/5 starting — 15 journeys (1 sub-journey promoted), dual-stage A↔B
 ...
-[coverage-expansion] Pass 3/5 complete — total 68 tests added across three compositional passes
-[coverage-expansion] Pass 4/5 starting — adversarial probing for 15 journeys
-[coverage-expansion] Pass 4/5 — j-returning-user-checkout returned: 12 probes, 8 boundaries, 1 high-severity suspected bug
+[coverage-expansion] Pass 3/5 complete — total 68 tests added across three compositional passes, all journeys greenlit
+[coverage-expansion] Pass 4/5 starting — adversarial probing for 15 journeys, dual-stage A↔B
+[coverage-expansion] Pass 4/5, journey j-returning-user-checkout: cycle 1/7, review improvements-needed (1 adversarial-missed)
+[coverage-expansion] Pass 4/5, journey j-returning-user-checkout: cycle 2/7, review greenlight (12 probes, 8 boundaries, 1 high-severity suspected bug)
 ...
-[coverage-expansion] Pass 4/5 complete — 216 probes, 147 boundaries verified, 9 suspected bugs (3 high, 5 medium, 1 low)
-[coverage-expansion] Pass 5/5 starting — adversarial consolidation + regression authoring
+[coverage-expansion] Pass 4/5 complete — 216 probes, 147 boundaries verified, 9 suspected bugs (3 high, 5 medium, 1 low), all journeys greenlit
+[coverage-expansion] Pass 5/5 starting — adversarial consolidation + regression authoring, dual-stage A↔B
 [coverage-expansion] Pass 5/5 complete — 54 regression tests added, 11 new findings, all committed
 [coverage-expansion] Cleanup — 7 cross-cutting findings consolidated across 18 journey sections
 [coverage-expansion] Depth run complete — 5 passes + cleanup, 122 tests + 54 regression tests, ledger at tests/e2e/docs/adversarial-findings.md
 ```
+
+The `Pass <N>/5, journey j-<slug>: cycle <c>/7, review <status>` per-cycle line is the user-facing visibility into the dual-stage retry loop. Emit one such line whenever a journey's A↔B cycle terminates (greenlight / blocked-cycle-stalled / blocked-cycle-exhausted / blocked-dispatch-failure). Skip per-cycle lines for cycles that complete with `improvements-needed` and trigger an immediate retry — only emit on terminal states or notable retries (cycle ≥ 2).
 
 ---
 
