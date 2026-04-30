@@ -316,7 +316,21 @@ new discoveries:
     - <new selector added to page-repository.json, page, role>
 api compliance: clean | <specific issue resolved>
 stabilization: <N runs> green
+stage_4a:
+  specs_reviewed: <count>
+  fixtures_modified: <count>
+  findings: <count by severity (fixed/review/gap-flagged/blocked)>
+  post_fix_run: passing | failing
+whole_suite_gate:
+  status: passed | whole-suite-gate-failed
+  specs_passed: <N>
+  specs_failed: <N>
+  skipped: <N>
 ```
+
+The `stage_4a` block summarizes the structured return from Step 6a. Full per-finding schema: see `../element-interactions/references/test-optimization.md` §8.
+
+The `whole_suite_gate` block records the result of the whole-suite re-run at Step 7 exit. Status `whole-suite-gate-failed` means this skill did NOT mark the journey complete and the caller must resolve before invoking another journey.
 
 For `status: covered-exhaustively`, append the per-expectation mapping table documented in the canonical schema immediately after the return block. The orchestrator uses the table to audit that the "no new tests" claim is supported by inspection, not rationalised.
 
