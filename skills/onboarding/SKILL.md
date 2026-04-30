@@ -215,7 +215,31 @@ Do **not** add, remove, or upgrade any other dependencies. Do **not** modify the
 **Scaffold files** (Level A and B, whichever are missing):
 
 - `playwright.config.ts` — minimal config with `baseURL` from the front-load gate, `testDir: './tests/e2e'`, `reporter: 'html'`, headless true.
-- `tests/fixtures/base.ts` — `baseFixture` export wiring `Steps` and `ContextStore`. Exact content: see `references/api-reference.md` from the `element-interactions` skill.
+- `tests/fixtures/base.ts` — `baseFixture` export wiring `Steps` and `ContextStore`, with four `HELPER SLOT` comment markers that Stage 4a (test optimization) populates on demand. Exact starting content:
+
+  ```typescript
+  import { test as base, expect } from '@playwright/test';
+  import { baseFixture } from '@civitas-cerebrum/element-interactions';
+
+  const test = baseFixture(base, 'tests/data/page-repository.json', { timeout: 60000 });
+
+  // Stage-4a-managed helpers. Each slot is filled in only when both gates
+  // (UI-covered + API discovered) confirm during Stage 4a; otherwise the slot
+  // stays as a comment.
+  //
+  // HELPER SLOT: resetState — populated when a reset endpoint is discovered
+  //   in app-context.md's Test Infrastructure section.
+  // HELPER SLOT: setAuthCookie — populated when login/signup is UI-covered AND
+  //   POST /api/auth/login is discovered.
+  // HELPER SLOT: seedCart, createListingViaApi, etc. — populated per the
+  //   shortcut list in references/test-optimization.md when both gates apply.
+  // HELPER SLOT: dismissBanners — populated when Phase 1 discovery flagged a
+  //   persistent banner/modal in Test Infrastructure.
+
+  export { test, expect };
+  ```
+
+  The `HELPER SLOT` comments are a contract: Stage 4a replaces them with code, never editing arbitrary regions of the file. Full helper templates: see `../element-interactions/references/test-optimization.md` §1, §4, §5.
 - `page-repository.json` — `{}` at the repo root (or `tests/e2e/page-repository.json`; follow existing convention if partial scaffold exists).
 - `tests/e2e/` — directory created if missing.
 - `tests/e2e/docs/` — directory created if missing.
