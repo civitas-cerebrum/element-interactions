@@ -1,31 +1,85 @@
 #!/bin/bash
-# coverage-expansion-dispatch-guard.sh
+# coverage-expansion-dispatch-guard.sh — per-subagent dispatch contract gate
 #
-# PreToolUse hook for the Agent tool. Enforces the @civitas-cerebrum/
-# element-interactions per-subagent dispatch contract: each composer/reviewer/
-# probe Agent covers ONE journey (or one named phase), and its `description`
-# field begins with a recognized role prefix that names that subagent's
-# identity. The same prefix appears on the subagent's playwright-cli session
-# slug — see playwright-cli-isolation-guard.sh.
+# Hook    : PreToolUse:Agent
+# Mode    : DENY (anti-patterns A/C/D) + WARN (anti-pattern B for non-strict prefixes) + DENY (anti-pattern B for strict prefixes per issue #132)
+# State   : none
+# Env     : none
 #
-# Recognized role prefixes (subagent ID schemes):
-#   composer-<slug>:        test-composer subagent (Stage A compositional)
-#   reviewer-<slug>:        Stage B reviewer
-#   probe-<slug>:           adversarial probe (passes 4-5)
-#   process-validator-<scope>: sub-orchestrator validating a planned dispatch wave
-#   phase1-<entry>:         Phase-1 discovery subagent
-#   phase2-<scope>:         Phase-2+ discovery
-#   stage2-<scenario>:      element inspection (stage 2 of element-interactions)
-#   cleanup-<scope>:        ledger dedup / cleanup
-#   [P3-batch] composer-<slug>,composer-<slug>,...: P3 batch (max 7, P3 only)
+# Rule
+# ----
+# Every Agent dispatch under coverage-expansion / journey-mapping work must:
+#   1. Have a description starting with a role-explicit prefix (composer-,
+#      reviewer-, probe-, process-validator-, phase1-, phase2-, stage2-,
+#      cleanup-, or [P3-batch] composer-...). Bare j- and sj- prefixes are
+#      role-ambiguous and denied (issue #126).
+#   2. Not ask the subagent to recursively dispatch sub-subagents (anti-
+#      pattern A — the Agent tool is parent-only in this environment).
+#   3. Not contain orchestrator meta-content ("depth mode", "5-pass
+#      pipeline", "Pass 4/5", etc.) in the brief — DENY for strict role
+#      prefixes (composer/reviewer/probe), WARN for transitional prefixes
+#      (issue #132).
+#   4. Not be a batched dispatch disguised as a single-journey call —
+#      prompts referencing 2+ distinct j-<slug> IDs without a [P3-batch]
+#      description prefix are denied.
 #
-# Journey-scoped slugs follow the pattern <role>-j-<slug> (e.g.
-# composer-j-checkout, reviewer-j-checkout, probe-j-checkout). Bare j-<slug>
-# and sj-<slug> were dropped per issue #126 — they're role-ambiguous and
-# downstream return-schema validation can't map them to a return shape.
+# Why
+# ---
+# The role prefix is the routing key for the downstream return-schema
+# validator (hooks/subagent-return-schema-guard.sh). Without an unambiguous
+# role, the validator can't map description → expected return shape. The
+# anti-batching rules prevent the failure mode where one composer rations
+# attention across N siblings and skips Test-expectations bullets, surfacing
+# as Stage B improvements-needed across the batch.
+#
+# Canonical reference
+# -------------------
+# skills/coverage-expansion/SKILL.md §"Stage A per-journey dispatch is
+#   non-negotiable" + §"Role prefixes" + §"Recursive dispatch is impossible"
+# skills/coverage-expansion/references/process-validator-workflow.md
+#
+# Recognized role prefixes (subagent ID ↔ CLI slug — see playwright-cli-isolation-guard.sh)
+# -----------------------------------------------------------------------------------------
+#   composer-j-<slug>: / composer-sj-<slug>: → composer-j-<slug>-<pass>-c<N>
+#   reviewer-j-<slug>: / reviewer-sj-<slug>: → reviewer-j-<slug>-<pass>-c<N>
+#   probe-j-<slug>:                          → probe-j-<slug>-<pass>
+#   process-validator-<scope>:               → (no CLI session)
+#   phase1-<entry>:                          → phase1-<entry>
+#   phase2-<scope>:                          → phase2-<scope>
+#   stage2-<scenario>:                       → stage2-<scenario>
+#   cleanup-<scope>:                         → cleanup-<scope>
+#   [P3-batch] composer-<slug>,...:          → per-item slug (cap 7, P3 only)
+#
+# Failure → action
+# ----------------
+# - Subagent fan-out anti-pattern (A)               → DENY
+# - Orchestrator meta-content + strict prefix (B)   → DENY (issue #132)
+# - Orchestrator meta-content + transitional prefix → WARN (systemMessage)
+# - Bare j- / sj- description prefix (C)            → DENY (issue #126)
+# - 2+ distinct j-<slug> IDs in prompt + non-role-prefixed description (D) → DENY
+# - All other Agent dispatches                      → silent allow
 
 set -euo pipefail
 
+# --- helpers ---
+emit_deny() {
+  jq -n --arg r "$1" '{
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "deny",
+      "permissionDecisionReason": $r
+    }
+  }'
+}
+
+emit_warn() {
+  jq -n --arg m "$1" '{
+    "systemMessage": $m,
+    "suppressOutput": false
+  }'
+}
+
+# --- input ---
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 [ "$TOOL_NAME" != "Agent" ] && exit 0
@@ -83,13 +137,7 @@ If you intended (b), reword the brief: ask the subagent to *return* a
 dispatch plan, not to *execute* it. See coverage-expansion §\"Orchestrator
 context discipline\" + §\"Recursive dispatch is impossible — plan, don't
 fan out\"."
-  jq -n --arg r "$REASON_FANOUT" '{
-    "hookSpecificOutput": {
-      "hookEventName": "PreToolUse",
-      "permissionDecision": "deny",
-      "permissionDecisionReason": $r
-    }
-  }'
+  emit_deny "$REASON_FANOUT"
   exit 0
 fi
 
@@ -136,13 +184,7 @@ Fix: rewrite the brief to drop the leaked phrases and re-dispatch. Tight-brief t
   See skills/element-interactions/references/subagent-return-schema.md.
 
 See coverage-expansion §\"Orchestrator context discipline\" for the full briefing convention."
-      jq -n --arg r "$REASON_LEAK" '{
-        "hookSpecificOutput": {
-          "hookEventName": "PreToolUse",
-          "permissionDecision": "deny",
-          "permissionDecisionReason": $r
-        }
-      }'
+      emit_deny "$REASON_LEAK"
       exit 0
     fi
 
@@ -150,15 +192,11 @@ See coverage-expansion §\"Orchestrator context discipline\" for the full briefi
     # cleanup- (single dispatch, narrow scope) and the discovery prefixes
     # phase1- / phase2- / stage2- (different brief shape from the
     # composer/reviewer/probe pipeline).
-    WARNING="[WARN] Subagent brief contains orchestrator meta-content: ${LEAK//|/, }
+    emit_warn "[WARN] Subagent brief contains orchestrator meta-content: ${LEAK//|/, }
 
 This subagent only needs: scope + return shape. References to the broader pipeline (depth/breadth mode, Pass 4/5, 5-pass structure, adversarial passes) belong to the parent orchestrator's context — they bloat the subagent's context and risk it consulting parts of the skill outside its scope.
 
 Suggested cleanup: remove pipeline meta-talk from the brief. Subagent role + scope + return contract is enough. See coverage-expansion §\"Orchestrator context discipline\"."
-    jq -n --arg m "$WARNING" '{
-      "systemMessage": $m,
-      "suppressOutput": false
-    }'
   fi
 fi
 
@@ -187,13 +225,7 @@ Bare \`j-<slug>:\` and \`sj-<slug>:\` prefixes were dropped per issue #126 — t
 The role prefix appears unchanged on the playwright-cli session slug (see playwright-cli-isolation-guard.sh), so .playwright-cli/<slug>* trace files map 1:1 to the dispatching subagent's role + journey.
 
 See coverage-expansion/SKILL.md §\"Role prefixes\" for the full mapping table."
-  jq -n --arg r "$REASON_BARE" '{
-    "hookSpecificOutput": {
-      "hookEventName": "PreToolUse",
-      "permissionDecision": "deny",
-      "permissionDecisionReason": $r
-    }
-  }'
+  emit_deny "$REASON_BARE"
   exit 0
 fi
 
@@ -233,13 +265,7 @@ The role-prefix appears unchanged on the subagent's CLI session slug (see playwr
 
 Why: P0/P1/P2 journeys never batch — see coverage-expansion SKILL.md §\"Stage A per-journey dispatch is non-negotiable\". A batched composer rations attention across siblings and skips Test-expectations bullets, surfacing as Stage B improvements-needed."
 
-  jq -n --arg r "$REASON" '{
-    "hookSpecificOutput": {
-      "hookEventName": "PreToolUse",
-      "permissionDecision": "deny",
-      "permissionDecisionReason": $r
-    }
-  }'
+  emit_deny "$REASON"
 fi
 
 exit 0

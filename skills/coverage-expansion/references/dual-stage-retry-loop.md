@@ -26,16 +26,18 @@ The dual-stage design addresses a concrete failure mode: a single subagent that 
 - Stage B: see `references/reviewer-subagent-contract.md` for the full contract and dispatch-brief template.
 - Return shape: both stages use the canonical subagent-return-schema. Stage B's return states (`greenlight`, `improvements-needed`) are additions; Stage A's existing states are unchanged.
 
-**Cost posture.** This skill is **cost-blind**. The optimisation targets are completeness and speed, not dispatch cost. Default opus for every dispatch in every stage. The sonnet-for-P2/P3 heuristic from the prior design is removed; a narrow sonnet exception for cycle-1 Stage B confirmation on previously-greenlit journeys is documented in §"Model selection".
+**Cost posture.** This skill is **cost-blind**. The optimisation targets are completeness and speed, not dispatch cost. Default opus for every dispatch in every stage. The sonnet-for-P2/P3 heuristic from the prior design is removed; a narrow sonnet exception for cycle-1 Stage B confirmation on previously-greenlit journeys is documented in [`depth-mode-pipeline.md` §"Model selection"](depth-mode-pipeline.md).
 
 **No-skip extension.** Under dual-stage, the no-skip contract (PR #105) extends: every journey must receive both Stage A and Stage B in every pass. A journey with Stage A but no Stage B is incomplete. The terminal `review_status` set gains three subagent-evidenced blocked values — `blocked-cycle-stalled`, `blocked-cycle-exhausted`, and `blocked-dispatch-failure` — per §"Retry loop" termination conditions. (These hyphenated forms are the canonical `review_status` enum used in the state file's `dispatches[]` array; the no-skip `result` field's `blocked (reason)` shape may carry these strings as the reason text, but `review_status` itself is the bare hyphenated form.)
 
 **Dual-stage no-skip rationalizations to reject:**
 
+> ↗ Cross-cutting categories: see [`anti-rationalizations.md`](anti-rationalizations.md) §"Self-certifying greenlight" and §"Trivial-journey-skip".
+
 | Excuse | Reality |
 |--------|---------|
 | "Stage A returned `covered-exhaustively` with full mapping evidence — no need to dispatch Stage B for this journey" | Stage A's `covered-exhaustively` is one of four valid Stage A returns; it does not authorise skipping Stage B. The reviewer is the verification, not Stage A's self-certification. Dispatch B. |
-| "Cycle 1 Stage B will obviously greenlight this trivial journey, I'll skip it and record `greenlight` in the state file" | Self-certifying greenlights without a reviewer dispatch is exactly the failure mode dual-stage was introduced to close. Dispatch the reviewer; if it really is trivial, sonnet-confirmation is the fast path documented in §"Model selection". |
+| "Cycle 1 Stage B will obviously greenlight this trivial journey, I'll skip it and record `greenlight` in the state file" | Self-certifying greenlights without a reviewer dispatch is exactly the failure mode dual-stage was introduced to close. Dispatch the reviewer; if it really is trivial, sonnet-confirmation is the fast path documented in [`depth-mode-pipeline.md` §"Model selection"](depth-mode-pipeline.md). |
 | "The journey was greenlit last pass with no map delta — skip the whole A↔B for this pass" | Every journey gets both stages every pass, full stop. Sonnet-confirmation reduces the cost of the trivial-greenlight case but does not eliminate the dispatch. |
 | "The pass is otherwise clean — leaving one journey without a Stage B return is fine, I'll record review_status anyway" | A `review_status` written without a Stage B dispatch having occurred is fabricated state — corrupts the state file, breaks resume, and lies to telemetry. Dispatch B or surface the gap. |
 
@@ -119,13 +121,15 @@ record journey review_status + cycle count + final must_fix list in state file
 | Cycle 7 reached without greenlight (and not stalled) | `blocked-cycle-exhausted` | Escalate — retry budget spent. Commit whatever Stage A landed; log the unresolved list. |
 | Stage A dispatch fails (transport / timeout / malformed schema), re-dispatch also fails | `blocked-dispatch-failure` | Escalate — infrastructure issue, not a discipline issue. Commit nothing for this journey this pass; carries to next pass with the failure noted in trigger-4 input. |
 
-Both blocked statuses are valid terminal values under the no-skip contract (PR #105). They are **not** pass failures — they are visible deferrals. The orchestrator records the `must-fix` list to the state file and carries it forward to the next pass as an explicit Stage A input (see §"Re-pass mode" trigger 4).
+Both blocked statuses are valid terminal values under the no-skip contract (PR #105). They are **not** pass failures — they are visible deferrals. The orchestrator records the `must-fix` list to the state file and carries it forward to the next pass as an explicit Stage A input (see [`depth-mode-pipeline.md` §"Re-pass mode for compositional passes 2–3"](depth-mode-pipeline.md) trigger 4).
 
-**Why 7 cycles.** Gives genuine room for adversarial iteration: first review catches obvious gaps, second fills subtler ones, third addresses what the reviewer missed the first read. The bounded cap prevents runaway loops while leaving enough slack that exhaustion is the exception rather than the common case. The same numeric value (7) appears as the P3 batch cap in §"Batched dispatch for P3 peripheral journeys" — these two 7s are **independent design choices** that happen to share a number. Changing one does not require changing the other; the rationales are unrelated (cycle cap = adversarial-iteration-budget; batch cap = brief-size-and-per-journey-attention-budget).
+**Why 7 cycles.** Gives genuine room for adversarial iteration: first review catches obvious gaps, second fills subtler ones, third addresses what the reviewer missed the first read. The bounded cap prevents runaway loops while leaving enough slack that exhaustion is the exception rather than the common case. The same numeric value (7) appears as the P3 batch cap in [`depth-mode-pipeline.md` §"Batched dispatch for P3 peripheral journeys"](depth-mode-pipeline.md) — these two 7s are **independent design choices** that happen to share a number. Changing one does not require changing the other; the rationales are unrelated (cycle cap = adversarial-iteration-budget; batch cap = brief-size-and-per-journey-attention-budget).
 
 **Fresh reviewer every cycle.** Every Stage B dispatch is a fresh subagent with a fresh `playwright-cli` session — no context inheritance from the prior cycle's reviewer, no context inheritance from the paired Stage A. The fresh-eyes property is load-bearing; if the reviewer carries state across cycles, it will start agreeing with Stage A.
 
 **Rationalizations to reject:**
+
+> ↗ Cross-cutting categories: see [`anti-rationalizations.md`](anti-rationalizations.md) §"Compress findings into summary", §"Cycle-7 exhausted → call-it-greenlit", and §"Reviewer-disagreement cherry-picking".
 
 | Excuse | Reality |
 |--------|---------|

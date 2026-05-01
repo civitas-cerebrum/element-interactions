@@ -1,27 +1,55 @@
 #!/bin/bash
-# suite-gate-ratchet.sh
+# suite-gate-ratchet.sh — windowed any-red-blocks-progression suite gate
 #
-# Two-event hook split:
-#   - PostToolUse on Bash for `playwright test` runs: appends pass/fail to a
-#     sliding window of the last N runs in
-#     `<repo-root>/.claude/last-suite-result.json` (array shape).
-#   - PreToolUse on Bash for `git commit`: if the commit message indicates a
-#     phase-progression (`test(j-...):`, `docs(ledger):`, etc.) and ANY run
-#     in the window is failed (or oldest run >1h old, or window not yet
-#     filled), blocks with a redirect to re-run the suite.
+# Hook    : PreToolUse:Bash + PostToolUse:Bash  (one script, two events)
+# Mode    : RECORD (PostToolUse — append run result) + DENY (PreToolUse —
+#           block phase-progression commits on red / unfilled / stale window)
+# State   : <repo>/.claude/last-suite-result.json  (sliding window of N runs)
+# Env     : CIVITAS_SUITE_GATE_WINDOW=<int>  (default 3, clamped to ≥1)
 #
-# Behaviour is dispatched by the hook_event_name: the harness fires the same
-# script for PreToolUse and PostToolUse, and the script branches.
+# Rule
+# ----
+# PostToolUse:  every `playwright test` invocation appends a run record
+#               (status / timestamp / exitCode) to the window array, trimmed
+#               to the last N entries.
+# PreToolUse:   every `git commit` whose message is a phase-progression
+#               (`test(j-...)`, `docs(ledger)`, `docs(coverage-expansion-state)`)
+#               is denied if ANY run in the window is failed, OR fewer than
+#               N runs are recorded, OR the OLDEST run is more than 1h old.
 #
-# Window size — defaults to 3 (matches the "stabilize 3x" convention in
-# element-interactions Stage 3). Override via env var:
+# Why
+# ---
+# A one-shot suite gate catches "lucky green" runs but misses serial-mode
+# flakes, click-PUT race conditions, and auth-state eviction post-refresh —
+# real failure classes that pass an isolated single run but fail across 3-5
+# reviewer-driven re-runs (BookHive run finding: 4 of 12 cycle-2 specs).
+# The windowed shape catches that class at the gate. A flake that passes
+# 70% of the time displaces no failed entry from a 3-run window — by design.
 #
-#     CIVITAS_SUITE_GATE_WINDOW=5
+# Canonical reference
+# -------------------
+# skills/coverage-expansion/references/depth-mode-pipeline.md §"Whole-suite
+#   re-run gate (per-pass exit)" — orchestrator-side counterpart
+# skills/coverage-expansion/SKILL.md §"Whole-suite re-run gate" (kernel-resident)
 #
-# Issue #131 promoted the gate from a one-shot to a windowed ratchet because
-# real-world flakes (serial-mode, click-PUT race, auth-state eviction) pass
-# an isolated single run but fail across 3-5 reviewer-driven re-runs. The
-# windowed gate catches that class at the gate, not in the next pass.
+# State file shape (auto-migrates from legacy single-object form)
+# ---------------------------------------------------------------
+#   { "window_size": 3,
+#     "runs": [
+#       { "status": "passed", "timestamp": "...", "exitCode": "0" },
+#       { "status": "failed", "timestamp": "...", "exitCode": "1" },
+#       { "status": "passed", "timestamp": "...", "exitCode": "0" } ] }
+#
+# Failure → action
+# ----------------
+# - PostToolUse `playwright test`        → RECORD (append + trim)
+# - PreToolUse phase-progression commit:
+#     - state file missing               → DENY (no window)
+#     - window_size > runs.length        → DENY (window not yet filled)
+#     - any run.status == "failed"       → DENY (any-red)
+#     - oldest run > 1h old              → DENY (stale window)
+#     - else                             → silent allow
+# - Anything else                         → silent allow
 
 set -euo pipefail
 

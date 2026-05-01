@@ -1,16 +1,51 @@
 #!/bin/bash
-# journey-map-sentinel-guard.sh
+# journey-map-sentinel-guard.sh — preserve the journey-map.md line-1 sentinel
 #
-# PreToolUse hook for Write/Edit. Blocks edits to journey-map.md that would
-# strip the `<!-- journey-mapping:generated -->` sentinel from line 1.
+# Hook    : PreToolUse:Write|Edit  (filters to tests/e2e/docs/journey-map.md only)
+# Mode    : DENY (sentinel-stripping writes / edits)
+# State   : none
+# Env     : none
 #
-# Why: the sentinel is the single source of truth for "this file was produced
-# by the journey-mapping skill". Consumers (test-composer, coverage-expansion,
-# coverage checkpoint) check line 1 before parsing. Stripping it silently
-# breaks every downstream skill.
+# Rule
+# ----
+# Writes / edits to `tests/e2e/docs/journey-map.md` must preserve the
+# `<!-- journey-mapping:generated -->` sentinel as line 1.
+#
+# Why
+# ---
+# The sentinel is the single source of truth for "this file was produced by
+# the journey-mapping skill". Every downstream consumer (test-composer,
+# coverage-expansion, coverage checkpoint) reads line 1 before parsing the
+# rest. Stripping the sentinel silently breaks every downstream skill —
+# consumers refuse to read the file, the run halts, and the operator
+# debugs upward instead of looking at the line that vanished.
+#
+# Canonical reference
+# -------------------
+# skills/journey-mapping/SKILL.md §"Phase 4: Journey Map Document"
+#   (signature-marker rules + hard gate)
+# skills/journey-mapping/SKILL.md §"Hard rules — kernel-resident"
+#
+# Failure → action
+# ----------------
+# - Write that would replace the sentinel on line 1                    → DENY
+# - Edit whose old_string matches line 1 and removes the sentinel      → DENY
+# - Anything else                                                      → silent allow
 
 set -euo pipefail
 
+# --- helpers ---
+emit_deny() {
+  jq -n --arg r "$1" '{
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "deny",
+      "permissionDecisionReason": $r
+    }
+  }'
+}
+
+# --- input ---
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 
@@ -26,16 +61,6 @@ case "$FILE_PATH" in
 esac
 
 SENTINEL='<!-- journey-mapping:generated -->'
-
-emit_deny() {
-  jq -n --arg r "$1" '{
-    "hookSpecificOutput": {
-      "hookEventName": "PreToolUse",
-      "permissionDecision": "deny",
-      "permissionDecisionReason": $r
-    }
-  }'
-}
 
 if [ "$TOOL_NAME" = "Write" ]; then
   CONTENT=$(echo "$INPUT" | jq -r '.tool_input.content // ""')

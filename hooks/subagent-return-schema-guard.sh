@@ -1,40 +1,76 @@
 #!/bin/bash
-# subagent-return-schema-guard.sh
+# subagent-return-schema-guard.sh — canonical-return-shape validator
 #
-# PostToolUse hook for the Agent tool. Validates a dispatched subagent's
-# return against the canonical schema in
-#   skills/element-interactions/references/subagent-return-schema.md
-# and emits a non-blocking `systemMessage` warning that names the missing
-# field markers so the parent orchestrator re-dispatches with a stricter
-# brief instead of feeding malformed returns into downstream state files.
+# Hook    : PostToolUse:Agent
+# Mode    : WARN (initial release; will flip to DENY in a follow-up after
+#           false-positive rate is calibrated on a representative run)
+# State   : none
+# Env     : none
 #
-# Routing key — the description prefix on the originating Agent dispatch.
-# The dispatch-guard hook (issue #126) tightened these to role-explicit
-# forms so this validator can map them mechanically:
+# Rule
+# ----
+# Every Agent dispatch's return is validated against the canonical schema
+# in `skills/element-interactions/references/subagent-return-schema.md`,
+# routed by description prefix:
 #
 #   Description prefix       →  Validation target
 #   -------------------------    ------------------------------------------
-#   composer-<j-slug>:           Stage A — `status:` enum + per-status fields
-#   reviewer-<j-slug>:           Stage B — `status:` enum + journey/pass/cycle
-#                                + (`summary:` on greenlight ‖ findings list
-#                                   on improvements-needed)
-#   probe-<j-slug>:              Adversarial — `probes:` + `boundaries:`
-#                                + `findings:` (count line OR list)
+#   composer-<j-slug>:           Stage A — `status:` enum (new-tests-landed |
+#                                covered-exhaustively | blocked | skipped) +
+#                                per-status fields (tests-added / run-time;
+#                                mapping table; reason; reason+authorizer)
+#   reviewer-<j-slug>:           Stage B (§2.4) — `status:` (greenlight |
+#                                improvements-needed) + journey/pass/cycle +
+#                                summary on greenlight | findings sub-list
+#                                on improvements-needed
+#   probe-<j-slug>:              Adversarial — `probes:` + `boundaries:` +
+#                                `findings:` count or list
 #   process-validator-<scope>:   Sub-orchestrator — reviewer-shape applied
-#                                to a manifest (`status:`, `findings:`,
-#                                `summary:`)
+#                                to a manifest (`status:`, `findings:`, `summary:`)
 #   phase1- / stage2- / cleanup- / bare j- / bare sj- → silent allow
-#   (phase1/stage2 returns are free-form site-map / page-repository
-#    entries; cleanup is unstructured; bare j-/sj- are blocked at dispatch
-#    by coverage-expansion-dispatch-guard so they never reach here, but
-#    the hook stays silent on them as defense-in-depth.)
+#   (phase1/stage2 returns are free-form site-map / page-repository entries;
+#    cleanup is unstructured; bare j-/sj- are blocked upstream by
+#    coverage-expansion-dispatch-guard so they never reach here, but the
+#    hook stays silent on them as defense-in-depth.)
 #
-# Mode: WARN-ONLY (initial release). After a representative run produces
-# a ≤2% false-positive rate, a follow-up flips this to a `decision: block`
-# emit so malformed returns force re-dispatch instead of polluting state.
+# Why
+# ---
+# A subagent that returns a beautifully-prosed paragraph + 80% of the schema
+# fields lets the orchestrator's grep-based validation pass-through (the
+# orchestrator hand-waves missing parts). State-file updates with degraded
+# data, three passes later state is corrupt, resume-from-state breaks. The
+# validator catches malformed returns at the harness boundary before
+# pollution propagates.
+#
+# Canonical reference
+# -------------------
+# skills/element-interactions/references/subagent-return-schema.md §1, §2,
+#   §2.4, §3, §4.1 (grep-based conformance check) + §4.2 (this hook)
+#
+# Failure → action
+# ----------------
+# - Composer return missing required field for its status enum  → WARN
+# - Reviewer greenlight without `summary:`                      → WARN
+# - Reviewer improvements-needed without findings sub-list      → WARN
+# - Probe return missing probes/boundaries/findings             → WARN
+# - Process-validator missing status/findings/summary           → WARN
+# - Banned tokens (`no-new-tests-by-rationalisation`, `nice-to-have`,
+#   `greenlight-with-notes`, top-level `notes:`, legacy AF-/P4-/REG- IDs) → WARN
+# - phase1- / stage2- / cleanup- / bare j-/sj- prefix           → silent allow
+# - Empty / null tool_response                                  → silent allow
+# - Anything else                                               → silent allow
 
 set -euo pipefail
 
+# --- helpers ---
+emit_warn() {
+  jq -n --arg m "$1" '{
+    "systemMessage": $m,
+    "suppressOutput": false
+  }'
+}
+
+# --- input ---
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 [ "$TOOL_NAME" != "Agent" ] && exit 0
@@ -231,9 +267,6 @@ The canonical return schema is documented in:
 
 Re-dispatch the subagent with a brief that quotes the missing markers verbatim and re-grep the return on its way back. This warning is non-blocking; a follow-up release will promote it to BLOCK once the false-positive rate is calibrated."
 
-jq -n --arg m "$WARNING" '{
-  "systemMessage": $m,
-  "suppressOutput": false
-}'
+emit_warn "$WARNING"
 
 exit 0

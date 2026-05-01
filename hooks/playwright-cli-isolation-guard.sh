@@ -1,28 +1,64 @@
 #!/bin/bash
-# playwright-cli-isolation-guard.sh
+# playwright-cli-isolation-guard.sh — playwright-cli session-isolation enforcer
 #
-# PreToolUse hook for the Bash tool. Enforces that every `playwright-cli`
-# invocation runs in a role-prefixed isolated session — the slug must follow
-# the SAME naming convention as the dispatching subagent's `description`
-# prefix (see coverage-expansion-dispatch-guard.sh).
+# Hook    : PreToolUse:Bash  (filters to `playwright-cli` invocations)
+# Mode    : DENY (missing -s=, collision-prone slug, missing role prefix, length cap)
+# State   : none
+# Env     : none
 #
-# Convention (subagent ID ↔ CLI slug):
-#   Agent description prefix     →   CLI -s= slug pattern
-#   -----------------------------    -------------------------------------
-#   composer-j-<slug>:               composer-j-<slug>-<pass>-c<N>
-#   composer-sj-<slug>:              composer-sj-<slug>-<pass>-c<N>
-#   reviewer-j-<slug>:               reviewer-j-<slug>-<pass>-c<N>
-#   reviewer-sj-<slug>:              reviewer-sj-<slug>-<pass>-c<N>
-#   probe-j-<slug>:                  probe-j-<slug>-<pass>
-#   phase1-<entry>:                  phase1-<entry>
-#   phase2-<scope>:                  phase2-<scope>
-#   stage2-<scenario>:               stage2-<scenario>
-#   cleanup-<scope>:                 cleanup-<scope>
+# Rule
+# ----
+# Every `playwright-cli` invocation must run in a role-prefixed isolated
+# session. The `-s=<slug>` flag is required (except for session-agnostic
+# subcommands like close-all / kill-all / list / install-browser /
+# --version / --help). The slug must:
+#   1. Begin with a recognized role prefix (composer-, reviewer-, probe-,
+#      process-validator-, phase1-, phase2-, stage2-, cleanup-, companion-, fd-).
+#   2. Not match a collision-prone reserved word (default, test, session, …).
+#   3. Be 6–28 characters (the macOS UNIX-socket-path cap leaves ~28 chars
+#      of slug headroom under $TMPDIR/pw-XXXXXXXX/cli/<16-hash>-<slug>.sock).
 #
-# Bare `j-<slug>-...` and `sj-<slug>-...` slugs were dropped per issue #126
+# Why
+# ---
+# Slug = browser process. Two parallel subagents that share a slug fight
+# over one Chrome instance — the second's `open` reuses the first's
+# user-data-dir and isolation breaks silently. The role prefix locks the
+# subagent description ↔ CLI slug into a 1:1 mapping: `.playwright-cli/<slug>*`
+# trace files attribute to exactly one subagent. The length cap exists
+# because the playwright-cli daemon binds a UNIX socket whose path overflows
+# silently (EINVAL) past 104 bytes on darwin.
+#
+# Canonical reference
+# -------------------
+# skills/element-interactions/references/playwright-cli-protocol.md §3
+#   (Session model, naming convention, length budget, quarantine)
+#
+# Convention (subagent description prefix ↔ CLI slug — same prefix on both ends)
+# ------------------------------------------------------------------------------
+#   composer-j-<slug>:    →  composer-j-<slug>-<pass>-c<N>
+#   composer-sj-<slug>:   →  composer-sj-<slug>-<pass>-c<N>
+#   reviewer-j-<slug>:    →  reviewer-j-<slug>-<pass>-c<N>
+#   reviewer-sj-<slug>:   →  reviewer-sj-<slug>-<pass>-c<N>
+#   probe-j-<slug>:       →  probe-j-<slug>-<pass>
+#   phase1-<entry>:       →  phase1-<entry>
+#   phase2-<scope>:       →  phase2-<scope>
+#   stage2-<scenario>:    →  stage2-<scenario>
+#   cleanup-<scope>:      →  cleanup-<scope>
+#   (companion- and fd- prefixes accepted for companion-mode / failure-diagnosis)
+#
+# Bare `j-<slug>-...` / `sj-<slug>-...` slugs were dropped per issue #126
 # alongside the matching dispatch-description prefixes — both ends use the
-# role-explicit form. The shared prefix means `.playwright-cli/<slug>*`
-# files trace 1:1 back to the subagent that produced them.
+# role-explicit form.
+#
+# Failure → action
+# ----------------
+# - Missing `-s=` flag                                          → DENY
+# - Slug in collision-prone blocklist                           → DENY
+# - Slug missing role prefix                                    → DENY
+# - Slug shorter than 6 chars                                   → DENY
+# - Slug longer than 28 chars                                   → DENY (length-cap)
+# - Session-agnostic subcommand (close-all / kill-all / list / install-browser / etc.) → silent allow
+# - Anything else                                               → silent allow
 
 set -euo pipefail
 
@@ -45,7 +81,7 @@ if ! echo "$CMD" | grep -qE "${SEP}(${RUNNERS})?playwright-cli[[:space:]]"; then
 fi
 
 # Allow session-agnostic subcommands. These run without `-s=` by design.
-if echo "$CMD" | grep -qE 'playwright-cli[[:space:]]+(install-browser|close-all|kill-all|list-sessions|sessions|--help|-h|--version|-v)([[:space:]]|$)'; then
+if echo "$CMD" | grep -qE 'playwright-cli[[:space:]]+(install-browser|close-all|kill-all|list|list-sessions|sessions|--help|-h|--version|-v)([[:space:]]|$)'; then
   exit 0
 fi
 
