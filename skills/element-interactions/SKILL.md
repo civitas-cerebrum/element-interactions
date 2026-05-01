@@ -190,6 +190,8 @@ Every skill in this suite that drives a live browser — `journey-mapping`, `cov
 
 **No install gate.** `@playwright/cli` is a hard `dependencies` entry of this package — after `npm install @civitas-cerebrum/element-interactions` it is always reachable via `npx playwright-cli`. Skills do not run a "tell the user to install the CLI" branch; that prereq is satisfied by the package install itself. The only adjacent prereq is the one-shot browser binary fetch (`npx playwright-cli install-browser chromium`), which the postinstall script reminds the consumer about. Do NOT write `.mcp.json` and do NOT prompt for a Claude Code reload — those were explicit constraints during the migration from MCP and remain in force.
 
+**Forbidden: direct MCP browser tools.** When the harness exposes `mcp__plugin_playwright_playwright__browser_*` tools alongside the CLI, do NOT call them. The MCP browser tools spawn a separate Chrome process with its own user-data-dir (`mcp-chrome-...`), share no state with `playwright-cli` sessions, and write artifacts to a separate `.playwright-mcp/` directory — defeating the per-session OS isolation the CLI guarantees and producing parallel browser stacks that race for shared application state. The CLI is the only sanctioned channel; a tool list that contains both does NOT mean both are permitted. If a subagent's brief somehow surfaces the MCP tools, that brief is malformed — fall back to the CLI from Bash.
+
 ### 12. Orchestrator context discipline
 
 Orchestrator skills (`coverage-expansion`, `onboarding`, this orchestrator) hold only **index-level state** in their own context:
