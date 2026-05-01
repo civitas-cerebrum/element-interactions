@@ -146,6 +146,8 @@ The orchestrator runs three grep-based validation checks. All three live here fo
 
 If any check fails, the orchestrator re-dispatches with a brief explicitly quoting the rejected parts. Failures consume one cycle of the 7-cycle budget. Persistent malformed returns terminate as `blocked-dispatch-failure`.
 
+**Harness backstop.** Returns are also validated by `hooks/subagent-return-schema-guard.sh` — a PostToolUse:Agent hook that mirrors §4.1's grep checks at the harness layer. The hook routes by description prefix (`composer-`/`reviewer-`/`probe-`/`process-validator-`) and emits a non-blocking `systemMessage` warning that names the missing field markers. Initial release is warn-only; a follow-up flips to block-mode after the false-positive rate is calibrated. The hook exists to catch malformed returns the orchestrator's own grep missed — it never substitutes for the orchestrator-side check.
+
 ---
 
 ## When to Use
