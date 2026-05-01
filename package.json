@@ -24,7 +24,13 @@
     "scripts/postinstall.js"
   ],
   "peerDependencies": {
-    "@playwright/test": ">=1.0.0"
+    "@playwright/test": ">=1.0.0",
+    "@playwright/cli": ">=0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@playwright/cli": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@civitas-cerebrum/test-coverage": "^0.1.0",

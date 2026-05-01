@@ -76,3 +76,23 @@ try {
 } catch (err) {
   console.warn(`[@civitas-cerebrum/element-interactions] Could not install Claude Code skill: ${err.message}`);
 }
+
+// Optional-peer probe: @playwright/cli powers parallel browser automation
+// across the skill suite. It is intentionally NOT a hard dependency — alpha
+// versions cannot be required — but skills that drive a live browser need it.
+// Print a one-line install hint when missing. Do NOT auto-install. Do NOT
+// write .mcp.json. Do NOT prompt for a Claude Code reload — those were
+// explicit constraints during the migration from MCP and remain in force.
+function probePlaywrightCli() {
+  const { spawnSync } = require('child_process');
+  const probe = spawnSync('npx', ['--no-install', 'playwright-cli', '--version'], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  return probe.status === 0;
+}
+
+if (!probePlaywrightCli()) {
+  console.log('[@civitas-cerebrum/element-interactions] Tip: install `@playwright/cli` for parallel browser automation: `npm install -D @playwright/cli`.');
+}
