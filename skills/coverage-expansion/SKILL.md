@@ -29,6 +29,34 @@ The orchestrator for coverage growth. Iterates the user journey map, dispatches 
 
 ---
 
+## Two valid exits — read this before anything else
+
+There are exactly two ways for a coverage-expansion run to terminate:
+
+1. **All 5 passes + cleanup complete** for `mode: depth` (or the one breadth sweep complete for `mode: breadth`), with every journey dispatched in every pass.
+2. **Commit-what-landed + write `coverage-expansion-state.json` + stop with an explicit "resume needed" message** naming the completed passes, the in-flight pass, and the pending journeys.
+
+There is no third exit. Any framing that implies "partial run, but reasonable" — *"pragmatic Pass 1"*, *"honest Pass 1 only"*, *"most of the work done"*, *"deferred Passes 2–5 to a follow-up"*, *"reduced scope given session constraints"* — is the contract violation this skill exists to prevent. Tone does not change the contract: a "transparent" scope reduction is still a scope reduction, and silent scope reduction dressed in candid language is still silent scope reduction.
+
+If you are about to dispatch fewer passes than the mode requires, or fewer journeys than the map contains, you must EITHER (a) have explicit user authorisation in this conversation naming the reduction, OR (b) take exit #2 above. Self-authorisation is not authorisation. Auto-mode is not authorisation. Inferred user preference is not authorisation. Estimated session length is not authorisation.
+
+---
+
+## Self-talk red flags
+
+If your internal narrative includes any of the following framings, stop and re-read §"Two valid exits". You are about to violate the contract.
+
+| If you catch yourself thinking… | Reality |
+|---|---|
+| "Given session / conversation / context constraints, I'll run a subset…" | Budget pressure is not scope authorisation. Dispatch; if budget actually presses mid-run, take exit #2 (commit + state + stop). Pre-emptive reduction is forbidden. |
+| "Pragmatically / honestly / transparently I'll only run Pass N…" | Moral language framing scope compression as virtue. The contract is the contract; tone does not change it. |
+| "The user clearly wants results, not hours of subagent dispatch" | The user's authorisation is what they wrote, not what you infer. The onboarding front-load gate already explicitly authorised "tens of minutes to several hours" — hold them to their own authorisation. |
+| "I'll run [subset] and report state — that's resume-friendly" | Resume is for budget-driven mid-pipeline stops, not for pre-emptive scope reduction at the start. The state file is a resume marker, not a scope-reduction certificate. |
+| "Running all 5 passes is excessive for this app" | The map's content drives scope, not the orchestrator's judgement of "excessive". If the map has 16 journeys, every pass dispatches 16 journeys. |
+| "I'll be honest with the user that I'm reducing scope" | Naming the violation does not undo the violation. "Honest scope compression" is still scope compression. The fix is not honesty — it is asking the user before reducing, or running the full pipeline. |
+
+---
+
 ## Reading order for new contributors
 
 A new orchestrator implementer or contract-modifier should read these files in dependency order:
@@ -274,6 +302,34 @@ Both blocked statuses are valid terminal values under the no-skip contract (PR #
 
 1. `tests/e2e/docs/journey-map.md` must exist with `<!-- journey-mapping:generated -->` on line 1. If missing, stop and invoke `journey-mapping` first.
 2. The map must be in the precise-embedding format (each journey is a self-contained `### j-<slug>:` block with a `Pages touched:` line). If the map is in an older format without stable IDs, invoke `journey-mapping` to re-emit it.
+
+---
+
+## Mandatory intent declaration — required before any dispatch
+
+After the state-file read (next section) and before any subagent dispatch, the orchestrator MUST emit this declaration verbatim, with the placeholders filled:
+
+```
+[coverage-expansion] Pre-flight intent declaration
+  Mode: <depth | breadth>
+  Plan: dispatch every journey in `tests/e2e/docs/journey-map.md` for every required pass
+        (depth = 3 compositional + 2 adversarial + cleanup; breadth = 1 sweep).
+  Authorisation: <full-pipeline | user-authorised-scope>
+  If "user-authorised-scope":
+    Scope reduction: <description, e.g. "Pass 1 only across all journeys">
+    Authorising user message: "<exact verbatim quote of the user's authorising words>"
+    Conversation turn of authorisation: <turn number or "this turn">
+```
+
+Rules for this declaration:
+
+- It is emitted exactly once per invocation, before the first dispatch.
+- "Authorisation: full-pipeline" is the default and requires no quote — the full pipeline is what the skill exists to run.
+- "Authorisation: user-authorised-scope" requires a verbatim quote of the user's words. *Inferred* preferences ("the user clearly wants…") do not count and must not be cited. If you cannot fill in a verbatim quote, you do not have authorisation; either declare full-pipeline or stop and ask.
+- Auto-mode does not satisfy "user-authorised-scope". Auto-mode authorises proceeding without confirmation on routine decisions; scope-of-pipeline is not a routine decision per §"Two valid exits".
+- After the declaration is emitted, the orchestrator is bound to it. A run that declares "full-pipeline" and then runs only Pass 1 is in violation regardless of intent.
+
+The declaration also serves as the auditable record of *why* a partial run, if any, was sanctioned. A state file showing fewer passes than the mode requires must have a corresponding `user-authorised-scope` declaration in the progress log; otherwise it documents a contract violation.
 
 ---
 
