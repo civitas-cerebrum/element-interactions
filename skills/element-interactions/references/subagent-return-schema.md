@@ -282,6 +282,16 @@ Callers do not run a parser — they grep the return for a short, fixed list of 
 
 If any of the above is missing or a banned token is present, the caller re-dispatches with a brief that quotes the specific violation. The grep-based check is sufficient — no AST, no JSON, no parser.
 
+### 4.2 Harness validator (PostToolUse:Agent)
+
+The same grep-based shape signals are enforced at the harness layer by `hooks/subagent-return-schema-guard.sh` (auto-installed via `scripts/postinstall.js`). The hook:
+
+- Routes by Agent description prefix (`composer-` / `reviewer-` / `probe-` / `process-validator-`); other prefixes (`phase1-`, `stage2-`, `cleanup-`) skip validation.
+- Greps the subagent's return for the §4.1 markers above plus the per-status evidence (`tests-added` + `run-time` for `new-tests-landed`, mapping table for `covered-exhaustively`, `reason` for `blocked` / `skipped`, etc.).
+- Emits a non-blocking `systemMessage` listing missing markers and any banned tokens detected. The orchestrator sees the warning and re-dispatches.
+
+The hook is a backstop, not a replacement: callers still run the orchestrator-side grep per §4.1. The harness layer catches malformed returns the orchestrator missed; the orchestrator-side check catches violations that depend on caller-specific context the hook can't see (e.g., whether a `Test expectations:` row is missing from the mapping table). Initial release is warn-only — a follow-up promotes to block-mode after a representative run produces a ≤2% false-positive rate.
+
 ---
 
 ## 5. Non-goals

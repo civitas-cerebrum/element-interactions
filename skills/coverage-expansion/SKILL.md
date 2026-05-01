@@ -70,7 +70,26 @@ The symptom of getting this wrong: every Stage B reviewer for a batched-Stage-A 
 
 See §"Batched dispatch for P3 peripheral journeys" for the narrow P3-only exception.
 
-**Harness-enforced, not markdown-only.** This rule is shipped with the package as a PreToolUse:Agent hook (`hooks/coverage-expansion-dispatch-guard.sh`, auto-installed into `~/.claude/hooks/` and registered in `~/.claude/settings.json` by `scripts/postinstall.js`). Every Agent dispatch the orchestrator issues during coverage-expansion / journey-mapping work is inspected at the tool-use boundary: if the prompt references 2+ distinct `j-<slug>` IDs and the description does not start with a single `j-<slug>:` (one journey) or `[P3-batch] j-<slug>,...` (capped P3 batch) prefix, the harness denies the call before it reaches the subagent. Markdown rules can be rationalised away mid-run; this hook cannot. Consumers that cannot accept settings-modification (e.g., enterprise-managed `~/.claude/settings.json`) may set `CIVITAS_SKIP_HOOK_INSTALL=1` at install time to skip registration — but doing so falls back to markdown-only enforcement and re-opens the loophole.
+**Harness-enforced, not markdown-only.** This rule is shipped with the package as a PreToolUse:Agent hook (`hooks/coverage-expansion-dispatch-guard.sh`, auto-installed into `~/.claude/hooks/` and registered in `~/.claude/settings.json` by `scripts/postinstall.js`). Every Agent dispatch the orchestrator issues during coverage-expansion / journey-mapping work is inspected at the tool-use boundary: if the prompt references 2+ distinct `j-<slug>` IDs and the description does not start with a role-explicit single-journey prefix (`composer-j-<slug>:`, `reviewer-j-<slug>:`, `probe-j-<slug>:`) or `[P3-batch] composer-j-<slug>,...` (capped P3 batch) prefix, the harness denies the call before it reaches the subagent. Bare `j-<slug>:` and `sj-<slug>:` are also denied — see §"Role prefixes" below. Markdown rules can be rationalised away mid-run; this hook cannot. Consumers that cannot accept settings-modification (e.g., enterprise-managed `~/.claude/settings.json`) may set `CIVITAS_SKIP_HOOK_INSTALL=1` at install time to skip registration — but doing so falls back to markdown-only enforcement and re-opens the loophole.
+
+### Role prefixes
+
+Every Agent dispatch description starts with a role-explicit prefix. The prefix routes the dispatch through the harness gates: the dispatch-guard validates inputs, the playwright-cli isolation guard ties the prefix to a session slug, and the return-schema guard (`hooks/subagent-return-schema-guard.sh`) validates the output shape against the role's contract. Same prefix on description, on CLI session slug, on the schema selector — one mechanical convention.
+
+| Role | Description prefix | CLI session slug | Return shape |
+|---|---|---|---|
+| Stage A composer (per journey) | `composer-j-<slug>:` | `composer-j-<slug>-<pass>-c<N>` | `subagent-return-schema.md` §1 + §2 (Stage A) |
+| Stage A composer (sub-journey) | `composer-sj-<slug>:` | `composer-sj-<slug>-<pass>-c<N>` | as above |
+| Stage B reviewer | `reviewer-j-<slug>:` | `reviewer-j-<slug>-<pass>-c<N>` | `subagent-return-schema.md` §2.4 (Stage B) |
+| Adversarial probe (passes 4-5) | `probe-j-<slug>:` | `probe-j-<slug>-<pass>` | Stage A finding shape + ledger |
+| Sub-orchestrator (process-validator) | `process-validator-<scope>:` | (no CLI session) | Reviewer-shape (§2.4) applied to a manifest |
+| Phase 1 discovery | `phase1-<entry>:` | `phase1-<entry>` | site-map / page entries |
+| Phase 2+ discovery | `phase2-<scope>:` | `phase2-<scope>` | site-map / page entries |
+| Stage 2 element inspection | `stage2-<scenario>:` | `stage2-<scenario>` | page-repository entries |
+| P3-batch composer (≤7) | `[P3-batch] composer-j-<a>,composer-j-<b>,...:` | per-item slug | per-journey returns concatenated |
+| Cleanup / dedup | `cleanup-<scope>:` | `cleanup-<scope>` | unstructured |
+
+**Forbidden:** bare `j-<slug>:` and bare `sj-<slug>:` — role-ambiguous, blocked at dispatch time. Pick one of `composer-`, `reviewer-`, or `probe-` based on what the subagent actually does.
 
 ---
 
@@ -127,6 +146,8 @@ The orchestrator runs three grep-based validation checks. All three live here fo
 
 If any check fails, the orchestrator re-dispatches with a brief explicitly quoting the rejected parts. Failures consume one cycle of the 7-cycle budget. Persistent malformed returns terminate as `blocked-dispatch-failure`.
 
+**Harness backstop.** Returns are also validated by `hooks/subagent-return-schema-guard.sh` — a PostToolUse:Agent hook that mirrors §4.1's grep checks at the harness layer. The hook routes by description prefix (`composer-`/`reviewer-`/`probe-`/`process-validator-`) and emits a non-blocking `systemMessage` warning that names the missing field markers. Initial release is warn-only; a follow-up flips to block-mode after the false-positive rate is calibrated. The hook exists to catch malformed returns the orchestrator's own grep missed — it never substitutes for the orchestrator-side check.
+
 ---
 
 ## When to Use
@@ -170,9 +191,11 @@ Subagents in this environment **cannot** dispatch their own sub-subagents. The A
 
 **Anti-pattern:** a brief that asks a subagent to "dispatch N parallel subagents", "spawn workers", "fan out", or "use the Agent tool to coordinate". The hook `coverage-expansion-dispatch-guard.sh` blocks these explicitly because the subagent cannot satisfy them.
 
-**Process-validator role** (proactive Stage B for the orchestrator's plan): before fanning out a wave of N composer / reviewer / probe subagents, the parent MAY dispatch a `process-validator-<scope>:` subagent with the relevant skill loaded. The validator reviews the planned dispatch manifest against the skill's contract — slug convention, role-prefix consistency, journey coverage, brief minimalism — and returns `greenlight` or `improvements-needed`. Only on `greenlight` does the parent fan out the wave. Same shape as Stage B reviewer, applied one level up.
+**Process-validator role** (proactive Stage B for the orchestrator's plan): before fanning out a wave of N composer / reviewer / probe subagents, the parent dispatches a `process-validator-<scope>:` subagent with the relevant skill loaded. The validator reviews the planned dispatch manifest against the skill's contract — slug convention, role-prefix consistency, journey coverage, brief minimalism — and returns `greenlight` or `improvements-needed`. Only on `greenlight` does the parent fan out the wave. Same shape as Stage B reviewer, applied one level up.
 
-**Slug-length constraint:** the `playwright-cli` daemon binds a UNIX socket under `$TMPDIR`. On macOS the path is capped at 104 chars; slugs longer than ~28 chars push the path over the limit and the daemon silently fails to bind. Hook `playwright-cli-isolation-guard.sh` enforces a 6–28-char range. Use shortened forms inside long subagent contexts (e.g. `j-checkout-1-a-c2` rather than `j-checkout-1-stage-a-cycle2`).
+**Workflow spec.** When to invoke (wave-size ≥ 3, pass boundary, scope change, recovery-after-improvements-needed), the manifest shape (table of role-prefix / journey-id / slug / model-hint / must-fix-list summary), the validator's review checklist (slug-length, role-prefix consistency, journey coverage, brief minimalism, parallelism cap, hook-rule pre-checks, model-hint sanity, pass-boundary fit), the response shape (mirrors `subagent-return-schema.md` §2.4 reviewer-return — `greenlight` requires `summary:`, `improvements-needed` carries findings under a `findings:` array), and the parent's response handling (greenlight → dispatch unchanged; improvements-needed → revise + re-validate; 3-cycle cap before escalating to the user) are all specified end-to-end in [`references/process-validator-workflow.md`](references/process-validator-workflow.md). The harness validator hook (`hooks/subagent-return-schema-guard.sh`, issue #127) enforces the `process-validator-` return shape mechanically.
+
+**Slug-length constraint:** the `playwright-cli` daemon binds a UNIX socket under `$TMPDIR`. On macOS the path is capped at 104 chars; slugs longer than ~28 chars push the path over the limit and the daemon silently fails to bind. Hook `playwright-cli-isolation-guard.sh` enforces a 6–28-char range. With the role-explicit prefix (`composer-`, `reviewer-`, `probe-` — 8–9 chars), the journey slug needs to stay short: `composer-j-checkout-1-c1` (24 chars) fits; `composer-j-marketplace-buy-1-c1` (31 chars) does not. Shorten the journey slug, not the role prefix.
 
 ---
 
@@ -742,7 +765,7 @@ Every `test-composer` subagent dispatched by this skill must:
 
 1. Receive an **isolated context window** — no prior session content, no other journey's data.
 2. Receive only: its assigned journey block + any `sj-<slug>` sub-journey blocks it references + the current `page-repository.json` slice for the pages that journey touches.
-3. Have access to an **isolated `playwright-cli` session** named `<journey-slug>-<pass>-stage-a` (e.g. `j-checkout-3-stage-a`), opened by the subagent at the start of its work and closed at the end. Sessions are OS-isolated by construction — one browser process per `-s=<name> open` — so there is no isolation-prerequisite check to run before dispatching. The subagent's brief includes a pointer to [`../element-interactions/references/playwright-cli-protocol.md`](../element-interactions/references/playwright-cli-protocol.md) §3 + §8 (the dispatch-brief template). The parent does **not** call `close-all` while subagents are working; it runs `close-all` once the pass completes as belt-and-suspenders cleanup.
+3. Have access to an **isolated `playwright-cli` session** named `composer-<journey-slug>-<pass>-c<N>` (e.g. `composer-j-checkout-3-c1`), opened by the subagent at the start of its work and closed at the end. Sessions are OS-isolated by construction — one browser process per `-s=<name> open` — so there is no isolation-prerequisite check to run before dispatching. The subagent's brief includes a pointer to [`../element-interactions/references/playwright-cli-protocol.md`](../element-interactions/references/playwright-cli-protocol.md) §3 + §8 (the dispatch-brief template). The parent does **not** call `close-all` while subagents are working; it runs `close-all` once the pass completes as belt-and-suspenders cleanup.
 4. Not return until stabilization green, API compliance review clean, and coverage verified exhaustive (enforced inside `test-composer`).
 5. Return a structured discovery report only — no pasted test source, no DOM snapshots, no CLI transcripts. Returns follow the canonical return schema in [`../element-interactions/references/subagent-return-schema.md`](../element-interactions/references/subagent-return-schema.md); the dispatch brief includes a pointer to the file rather than re-pasting the schema.
 
@@ -750,7 +773,7 @@ Every `test-composer` subagent dispatched by this skill must:
 
 Every adversarial probe subagent dispatched by this skill must:
 
-1. Receive the same isolated context window as compositional-pass subagents, with its own `playwright-cli` session named `<journey-slug>-<pass>-stage-a` (pass = 4 or 5). Same isolation guarantee as the compositional case (per-session browser process; see `playwright-cli-protocol.md` §1).
+1. Receive the same isolated context window as compositional-pass subagents, with its own `playwright-cli` session named `probe-<journey-slug>-<pass>` (pass = 4 or 5). Same isolation guarantee as the compositional case (per-session browser process; see `playwright-cli-protocol.md` §1).
 2. Additionally receive: the pass number (4 or 5), the ledger file path (`tests/e2e/docs/adversarial-findings.md`), the lockfile path (`tests/e2e/docs/.adversarial-findings.lock`), and a pointer to the canonical schema at `skills/element-interactions/references/subagent-return-schema.md`.
 3. Receive a pre-built **negative-case matrix** for the journey — one negative-case complement per `Test expectations:` entry, plus the standard cross-cutting negatives (auth tamper, tenant isolation, idempotency, session boundary, input boundaries) — derived per `references/adversarial-subagent-contract.md` §"Negative-case matrix — full QA scope". The matrix is the deterministic floor for the probe; `bug-discovery`'s open-ended categories extend above it. The orchestrator builds the matrix from the journey block before dispatch and includes it verbatim in the brief — the subagent does not re-derive it.
 4. For pass 5 specifically: also receive the journey's pass-4 ledger section (read from the ledger file before dispatch and passed along — the orchestrator's single exception to the "never hold findings content" rule, bounded to one journey's section for one subagent), so the subagent can re-probe matrix entries that returned `Ambiguous` in pass 4 and run compound probes across matrix entries.
