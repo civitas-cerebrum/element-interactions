@@ -245,22 +245,22 @@ These were settled during the prior session and should be honored without re-lit
 - **Issue #121** (Emma): documentation/protocol gap, parallel sub-agent MCP isolation. Filed by `@Emmdb`.
 - **Issue #115** (Umut): sustainable context management & output precision. Item B3 (consolidate MCP-isolation rule) is dissolved by this migration.
 
-## Validation log template
+## Validation log
 
-When the CLI agent runs the G1–G6 tests, append results here:
+Run on 2026-05-01 against `@playwright/cli@0.1.10` + chromium 1222 (chrome-headless-shell), darwin 25.3.0, node v24.13.0. Fixture: a tiny 4-route node http server (`/`, `/dashboard`, `/settings`, `/admin`).
 
 ```
-G1 (parallel open isolation):  [ ] pass [ ] fail   notes:
-G2 (storage isolation):         [ ] pass [ ] fail   notes:
-G3 (snapshot A/B vs MCP):       [ ] pass [ ] fail   notes:
-G4 (performance + lifecycle):   [ ] pass [ ] fail   notes:
-G5 (state-load/state-save):     [ ] pass [ ] fail   notes:
-G6 (--raw / --json stability):  [ ] pass [ ] fail   notes:
+G1 (parallel open isolation):  [x] pass    notes: 4 parallel `-s=phase1-{1..4} open --browser=chromium` against 4 different URLs → 4 distinct `location.href` reads, 4 distinct snapshot headings ("Home", "Dashboard", "Settings", "Admin"). No last-write-wins. Per-session browser-process isolation confirmed.
+G2 (storage isolation):         [x] pass    notes: `-s=a cookie-set test_cookie hello_a`, `-s=b cookie-set test_cookie hello_b`. Each session reads its own value back. Cookies are NOT shared between sessions opened with `-s=<name> open`.
+G3 (snapshot A/B vs MCP):       [x] pass    notes: `--raw snapshot` output uses identical YAML-ish ARIA + `[ref=eN]` shape as `mcp__playwright__browser_snapshot`. Example: `- heading "Dashboard" [level=1] [ref=e2]`, `- textbox [ref=e4]`, `- button "Go" [ref=e5]`. No translation layer needed.
+G4 (performance + lifecycle):   [-] skipped notes: not run — costly fixture (50-page crawl × 4) and the G1-confirmed architectural premise (per-session = per-browser-process) means performance scales linearly with sessions. Lifecycle discipline (`close-all`, `kill-all` for zombies) is documented in the protocol doc.
+G5 (state-load/state-save):     [x] pass    notes: `state-save /tmp/auth.json` writes a Playwright storageState JSON (cookies + origins[].localStorage). Replay flow is `open → state-load <file> → reload` (not `open --load-storage=` as the prior session's HANDOVER guessed — that flag does not exist). Cookies + localStorage round-trip cleanly.
+G6 (--raw / --json stability):  [x] pass    notes: `--raw eval` returns the bare value (e.g. `"http://localhost:4444/"`). `--raw cookie-get` returns `name=value (...attrs...)`. `--json snapshot` returns `{"snapshot": "<yaml-string>"}`. Both are stable, parser-friendly, greppable.
 ```
 
-If G1 or G2 fail, **stop the migration** and re-evaluate — the architectural premise is wrong.
-If G3 fails, **add a translation layer** in the new reference doc before proceeding.
-If G4–G6 fail, document the constraint and proceed — these are tractable in skill briefs.
+**Conclusion:** all hard gates (G1, G2) pass. G3 passes — no translation layer needed. G5/G6 pass with one HANDOVER correction (`open --load-storage=` is not a thing; use `state-load` post-open). G4 skipped intentionally; lifecycle hygiene is captured in the protocol doc.
+
+**Migration is unblocked.**
 
 ## Rollback
 
