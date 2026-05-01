@@ -11,7 +11,7 @@ Skills that need to drive a real browser — `journey-mapping`, `coverage-expans
 
 The MCP-isolation rule existed because two parallel subagents on one MCP browser fight over the active tab and corrupt each other's snapshots. That risk does not exist with the CLI: every `playwright-cli -s=<name> open` spawns its **own browser process** with its **own user-data directory**. Sessions are OS-isolated, not just labelled.
 
-This was empirically validated on 2026-05-01: four parallel sessions opened against four different URLs each reported their own `location.href` and their own snapshot — no last-write-wins, no cross-contamination. Cookies, localStorage, and sessionStorage are per-session. See HANDOVER.md §"Validation log" for the test transcript.
+This was empirically validated on 2026-05-01: four parallel sessions opened against four different URLs each reported their own `location.href` and their own snapshot — no last-write-wins, no cross-contamination. Cookies, localStorage, and sessionStorage are per-session.
 
 Consequence: the orchestrator no longer needs to "confirm per-subagent isolation is achievable" before dispatching. The parent dispatches N subagents in parallel; each subagent issues `playwright-cli -s=<unique-slug> open ...` in its own Bash; the OS provides isolation.
 
