@@ -69,14 +69,25 @@ Use `<phase>-<role>-<slug>` so `playwright-cli list` reads as a workflow summary
 
 | Workflow | Convention | Example |
 |---|---|---|
-| `journey-mapping` Phase 1 (per entry point) | `phase1-<entry-slug>` | `phase1-root`, `phase1-dashboard`, `phase1-settings` |
+| `journey-mapping` Phase 1 (per entry point) | `phase1-<entry-slug>` | `phase1-root`, `phase1-mkt`, `phase1-login` |
 | `coverage-expansion` Pass-N Stage A (compositional) | `<journey-slug>-<pass>-stage-a` | `j-checkout-3-stage-a` |
 | `coverage-expansion` Pass-N Stage B (reviewer) | `<journey-slug>-<pass>-stage-b` | `j-checkout-3-stage-b` |
 | `bug-discovery` per-journey adversarial | `<journey-slug>-bd` | `j-checkout-bd` |
 | `failure-diagnosis` per-failure debug session | `fd-<short-slug>` | `fd-cart-update-flake` |
-| `companion-mode` single-task verification | `companion-<task-slug>` | `companion-onboarding-form` |
+| `companion-mode` single-task verification | `companion-<task-slug>` | `companion-onb-form` |
 
 Slugs use ASCII, lowercase, dash-separated. Avoid `/` (it appears in URL paths but is fine in session names — the CLI tolerates it; just be aware `playwright-cli list` will print the literal name).
+
+**Slug-length budget — keep under ~25 chars on darwin.** The CLI opens a Unix domain socket at `$TMPDIR/pw-<8>/cli/<16-hash>-<slug>.sock`. macOS's `sockaddr_un.sun_path` caps at 104 bytes, and after the `pw-XXXXXXXX/cli/<16-hash>-` prefix you have only ~25–30 characters of slug headroom before `listen()` fails with `EINVAL`. Empirically observed during Phase-2 validation on book-hive-pw-cli: `phase1-marketplace` (18 chars) failed; `phase1-mkt` (10 chars) worked. The cap is per-socket-path, not per-slug-string, so `$TMPDIR` length matters too.
+
+Practical guidance:
+
+- Compose phase prefixes from short tokens: `phase1-`, `bd-`, `fd-`, `companion-`, plus `<journey-slug>-<pass>-stage-{a,b}` for coverage-expansion.
+- Keep journey slugs to ≤12 chars where you can — `j-checkout`, not `j-checkout-with-coupon-and-card`.
+- Compose the slug, then `wc -c <<< "<slug>"`; abort and shorten if it crosses 25 chars.
+- Linux's 108-byte limit is slightly more forgiving but the same discipline keeps cross-OS portability cheap.
+
+If a longer slug is unavoidable, set `TMPDIR=/tmp` for the run — a shorter base path buys back a few characters — but treat that as a workaround, not a fix.
 
 ### 3.2 Quarantine on start
 
@@ -238,6 +249,7 @@ The orchestrator picks the slug per the convention in §3.1 and substitutes it.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `The browser '<name>' is not open, please run open first` | Session was never opened, or was closed (e.g. by a sibling running `close-all`). | `playwright-cli -s=<name> open ...` first. Never run `close-all` while siblings are working. |
+| `Error: listen EINVAL` on `playwright-cli -s=<long-slug> open` | Unix-socket path under `$TMPDIR/pw-<8>/cli/<16-hash>-<slug>.sock` exceeds `sockaddr_un.sun_path` (104 bytes on darwin). | Shorten the slug — see §3.1's slug-length budget. As a workaround, `TMPDIR=/tmp` shortens the base path. |
 | Stale chromium processes after `close-all` | Crash mid-run; `close-all` reaps gracefully but a hung process can survive. | `playwright-cli kill-all` then `ps aux | grep chrome-headless` to confirm. |
 | `cannot read state file` on `state-load` | Path is relative to cwd, not to the session's user-data dir. | Use absolute paths or paths relative to the project root, and verify with `ls`. |
 | Snapshot contains stale `[ref=eN]`s after a click | Refs are scoped to the most recent snapshot. | Re-run `playwright-cli snapshot` after every navigation/state change before the next ref-based command. |
