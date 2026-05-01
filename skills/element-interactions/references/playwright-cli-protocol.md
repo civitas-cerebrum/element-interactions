@@ -1,7 +1,7 @@
 # Playwright CLI Protocol — Canonical Browser-Automation Primitive
 
 **Status:** single source of truth for live browser automation across the `@civitas-cerebrum/element-interactions` skill suite.
-**Replaces:** the prior `mcp__plugin_playwright_playwright__*` MCP-tool protocol and the Rule-11-era "isolated MCP browser per subagent" prerequisite check.
+**Supersedes and forbids:** the prior `mcp__plugin_playwright_playwright__*` MCP-tool protocol. The MCP browser tools are not an acceptable fallback when the CLI is unavailable, when the harness still surfaces them in a subagent's tool list, or when a brief is unclear about which channel to use. The CLI is the only sanctioned channel for browser automation across every skill in this suite. A subagent that finds itself reaching for an MCP browser tool has a malformed dispatch brief, not a permitted alternative.
 
 Skills that need to drive a real browser — `journey-mapping`, `coverage-expansion`, `test-composer`, `bug-discovery`, `failure-diagnosis`, `companion-mode`, `element-interactions` (Stages 1–2), `onboarding` (Phases 2/3/5/6) — invoke `@playwright/cli` from the Bash tool. Sessions are isolated by design: there is no Rule-11-style prereq check, no `[mcp-isolation: serializing]` fallback, no `.mcp.json` to write.
 
