@@ -573,6 +573,32 @@ export class Steps {
     }
 
     /**
+     * Retrieves the raw HTML of an element. Defaults to `innerHTML`; pass
+     * `{ outer: true }` to get the element's `outerHTML` (the tag itself plus its subtree).
+     *
+     * @param elementName - The element name as defined under the given page.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param options - `outer` switches between innerHTML/outerHTML; other fields control strategy.
+     */
+    async getHtml(elementName: string, pageName: string, options?: StepOptions & { outer?: boolean }): Promise<string> {
+        log.extract('Getting %s HTML of "%s" in "%s"', options?.outer ? 'outer' : 'inner', elementName, pageName);
+        const element = await this.getWebElement(elementName, pageName, options);
+        return await this.extract.getHtml(element, { outer: options?.outer });
+    }
+
+    /**
+     * Retrieves the HTML of the current page. Defaults to `document.body.innerHTML`;
+     * pass `{ outer: true }` to get the full `<html>` document outerHTML (including `<head>`).
+     *
+     * Use this for page-level scans where no single element is the natural scope —
+     * e.g. confirming an injected payload was HTML-escaped anywhere on the page.
+     */
+    async getPageHtml(options?: { outer?: boolean }): Promise<string> {
+        log.extract('Getting page %s HTML', options?.outer ? 'outer' : 'inner');
+        return await this.extract.getPageHtml(options);
+    }
+
+    /**
      * Extracts text content or attribute values from all elements matching the locator.
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
@@ -796,6 +822,92 @@ export class Steps {
     async verifyAttribute(elementName: string, pageName: string, attributeName: string, expectedValue: string, options?: StepOptions): Promise<void> {
         log.verify('Verifying "%s" in "%s" has attribute "%s" = "%s"', elementName, pageName, attributeName, expectedValue);
         await this.actionWithStrategy(elementName, pageName, options).verifyAttribute(attributeName, expectedValue);
+    }
+
+    /**
+     * Asserts that an element's HTML equals the expected string exactly.
+     * Defaults to `innerHTML`; pass `{ outer: true }` for `outerHTML`.
+     *
+     * Equivalent to `steps.on(elementName, pageName).verifyHtml(expected, htmlOptions)`.
+     *
+     * @param elementName - The element name as defined under the given page.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param expected - The expected HTML string.
+     * @param htmlOptions - `outer` switches between innerHTML/outerHTML.
+     * @param options - Optional step options for element resolution.
+     */
+    async verifyHtml(elementName: string, pageName: string, expected: string, htmlOptions?: { outer?: boolean }, options?: StepOptions): Promise<void> {
+        log.verify('Verifying %s HTML of "%s" in "%s" matches exactly', htmlOptions?.outer ? 'outer' : 'inner', elementName, pageName);
+        await this.actionWithStrategy(elementName, pageName, options).verifyHtml(expected, htmlOptions);
+    }
+
+    /**
+     * Asserts that an element's HTML contains the specified substring.
+     * Defaults to `innerHTML`; pass `{ outer: true }` for `outerHTML`.
+     *
+     * Equivalent to `steps.on(elementName, pageName).verifyHtmlContains(substring, htmlOptions)`.
+     *
+     * @param elementName - The element name as defined under the given page.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param substring - The substring expected to appear in the element's HTML.
+     * @param htmlOptions - `outer` switches between innerHTML/outerHTML.
+     * @param options - Optional step options for element resolution.
+     */
+    async verifyHtmlContains(elementName: string, pageName: string, substring: string, htmlOptions?: { outer?: boolean }, options?: StepOptions): Promise<void> {
+        log.verify('Verifying %s HTML of "%s" in "%s" contains: "%s"', htmlOptions?.outer ? 'outer' : 'inner', elementName, pageName, substring);
+        await this.actionWithStrategy(elementName, pageName, options).verifyHtmlContains(substring, htmlOptions);
+    }
+
+    /**
+     * Asserts that an element's HTML matches a regular expression.
+     * Defaults to `innerHTML`; pass `{ outer: true }` for `outerHTML`.
+     *
+     * Equivalent to `steps.on(elementName, pageName).verifyHtmlMatches(regex, htmlOptions)`.
+     */
+    async verifyHtmlMatches(elementName: string, pageName: string, regex: RegExp, htmlOptions?: { outer?: boolean }, options?: StepOptions): Promise<void> {
+        log.verify('Verifying %s HTML of "%s" in "%s" matches regex %s', htmlOptions?.outer ? 'outer' : 'inner', elementName, pageName, regex);
+        await this.actionWithStrategy(elementName, pageName, options).verifyHtmlMatches(regex, htmlOptions);
+    }
+
+    /**
+     * Asserts that the page-level HTML equals the expected string exactly.
+     * Defaults to `document.body.innerHTML`; pass `{ outer: true }` for the full
+     * `<html>` document outerHTML.
+     *
+     * @param expected - The expected HTML string.
+     * @param options - `outer` switches between body.innerHTML / documentElement.outerHTML;
+     *   `negated` flips the assertion; `timeout` overrides the default; `errorMessage` adds a header.
+     */
+    async verifyPageHtml(expected: string, options?: { outer?: boolean; negated?: boolean; timeout?: number; errorMessage?: string }): Promise<void> {
+        log.verify('Verifying page %s HTML matches exactly', options?.outer ? 'outer' : 'inner');
+        await this.verify.pageHtml(expected, options);
+    }
+
+    /**
+     * Asserts that the page-level HTML contains the specified substring.
+     * Defaults to `document.body.innerHTML`; pass `{ outer: true }` for the full document outerHTML.
+     *
+     * Use this to confirm an injected payload appears unescaped (`negated: false`)
+     * or was correctly escaped (`negated: true`) anywhere on the rendered page.
+     *
+     * @example
+     * ```ts
+     * // XSS probe — payload must NOT appear raw in rendered HTML
+     * await steps.verifyPageHtmlContains('<img src=x onerror=alert(1)>', { negated: true });
+     * ```
+     */
+    async verifyPageHtmlContains(substring: string, options?: { outer?: boolean; negated?: boolean; timeout?: number; errorMessage?: string }): Promise<void> {
+        log.verify('Verifying page %s HTML contains: "%s"', options?.outer ? 'outer' : 'inner', substring);
+        await this.verify.pageHtmlContains(substring, options);
+    }
+
+    /**
+     * Asserts that the page-level HTML matches a regular expression.
+     * Defaults to `document.body.innerHTML`; pass `{ outer: true }` for the full document outerHTML.
+     */
+    async verifyPageHtmlMatches(regex: RegExp, options?: { outer?: boolean; negated?: boolean; timeout?: number; errorMessage?: string }): Promise<void> {
+        log.verify('Verifying page %s HTML matches regex %s', options?.outer ? 'outer' : 'inner', regex);
+        await this.verify.pageHtmlMatches(regex, options);
     }
 
     /**

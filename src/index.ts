@@ -32,6 +32,7 @@ export {
     AttributeMatcher,
     AttributesMatcher,
     CssMatcher,
+    HtmlMatcher,
 } from './steps/ExpectMatchers';
 export type { ElementSnapshot, ExpectContext } from './steps/ExpectMatchers';
 

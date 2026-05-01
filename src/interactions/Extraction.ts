@@ -58,6 +58,39 @@ export class Extractions {
         return target.getCssProperty(property);
     }
 
+    /**
+     * Retrieves the raw HTML of an element. Defaults to `innerHTML`; set
+     * `{ outer: true }` for `outerHTML` (the element tag plus its subtree).
+     *
+     * Reads after waiting for `attached` so the element exists in the DOM,
+     * but does NOT wait for visibility — HTML inspection is a lower-level
+     * read than the standard verification family.
+     */
+    async getHtml(target: WebElement, options?: { outer?: boolean }): Promise<string> {
+        await this.utils.waitForState(target, 'attached');
+        const locator = target.locator.first();
+        if (options?.outer) {
+            return await locator.evaluate((el: Element) => el.outerHTML);
+        }
+        return await locator.innerHTML();
+    }
+
+    /**
+     * Retrieves the HTML of the current page. Defaults to `document.body.innerHTML`;
+     * set `{ outer: true }` for `document.documentElement.outerHTML` (the full
+     * `<html>...</html>` document, including `<head>`).
+     *
+     * Use this for page-level scans where no single element is the natural
+     * scope — e.g. confirming an injected payload was HTML-escaped anywhere
+     * in the rendered page.
+     */
+    async getPageHtml(options?: { outer?: boolean }): Promise<string> {
+        if (options?.outer) {
+            return await this.page.evaluate(() => document.documentElement.outerHTML);
+        }
+        return await this.page.evaluate(() => document.body.innerHTML);
+    }
+
     /** Captures a screenshot of the full page or a specific element. */
     async screenshot(target?: WebElement, options?: ScreenshotOptions): Promise<Buffer> {
         if (target) {

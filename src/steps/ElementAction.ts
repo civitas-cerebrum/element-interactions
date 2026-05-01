@@ -453,6 +453,30 @@ export class ElementAction {
         return await this.interactions.extract.getCssProperty(element, property);
     }
 
+    /**
+     * Get the raw HTML of the resolved element. Defaults to `innerHTML`;
+     * pass `{ outer: true }` to get `outerHTML` (the element tag + subtree).
+     */
+    async getHtml(options?: { outer?: boolean }): Promise<string> {
+        const element = await this.resolve();
+        return await this.interactions.extract.getHtml(element, options);
+    }
+
+    /** Assert the element's HTML equals the expected string exactly. Delegates to the matcher tree's `.html.toBe(...)` (or `.outerHtml.toBe(...)` when `outer`). */
+    async verifyHtml(expected: string, options?: { outer?: boolean }): Promise<void> {
+        await (options?.outer ? this.expectBuilder().outerHtml : this.expectBuilder().html).toBe(expected);
+    }
+
+    /** Assert the element's HTML contains a substring. Delegates to the matcher tree's `.html.toContain(...)`. */
+    async verifyHtmlContains(substring: string, options?: { outer?: boolean }): Promise<void> {
+        await (options?.outer ? this.expectBuilder().outerHtml : this.expectBuilder().html).toContain(substring);
+    }
+
+    /** Assert the element's HTML matches a regex. Delegates to the matcher tree's `.html.toMatch(...)`. */
+    async verifyHtmlMatches(regex: RegExp, options?: { outer?: boolean }): Promise<void> {
+        await (options?.outer ? this.expectBuilder().outerHtml : this.expectBuilder().html).toMatch(regex);
+    }
+
     /** Take a screenshot of the element. */
     async screenshot(options?: ScreenshotOptions): Promise<Buffer> {
         const element = await this.resolve();
@@ -522,6 +546,8 @@ export class ElementAction {
     get visible() { return this.expectBuilder().visible; }
     get enabled() { return this.expectBuilder().enabled; }
     get attributes() { return this.expectBuilder().attributes; }
+    get html() { return this.expectBuilder().html; }
+    get outerHtml() { return this.expectBuilder().outerHtml; }
     css(property: string) { return this.expectBuilder().css(property); }
 
     /**
