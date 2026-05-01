@@ -32,15 +32,17 @@ CMD=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
 # Filter: only fire when playwright-cli is actually being INVOKED as a command,
 # not just mentioned inside a string argument (echo, error message, JSON literal).
 # A real invocation appears at:
-#   - start of the command line, optionally preceded by npx
-#   - after a command separator (;, &&, ||, |) optionally preceded by npx
+#   - start of the command line, optionally via npx | bunx | pnpm exec | yarn exec
+#   - after a command separator (;, &&, ||, |) with the same optional runners
 # Crucially, NOT inside a quoted string — those are preceded by " or ' or :.
-if ! echo "$CMD" | grep -qE '(^|[;&|][[:space:]]*)(npx[[:space:]]+)?playwright-cli[[:space:]]'; then
+RUNNERS='(npx|bunx|pnpm[[:space:]]+exec|yarn[[:space:]]+exec)[[:space:]]+'
+SEP='(^|[;|][[:space:]]*|&&[[:space:]]*|\|\|[[:space:]]*)'
+if ! echo "$CMD" | grep -qE "${SEP}(${RUNNERS})?playwright-cli[[:space:]]"; then
   exit 0
 fi
 
 # Allow session-agnostic subcommands. These run without `-s=` by design.
-if echo "$CMD" | grep -qE 'playwright-cli[[:space:]]+(install-browser|close-all|list-sessions|--help|-h|--version|-v)([[:space:]]|$)'; then
+if echo "$CMD" | grep -qE 'playwright-cli[[:space:]]+(install-browser|close-all|kill-all|list-sessions|sessions|--help|-h|--version|-v)([[:space:]]|$)'; then
   exit 0
 fi
 
@@ -53,8 +55,10 @@ fi
 # Extract -s=<slug>.
 SLUG=$(echo "$CMD" | grep -oE -- '-s=[A-Za-z0-9_.-]+' | head -1 | sed 's/^-s=//' || true)
 
-# Allowed slug prefixes — must match dispatch-guard's role prefixes.
-SLUG_PREFIX_REGEX='^(j-|sj-|phase1-|phase2-|stage2-|composer-|reviewer-|probe-|cleanup-)'
+# Allowed slug prefixes — must match dispatch-guard's role prefixes. The
+# trailing `[a-z0-9-]+` enforces a non-empty suffix so bare prefixes like
+# `phase1-` or `j--` are rejected.
+SLUG_PREFIX_REGEX='^(j|sj|phase1|phase2|stage2|composer|reviewer|probe|cleanup)-[a-z0-9][a-z0-9-]*'
 
 emit_deny() {
   jq -n --arg r "$1" '{

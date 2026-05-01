@@ -63,7 +63,7 @@ Schema (skills/coverage-expansion/SKILL.md §\"Authoritative state file\"):
   fi
 
   # 2. Required top-level keys.
-  for KEY in status currentPass journeyRoster updatedAt; do
+  for KEY in status mode currentPass journeyRoster passes updatedAt; do
     if ! echo "$TARGET" | jq -e ".$KEY" >/dev/null 2>&1; then
       emit_deny "[BLOCKED] coverage-expansion-state.json missing required key '$KEY'.
 

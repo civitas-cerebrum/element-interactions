@@ -41,7 +41,9 @@ emit_deny() {
 # === PostToolUse branch: record `playwright test` result ===
 if [ "$EVENT_NAME" = "PostToolUse" ]; then
   # Only fire on `playwright test` invocations.
-  if ! echo "$CMD" | grep -qE '(^|[;&|][[:space:]]*)(npx[[:space:]]+)?playwright[[:space:]]+test'; then
+  RUNNERS='(npx|bunx|pnpm[[:space:]]+exec|yarn[[:space:]]+exec)[[:space:]]+'
+  SEP='(^|[;|][[:space:]]*|&&[[:space:]]*|\|\|[[:space:]]*)'
+  if ! echo "$CMD" | grep -qE "${SEP}(${RUNNERS})?playwright[[:space:]]+test"; then
     exit 0
   fi
 

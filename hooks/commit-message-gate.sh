@@ -91,7 +91,7 @@ Why: per-journey commits make the git log filterable by j-<slug>. A multi-journe
 fi
 
 # Anti-pattern: feat(e2e): ... — coverage expansion / e2e tests are never `feat`.
-if echo "$MSG" | grep -qE '^feat\((e2e|tests|test|coverage|journey|onboarding)\)'; then
+if echo "$MSG" | grep -qiE '^feat\((e2e|tests|test|coverage|journey|onboarding)\)'; then
   emit_deny "[BLOCKED] Test/coverage commits are 'test:' not 'feat:'.
 
 Message: \"${MSG}\"

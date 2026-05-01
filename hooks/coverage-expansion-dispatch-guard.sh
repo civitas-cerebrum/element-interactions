@@ -49,7 +49,9 @@ fi
 
 # Count distinct j-<slug> references in the prompt body. If 2+ appear, this
 # is almost certainly a batched composer/reviewer dispatch against the rules.
-DISTINCT=$(echo "$PROMPT" | grep -oE 'j-[a-z0-9-]+' | sort -u | wc -l | tr -d '[:space:]')
+# Word-boundary anchors the match so substrings like `obj-foo`, `subj-x`,
+# `proj-bar` are NOT counted as journey IDs.
+DISTINCT=$(echo "$PROMPT" | grep -oE '(^|[^a-zA-Z0-9_])(j-[a-z0-9-]+)' | grep -oE 'j-[a-z0-9-]+' | sort -u | wc -l | tr -d '[:space:]')
 
 if [ "$DISTINCT" -ge 2 ]; then
   REASON="[BLOCKED] Subagent dispatch missing role-prefixed description.
