@@ -55,6 +55,23 @@ See §"Parallelism — Intra-group pipelining (dual-stage)" for the full pipelin
 
 ---
 
+### Stage A per-journey dispatch is non-negotiable
+
+Stage A composers also run **one subagent per journey, in parallel up to host max**. A pass with 16 journeys dispatches up to 16 Stage A subagents in one parallel wave. Stage A is **not** "4 group agents each covering 4 journeys sequentially" — that is batched grouping, not per-journey dispatch, and it is forbidden for P0/P1/P2.
+
+The contract:
+- **Per-journey**: each Stage A subagent owns ONE journey's brief, ONE journey's `playwright-cli` session slug, and produces ONE journey's commit(s). The journey block + its referenced sub-journeys are the brief; sibling journeys are not in scope for that subagent.
+- **P3 batching**: the only batching exception is documented in §"Batched dispatch for P3 peripheral journeys" — P3 only, max 7 per brief, with cycle-1 split-out semantics. P0/P1/P2 are NEVER batched, full stop.
+- **Across journeys**: dispatched in parallel up to the host-max cap, sharing the same in-flight pool with Stage B reviewers (per §"Parallel cap — lifted and jointly applied").
+
+If you find yourself writing one Agent dispatch that owns multiple non-P3 journeys ("composer-auth", "composer-cart-orders", etc.), stop. That is grouped batching. The fix is N parallel single-journey dispatches in one message, not N/k grouped dispatches.
+
+The symptom of getting this wrong: every Stage B reviewer for a batched-Stage-A journey returns `improvements-needed` because the batched composer rationed attention across siblings and skipped Test-expectations bullets (mobile, error states, edge cases) on each. The volume of `improvements-needed` returns is the diagnostic.
+
+See §"Batched dispatch for P3 peripheral journeys" for the narrow P3-only exception.
+
+---
+
 ## Self-talk red flags
 
 If your internal narrative includes any of the following framings, stop and re-read §"Two valid exits". You are about to violate the contract.
@@ -68,6 +85,8 @@ If your internal narrative includes any of the following framings, stop and re-r
 | "Running all 5 passes is excessive for this app" | The map's content drives scope, not the orchestrator's judgement of "excessive". If the map has 16 journeys, every pass dispatches 16 journeys. |
 | "I'll be honest with the user that I'm reducing scope" | Naming the violation does not undo the violation. "Honest scope compression" is still scope compression. The fix is not honesty — it is asking the user before reducing, or running the full pipeline. |
 | "16 individual reviewer dispatches is too many" / "Stage B is too expensive to dispatch per-journey" | The dispatch count is not the cost. Stage B is parallel by design — 16 reviewers in one wave, not 16 sequential calls. The skill mandates host-max parallelism for both Stage A AND Stage B (see §"Parallelism — Intra-group pipelining"). If you find yourself counting reviewer dispatches as if each were sequential, you are misreading the parallelism model. Dispatch the wave. |
+| "16 individual Stage A composer dispatches is too many — I'll group them by area" | The dispatch count is not the cost. Stage A is parallel by design — 16 composers in one wave, not 4 group agents each covering 4 journeys. Grouping is forbidden for P0/P1/P2 (only P3 may batch, capped at 7 — see §"Batched dispatch for P3 peripheral journeys"). If you find yourself writing dispatch briefs whose names are area buckets ("composer-auth", "composer-cart-orders") rather than journey IDs, you are batching against the rule. Re-do as N parallel single-journey dispatches. |
+| "These 4 journeys naturally cluster — 1 agent can handle them efficiently" | Natural clustering is page-co-residence, which the independence graph already accounts for at the parallelism layer. It is not authorisation to put N journeys in one brief. The dispatch shape is fixed: one journey per brief, period (P3 batching exception aside). |
 
 ---
 
@@ -632,7 +651,9 @@ The re-pass mode's contribution is **disciplined justification**, not speed. Eve
 
 ### Batched dispatch for P3 peripheral journeys
 
-Adjacent low-impact journeys (typically P3 smoke or admin-portal siblings sharing one Playwright project) may have Stage A batched into a single brief, cap 7 journeys per brief. Dual-stage narrows this:
+**Reminder: P3 only. P0/P1/P2 never batch.** Adjacent low-impact journeys — typically P3 smoke or admin-portal siblings sharing one Playwright project — MAY have Stage A batched into a single brief, cap 7 journeys per brief. Every other journey (P0, P1, P2) dispatches one subagent per journey, full stop. If you are tempted to batch a P0/P1/P2 journey because it "shares pages with P3 siblings" or "fits naturally with this group", STOP — that temptation is the failure mode this section's narrowness exists to prevent. Re-read §"Stage A per-journey dispatch is non-negotiable" before continuing.
+
+Dual-stage narrows this:
 
 - **Stage A may still be batched** for eligible P3 journeys (shared project, no pending gap flags, same priority tier, cap 7 per brief — criteria from PR #108).
 - **Stage B is never batched.**
