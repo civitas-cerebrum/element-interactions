@@ -120,8 +120,11 @@ Wait for the user's reply. On `y` / `yes` / `proceed` / equivalent affirmative, 
   - the top-level nav/link count on the app's homepage (one `playwright-cli snapshot` before the gate, counted as discovery preamble), and
   - a fallback band of 15–40 if neither signal is reliable.
 - `<M_low>–<M_high>` = `journeys_low × 0.5` to `journeys_high × 0.5` (bug hunts target ~half the journey set).
-- `<P>` = min(4, credential-count-per-role from Phase-0 pre-flight) unless the shared-resource audit (below) reports a parallelism cap.
-- `<H1>–<H2>` = wall-clock band derived from `<N_high>` and `<N_low>` at `<P>`-way parallel.
+- **Two parallelism caps — `<P_dispatch>` (subagent count) and `<P_workers>` (Playwright workers).** They are governed by different constraints:
+  - `<P_dispatch>` = min(4, credential-count-per-role from Phase-0 pre-flight) — bounded by host CPU/memory + per-role credential availability + dispatch-time API rate limits. Affects how many composer / reviewer / probe subagents the orchestrator fans out per wave.
+  - `<P_workers>` = bounded by **DB-state isolation**, NOT credentials. Default = `<P_dispatch>` when the audit reports no global-state contention. Capped at **1** when the audit reports `global-reset:cross-test-race` (every test races on a global reset/teardown). Capped at **per-user-isolation cap** when the audit reports `single-tenant-global-state` (assertions on global collections race across workers).
+  - These are **independent**: a single-tenant app with `/api/reset` may legitimately have `P_dispatch=4` (4 composers writing 4 specs in parallel) and `P_workers=1` (those specs run serially at test time). Conflating them produces either over-paralleled runtime (flake) or under-paralleled dispatch (slow).
+- `<H1>–<H2>` = wall-clock band derived from `<N_high>` and `<N_low>` at `<P_dispatch>`-way parallel composition + `<P_workers>`-way parallel test-runtime.
 
 After Phase-1 discovery completes, the orchestrator emits a progress line of the form `[onboarding] scope update: <N_actual> journeys discovered — projection was <N_low>–<N_high>, proceeding with full coverage`. It does NOT re-prompt the user — the single-gate contract is preserved. If the actual lands outside the projected band, the progress line makes that visible; the run continues regardless.
 
@@ -133,28 +136,40 @@ Before the user confirms the gate, the orchestrator runs a shared-resource audit
 
 Run the checklist below and, for each row with a positive detection, emit a one-line constraint into the gate's "Shared-resource audit" block.
 
-| Constraint | Detection | Mitigation the user should consider |
-|---|---|---|
-| Single credential per role (OAuth or form) | Phase-0 credential count ≤ 1 per role | Pre-seed 3+ throwaway accounts per parallel-eligible role |
-| Global rate limits (per-IP or per-tenant) | Probe login endpoint for 429 behaviour | Confirm rate-limit ceiling vs. planned parallel-dispatch peak |
-| CSRF tokens tied to session (concurrent POSTs fail) | Static scan of form handlers for `csrf` / `antiforgery` patterns | File-level serial on mutating specs + throwaway accounts per worker |
-| Shared tenant/workspace state | Single-tenant app with no per-user partition | Throwaway tenant for the run, or mandatory teardown hooks |
-| No UI delete for created entities | Static scan for `Delete`/`Verwijder` action absence on add-* pages | API-backdoor cleanup helper |
+| Constraint | Detection | Mitigation the user should consider | Tag |
+|---|---|---|---|
+| Single credential per role (OAuth or form) | Phase-0 credential count ≤ 1 per role | Pre-seed 3+ throwaway accounts per parallel-eligible role | `single-credential:<role>` |
+| Global rate limits (per-IP or per-tenant) | Probe login endpoint for 429 behaviour | Confirm rate-limit ceiling vs. planned parallel-dispatch peak | `rate-limit:<scope>` |
+| CSRF tokens tied to session (concurrent POSTs fail) | Static scan of form handlers for `csrf` / `antiforgery` patterns | File-level serial on mutating specs + throwaway accounts per worker | `csrf-session-bound` |
+| Shared tenant/workspace state | Single-tenant app with no per-user partition | Throwaway tenant for the run, or mandatory teardown hooks | `single-tenant:shared-state` |
+| No UI delete for created entities | Static scan for `Delete`/`Verwijder` action absence on add-* pages | API-backdoor cleanup helper | `missing-ui-delete:<entities>` |
+| **Global mutating reset/teardown endpoint** | Phase-1 probe finds reset endpoint AND mutation endpoints touch global (non-tenanted) collections (catalog-wide, marketplace-wide, etc.) | **Forbid `beforeEach(reset)` — it races across workers.** Use per-test throwaway users + `globalSetup` once-per-suite seed. Stage 4a §1 inverts under this tag (see `element-interactions/references/test-optimization.md` §1). | `global-reset:cross-test-race` |
+| **Per-tenant vs per-user data scoping** | Probe whether the app exposes any tenant/workspace partition (e.g., URL prefix `/t/<id>/...`, JWT `tenant_id` claim, dropdown switch) | Single-tenant apps make global-state assertions (e.g., "marketplace is empty") parallel-hostile across workers. Rewrite assertions to per-user-scoped views (e.g., "MY profile has no listings"). | `single-tenant-global-state` |
 
 Rendered example of the audit block inside the gate (positive detections):
 
 ```
 Shared-resource audit:
-  • Single Care Manager credential → manager-portal parallelism capped at 1 until seeding resolved.
-  • CSRF tokens session-bound → mandatory `test.describe.configure({ mode: 'serial' })` on mutating specs.
-  • No UI delete for caregivers/locations → tenant pollution expected; API-backdoor cleanup required.
+  • Single Care Manager credential [single-credential:care-manager] → P_dispatch capped at 1 for manager-portal journeys until seeding resolved.
+  • CSRF tokens session-bound [csrf-session-bound] → mandatory `test.describe.configure({ mode: 'serial' })` on mutating specs.
+  • Global /api/reset endpoint touches catalog-wide collections [global-reset:cross-test-race] → forbid beforeEach(reset); P_workers capped at 1 unless per-test-user pattern + globalSetup-once is adopted.
+  • Single-tenant marketplace [single-tenant-global-state] → rewrite "marketplace is empty" assertions to "MY profile has no listings".
+  • No UI delete for caregivers/locations [missing-ui-delete:caregiver,location] → tenant pollution expected; API-backdoor cleanup required.
+
+Parallelism caps:
+  P_dispatch = 4 (composer / reviewer / probe subagents in parallel — bounded by host CPU/memory + credentials)
+  P_workers  = 1 (Playwright workers — capped by global-reset:cross-test-race; raise to 4 after per-test-user pattern is adopted)
 ```
 
 **If the audit finds zero constraints**, the block still renders — silently skipping it would let a user assume the audit was not attempted. Render:
 
 ```
 Shared-resource audit:
-  • No shared-resource constraints detected. Parallelism cap: P = <P>.
+  • No shared-resource constraints detected.
+
+Parallelism caps:
+  P_dispatch = <P_dispatch>
+  P_workers  = <P_workers>
 ```
 
 The audit block is never omitted from the gate. Empty-findings runs still emit the block with the no-constraints line so the audit's execution is always visible to the user.

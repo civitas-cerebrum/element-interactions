@@ -52,11 +52,84 @@ The detailed rules for each check are in §1 through §6 below.
 
 **Trigger:** the spec under review mutates state. Mutating tests are detected by any of: `steps.click('submit*')` in a flow that creates a record; `signupFresh()` / `loginFresh()` helpers; calls into endpoints listed under `Mutation endpoints (UI-driven)` in app-context's Test Infrastructure section.
 
-**Rule:** if `app-context.md`'s Test Infrastructure has a non-empty `Reset / seed endpoints` entry, every mutating spec MUST have `test.beforeEach(resetState)` (or an equivalent `test.beforeAll` for serial-mode describes — see §6).
+§1 has two branches. **Read app-context.md's Test Infrastructure section AND the onboarding shared-resource-audit tags before applying either.** Picking the wrong branch silently caps the suite at `workers=1` forever or causes cross-worker test pollution.
+
+### §1.A — Per-test-user isolation (mandatory when `global-reset:cross-test-race` tag is present)
+
+**Trigger:** the onboarding shared-resource audit reported `global-reset:cross-test-race` — the discovered reset endpoint touches global (non-tenanted) collections, and `beforeEach(reset)` would race across Playwright workers.
+
+**Rule:** the spec MUST NOT call `beforeEach(resetState)` or any equivalent global-wipe hook. Instead:
+
+1. Each test creates its own throwaway user (or uses an isolated test-user pool) and asserts against per-user-scoped views.
+2. The suite has ONE `globalSetup` (Playwright config) that seeds the global state once before any test runs.
+3. Specs that need clean state for a specific resource use targeted per-user cleanup, never global reset.
 
 **Auto-fix:**
 
-1. If `tests/fixtures/base.ts`'s `resetState` HELPER SLOT is empty, populate it from the discovered reset endpoint. Substitute the `«…»` placeholders per the placeholder-convention table above:
+1. Populate `tests/fixtures/base.ts`'s `freshUser` HELPER SLOT to mint a throwaway user per test. The helper signs the user in and returns the `{ email, password, userId }` triplet:
+
+   ```typescript
+   import { request, type Page } from '@playwright/test';
+
+   export async function freshUser(page: Page): Promise<{ email: string; password: string; userId: string }> {
+     const email = `test+${Date.now()}-${Math.random().toString(36).slice(2,8)}@example.test`;
+     const password = 'P@ssw0rd!';
+     const ctx = await request.newContext({ baseURL: process.env.BASE_URL ?? '«BASE_URL»' });
+     const res = await ctx.post('«SIGNUP_ENDPOINT»', { data: { email, password } });
+     if (!res.ok()) throw new Error(`freshUser signup failed: ${res.status()}`);
+     const { userId } = await res.json();
+     await ctx.dispose();
+     // The page-level login is left to the spec — fixtures shouldn't navigate.
+     return { email, password, userId };
+   }
+   ```
+
+2. Populate `playwright.config.ts`'s `globalSetup` slot with a once-per-suite seed:
+
+   ```typescript
+   // playwright.config.ts
+   export default defineConfig({
+     globalSetup: require.resolve('./tests/fixtures/global-setup'),
+     // ...
+   });
+   ```
+
+   ```typescript
+   // tests/fixtures/global-setup.ts
+   import { request } from '@playwright/test';
+   export default async function globalSetup() {
+     const ctx = await request.newContext({ baseURL: process.env.BASE_URL ?? '«BASE_URL»' });
+     await ctx.post('«RESET_ENDPOINT»');  // run once, before any worker spawns
+     await ctx.dispose();
+   }
+   ```
+
+3. Each spec uses `freshUser` per-test, with assertions scoped to that user:
+
+   ```typescript
+   test('listing creates and appears on MY profile', async ({ page }) => {
+     const { email, password } = await freshUser(page);
+     await steps.signin(email, password);
+     await steps.createListing({ title: 'My item', price: 10 });
+     // SCOPED — assert on MY profile, not on the global marketplace.
+     await steps.navigateTo('/me/listings');
+     await steps.verifyText('listingTitle', 'My item');
+   });
+   ```
+
+**Banned in this branch:** `test.beforeEach(resetState)`, `test.beforeAll(resetState)` (in non-serial mode), and any direct call to the discovered reset endpoint inside a spec body. The banned forms produce cross-worker races (worker A's reset wipes worker B's mid-test state).
+
+**Why:** a shared-DB SaaS-style app where every test calls `/api/reset` in `beforeEach` *appears* isolated but actually serialises every worker through one global mutation. Workers never run in parallel — `workers=4` becomes `workers=1` in practice. The per-test-user pattern is the only way to keep `workers=N` real.
+
+### §1.B — Global reset isolation (default when no global-reset tag is present)
+
+**Trigger:** `app-context.md`'s `Reset / seed endpoints` is non-empty AND the audit did NOT report `global-reset:cross-test-race`. This means the reset is either tenanted (per-user-or-tenant scope) or the suite is mono-worker by design.
+
+**Rule:** every mutating spec MUST have `test.beforeEach(resetState)` (or `test.beforeAll` for serial-mode describes — see §6).
+
+**Auto-fix:**
+
+1. If `tests/fixtures/base.ts`'s `resetState` HELPER SLOT is empty, populate it from the discovered reset endpoint:
 
    ```typescript
    import { request } from '@playwright/test';
@@ -80,7 +153,16 @@ The detailed rules for each check are in §1 through §6 below.
    });
    ```
 
-**No-reset-discovered branch:** if the Test Infrastructure section's `Reset / seed endpoints` entry reads `none discovered`, mark the spec with a `// stage4a:no-reset-endpoint` top-of-file comment and proceed. Stage 4a's #2 (hardcoded shared resources) becomes the strict gate instead.
+### Branch-selection summary
+
+| audit tag                      | reset endpoint discovered | applies | beforeEach(reset) |
+|---|---|---|---|
+| `global-reset:cross-test-race` | yes                       | §1.A    | **forbidden** — use freshUser + globalSetup |
+| (none)                         | yes                       | §1.B    | **mandatory** |
+| (none)                         | no — `none discovered`    | mark spec `// stage4a:no-reset-endpoint`, fall through to §2 | n/a |
+| `single-tenant-global-state`   | (independent of reset)    | overlay on §1.A or §1.B | rewrite global-state assertions to per-user-scoped views |
+
+**No-reset-discovered branch:** if the Test Infrastructure section's `Reset / seed endpoints` entry reads `none discovered`, mark the spec with a `// stage4a:no-reset-endpoint` top-of-file comment and proceed. Stage 4a's §2 (hardcoded shared resources) becomes the strict gate instead.
 
 ## §2 Hardcoded shared resources
 

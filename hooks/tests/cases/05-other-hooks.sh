@@ -42,6 +42,28 @@ assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverag
 assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content='{\"status\":\"in-progress\"}')" "missing required keys → DENY"
 assert_allow "$H" "$(payload tool_name=Write file_path='/x/some-other-file.json' content='{}')" "non-state file → silent allow"
 
+section "coverage-expansion-direct-compose-warning"
+H="$HOOK_DIR/coverage-expansion-direct-compose-warning.sh"
+# Set up a temp project with an active coverage-expansion state file
+TMP_PROJ=$(mktemp -d)
+mkdir -p "$TMP_PROJ/tests/e2e/docs"
+cd "$TMP_PROJ" && git init -q && cd - >/dev/null
+echo '{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-x"],"passes":{"1-compositional":{"dispatches":[{"journey":"j-x","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]}},"updatedAt":"2026-05-02T00:00:00Z"}' > "$TMP_PROJ/tests/e2e/docs/coverage-expansion-state.json"
+
+assert_warn "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/j-checkout.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "j-spec write during coverage-expansion → WARN" "Direct composition"
+assert_warn "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/sj-payment.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "sj-spec write during coverage-expansion → WARN"
+assert_warn "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/j-checkout-regression.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "j-regression-spec write during coverage-expansion → WARN"
+assert_allow "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/happy-path.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "happy-path.spec.ts → ALLOW (exempt)"
+assert_allow "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/utils.ts" content='helpers' cwd="$TMP_PROJ")" "non-spec file → ALLOW"
+assert_allow "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/scenarios.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "non-j-prefixed spec → ALLOW"
+
+# Without state file, j-spec writes are allowed (element-interactions Stage 3 / companion-mode context)
+rm "$TMP_PROJ/tests/e2e/docs/coverage-expansion-state.json"
+assert_allow "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/j-checkout.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "j-spec write WITHOUT coverage-expansion state → ALLOW"
+
+# Cleanup
+rm -rf "$TMP_PROJ"
+
 section "raw-playwright-api-warning"
 H="$HOOK_DIR/raw-playwright-api-warning.sh"
 assert_warn "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/foo.spec.ts' content='await page.click(\"#submit\");')" "page.click → WARN" "page.click"

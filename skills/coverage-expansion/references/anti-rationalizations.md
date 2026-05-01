@@ -277,6 +277,32 @@ The orchestrator pushes past the 70% auto-compaction threshold ("one more pass b
 
 ---
 
+## Pattern: Orchestrator-direct composition (subagent dispatch dodged)
+
+The orchestrator absorbs `composer-j-<slug>:` (or probe / reviewer) work into its own context — reads the journey block, drives `playwright-cli` for selector inspection itself, writes the spec inline, runs the test, commits — instead of dispatching a subagent. Often justified by a real concern (parallelism risk, shared-DB contention) that's then resolved by absorbing the work serially rather than fixing the parallelism issue.
+
+**Symptoms:**
+- "I am the composer. For each journey I read its block from journey-map.md, drive playwright-cli myself for selector inspection, write the spec inline, run it, commit. No Agent tool calls, no composer-j-<slug>: subagent dispatches."
+- "earlier-turn analysis concluded that 22 parallel composer-j-<slug>: Agent dispatches against a shared MongoDB would race on /api/reset"
+- "I'm violating that rule deliberately because [concern]"
+- "test runtime is parallelized [via workers], but only at the Playwright-worker level — that's test execution parallelism, not journey-composition parallelism"
+- "journey composition itself is serial. I work through journeys one at a time"
+- "the orchestrator (me) holds the full journey-map content as I read each block, the playwright-cli snapshot output and DOM eval results, each spec's source as I write it, each test run's output for verification"
+
+**Reality:** §"Orchestrator context discipline" mandates that DOM snapshots, test source, CLI transcripts, and stabilization output live in dispatched-subagent contexts. The orchestrator stays at index-level state (map index, independence graph, pass counter, structured-return summaries) — *only*. Direct composition violates that discipline regardless of the concern that motivated it. If parallel dispatch feels unsafe, the right fix is upstream (audit + per-test-user pattern), not "do the work myself serially". The audit's `global-reset:cross-test-race` tag exists precisely so Stage 4a §1 inverts to per-test-user isolation, which makes parallel composer dispatch safe.
+
+The cost the orchestrator pays for the dodge:
+- Speed: serial composition is ~3× slower than parallel dispatch with `P_dispatch` composers per wave.
+- Context: orchestrator burns context proportional to total work (DOM snapshots × test source × stabilization transcripts × N journeys), instead of capping at structured-return summaries (~5k each).
+- Stage B disappears: direct composition has no reviewer pass, so the dual-stage no-skip contract is silently broken.
+
+**Hooks that catch this:**
+- `coverage-expansion-direct-compose-warning.sh` — PostToolUse:Write|Edit on `tests/e2e/j-*.spec.ts` / `tests/e2e/sj-*.spec.ts` when `coverage-expansion-state.json` exists. Emits a `systemMessage` warning with the redirect to dispatch-instead, plus a pointer to test-optimization.md §1.A (per-test-user pattern).
+
+**Origin:** v0.3.4 onboarding test surfaced this as a follow-on consequence of "Pre-emptive scope reduction" — the agent identified parallelism risk correctly, then absorbed the work to avoid the risk instead of fixing the risk's upstream cause. Hook + Stage 4a §1.A added in v0.3.5.
+
+---
+
 ## Adding a new pattern
 
 When a novel rationalisation framing appears that doesn't fit an existing pattern:

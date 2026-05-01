@@ -426,6 +426,13 @@ One bounded exception for pass 5: when dispatching a pass-5 subagent, the orches
 
 If orchestrator context approaches a budget boundary, follow the auto-compaction flow in §"Auto-compaction between passes". The authoritative state file is `tests/e2e/docs/coverage-expansion-state.json` (see §"Authoritative state file — read first, always"); resumption on any subsequent invocation is driven from that file.
 
+### Hard rules — kernel-resident
+
+- **The orchestrator does NOT compose tests directly.** Spec writes for `tests/e2e/j-<slug>.spec.ts` and `tests/e2e/sj-<slug>.spec.ts` (and their `-regression` variants) come from a dispatched `composer-j-<slug>:` / `composer-sj-<slug>:` / `probe-j-<slug>:` subagent — never from direct orchestrator action. Harness-enforced by `hooks/coverage-expansion-direct-compose-warning.sh` (PostToolUse warning when `coverage-expansion-state.json` exists). `tests/e2e/happy-path.spec.ts` is exempt (Phase 3 of onboarding writes it before coverage-expansion's Pass 1).
+- **The orchestrator does NOT run `playwright-cli` for selector inspection.** The CLI session belongs to the dispatched subagent (its slug carries the subagent's role prefix — see §"Role prefixes"). Orchestrator-side `playwright-cli` use during coverage-expansion is a discipline violation: it pulls DOM snapshots into the orchestrator's context.
+- **The orchestrator does NOT run `npx playwright test` for stabilization.** Stabilization happens inside the composer subagent's loop, with the result captured in the structured return. The orchestrator-level test run is the **whole-suite re-run gate** at pass exit, not per-spec stabilization.
+- **If parallel composer dispatch feels unsafe (e.g., shared-DB races), the fix is the per-test-user pattern**, not "absorb the composer work serially". See `../element-interactions/references/test-optimization.md` §1.A. The onboarding shared-resource audit's `global-reset:cross-test-race` tag is the trigger for §1.A.
+
 ---
 
 ## Integration with other skills
