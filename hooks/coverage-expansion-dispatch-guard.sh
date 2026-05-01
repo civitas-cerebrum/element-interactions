@@ -102,11 +102,59 @@ if [ "$DESCRIPTION_HAS_ROLE_PREFIX" = true ] && echo "$DESCRIPTION" | grep -qE '
   # grep -o returns 1 and the substitution would otherwise abort the script.
   LEAK=$(echo "$PROMPT" | grep -oiE 'depth mode|breadth mode|5-pass pipeline|5-pass|3 compositional|2 adversarial|pass(es)? [2-5]([[:space:]]|$|/|,|\.)|pipeline (orchestrator|stage|coordinator)|adversarial pass(es)?' | sort -u | head -5 | tr '\n' '|' | sed 's/|$//' || true)
   if [ -n "$LEAK" ]; then
+    # === Strict role prefixes BLOCK on leak (issue #132) ================
+    # composer / reviewer / probe briefs are the high-leverage dispatches —
+    # a leaked "5-pass pipeline" reference here causes the subagent to
+    # consult parts of the skill outside its scope and ration attention
+    # across siblings. Hard-block; the parent revises the brief and
+    # re-emits.
+    if echo "$DESCRIPTION" | grep -qE '^(composer-|reviewer-|probe-)'; then
+      REASON_LEAK="[BLOCKED] Subagent brief contains orchestrator meta-content: ${LEAK//|/, }
+
+Description: \"${DESCRIPTION}\"
+
+A composer / reviewer / probe brief only needs:
+  - the journey block (verbatim from journey-map.md)
+  - the must-fix list (Stage B feedback or empty for cycle 1)
+  - the CLI session slug
+  - a pointer to the canonical return schema
+
+References to the broader pipeline (depth/breadth mode, Pass 4/5, 5-pass structure, adversarial passes) belong to the parent orchestrator's context only. They bloat the subagent and cause it to ration attention across siblings — the diagnostic is Stage B reviewers returning improvements-needed for Test-expectations bullets the composer skipped.
+
+Fix: rewrite the brief to drop the leaked phrases and re-dispatch. Tight-brief template:
+
+  ## Journey block
+  <paste from journey-map.md, this journey only>
+
+  ## Must-fix list
+  <Stage B feedback IDs verbatim, or \"(none — cycle 1)\">
+
+  ## Session slug
+  <composer|reviewer|probe>-j-<slug>-<pass>-c<N>
+
+  ## Return shape
+  See skills/element-interactions/references/subagent-return-schema.md.
+
+See coverage-expansion §\"Orchestrator context discipline\" for the full briefing convention."
+      jq -n --arg r "$REASON_LEAK" '{
+        "hookSpecificOutput": {
+          "hookEventName": "PreToolUse",
+          "permissionDecision": "deny",
+          "permissionDecisionReason": $r
+        }
+      }'
+      exit 0
+    fi
+
+    # Soft WARN preserved for transitional / non-strict prefixes:
+    # cleanup- (single dispatch, narrow scope) and the discovery prefixes
+    # phase1- / phase2- / stage2- (different brief shape from the
+    # composer/reviewer/probe pipeline).
     WARNING="[WARN] Subagent brief contains orchestrator meta-content: ${LEAK//|/, }
 
-This subagent only needs: journey block + must-fix list + slug + return shape. References to the broader pipeline (depth/breadth mode, Pass 4/5, 5-pass structure, adversarial passes) belong to the parent orchestrator's context — they bloat the subagent's context and risk it consulting parts of the skill outside its scope.
+This subagent only needs: scope + return shape. References to the broader pipeline (depth/breadth mode, Pass 4/5, 5-pass structure, adversarial passes) belong to the parent orchestrator's context — they bloat the subagent's context and risk it consulting parts of the skill outside its scope.
 
-Suggested cleanup: remove pipeline meta-talk from the brief. Subagent role + must-fix list + return contract is enough. See coverage-expansion §\"Orchestrator context discipline\"."
+Suggested cleanup: remove pipeline meta-talk from the brief. Subagent role + scope + return contract is enough. See coverage-expansion §\"Orchestrator context discipline\"."
     jq -n --arg m "$WARNING" '{
       "systemMessage": $m,
       "suppressOutput": false
