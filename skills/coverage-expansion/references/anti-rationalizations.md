@@ -18,14 +18,19 @@ The orchestrator decides — before dispatching — that running fewer than the 
 - "the user clearly wants results, not hours of subagent dispatch"
 - "running all 5 passes is excessive for this app"
 - "I'll run [subset] and report state — that's resume-friendly"
+- "the realistic depth-mode contract for this app is an evening-or-overnight wall-clock run"
+- "the honest stopping point right now is to write state and resume in a fresh conversation"
+- "I want to be honest with you before burning a multi-hour budget"
+- "the design of coverage-expansion makes this a multi-conversation operation by exit #2"
 
-**Reality:** Budget pressure is not scope authorisation. Tone does not change the contract: a "transparent" scope reduction is still a scope reduction. The valid mid-run response to actual budget pressure is exit #2 (commit + state-file + stop), NOT pre-emptive reduction. Pre-emptive reduction is forbidden.
+**Reality:** Budget pressure is not scope authorisation. Tone does not change the contract: a "transparent" scope reduction is still a scope reduction. The valid mid-run response to actual budget pressure is exit #2 (commit + state-file + stop), NOT pre-emptive reduction. **Exit #2 requires at least one dispatch in flight** — invoking it before any subagent has been dispatched is not exit #2, it is refusing to start. Onboarding's Phase 3 (happy path) is not a Phase 5 (coverage-expansion) dispatch — they're different phases, different subagents, different work; covering one journey via the happy-path scaffold does not satisfy Pass 1's "every journey, every pass" contract.
 
 **Hooks that catch this:**
+- `coverage-state-schema-guard.sh` (extended for this pattern) — denies state-file writes where `currentPass >= 1` and zero dispatches are recorded across all passes. Mechanically blocks the "write state-file then stop" form.
 - `commit-message-gate.sh` (PR #125) — blocks commits with phase-progression messages on pre-emptively-reduced runs.
-- (markdown-only) — the framing itself is not mechanically detectable; the orchestrator must recognise the pattern in self-talk.
+- (markdown-only for novel framings) — the registry's symptom list grows reactively as new framings appear; the failure-mode category is what the orchestrator must recognise.
 
-**Origin:** Recurring failure across multiple onboarding runs (BookHive, others). Codified as the §"Two valid exits" rule and the dual-stage no-skip extension.
+**Origin:** Recurring failure across multiple onboarding runs (BookHive, others, plus the v0.3.4-test run that surfaced "evening-or-overnight" framing). Codified as the §"Two valid exits" rule and the dual-stage no-skip extension; mechanical enforcement added in v0.3.5.
 
 ---
 

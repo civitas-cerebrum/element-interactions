@@ -209,8 +209,9 @@ The seven-phase pipeline (Phase 1 Scaffold → Phase 2 Groundwork discovery → 
 
 - **All seven phases run in order, no skipping.** Phase 5 (coverage-expansion) and Phase 6 (bug-discovery) are the lengthy phases — the front-load gate authorises both up-front. Skipping either is a contract violation; surface to the user instead.
 - **Phase 5 invokes `coverage-expansion` with `mode: depth`** — the full 5-pass + cleanup pipeline. Onboarding never invokes coverage-expansion in `mode: breadth`.
+- **Phase 5 must DISPATCH at least one wave before any exit.** Phase 3 (happy-path scaffolded test) is NOT a Phase 5 dispatch — different phases, different subagents, different work. Covering one journey via the happy-path scaffold does NOT satisfy Pass 1's per-journey contract. If Phase 5 stops without having dispatched a single composer subagent, that is refusing to start, not exit #2. Harness-enforced by `coverage-state-schema-guard.sh` (denies state-file writes claiming `currentPass >= 1` with zero recorded dispatches).
 - **Hard gates between phases.** A phase that surfaces a malformed prerequisite (missing journey-map sentinel, missing tenant credentials, missing happy-path sentence, etc.) stops onboarding with a clear `blocked-on-prerequisite` message — never silently proceeds.
-- **Front-load gate is the only user prompt.** Once the user authorises the run, onboarding runs autonomously through Phase 7 — no further confirmation prompts. Mid-run scope-reduction without explicit user authorisation is forbidden (mirrors coverage-expansion §"Two valid exits").
+- **Front-load gate is the only user prompt.** Once the user authorises the run, onboarding runs autonomously through Phase 7 — no further confirmation prompts. Mid-run scope-reduction without explicit user authorisation is forbidden (mirrors coverage-expansion §"Two valid exits"). "Honest" / "pragmatic" / "I want to surface this back upstream" framings before Phase 5 has dispatched anything are the same forbidden pattern with different words.
 
 ## Onboarding report (`tests/e2e/docs/onboarding-report.md`)
 

@@ -22,8 +22,21 @@ assert_allow "$H" "$(payload tool_name=Edit file_path='/x/tests/e2e/docs/other.m
 
 section "coverage-state-schema-guard"
 H="$HOOK_DIR/coverage-state-schema-guard.sh"
-GOOD='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":[],"updatedAt":"2026-05-01T00:00:00Z"}'
-assert_allow "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$GOOD")" "valid state file → ALLOW"
+# Valid: currentPass=0, no dispatches yet (orchestrator hasn't started)
+INIT='{"status":"in-progress","mode":"depth","currentPass":0,"journeyRoster":["j-a","j-b"],"passes":{},"updatedAt":"2026-05-01T00:00:00Z"}'
+assert_allow "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$INIT")" "currentPass=0 with empty passes → ALLOW (haven't started)"
+# Valid: currentPass=1 with at least one dispatch recorded
+PROGRESS='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a","j-b"],"passes":{"1-compositional":{"dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]}},"updatedAt":"2026-05-01T00:00:00Z"}'
+assert_allow "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$PROGRESS")" "currentPass=1 with one dispatch → ALLOW"
+# Pre-emptive-stop: currentPass=1 with empty passes (the v0.3.4-test failure mode)
+EMPTY='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a","j-b"],"passes":{},"updatedAt":"2026-05-01T00:00:00Z"}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$EMPTY")" "currentPass=1 with empty passes → DENY (pre-emptive stop)" "zero dispatches recorded"
+# Pre-emptive-stop with passes object but empty dispatches[]
+EMPTY_DISPATCHES='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a","j-b"],"passes":{"1-compositional":{"dispatches":[]}},"updatedAt":"2026-05-01T00:00:00Z"}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$EMPTY_DISPATCHES")" "currentPass=1 with empty dispatches[] → DENY (pre-emptive stop)" "zero dispatches recorded"
+# Top-level dispatches[] form (older schema variant) — still satisfies the at-least-one rule
+TOP_DISPATCHES='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{},"dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}],"updatedAt":"2026-05-01T00:00:00Z"}'
+assert_allow "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$TOP_DISPATCHES")" "currentPass=1 with top-level dispatches[] → ALLOW (compat)"
 assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content='not json')" "malformed JSON → DENY"
 assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content='{}')" "empty object → DENY (missing required fields)"
 assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content='{\"status\":\"in-progress\"}')" "missing required keys → DENY"
