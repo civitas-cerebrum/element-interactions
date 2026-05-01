@@ -77,6 +77,91 @@ try {
   console.warn(`[@civitas-cerebrum/element-interactions] Could not install Claude Code skill: ${err.message}`);
 }
 
+// Install the coverage-expansion dispatch-guard hook into the user's
+// ~/.claude/hooks/ directory and register it as a PreToolUse:Agent hook in
+// ~/.claude/settings.json. Markdown rules in the skill ("dispatch one
+// journey per Agent call") are skippable; the harness-level hook is not.
+//
+// Idempotent:
+//   - Hook file is copied iff missing or older than the bundled version.
+//   - Hook entry in settings.json is added iff a matching command is not
+//     already registered (other PreToolUse:Agent hooks are preserved).
+//
+// Opt-out: set CIVITAS_SKIP_HOOK_INSTALL=1 — useful for enterprise managed
+// settings where postinstall scripts must not modify ~/.claude/settings.json.
+function installDispatchGuardHook() {
+  if (process.env.CIVITAS_SKIP_HOOK_INSTALL === '1') {
+    console.log('[civitas-cerebrum] CIVITAS_SKIP_HOOK_INSTALL=1 — dispatch guard hook install skipped.');
+    return;
+  }
+
+  const hookSrc = path.join(packageDir, 'hooks', 'coverage-expansion-dispatch-guard.sh');
+  if (!fs.existsSync(hookSrc)) {
+    // Bundled hook missing — quietly skip rather than failing the consumer's npm install.
+    return;
+  }
+
+  const userHooksDir = path.join(homeDir, '.claude', 'hooks');
+  const hookDest = path.join(userHooksDir, 'coverage-expansion-dispatch-guard.sh');
+  const settingsPath = path.join(homeDir, '.claude', 'settings.json');
+
+  fs.mkdirSync(userHooksDir, { recursive: true });
+
+  // Copy hook iff missing or bundled version is newer (mtime-based).
+  let shouldCopy = !fs.existsSync(hookDest);
+  if (!shouldCopy) {
+    try {
+      const srcMtime  = fs.statSync(hookSrc).mtimeMs;
+      const destMtime = fs.statSync(hookDest).mtimeMs;
+      shouldCopy = srcMtime > destMtime;
+    } catch (_) {
+      shouldCopy = true;
+    }
+  }
+  if (shouldCopy) {
+    fs.copyFileSync(hookSrc, hookDest);
+    fs.chmodSync(hookDest, 0o755);
+  }
+
+  // Register PreToolUse:Agent hook in ~/.claude/settings.json — idempotent.
+  let settings = {};
+  if (fs.existsSync(settingsPath)) {
+    try {
+      const raw = fs.readFileSync(settingsPath, 'utf8').trim();
+      settings = raw ? JSON.parse(raw) : {};
+    } catch (err) {
+      console.warn(`[civitas-cerebrum] Could not parse ${settingsPath} — leaving it untouched. (${err.message})`);
+      return;
+    }
+  }
+
+  settings.hooks = settings.hooks || {};
+  settings.hooks.PreToolUse = settings.hooks.PreToolUse || [];
+
+  // Find an existing PreToolUse entry whose matcher targets the Agent tool.
+  let agentEntry = settings.hooks.PreToolUse.find(e => e && e.matcher === 'Agent');
+  if (!agentEntry) {
+    agentEntry = { matcher: 'Agent', hooks: [] };
+    settings.hooks.PreToolUse.push(agentEntry);
+  }
+  agentEntry.hooks = agentEntry.hooks || [];
+
+  const alreadyRegistered = agentEntry.hooks.some(h => h && h.type === 'command' && h.command === hookDest);
+  if (!alreadyRegistered) {
+    agentEntry.hooks.push({ type: 'command', command: hookDest });
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
+  }
+
+  console.log(`[civitas-cerebrum] Installed coverage-expansion dispatch guard at ${hookDest} and registered PreToolUse hook.`);
+}
+
+try {
+  installDispatchGuardHook();
+} catch (err) {
+  console.warn(`[civitas-cerebrum] Could not install dispatch guard hook: ${err.message}`);
+}
+
 // @playwright/cli is shipped as a hard dependency of this package, so skills
 // that drive a live browser can rely on it after `npm install` with no
 // further action from the consumer. Confirm reachability, then fetch the

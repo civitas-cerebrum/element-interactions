@@ -70,6 +70,8 @@ The symptom of getting this wrong: every Stage B reviewer for a batched-Stage-A 
 
 See §"Batched dispatch for P3 peripheral journeys" for the narrow P3-only exception.
 
+**Harness-enforced, not markdown-only.** This rule is shipped with the package as a PreToolUse:Agent hook (`hooks/coverage-expansion-dispatch-guard.sh`, auto-installed into `~/.claude/hooks/` and registered in `~/.claude/settings.json` by `scripts/postinstall.js`). Every Agent dispatch the orchestrator issues during coverage-expansion / journey-mapping work is inspected at the tool-use boundary: if the prompt references 2+ distinct `j-<slug>` IDs and the description does not start with a single `j-<slug>:` (one journey) or `[P3-batch] j-<slug>,...` (capped P3 batch) prefix, the harness denies the call before it reaches the subagent. Markdown rules can be rationalised away mid-run; this hook cannot. Consumers that cannot accept settings-modification (e.g., enterprise-managed `~/.claude/settings.json`) may set `CIVITAS_SKIP_HOOK_INSTALL=1` at install time to skip registration — but doing so falls back to markdown-only enforcement and re-opens the loophole.
+
 ---
 
 ## Self-talk red flags
