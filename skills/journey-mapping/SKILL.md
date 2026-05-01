@@ -67,6 +67,14 @@ The five-phase mapping pipeline is split as follows:
 
 Phases 1 → 3.5 detail (process, parallel-discovery model, output formats) is in [`references/phases.md`](references/phases.md). Phase 4 + 5 detail (document structure, sentinel-marker rules, hard gates) stays in this file because it is tightly coupled to the file the consumer commits.
 
+### Hard rules — kernel-resident
+
+- **Discovery via `playwright-cli` only.** Static analysis, MCP browser tools, and "I'll guess from the URL structure" are not acceptable substitutes. Phase 1 hits the live app.
+- **Every journey is a self-contained `### j-<slug>:` block.** Downstream subagents receive ONLY their assigned journey block (plus referenced `sj-` sub-journeys) — cross-section reading is forbidden. Block format must support that isolation.
+- **The `<!-- journey-mapping:generated -->` sentinel is line 1 of `journey-map.md`.** Maps without the sentinel are not valid. Tools (coverage-expansion, test-composer) refuse to consume sentinel-less maps.
+- **Priority is load-bearing.** P0 / P1 / P2 / P3 ordering drives dispatch order in coverage-expansion AND batching eligibility (only P3 may batch). Misclassifying a journey as P3 is a contract violation, not an optimization.
+- **Phase 4 is sentinel-bearing.** Phase 5 re-verifies. A Phase-4 commit without the sentinel re-fires Phase 4.
+
 ## Phase 4: Journey Map Document
 
 Write the complete journey map to `tests/e2e/docs/journey-map.md`. This is the blueprint that test-composer uses to determine what to implement and in what order.

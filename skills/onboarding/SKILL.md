@@ -205,11 +205,12 @@ Examples:
 
 The seven-phase pipeline (Phase 1 Scaffold → Phase 2 Groundwork discovery → Phase 3 Happy path → Phase 4 Full journey mapping → Phase 5 Coverage expansion → Phase 6 Bug hunts → Phase 7 Final summary) is specified in [`references/phases-walkthrough.md`](references/phases-walkthrough.md). Read it before authoring or modifying any phase logic.
 
-Key invariants kept here:
+### Hard rules — kernel-resident
 
-- **All seven phases run in order, no skipping.** Phase 5 (coverage-expansion) and Phase 6 (bug-discovery) are the lengthy phases — the front-load gate authorises both.
-- **Phase 5 invokes `coverage-expansion` with `mode: depth`** — the full 5-pass + cleanup pipeline. Onboarding does not invoke coverage-expansion in `mode: breadth`.
-- **Hard gates between phases.** A phase that surfaces a malformed prerequisite (missing journey-map sentinel, missing tenant credentials, etc.) stops onboarding with a clear "blocked-on-prerequisite" message rather than silently proceeding.
+- **All seven phases run in order, no skipping.** Phase 5 (coverage-expansion) and Phase 6 (bug-discovery) are the lengthy phases — the front-load gate authorises both up-front. Skipping either is a contract violation; surface to the user instead.
+- **Phase 5 invokes `coverage-expansion` with `mode: depth`** — the full 5-pass + cleanup pipeline. Onboarding never invokes coverage-expansion in `mode: breadth`.
+- **Hard gates between phases.** A phase that surfaces a malformed prerequisite (missing journey-map sentinel, missing tenant credentials, missing happy-path sentence, etc.) stops onboarding with a clear `blocked-on-prerequisite` message — never silently proceeds.
+- **Front-load gate is the only user prompt.** Once the user authorises the run, onboarding runs autonomously through Phase 7 — no further confirmation prompts. Mid-run scope-reduction without explicit user authorisation is forbidden (mirrors coverage-expansion §"Two valid exits").
 
 ## Onboarding report (`tests/e2e/docs/onboarding-report.md`)
 

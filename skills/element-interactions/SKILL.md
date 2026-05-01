@@ -446,11 +446,14 @@ Full per-entry-point contracts live in [`references/autonomous-mode-callers.md`]
 
 The four-stage pipeline (Stage 1 Scenario Discovery → Stage 2 Element Inspection → Stage 3 Write Automation → Stage 4a Test Optimization + Stage 4b API Compliance Review) is specified in [`references/stages-protocol.md`](references/stages-protocol.md). Read it before authoring or modifying any test under this skill.
 
-Key invariants kept here:
+### Hard rules — kernel-resident
 
-- **Run stages in order, no skipping.** Skip-to-Stage-3 mode (Stage 3 only, scope= one named test, no new selectors) is the lone exception, narrowly scoped per `references/stages-protocol.md` §"Skip-to-Stage-3".
+- **Run stages in order, no skipping.** Skip-to-Stage-3 mode (Stage 3 only, scope = one named test, no new selectors) is the lone exception, narrowly scoped.
 - **Hard gates between stages.** Stage 1 → 2: scenario list + page coverage explicit. Stage 2 → 3: every selector lives in `page-repository.json`. Stage 3 → 4a: test passes 3× green in isolation. Stage 4a → 4b: optimization checklist clean. Stage 4b → done: API compliance checklist clean.
-- **Stage 4b reviews against `references/api-reference.md` exclusively.** No raw Playwright APIs that have a Steps equivalent.
+- **Stage 4b reviews against `references/api-reference.md` exclusively.** Raw Playwright APIs that have a Steps equivalent are rejected.
+- **Every test MUST end with a verification proving the action's effect.** A test that performs actions (click, fill, drag, hover, check, upload, setSliderValue, etc.) and never asserts a resulting state is not a test — it's a smoke call that only catches thrown exceptions. The final meaningful statement must be a `verify*`, a matcher-tree assertion (`.text.toBe`, `.visible.toBeTrue`, `.satisfy`, …), or a typed `expect(extractedValue)` reflecting what the action was supposed to change.
+- **Selectors are NEVER invented.** Every selector is either inspected from the live site (Stage 2) or reuses an existing entry in `page-repository.json`. Inline selectors in test code are a hard rule violation.
+- **Application bugs are reported, not worked around.** If a bug blocks the test, surface the bug — don't write a test that pretends the bug isn't there.
 
 ## API Reference
 

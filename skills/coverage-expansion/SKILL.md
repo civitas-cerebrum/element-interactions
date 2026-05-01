@@ -256,12 +256,15 @@ This subsection extends §"Per-pass completion criteria" (see below). A pass's c
 
 Every one of the 5 passes runs **per journey** as two sequential stages — Stage A (compose / probe) and Stage B (adversarial review). They alternate in a bounded 7-cycle retry loop until the journey reaches one of four terminal `review_status` values: `greenlight`, `blocked-cycle-stalled`, `blocked-cycle-exhausted`, or `blocked-dispatch-failure`. The full retry-loop pseudocode, termination conditions, the "fresh reviewer every cycle" invariant, and dual-stage-specific anti-rationalizations are specified in [`references/dual-stage-retry-loop.md`](references/dual-stage-retry-loop.md).
 
-Key invariants kept here:
+### Hard rules — kernel-resident
 
-- **Both stages, every journey, every pass.** A `review_status` written without a Stage B dispatch is fabricated state and breaks resume.
-- **Stage B is fresh-eyes per cycle.** Each cycle dispatches a new reviewer with a new context and a new `playwright-cli` session. State carried across cycles defeats the design.
-- **Cap of 7 A↔B cycles per journey per pass.** Stalled (3 consecutive identical must-fix lists, OR reviewer-flagged stalled) wins over exhausted when both apply on cycle 7.
-- **Dual-stage no-skip extension** to the no-skip contract: every journey gets both stages every pass.
+- **Both stages, every journey, every pass.** A `review_status` written without a Stage B dispatch having occurred is fabricated state — corrupts the state file, breaks resume, lies to telemetry.
+- **Stage B is fresh-eyes per cycle.** Each cycle dispatches a new reviewer with a new context and a new `playwright-cli` session. No state carried across cycles, no inheritance from the paired Stage A. The fresh-eyes property is load-bearing — a stateful reviewer starts agreeing with Stage A.
+- **Stage B never writes tests, never appends to the ledger, never modifies files.** Pure review subagent. Findings come back in the return; the orchestrator (not Stage B) decides what to do with them.
+- **Cap of 7 A↔B cycles per journey per pass.** Stalled (3 consecutive identical must-fix lists OR reviewer-flagged `stalled: true`) takes precedence over exhausted when both apply on cycle 7 — different downstream signal.
+- **Cycle 7 reached without greenlight → `blocked-cycle-exhausted`.** Marking it greenlit when it isn't corrupts state. `blocked-cycle-exhausted` is a valid terminal, not a pass failure.
+- **Empty findings on `improvements-needed` → coerce to greenlight after one re-dispatch.** Empty findings = no changes needed; the status was malformed.
+- **Pass full findings through verbatim.** Compressed findings lose the surgical specificity Stage A needs. No "summary string" inputs to the next cycle.
 
 ## Prerequisites
 
@@ -302,12 +305,15 @@ The declaration also serves as the auditable record of *why* a partial run, if a
 
 The skill's first action on entry is to read `tests/e2e/docs/coverage-expansion-state.json`. The full schema (top-level fields, per-journey `dispatches[]` entry shape including dual-stage fields, journey-roster mutability rules, and the corrupt-state-refusal protocol) is specified in [`references/state-file-schema.md`](references/state-file-schema.md). Resumption is a contract, not a convention — read it before authoring or modifying any state-file-touching code.
 
-Key invariants kept here:
+### Hard rules — kernel-resident
 
 - **Read first, before anything else.** If currentPass is set, resume from that pass; if absent or `status == "complete"`, start Pass 1 from scratch.
-- **The file is authoritative.** Do not reason about "where did we leave off" from chat history, commit log, or journey-map deltas — they are diagnostic, not authoritative.
-- **State-file lifecycle.** Write after every per-pass commit + every auto-compaction trigger. Delete after successful 5-pass + cleanup completion (otherwise the next invocation mistakes a completed run for a resume).
-- **Corrupt-state stops the run.** Self-repair is out of scope — surface the mismatch to the caller.
+- **The file is authoritative.** Do not reason about "where did we leave off" from chat history, commit log, or journey-map deltas — those are diagnostic, not authoritative. If the file says currentPass=3 with 22 of 45 journeys complete, Pass 3 resumes with the remaining 23.
+- **Write after every per-pass commit AND every auto-compaction trigger.** A state file written without the dual-stage fields (`stage_a_cycles`, `stage_b_cycles`, `review_status`, `final_must_fix`) is incomplete — resume cannot reconstruct mid-A↔B-cycle journeys.
+- **Delete after successful 5-pass + cleanup completion.** Otherwise the next invocation mistakes a completed run for a resume.
+- **Roster is frozen at the start of each pass.** Journeys discovered mid-pass go to the NEXT pass's roster, not retroactively to the current pass's. Reconciliation commits write the new roster at the same commit that appends new map blocks.
+- **Missing dual-stage fields = corrupt state.** A state file lacking `stage_a_cycles`, `stage_b_cycles`, or `review_status` for any journey that ran this pass is corrupt — stop and report; never silently proceed.
+- **Corrupt-state stops the run.** Self-repair is out of scope — surface the mismatch to the caller. State referencing journeys not in `journey-map.md`, or `completedJourneys` ⊋ `journeyRoster`, both qualify.
 
 ## Modes
 
@@ -322,13 +328,20 @@ Key invariants kept here:
 
 The full per-pass pipeline (steps 1–8), pass differences, commit-message conventions, per-pass completion criteria, the whole-suite re-run gate, the parallelism model, model selection (cost-blind), auto-compaction between passes, re-pass mode for compositional passes 2–3, batched dispatch for P3 peripheral journeys, and the post-pass-5 ledger dedup are specified in [`references/depth-mode-pipeline.md`](references/depth-mode-pipeline.md). Read it before authoring or modifying any depth-mode pass.
 
-Key invariants kept here so this file is still scannable:
+### Hard rules — kernel-resident (never violate, even without loading the reference)
 
-- **Five passes + cleanup, in order, every run.** Three compositional (1–3) + two adversarial (4–5) + one ledger-dedup cleanup. "Pass 1 only" is one-fifth of the pipeline, never a valid completion state for `mode: depth` (see §"Non-negotiables for depth mode").
-- **Every journey, every pass.** The no-skip contract (§"No-skip contract") applies inside every pass — Pass 4 with 0 journeys is not Pass 4.
-- **Cost-blind, opus-default model selection.** No P-tier carve-outs; one narrow cycle-1 Stage B sonnet-confirmation exception for previously-greenlit journeys with no map delta. Full rules in `references/depth-mode-pipeline.md` §"Model selection".
-- **Auto-compaction at 70%.** State written first, then `/compact`, then resume from state. Mid-cycle Stage A returns persist to a scratch file before compacting. Full flow in `references/depth-mode-pipeline.md` §"Auto-compaction between passes".
-- **P3 batching is the only batching exception.** P0/P1/P2 never batch. P3 may batch up to 7 in Stage A only — Stage B always per-journey. Full rules in `references/depth-mode-pipeline.md` §"Batched dispatch for P3 peripheral journeys".
+These are restated here so they're in working memory even when `references/depth-mode-pipeline.md` is not loaded. Canonical text in the reference; this list is the no-load-required floor.
+
+- **Five passes + cleanup, in order, every run.** Three compositional (1–3) + two adversarial (4–5) + one ledger-dedup cleanup. "Pass 1 only" is one-fifth of the pipeline, never a valid completion state for `mode: depth`.
+- **Every journey, every pass.** Pass N is complete only when every journey in the map has been dispatched AND returned. Not "enough journeys", not "the P0/P1 tier", not "the journeys that fit the budget" — every journey. Pass 4 with 0 journeys is not Pass 4.
+- **One journey per commit, per pass kind.** Commit-message templates are fixed per pass (`test(<j-slug>)`, `docs(ledger): <j-slug> — …`, `test(<j-slug>-regression)`, `docs(ledger): dedupe cross-cutting findings`). Agents MUST NOT reinvent the format — the git log has to be filterable by `<j-slug>` and pass kind.
+- **Stage B never commits.** Reviewer judgements live in the state file's `review_status` and `final_must_fix` fields, never as commits. `review(j-…)` and any review-tagged commit form is forbidden.
+- **Stage A and B are parallel by default.** A journey's Stage B fires as soon as that journey's Stage A returns and the cap has a slot — not after every Stage A in the pass completes. Finishing all Stage A first then starting all Stage B is contract-violating.
+- **Parallel cap counts A and B jointly.** One pool of in-flight slots; A, B, and A-retry compete. A journey's own A and B never overlap (sequential within a journey); across journeys any A/B interleaving is possible. Queue order is FIFO.
+- **Cost-blind, opus-default model selection.** Default is opus for every dispatch in every stage in every pass. Two narrow exceptions: (a) cycle-1 Stage B sonnet-confirmation for previously-greenlit journeys with no map delta and no sibling-bug ledger update — sonnet's `improvements-needed` always re-runs on opus. **Pass 4 and Pass 5 are always opus, both stages, full stop** — the sonnet exception does NOT apply to adversarial passes. (b) Cleanup subagent (single post-pass-5 dispatch) may use haiku — text-only editing.
+- **P0/P1/P2 NEVER batch.** P3-only batching, capped at 7 per brief, Stage A only — Stage B always per-journey. Sharing pages with P3 siblings is not authorisation; priority is load-bearing.
+- **Auto-compaction at 70%.** State written first, then `/compact`, then resume from state. Mid-cycle Stage A returns persist to a scratch file (`tests/e2e/docs/.coverage-expansion-cycle-<slug>-cycle-<N>.json`) before compacting; mid-cycle restart from a fresh Stage A dispatch is NOT acceptable.
+- **`blocked-cycle-stalled`, `blocked-cycle-exhausted`, `blocked-dispatch-failure` are valid terminals**, not pass failures. Mark them faithfully — calling cycle-7-exhausted "greenlit" corrupts the state file and the next pass's trigger-4 input.
 
 ## Breadth mode — one horizontal sweep
 
@@ -347,7 +360,14 @@ In breadth mode, the legacy `passScope` shape may be passed through to `test-com
 
 ## Isolated subagent contract
 
-Every subagent dispatched by this skill — compositional `test-composer`, adversarial probe, Stage B reviewer, post-pass-5 cleanup — receives an isolated context window, an isolated `playwright-cli` session named per the role-prefix convention (`composer-j-<slug>-<pass>-c<N>`, `reviewer-j-<slug>-<pass>-c<N>`, `probe-j-<slug>-<pass>`, `cleanup-<scope>`), and only the inputs the contract names. The orchestrator never holds subagent payload content (test source, DOM snapshots, CLI transcripts, ledger bodies — modulo the bounded pass-5 ledger-section exception). Full per-role contracts in [`references/subagent-isolation.md`](references/subagent-isolation.md).
+Every subagent dispatched by this skill — compositional `test-composer`, adversarial probe, Stage B reviewer, post-pass-5 cleanup — runs against an isolation contract. Full per-role detail in [`references/subagent-isolation.md`](references/subagent-isolation.md).
+
+### Hard rules — kernel-resident
+
+- **Every subagent has an isolated context window.** No prior session content, no other journey's data, no orchestrator scratch.
+- **Every browser-using subagent has its own `playwright-cli` session** named per the role-prefix convention (`composer-j-<slug>-<pass>-c<N>`, `reviewer-j-<slug>-<pass>-c<N>`, `probe-j-<slug>-<pass>`, `cleanup-<scope>`). Sessions are OS-isolated; the subagent opens at start and closes at end.
+- **The orchestrator NEVER holds subagent payload content.** Not in steady state, not at dispatch boundaries, not during reconciliation. Forbidden in orchestrator context: full journey blocks (only the indexed fields), DOM snapshots, test source, stabilization transcripts, ledger bodies — modulo the **single bounded exception**: when dispatching a pass-5 subagent, the orchestrator reads that journey's pass-4 ledger section into the brief and releases it from context immediately after dispatch.
+- **Returns are structured summaries only.** No pasted test source, no DOM snapshots, no CLI transcripts. All returns conform to `subagent-return-schema.md` (and are validated by `hooks/subagent-return-schema-guard.sh`, issue #127).
 
 ## Progress output
 
