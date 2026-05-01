@@ -70,7 +70,7 @@ The signal that distinguishes companion mode from Stage-3 single-scenario author
 
 ## Prerequisites
 
-- **`@playwright/cli`** — needed for live discovery of the page when the user provides only a URL or a vague task. Without it, the user must supply a complete step list and any required selectors. Detect via `npx --no-install playwright-cli --version`; install with `npm install -D @playwright/cli`. See [`../element-interactions/references/playwright-cli-protocol.md`](../element-interactions/references/playwright-cli-protocol.md).
+- **`@playwright/cli`** — needed for live discovery of the page when the user provides only a URL or a vague task. Ships as a hard dependency of `@civitas-cerebrum/element-interactions`, so it is always reachable via `npx playwright-cli` after `npm install`. The first `... open` call may need a one-shot browser fetch (`npx playwright-cli install-browser chromium`) on a fresh machine. If the live app is unreachable from this environment, the user must supply a complete step list and any required selectors. See [`../element-interactions/references/playwright-cli-protocol.md`](../element-interactions/references/playwright-cli-protocol.md).
 - **App URL + task** — one URL or pre-authenticated state, one one-sentence task description. Credentials if the flow requires login. No `journey-map.md` needed.
 - **`page-repository.json`** — used opportunistically. If the page exists in the repo, reuse the entries; if not, propose new ones inline (gated like Stage 2 unless `autonomousMode: true`).
 - **Write access to `tests/e2e/evidence/`** — the bundle output directory. Created on first use.

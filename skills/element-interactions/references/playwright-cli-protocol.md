@@ -19,29 +19,21 @@ Consequence: the orchestrator no longer needs to "confirm per-subagent isolation
 
 ## 2. Detection and install
 
-### 2.1 Detect
+### 2.1 Package install — automatic
 
-```bash
-npx --no-install playwright-cli --version
-```
+`@playwright/cli` is a **hard `dependencies` entry** of `@civitas-cerebrum/element-interactions`. After `npm install @civitas-cerebrum/element-interactions`, the CLI binary is reachable via `npx playwright-cli ...` immediately — no extra `npm install -D @playwright/cli` step. The postinstall script confirms reachability and prints the version.
 
-Exit code 0 + a version string (e.g. `0.1.10`) → CLI is available locally; use `npx playwright-cli ...` for everything below.
+If `npx --no-install playwright-cli --version` ever returns non-zero in a project where this package is installed, treat it as a corrupted install (consumer's `node_modules` is incomplete). The fix is `npm install`, not a separate dep add.
 
-Non-zero exit → tell the user, in one line:
+### 2.2 Browser binary — one-shot, manual
 
-> "Install `@playwright/cli` for parallel browser automation: `npm install -D @playwright/cli`."
-
-Do NOT auto-install; do NOT write `.mcp.json`; do NOT prompt for a Claude Code reload. The CLI is a **soft dependency** — skills must continue to function for read-only/static work without it, and must stop gracefully on live-discovery work that requires it.
-
-### 2.2 Install browser
-
-The first session triggers a browser download. To pre-warm:
+Even with the CLI package installed, the browser binary is **not** fetched automatically — Playwright's `playwright-core` postinstall doesn't download chromium-headless-shell until requested. The first session against an uninstalled browser fails with a clear error. Pre-warm once per dev machine:
 
 ```bash
 npx playwright-cli install-browser chromium
 ```
 
-This downloads `chromium-headless-shell` (~93 MiB) into the Playwright browsers cache (`~/Library/Caches/ms-playwright/` on darwin). Subsequent sessions reuse it.
+This downloads `chromium-headless-shell` (~93 MiB) into the Playwright browsers cache (`~/Library/Caches/ms-playwright/` on darwin). Subsequent sessions reuse it. The postinstall script prints a reminder of this command after every install.
 
 ### 2.3 Workspace artifacts
 
@@ -256,7 +248,7 @@ The orchestrator picks the slug per the convention in §3.1 and substitutes it.
 
 ## 10. Out-of-scope / known constraints
 
-- **`@playwright/cli` is alpha (v0.1.x as of 2026-05-01).** It is treated as an optional peer dependency in this repo (see `package.json:peerDependenciesMeta`), not a hard `dependencies` entry. Skills detect it (§2.1) and degrade with guidance when missing. Promote to a hard peer dep only after the CLI clears 1.0 or has soaked through several minor releases without breaking changes.
+- **`@playwright/cli` is alpha (v0.1.x as of 2026-05-01).** It is shipped as a hard `dependencies` entry of `@civitas-cerebrum/element-interactions`, pinned to a specific patch version (currently `0.1.10`). When the CLI ships a breaking change, this package's pin is bumped on the same release that absorbs the change — consumers never have to think about CLI versions. The pin tightens (caret → exact) precisely *because* it's alpha; let it become `^X.Y.Z` only after 1.0.
 - **Adopting Playwright's `init-agents --loop claude` planner/generator/healer agents** is out of scope for this protocol — those overlap with `journey-mapping`, `test-composer`, and `failure-diagnosis` and need a separate architectural discussion.
 - **`playwright-cli attach --cdp=...`** (attach mode) is **not** isolated when sessions share a CDP endpoint — only `open` mode gives per-session browser-process isolation. Attach mode is fine for single-failure debug sessions in `failure-diagnosis` but must not be used by parallel-dispatch skills.
 - **Persistent profiles (`--persistent`).** Use only when a brief explicitly requires it (e.g. testing extension state). Default to in-memory user-data dirs so concurrent runs don't trample each other.

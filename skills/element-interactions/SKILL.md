@@ -97,10 +97,8 @@ These rules are non-negotiable. They override helpfulness, initiative, and assum
 ### 4. Do NOT invent selectors — inspect the live site or use user-provided entries
 
 - You do not know what selectors exist on the page. Do not guess.
-- Use `@playwright/cli` (see [`references/playwright-cli-protocol.md`](references/playwright-cli-protocol.md)) to navigate to the page and inspect the real DOM.
-- If the CLI is not installed (`npx --no-install playwright-cli --version` exits non-zero), tell the user:
-  > "I don't have `@playwright/cli` to inspect the site. You can install it with `npm install -D @playwright/cli`, or provide me with the `page-repository.json` entries directly and I'll use those."
-- Without the CLI, the user must supply all selectors. Do NOT guess or infer selectors from the scenario description alone.
+- Use `@playwright/cli` (see [`references/playwright-cli-protocol.md`](references/playwright-cli-protocol.md)) to navigate to the page and inspect the real DOM. The CLI ships as a hard dependency of this package, so `npx playwright-cli ...` is always reachable after `npm install`.
+- If the browser binary is missing (the first `playwright-cli ... open` call fails with a "browser not installed" error), run `npx playwright-cli install-browser chromium` once, then retry.
 
 ### 5. Do NOT invent type definitions
 - If a type is missing, tell the user. Do not create `.d.ts` stubs or workarounds.
@@ -190,7 +188,7 @@ Every skill in this suite that drives a live browser — `journey-mapping`, `cov
 
 **No `[mcp-isolation: serializing]` fallback exists** — there is no condition under which the orchestrator should serialize parallel work because of "isolation concerns." The only reason to serialize is when the work itself is sequential (e.g. login required before crawl).
 
-**Skill-availability gate.** If the CLI is not installed (`npx --no-install playwright-cli --version` exits non-zero), tell the user once: *"Install `@playwright/cli` for parallel browser automation: `npm install -D @playwright/cli`."* Skills that need live browsing then stop; static-only work continues. Do NOT auto-install, do NOT write `.mcp.json`, do NOT prompt for a Claude Code reload — these were explicit constraints during the migration from MCP and remain in force.
+**No install gate.** `@playwright/cli` is a hard `dependencies` entry of this package — after `npm install @civitas-cerebrum/element-interactions` it is always reachable via `npx playwright-cli`. Skills do not run a "tell the user to install the CLI" branch; that prereq is satisfied by the package install itself. The only adjacent prereq is the one-shot browser binary fetch (`npx playwright-cli install-browser chromium`), which the postinstall script reminds the consumer about. Do NOT write `.mcp.json` and do NOT prompt for a Claude Code reload — those were explicit constraints during the migration from MCP and remain in force.
 
 ### 12. Orchestrator context discipline
 
@@ -475,11 +473,11 @@ For complex flows, break into multiple scenarios.
 5. **Check existing `page-repository.json`** — if some elements already exist, note which ones are new vs already covered.
 6. **Close the session** when done: `npx playwright-cli -s=stage2-<scenario-slug> close`.
 
-### Without `playwright-cli`
+### When `playwright-cli` cannot reach the live app
 
-If the CLI is not installed, ask the user to provide the selectors:
+The CLI is always installed (hard dep), but the browser binary may be missing or the live app may be unreachable from this environment. In either case, fall back to user-supplied selectors:
 
-> "I don't have `@playwright/cli` to inspect the page. Could you install it (`npm install -D @playwright/cli`) or provide the selectors for the elements in the scenario? I need entries for: [list elements from the approved scenario]. You can give me CSS selectors, IDs, text values, or full page-repository JSON entries."
+> "I can't reach the live app to inspect selectors (browser binary missing — run `npx playwright-cli install-browser chromium` — or app URL unreachable from this environment). Could you provide the selectors for the elements in the scenario? I need entries for: [list elements from the approved scenario]. You can give me CSS selectors, IDs, text values, or full page-repository JSON entries."
 
 Use whatever the user provides to build the page-repository entries. Do NOT guess or infer selectors.
 

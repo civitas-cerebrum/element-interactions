@@ -77,12 +77,11 @@ try {
   console.warn(`[@civitas-cerebrum/element-interactions] Could not install Claude Code skill: ${err.message}`);
 }
 
-// Optional-peer probe: @playwright/cli powers parallel browser automation
-// across the skill suite. It is intentionally NOT a hard dependency — alpha
-// versions cannot be required — but skills that drive a live browser need it.
-// Print a one-line install hint when missing. Do NOT auto-install. Do NOT
-// write .mcp.json. Do NOT prompt for a Claude Code reload — those were
-// explicit constraints during the migration from MCP and remain in force.
+// @playwright/cli is shipped as a hard dependency of this package, so skills
+// that drive a live browser can rely on it after `npm install` with no
+// further action from the consumer. Confirm reachability and emit a clear
+// pointer to the browser-install step (the package itself doesn't fetch the
+// browser binary — that's a separate one-shot the consumer runs once).
 function probePlaywrightCli() {
   const { spawnSync } = require('child_process');
   const probe = spawnSync('npx', ['--no-install', 'playwright-cli', '--version'], {
@@ -90,9 +89,12 @@ function probePlaywrightCli() {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'ignore'],
   });
-  return probe.status === 0;
+  return { ok: probe.status === 0, version: (probe.stdout || '').trim() };
 }
 
-if (!probePlaywrightCli()) {
-  console.log('[@civitas-cerebrum/element-interactions] Tip: install `@playwright/cli` for parallel browser automation: `npm install -D @playwright/cli`.');
+const cliProbe = probePlaywrightCli();
+if (cliProbe.ok) {
+  console.log(`[@civitas-cerebrum/element-interactions] @playwright/cli ${cliProbe.version} reachable. If the browser hasn't been fetched yet, run: \`npx playwright-cli install-browser chromium\`.`);
+} else {
+  console.warn('[@civitas-cerebrum/element-interactions] @playwright/cli not reachable via `npx`. The CLI is shipped as a dependency — re-run `npm install` if this is unexpected.');
 }

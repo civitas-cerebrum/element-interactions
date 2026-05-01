@@ -44,7 +44,7 @@ Before starting, verify ALL of these:
 
 - A passing test suite exists (Stages 1-4 complete, optionally Stage 5 / Test Composer)
 - `page-repository.json` has selectors for the app's pages
-- `@playwright/cli` is installed (`npx --no-install playwright-cli --version` exits 0) — if not, stop and tell the user: *"I need `@playwright/cli` to probe the live app. Install it with `npm install -D @playwright/cli`."*
+- `@playwright/cli` is reachable (`npx --no-install playwright-cli --version` exits 0). Since the CLI ships as a hard dependency of `@civitas-cerebrum/element-interactions`, this almost always passes; a non-zero exit means a corrupted install and the fix is `npm install`, not a separate dep add. The browser binary may still need a one-shot fetch — `npx playwright-cli install-browser chromium`.
 - `app-context.md` exists (used in cross-reference phases; probing can proceed without it but phases 2 and 4 will be limited)
 
 If the test suite is not passing, stop: *"Bug discovery requires a green test suite as baseline. Please fix failing tests first."*

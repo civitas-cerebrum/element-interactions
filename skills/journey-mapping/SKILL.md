@@ -74,7 +74,7 @@ Page discovery **must** be performed through `@playwright/cli` from the Bash too
 - **Do not** substitute a headless Playwright test runner or shell scripts for the CLI. Discovery runs in a live `playwright-cli` session so snapshots, console errors, and navigation timing are observable and recordable.
 - **Every URL in the site map must have a corresponding `playwright-cli` snapshot** taken during this phase. If a page appears in the map without a CLI visit, it was guessed — remove it and visit it, or mark it gated.
 
-If `@playwright/cli` is not installed (`npx --no-install playwright-cli --version` exits non-zero), stop and tell the user once: *"Install `@playwright/cli` for live page discovery: `npm install -D @playwright/cli`."* Do not fall back to static analysis.
+`@playwright/cli` ships as a hard dependency of `@civitas-cerebrum/element-interactions`, so it is always reachable via `npx playwright-cli` after the package is installed. If the binary is somehow unreachable, the install is corrupted — `npm install` fixes it. If the browser binary is missing on the dev machine, the first `... open` call exits with a clear error; run `npx playwright-cli install-browser chromium` once, then retry. Do not fall back to static analysis.
 
 ### Process
 
