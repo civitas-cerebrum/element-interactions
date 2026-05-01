@@ -250,7 +250,7 @@ Do **not** add, remove, or upgrade any other dependencies. Do **not** modify the
 - `tests/e2e/` — directory created if missing.
 - `tests/e2e/docs/` — directory created if missing.
 - `screenshots/` — directory created at the repo root if missing. All screenshot artifacts produced during the run (probe evidence, adversarial captures, failure snapshots) must be written here — never to the repo root, never with bare basenames.
-- `.gitignore` — add `screenshots/failures/` so transient Playwright failure captures stay untracked. Probe-evidence screenshots in `screenshots/` root remain tracked so reviewers can open the ledger and see what the subagent saw.
+- `.gitignore` — add `screenshots/failures/` so transient Playwright failure captures stay untracked, and `.playwright-cli/` so the CLI's per-run snapshot YAMLs and console buffers stay untracked. Probe-evidence screenshots in `screenshots/` root remain tracked so reviewers can open the ledger and see what the subagent saw.
 
 **Screenshot-path contract for dispatched subagents.** Every subagent brief this skill writes — Phase-3 happy-path agent, Phase-5 `coverage-expansion` subagents, Phase-6 `bug-discovery` subagents — must restate the following rule verbatim:
 
