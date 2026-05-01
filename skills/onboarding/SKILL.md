@@ -222,13 +222,41 @@ The seven-phase pipeline (Phase 1 Scaffold → Phase 2 Groundwork discovery → 
 
 ### Hard rules — kernel-resident
 
-- **All seven phases run in order, no skipping.** Phase 5 (coverage-expansion) and Phase 6 (bug-discovery) are the lengthy phases — the front-load gate authorises both up-front. Skipping either is a contract violation; surface to the user instead.
-- **Phase 5 invokes `coverage-expansion` with `mode: depth`** — the full 5-pass + cleanup pipeline. Onboarding never invokes coverage-expansion in `mode: breadth`.
-- **All 5 passes + cleanup are mandatory inside Phase 5.** Phase 5 is complete only when `coverage-expansion` returns from **all 3 compositional passes + 2 adversarial passes + ledger dedup**, not when Pass 1 (or Passes 1–3) returns. Pass 1 alone is one-fifth of the pipeline; reporting "Phase 5 complete" when only Pass 1 ran is a contract violation. The progressive forms — "Pass 1 done, 2–5 deferred for budget" / "compositional passes complete, adversarial deferred" / "ledger dedup pending" — are honest mid-run states but they ARE NOT "Phase 5 complete". Onboarding does not advance to Phase 6 from any of those states.
-- **Phase 5 must DISPATCH at least one wave before any exit.** Phase 3 (happy-path scaffolded test) is NOT a Phase 5 dispatch — different phases, different subagents, different work. Covering one journey via the happy-path scaffold does NOT satisfy Pass 1's per-journey contract. If Phase 5 stops without having dispatched a single composer subagent, that is refusing to start, not exit #2. Harness-enforced by `coverage-state-schema-guard.sh` (denies state-file writes claiming `currentPass >= 1` with zero recorded dispatches).
-- **Phase 5 exit #2 does NOT advance Onboarding to Phase 6.** When `coverage-expansion` takes its own exit #2 (commit-what-landed + state-file + resume-needed), Onboarding pauses at the same point — it returns to the user with the resume-needed message, NOT proceeds to bug-discovery. Phase 6 only fires after `coverage-expansion` returns `status: complete` (all 5 passes + cleanup). The dual-stage completion extension applies: every journey must have a terminal `review_status` (`greenlight` / `blocked-cycle-stalled` / `blocked-cycle-exhausted` / `blocked-dispatch-failure`) on every pass — Stage-A-only completion is incomplete.
-- **Hard gates between phases.** A phase that surfaces a malformed prerequisite (missing journey-map sentinel, missing tenant credentials, missing happy-path sentence, etc.) stops onboarding with a clear `blocked-on-prerequisite` message — never silently proceeds.
-- **Front-load gate is the only user prompt.** Once the user authorises the run, onboarding runs autonomously through Phase 7 — no further confirmation prompts. Mid-run scope-reduction without explicit user authorisation is forbidden (mirrors coverage-expansion §"Two valid exits"). "Honest" / "pragmatic" / "I want to surface this back upstream" framings before Phase 5 has dispatched anything are the same forbidden pattern with different words.
+#### One rule, applied to every phase
+
+**Onboarding is complete only when every phase has run to completion — every internal stage, every internal pass, every sub-skill's own contract honoured.** Pass 1 alone is not Phase 5. Stage 3 alone is not Phase 3. Phase 1 of journey-mapping alone is not Phase 4. "Most of the work done", "deferred the rest for budget", "honest stopping point" — all of these are honest mid-run *states* but NONE of them are *phase-complete*. Onboarding does not advance from any of those states; it commits what it has, writes resume state, and returns to the user with a "resume needed" message.
+
+#### Per-phase completion contract — every internal stage / pass must finish
+
+| Phase | Sub-skill / inline | What "phase complete" requires |
+|---|---|---|
+| 1 — Scaffold | onboarding (inline) | `package.json` deps installed + scaffolded files present + Chromium installed |
+| 2 — Groundwork | onboarding (inline) | `app-context.md` written + ground-truth probe complete |
+| 3 — Happy path | element-interactions Stages 1, 2, 3, 4a, 4b | All five stages — scenario discovery, element inspection, write automation, optimization review, API compliance review. Stage 3 alone is not Phase 3 |
+| 4 — Journey mapping | journey-mapping Phases 1, 2, 3, 3.5, 4, 5 | All six phases — page discovery, flow identification, prioritization, redundancy revision, journey-map document, coverage checkpoint. Phase 1 alone is not Phase 4 |
+| 5 — Coverage expansion | coverage-expansion `mode: depth` | All 5 passes (3 compositional + 2 adversarial) + cleanup ledger dedup. Pass 1 alone is one-fifth of the pipeline. Every journey gets terminal `review_status` (greenlight / blocked-cycle-stalled / blocked-cycle-exhausted / blocked-dispatch-failure) on every pass — Stage-A-only is incomplete |
+| 6 — Bug hunts | bug-discovery (element + flow probing passes) | Both probing passes — element-level probing AND flow-level probing. One pass alone is not Phase 6 |
+| 7 — Final summary | onboarding (inline) | onboarding-report.md committed + work-summary deck generated |
+
+Reporting a phase complete when its sub-skill returned a partial state is a contract violation regardless of how the partial state is framed. The progressive forms — "Pass 1 done, 2–5 deferred for budget" / "compositional passes complete, adversarial deferred" / "Stage 3 done, 4a/4b skipped because tests passed" / "Phase 1 of journey-mapping done, full mapping deferred" — are honest mid-run *reports* but they ARE NOT phase completion.
+
+#### Sub-skill exit #2 does NOT advance Onboarding
+
+When ANY sub-skill takes its own exit #2 (commit-what-landed + state-file + resume-needed) — coverage-expansion at any pass, journey-mapping mid-Phase, element-interactions between stages, bug-discovery between probing passes — Onboarding pauses at that same point. It returns to the user with the sub-skill's resume-needed message. It does NOT proceed to the next phase. The next phase only fires after the previous phase's sub-skill returns `status: complete`.
+
+#### Every phase must EXECUTE before any exit
+
+Refusing to start a phase is not an exit — it's a contract violation, distinct from exit #2 (which is for budget-driven mid-pipeline stops AFTER work has begun). Specifically:
+
+- **Phase 5 must DISPATCH at least one composer wave** before exit #2 is invocable. Phase 3 (happy-path scaffolded test) is NOT a Phase 5 dispatch — different phases, different subagents, different work. Harness-enforced by `coverage-state-schema-guard.sh`.
+- The same principle generalises to every phase: an empty progress log + state file claiming "exit #2" is refusing to start, not exit #2.
+
+#### Other invariants
+
+- **All seven phases run in order.** No reordering, no skipping. The front-load gate authorises Phases 1–7 up-front; the user does not get re-prompted between phases.
+- **Phase 5 invokes `coverage-expansion` with `mode: depth`.** Onboarding never invokes coverage-expansion in `mode: breadth`. Phase 6 invokes `bug-discovery` with both probing passes (element + flow). The mode arguments are fixed; the agent does not choose them.
+- **Hard gates between phases.** A phase that surfaces a malformed prerequisite (missing journey-map sentinel, missing tenant credentials, missing happy-path sentence, etc.) stops Onboarding with a clear `blocked-on-prerequisite` message — never silently proceeds.
+- **Front-load gate is the only user prompt.** Once the user authorises the run, Onboarding runs autonomously through Phase 7 — no further confirmation prompts. Mid-run scope-reduction without explicit user authorisation is forbidden (mirrors coverage-expansion §"Two valid exits"). "Honest" / "pragmatic" / "I want to surface this back upstream" framings are the same forbidden pattern with different words.
 
 ## Onboarding report (`tests/e2e/docs/onboarding-report.md`)
 
