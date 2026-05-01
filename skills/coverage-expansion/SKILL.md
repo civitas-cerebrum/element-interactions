@@ -148,7 +148,7 @@ This subsection extends §"Per-pass completion criteria" (see below). A pass's c
 Every one of the 5 passes runs **per journey** as two sequential stages:
 
 - **Stage A — Compose / Probe.** The existing `test-composer` (passes 1–3) or adversarial probe subagent (passes 4–5). Dispatch contract unchanged from the single-stage era.
-- **Stage B — Adversarial Review.** A fresh staff-level-QA reviewer subagent, per journey, with its own isolated context and its own isolated Playwright MCP browser. Reads Stage A's output and the live app; returns `greenlight` or `improvements-needed`. Never writes tests, never appends to the ledger, never modifies files.
+- **Stage B — Adversarial Review.** A fresh staff-level-QA reviewer subagent, per journey, with its own isolated context and its own isolated `playwright-cli` session (`-s=<journey-slug>-stage-b`). Reads Stage A's output and the live app; returns `greenlight` or `improvements-needed`. Never writes tests, never appends to the ledger, never modifies files.
 
 The dual-stage design addresses a concrete failure mode: a single subagent that both does the work AND self-certifies it misses scenarios a fresh independent reviewer would catch. Stage B is that independent reviewer. It exists to catch what Stage A missed.
 
@@ -192,7 +192,7 @@ for cycle in 1..7:
       review_status = "blocked-dispatch-failure"
       break
 
-  b_return = dispatch Stage B (fresh ctx, fresh MCP) to review a_return
+  b_return = dispatch Stage B (fresh ctx, fresh playwright-cli session) to review a_return
 
   if b_return.status == "greenlight":
     review_status = "greenlight"
@@ -256,7 +256,7 @@ Both blocked statuses are valid terminal values under the no-skip contract (PR #
 
 **Why 7 cycles.** Gives genuine room for adversarial iteration: first review catches obvious gaps, second fills subtler ones, third addresses what the reviewer missed the first read. The bounded cap prevents runaway loops while leaving enough slack that exhaustion is the exception rather than the common case. The same numeric value (7) appears as the P3 batch cap in §"Batched dispatch for P3 peripheral journeys" — these two 7s are **independent design choices** that happen to share a number. Changing one does not require changing the other; the rationales are unrelated (cycle cap = adversarial-iteration-budget; batch cap = brief-size-and-per-journey-attention-budget).
 
-**Fresh reviewer every cycle.** Every Stage B dispatch is a fresh subagent with a fresh MCP browser — no context inheritance from the prior cycle's reviewer, no context inheritance from the paired Stage A. The fresh-eyes property is load-bearing; if the reviewer carries state across cycles, it will start agreeing with Stage A.
+**Fresh reviewer every cycle.** Every Stage B dispatch is a fresh subagent with a fresh `playwright-cli` session — no context inheritance from the prior cycle's reviewer, no context inheritance from the paired Stage A. The fresh-eyes property is load-bearing; if the reviewer carries state across cycles, it will start agreeing with Stage A.
 
 **Rationalizations to reject:**
 
@@ -576,7 +576,7 @@ Adjacent low-impact journeys (typically P3 smoke or admin-portal siblings sharin
 |--------|---------|
 | "This 8th journey is almost identical to the 7 in the batch, I'll include it" | Cap 7 is not negotiable. Split the batch (5 + 3, etc). The cap bounds brief size and per-journey attention. |
 | "All these journeys are P3 and share a project, and this admin journey *could* be grouped — skip the P1 carve-out" | P0 / P1 always dispatch individually. Priority is load-bearing; a journey at P1 deserves its own brief even if it happens to share pages with P3 siblings. |
-| "The journeys share most pages, same project, roughly P3 — skip the 'shared Playwright project' check" | Different Playwright projects require different MCP instances; batching across projects introduces browser-swap complexity that defeats the dispatch optimisation. |
+| "The journeys share most pages, same project, roughly P3 — skip the 'shared Playwright project' check" | Different Playwright projects require different `playwright-cli` sessions; batching across projects introduces session-swap complexity that defeats the dispatch optimisation. |
 | "Batching is faster so I'll batch everything that isn't explicitly forbidden" | Batching is allowed, not preferred. P0/P1 individual dispatch is the default; batching is specifically for P3 peripheral sweeps. Defaulting to batch on P2 quietly compresses scope. |
 | "One journey in the batch has a coverage-gap flag from Pass 1, but the gap is trivial" | Any flag in the three re-pass triggers kicks the journey out of the batch into individual dispatch. "Trivial" is the subagent's judgement after reading Pass-1 returns — which cannot happen inside a batched brief. |
 | "All P3 same project, I'll batch Stage B too to save a dispatch" | Stage B per-journey isolation is load-bearing for fresh-eyes review. One reviewer judging 7 journeys is not fresh-eyes; it's batched rubber-stamping. |
@@ -601,7 +601,7 @@ After pass 5 commits, the orchestrator dispatches one additional, non-per-journe
 
 ### Cleanup subagent constraints
 
-- Model: **haiku** is sufficient. This is text-only editing with no MCP, no test composition, no probing.
+- Model: **haiku** is sufficient. This is text-only editing with no browser session, no test composition, no probing.
 - Single dispatch — NOT per-journey. Just one subagent, handed the full ledger file path.
 - Isolated context. No prior session content.
 - Does not modify the journey-map, the page-repository, or any test files. Only the ledger.
@@ -631,15 +631,15 @@ Every `test-composer` subagent dispatched by this skill must:
 
 1. Receive an **isolated context window** — no prior session content, no other journey's data.
 2. Receive only: its assigned journey block + any `sj-<slug>` sub-journey blocks it references + the current `page-repository.json` slice for the pages that journey touches.
-3. Have access to an **isolated Playwright MCP browser instance**. Before dispatching, the orchestrating agent must confirm per-subagent isolation is achievable — either because the subagent-dispatch primitive runs each subagent in its own agent session with its own MCP connection (default; name the `mcp__plugin_playwright_playwright__*` tools in each subagent's prompt) or because the agent has provisioned a dedicated Playwright MCP process per subagent. See the `element-interactions` orchestrator's "Isolated MCP instances for parallel subagents" rule for the full prerequisite check and tier list. Parallel subagents never share one browser, and if neither prerequisite holds the agent must fall back to serial with a `[mcp-isolation: serializing]` log line rather than dispatch.
+3. Have access to an **isolated `playwright-cli` session** named `<journey-slug>-<pass>-stage-a` (e.g. `j-checkout-3-stage-a`), opened by the subagent at the start of its work and closed at the end. Sessions are OS-isolated by construction — one browser process per `-s=<name> open` — so there is no isolation-prerequisite check to run before dispatching. The subagent's brief includes a pointer to [`../element-interactions/references/playwright-cli-protocol.md`](../element-interactions/references/playwright-cli-protocol.md) §3 + §8 (the dispatch-brief template). The parent does **not** call `close-all` while subagents are working; it runs `close-all` once the pass completes as belt-and-suspenders cleanup.
 4. Not return until stabilization green, API compliance review clean, and coverage verified exhaustive (enforced inside `test-composer`).
-5. Return a structured discovery report only — no pasted test source, no DOM snapshots, no MCP transcripts. Returns follow the canonical return schema in [`../element-interactions/references/subagent-return-schema.md`](../element-interactions/references/subagent-return-schema.md); the dispatch brief includes a pointer to the file rather than re-pasting the schema.
+5. Return a structured discovery report only — no pasted test source, no DOM snapshots, no CLI transcripts. Returns follow the canonical return schema in [`../element-interactions/references/subagent-return-schema.md`](../element-interactions/references/subagent-return-schema.md); the dispatch brief includes a pointer to the file rather than re-pasting the schema.
 
 ### Adversarial passes (4–5)
 
 Every adversarial probe subagent dispatched by this skill must:
 
-1. Receive the same isolated context window and isolated Playwright MCP browser as compositional-pass subagents.
+1. Receive the same isolated context window as compositional-pass subagents, with its own `playwright-cli` session named `<journey-slug>-<pass>-stage-a` (pass = 4 or 5). Same isolation guarantee as the compositional case (per-session browser process; see `playwright-cli-protocol.md` §1).
 2. Additionally receive: the pass number (4 or 5), the ledger file path (`tests/e2e/docs/adversarial-findings.md`), the lockfile path (`tests/e2e/docs/.adversarial-findings.lock`), and a pointer to the canonical schema at `skills/element-interactions/references/subagent-return-schema.md`.
 3. Receive a pre-built **negative-case matrix** for the journey — one negative-case complement per `Test expectations:` entry, plus the standard cross-cutting negatives (auth tamper, tenant isolation, idempotency, session boundary, input boundaries) — derived per `references/adversarial-subagent-contract.md` §"Negative-case matrix — full QA scope". The matrix is the deterministic floor for the probe; `bug-discovery`'s open-ended categories extend above it. The orchestrator builds the matrix from the journey block before dispatch and includes it verbatim in the brief — the subagent does not re-derive it.
 4. For pass 5 specifically: also receive the journey's pass-4 ledger section (read from the ledger file before dispatch and passed along — the orchestrator's single exception to the "never hold findings content" rule, bounded to one journey's section for one subagent), so the subagent can re-probe matrix entries that returned `Ambiguous` in pass 4 and run compound probes across matrix entries.
@@ -650,7 +650,7 @@ Every adversarial probe subagent dispatched by this skill must:
 
 1. Single dispatch, NOT per-journey.
 2. Isolated context. Receives only the ledger file path.
-3. No MCP browser. Text-only work.
+3. No browser session. Text-only work.
 4. Returns a one-line summary of how many cross-cutting findings were consolidated and how many journeys' sections were backref'd.
 
 The orchestrator does not paste any probe transcripts, DOM snapshots, test source, or stabilization output into its own context at any point.
@@ -697,7 +697,7 @@ Hold in context:
 
 Never hold in context:
 - Any journey's full `### j-<slug>` block contents beyond the indexed fields.
-- Any DOM snapshot from MCP.
+- Any DOM snapshot from the live `playwright-cli` session.
 - Any test source composed by a subagent.
 - Any stabilization transcript.
 - Any adversarial-findings ledger content beyond the one-journey exception documented below.
