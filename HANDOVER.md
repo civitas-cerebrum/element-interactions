@@ -2,6 +2,7 @@
 
 **Branch:** `claude/implement-emmas-issue-6JvBh`
 **Origin issue:** [#121](https://github.com/civitas-cerebrum/element-interactions/issues/121) (Emma's parallel-MCP-isolation gap), with related coverage in [#115](https://github.com/civitas-cerebrum/element-interactions/issues/115) (B3 — consolidate the MCP-isolation rule).
+**Originator:** [@Emmdb](https://github.com/Emmdb) (Emma Bosch) filed and scoped the parallel-MCP-isolation gap that this migration resolves; the pivot to `@playwright/cli` is a direct response to her protocol analysis in #121.
 
 ## Decision
 
