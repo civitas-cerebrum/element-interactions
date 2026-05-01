@@ -159,6 +159,23 @@ Read these as hard rules, not guidance. They prevent the most common shortcut pa
 
 ---
 
+## Recursive dispatch is impossible — plan, don't fan out
+
+Subagents in this environment **cannot** dispatch their own sub-subagents. The Agent / Task tool is parent-only; a subagent that tries to fan out hits a hard wall (`"no Agent / Task tool available in my toolset"`). This is an environment constraint the methodology must work around, not a contract a skill can amend.
+
+**Two valid patterns** for any work that conceptually needs hierarchical dispatch:
+
+1. **Parent dispatches the wave directly.** Each subagent does ONE focused job. The parent fans out N parallel Agents in one message. This is the default for composer / reviewer / probe waves.
+2. **Sub-orchestrator returns a manifest.** When the parent's context shouldn't hold the full skill content, dispatch a sub-orchestrator subagent (`description: "process-validator-<scope>:"` or similar) with the relevant skill loaded. The sub-orchestrator **plans** the wave and **returns a structured manifest** of N briefs. The parent reads the manifest and dispatches the wave. The sub-orchestrator never tries to fire its own children.
+
+**Anti-pattern:** a brief that asks a subagent to "dispatch N parallel subagents", "spawn workers", "fan out", or "use the Agent tool to coordinate". The hook `coverage-expansion-dispatch-guard.sh` blocks these explicitly because the subagent cannot satisfy them.
+
+**Process-validator role** (proactive Stage B for the orchestrator's plan): before fanning out a wave of N composer / reviewer / probe subagents, the parent MAY dispatch a `process-validator-<scope>:` subagent with the relevant skill loaded. The validator reviews the planned dispatch manifest against the skill's contract — slug convention, role-prefix consistency, journey coverage, brief minimalism — and returns `greenlight` or `improvements-needed`. Only on `greenlight` does the parent fan out the wave. Same shape as Stage B reviewer, applied one level up.
+
+**Slug-length constraint:** the `playwright-cli` daemon binds a UNIX socket under `$TMPDIR`. On macOS the path is capped at 104 chars; slugs longer than ~28 chars push the path over the limit and the daemon silently fails to bind. Hook `playwright-cli-isolation-guard.sh` enforces a 6–28-char range. Use shortened forms inside long subagent contexts (e.g. `j-checkout-1-a-c2` rather than `j-checkout-1-stage-a-cycle2`).
+
+---
+
 ## No-skip contract
 
 This contract closes the "scope-to-gap-journeys" loophole — an orchestrator dispatching only the journeys it judges interesting and marking the pass complete by leaving the rest unrun. It stacks on top of §"Non-negotiables for depth mode" — that section ensures all 5 passes + cleanup run; this contract ensures every pass covers every journey. Both sets of rules are hard rules, not guidance.

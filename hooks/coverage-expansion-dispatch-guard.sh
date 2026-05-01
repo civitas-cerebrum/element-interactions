@@ -29,24 +29,86 @@ TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 DESCRIPTION=$(echo "$INPUT" | jq -r '.tool_input.description // ""')
 PROMPT=$(echo "$INPUT" | jq -r '.tool_input.prompt // ""')
 
-# Only inspect dispatches that look like coverage-expansion / orchestration work.
-# Each marker chosen to be specific to the skill suite so unrelated prompts
-# that happen to mention "Pass 1" or "Stage A" don't trigger inspection.
-if ! echo "$PROMPT" | grep -qE 'coverage-expansion|test-composer|JOURNEYS YOU OWN|cycle-[0-9]+ Stage [AB]|journey-map\.md|element-interactions[ /]|playwright-cli[[:space:]]+-s='; then
-  exit 0
-fi
-
-# Allowed description prefixes (single-journey scope).
-ALLOWED_PREFIX_REGEX='^(j-[a-z0-9-]+|sj-[a-z0-9-]+|phase1-[a-z0-9-]+|phase2-[a-z0-9-]+|stage2-[a-z0-9-]+|composer-[a-z0-9-]+|reviewer-[a-z0-9-]+|probe-[a-z0-9-]+|cleanup-[a-z0-9-]+)(:|[[:space:]]|$)'
+# Allowed description prefixes (single-journey scope, plus process-validator).
+# process-validator-<scope>: dispatched by the parent orchestrator BEFORE a
+# wave of composer/reviewer/probe subagents to validate the planned dispatch
+# manifest against the skill's contract. The validator returns greenlight or
+# improvements-needed; only on greenlight does the parent fan out the wave.
+ALLOWED_PREFIX_REGEX='^(j-[a-z0-9-]+|sj-[a-z0-9-]+|phase1-[a-z0-9-]+|phase2-[a-z0-9-]+|stage2-[a-z0-9-]+|composer-[a-z0-9-]+|reviewer-[a-z0-9-]+|probe-[a-z0-9-]+|cleanup-[a-z0-9-]+|process-validator-[a-z0-9-]+)(:|[[:space:]]|$)'
 
 # P3 batch form: `[P3-batch] j-a, j-b, j-c:`  (cap 7 enforced via comma count).
 # Allows optional whitespace after each comma for human-friendly listings.
 P3_BATCH_REGEX='^\[P3-batch\][[:space:]]+j-[a-z0-9-]+([[:space:]]*,[[:space:]]*j-[a-z0-9-]+){0,6}([[:space:]]*:|[[:space:]]|$)'
 
+DESCRIPTION_HAS_ROLE_PREFIX=false
 if echo "$DESCRIPTION" | grep -qE "$ALLOWED_PREFIX_REGEX"; then
+  DESCRIPTION_HAS_ROLE_PREFIX=true
+elif echo "$DESCRIPTION" | grep -qE "$P3_BATCH_REGEX"; then
+  DESCRIPTION_HAS_ROLE_PREFIX=true
+fi
+
+# === Anti-pattern A: subagent asking another subagent to fan-out =======
+# Subagents CANNOT dispatch their own sub-subagents in this environment
+# (the Agent / Task tool is parent-only). A prompt instructing a subagent
+# to "dispatch N parallel subagents", "fan out", or to "use the Agent tool
+# to spawn workers" is a methodology bug — the work either belongs to the
+# parent (recursive dispatch impossible) or the prompt should ask the
+# subagent to RETURN A MANIFEST the parent will dispatch from.
+if echo "$PROMPT" | grep -qiE '(dispatch|spawn|fan[ -]?out|fire) [0-9]+ (parallel|sub|sub-?agents?|agents)|use (the )?Agent tool to (dispatch|spawn|fan)|you are .{0,20} dispatch (subagents|N parallel)'; then
+  REASON_FANOUT="[BLOCKED] Subagent brief asks the subagent to dispatch sub-subagents.
+
+Description: \"${DESCRIPTION}\"
+
+Subagents in this environment CANNOT recursively dispatch other subagents — the Agent / Task tool is parent-only. A subagent that tries to fan out hits a hard wall (\"no Agent / Task tool available in my toolset\"). This is an environment limitation, not a contract.
+
+Fix the methodology, not the prompt. Two valid patterns:
+  (a) Parent dispatches the wave directly. The subagent does ONE focused job.
+  (b) Sub-orchestrator pattern: this subagent PLANS the wave and RETURNS A
+      MANIFEST (a structured list of N briefs). The parent reads the
+      manifest and dispatches the wave. The sub-orchestrator never tries
+      to fire its own children.
+
+If you intended (b), reword the brief: ask the subagent to *return* a
+dispatch plan, not to *execute* it. See coverage-expansion §\"Orchestrator
+context discipline\" + §\"Recursive dispatch is impossible — plan, don't
+fan out\"."
+  jq -n --arg r "$REASON_FANOUT" '{
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "deny",
+      "permissionDecisionReason": $r
+    }
+  }'
   exit 0
 fi
-if echo "$DESCRIPTION" | grep -qE "$P3_BATCH_REGEX"; then
+
+# === Anti-pattern B: orchestrator meta-content leak ===========================
+# Composer / reviewer / probe / cleanup subagents should NOT receive pipeline
+# meta-content (depth mode, 5-pass, Pass 4/5, etc.) — that belongs to the
+# parent orchestrator's context only.
+if [ "$DESCRIPTION_HAS_ROLE_PREFIX" = true ] && echo "$DESCRIPTION" | grep -qE '^(composer-|reviewer-|probe-|cleanup-|j-|sj-|phase1-|phase2-|stage2-)'; then
+  LEAK=$(echo "$PROMPT" | grep -oiE 'depth mode|breadth mode|5-pass pipeline|5-pass|3 compositional|2 adversarial|pass(es)? [2-5]([[:space:]]|$|/|,|\.)|pipeline (orchestrator|stage|coordinator)|adversarial pass(es)?' | sort -u | head -5 | tr '\n' '|' | sed 's/|$//')
+  if [ -n "$LEAK" ]; then
+    WARNING="[WARN] Subagent brief contains orchestrator meta-content: ${LEAK//|/, }
+
+This subagent only needs: journey block + must-fix list + slug + return shape. References to the broader pipeline (depth/breadth mode, Pass 4/5, 5-pass structure, adversarial passes) belong to the parent orchestrator's context — they bloat the subagent's context and risk it consulting parts of the skill outside its scope.
+
+Suggested cleanup: remove pipeline meta-talk from the brief. Subagent role + must-fix list + return contract is enough. See coverage-expansion §\"Orchestrator context discipline\"."
+    jq -n --arg m "$WARNING" '{
+      "systemMessage": $m,
+      "suppressOutput": false
+    }'
+  fi
+fi
+
+# === Anti-pattern C: prompt body looks coverage-expansion-related but ====
+# description has no role prefix → batched-dispatch attempt.
+if [ "$DESCRIPTION_HAS_ROLE_PREFIX" = true ]; then
+  exit 0
+fi
+
+# Only inspect for batched-dispatch when the prompt looks coverage-related.
+if ! echo "$PROMPT" | grep -qE 'coverage-expansion|test-composer|JOURNEYS YOU OWN|cycle-[0-9]+ Stage [AB]|journey-map\.md|element-interactions[ /]|playwright-cli[[:space:]]+-s='; then
   exit 0
 fi
 

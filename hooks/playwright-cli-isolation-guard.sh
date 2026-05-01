@@ -148,4 +148,27 @@ Why: ≥6 chars + role prefix is required to disambiguate parallel subagents. Se
   exit 0
 fi
 
+# Case 5: slug is too long. The playwright-cli daemon binds a UNIX socket
+# under \$TMPDIR; on macOS the socket path is capped at 104 chars. Slugs
+# longer than ~28 chars push the path over the limit and the daemon
+# silently fails with EINVAL on bind. Caught by Stage B reviewer in cycle 2.
+if [ ${#SLUG} -gt 28 ]; then
+  emit_deny "[BLOCKED] Slug '-s=$SLUG' is too long (${#SLUG} chars; ≤28 allowed).
+
+Command: $CMD_PREVIEW
+
+Fix: shorten the slug while keeping the role prefix and the journey identifier. Common abbreviations:
+
+  j-<journey-slug>-<pass>-stage-{a,b}-cycleN  →  j-<journey-slug>-<pass>-{a,b}-cN
+  reviewer-<long-scope>                        →  reviewer-<short-scope>
+
+Examples that fit:
+  j-checkout-1-a-c2          (16 chars — role:j, journey:checkout, pass:1, stage:a, cycle:2)
+  j-marketplace-buy-1-b      (21 chars)
+  phase1-public              (13 chars)
+
+Why: the playwright-cli daemon binds a UNIX socket under \$TMPDIR. Long slugs push the socket path over the 104-char macOS limit and the daemon silently fails to bind (EINVAL). See playwright-cli-protocol.md §3.1."
+  exit 0
+fi
+
 exit 0
