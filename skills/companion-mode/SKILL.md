@@ -70,7 +70,7 @@ The signal that distinguishes companion mode from Stage-3 single-scenario author
 
 ## Prerequisites
 
-- **Playwright MCP** — needed for live discovery of the page when the user provides only a URL or a vague task. Without MCP, the user must supply a complete step list and any required selectors.
+- **`@playwright/cli`** — needed for live discovery of the page when the user provides only a URL or a vague task. Ships as a hard dependency of `@civitas-cerebrum/element-interactions`, so it is always reachable via `npx playwright-cli` after `npm install`. The first `... open` call may need a one-shot browser fetch (`npx playwright-cli install-browser chromium`) on a fresh machine. If the live app is unreachable from this environment, the user must supply a complete step list and any required selectors. See [`../element-interactions/references/playwright-cli-protocol.md`](../element-interactions/references/playwright-cli-protocol.md).
 - **App URL + task** — one URL or pre-authenticated state, one one-sentence task description. Credentials if the flow requires login. No `journey-map.md` needed.
 - **`page-repository.json`** — used opportunistically. If the page exists in the repo, reuse the entries; if not, propose new ones inline (gated like Stage 2 unless `autonomousMode: true`).
 - **Write access to `tests/e2e/evidence/`** — the bundle output directory. Created on first use.
@@ -81,7 +81,7 @@ The signal that distinguishes companion mode from Stage-3 single-scenario author
 
 ```
 Phase 1: Task Intake          ─── one-sentence task, URL, optional creds
-Phase 2: Quick Discovery      ─── single-page MCP snapshot, scoped to the task
+Phase 2: Quick Discovery      ─── single-page playwright-cli snapshot, scoped to the task
 Phase 3: Compose Evidence Test─── Steps API + per-step screenshots + tracing on
 Phase 4: Run with Capture     ─── execute with video, trace, HAR, console, screenshots
 Phase 5: Bundle               ─── write tests/e2e/evidence/<slug>-<ts>/
@@ -117,17 +117,18 @@ Write all five inputs to a Phase-1 record before advancing — they appear verba
 
 ## Phase 2: Quick Discovery
 
-Use the Playwright MCP to take **one snapshot of each page the task touches**. Goal: enough surface knowledge to compose a stable test, not exhaustive mapping.
+Use `@playwright/cli` to take **one snapshot of each page the task touches**. Goal: enough surface knowledge to compose a stable test, not exhaustive mapping.
 
-1. `browser_navigate` to the entry URL.
-2. `browser_snapshot` → record the visible elements relevant to the task.
-3. If the task spans multiple pages, walk the happiest path through the task once and snapshot each page.
+1. Open a dedicated session: `npx playwright-cli -s=companion-<bundle-slug> open --browser=chromium <entry-URL>`
+2. Take a snapshot: `npx playwright-cli -s=companion-<bundle-slug> snapshot` → record the visible elements relevant to the task.
+3. If the task spans multiple pages, walk the happiest path through the task once and snapshot each page (`-s=companion-<bundle-slug> goto <URL>` followed by `... snapshot`).
 4. **Do NOT explore unrelated pages.** Companion mode is task-scoped. If the user asked to verify checkout, do not snapshot the admin panel.
 5. **Do NOT update `app-context.md`.** This is intentional — companion-mode runs are ephemeral evidence sessions, not contributions to the durable knowledge base. Stages 1–4 and `test-composer` own that file.
+6. Close the session at the end of Phase 2 (composing & running in Phases 3–4 use the spec runner, not the live CLI session): `npx playwright-cli -s=companion-<bundle-slug> close`.
 
-If MCP is unavailable **at the start of Phase 2**, ask the user for either (a) the selectors needed for each step, or (b) a screenshot of the page so you can derive selectors. Do not proceed without one.
+If `@playwright/cli` is unavailable **at the start of Phase 2**, ask the user for either (a) the selectors needed for each step, or (b) a screenshot of the page so you can derive selectors. Do not proceed without one.
 
-If MCP **becomes unavailable mid-walk** (succeeded on page 1, fails on page 2), fall back to (a)/(b) for the remaining pages — do not retry MCP indefinitely, and do not abandon the partial discovery. The pages already snapshotted stay in the discovery output; the unreached pages get a one-line note in `summary.md` §Notes ("Discovery for `<PageName>` was completed via user-provided selectors after MCP failure mid-walk.").
+If the CLI **fails mid-walk** (succeeded on page 1, fails on page 2), fall back to (a)/(b) for the remaining pages — do not retry indefinitely, and do not abandon the partial discovery. The pages already snapshotted stay in the discovery output; the unreached pages get a one-line note in `summary.md` §Notes ("Discovery for `<PageName>` was completed via user-provided selectors after `playwright-cli` failure mid-walk.").
 
 Output: a per-page list of the elements you'll touch in Phase 3.
 
@@ -495,7 +496,7 @@ digraph companion_mode {
     "Args have all\nrequired fields?" [shape=diamond];
     "Prompt user for\nmissing fields" [shape=box];
     "Phase 2: Quick discovery" [shape=box, style=bold];
-    "MCP available?" [shape=diamond];
+    "playwright-cli available?" [shape=diamond];
     "Ask for selectors\nor page screenshot" [shape=box];
     "Snapshot page(s)\non task path" [shape=box];
     "Phase 3: Compose spec" [shape=box, style=bold];
@@ -536,9 +537,9 @@ digraph companion_mode {
     "Args have all\nrequired fields?" -> "Phase 2: Quick discovery" [label="yes — autonomous"];
     "Args have all\nrequired fields?" -> "Prompt user for\nmissing fields" [label="no — interactive"];
     "Prompt user for\nmissing fields" -> "Phase 2: Quick discovery";
-    "Phase 2: Quick discovery" -> "MCP available?";
-    "MCP available?" -> "Snapshot page(s)\non task path" [label="yes"];
-    "MCP available?" -> "Ask for selectors\nor page screenshot" [label="no"];
+    "Phase 2: Quick discovery" -> "playwright-cli available?";
+    "playwright-cli available?" -> "Snapshot page(s)\non task path" [label="yes"];
+    "playwright-cli available?" -> "Ask for selectors\nor page screenshot" [label="no"];
     "Ask for selectors\nor page screenshot" -> "Phase 3: Compose spec";
     "Snapshot page(s)\non task path" -> "Phase 3: Compose spec";
     "Phase 3: Compose spec" -> "Write spec.ts\nin bundle dir";

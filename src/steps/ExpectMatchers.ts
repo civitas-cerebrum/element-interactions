@@ -316,6 +316,29 @@ export class AttributesMatcher extends BaseMatcher {
     }
 }
 
+/**
+ * Asserts on the element's HTML — `innerHTML` by default, `outerHTML` when
+ * constructed with `outer: true`. Reached via `.html` / `.outerHtml` on either
+ * `ExpectBuilder` or `ElementAction`. Supports the full `StringMatcher` surface
+ * (`toBe`, `toContain`, `toMatch`, `toStartWith`, `toEndWith`) plus `.not`.
+ *
+ * Useful for security probes (escape verification), template scaffolding
+ * assertions, and any case where text content alone misses tag/attribute
+ * structure.
+ */
+export class HtmlMatcher extends StringMatcher {
+    constructor(builder: ExpectBuilder, ctx: ExpectContext, private outer: boolean, negated: boolean) {
+        super(builder, ctx, negated);
+    }
+    get not(): HtmlMatcher { return new HtmlMatcher(this.builder, this.ctx, this.outer, !this.negated); }
+    protected fieldLabel() { return this.outer ? 'outerHtml' : 'html'; }
+    protected verifyEq(t: WebElement, v: string, o: VerifyOpts) { return this.ctx.verify.html(t, v, { ...o, outer: this.outer }); }
+    protected verifyContains(t: WebElement, v: string, o: VerifyOpts) { return this.ctx.verify.htmlContains(t, v, { ...o, outer: this.outer }); }
+    protected verifyMatches(t: WebElement, re: RegExp, o: VerifyOpts) { return this.ctx.verify.htmlMatches(t, re, { ...o, outer: this.outer }); }
+    protected verifyStartsWith(t: WebElement, p: string, o: VerifyOpts) { return this.ctx.verify.htmlStartsWith(t, p, { ...o, outer: this.outer }); }
+    protected verifyEndsWith(t: WebElement, s: string, o: VerifyOpts) { return this.ctx.verify.htmlEndsWith(t, s, { ...o, outer: this.outer }); }
+}
+
 /** Asserts on a computed CSS property value. Reached via `.css(propertyName)`. Supports `.toBe`, `.toContain`, `.toMatch`. */
 export class CssMatcher extends BaseMatcher {
     constructor(builder: ExpectBuilder, ctx: ExpectContext, private property: string, negated: boolean) {
@@ -405,6 +428,8 @@ export class ExpectBuilder implements PromiseLike<void> {
     get visible(): BooleanMatcher { return new BooleanMatcher(this, this.ctx, 'visible', this.consumeNot()); }
     get enabled(): BooleanMatcher { return new BooleanMatcher(this, this.ctx, 'enabled', this.consumeNot()); }
     get attributes(): AttributesMatcher { return new AttributesMatcher(this, this.ctx, this.consumeNot()); }
+    get html(): HtmlMatcher { return new HtmlMatcher(this, this.ctx, false, this.consumeNot()); }
+    get outerHtml(): HtmlMatcher { return new HtmlMatcher(this, this.ctx, true, this.consumeNot()); }
     css(property: string): CssMatcher { return new CssMatcher(this, this.ctx, property, this.consumeNot()); }
 
     /**

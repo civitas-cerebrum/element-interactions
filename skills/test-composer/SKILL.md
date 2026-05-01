@@ -72,16 +72,17 @@ Do NOT read other journey blocks. Do NOT hold the whole map in context. Do NOT c
 
 ## Step 2: Discover
 
-For each uncovered page or feature, use the Playwright MCP to inspect the live DOM.
+For each uncovered page or feature, use `@playwright/cli` (see [`../element-interactions/references/playwright-cli-protocol.md`](../element-interactions/references/playwright-cli-protocol.md)) to inspect the live DOM.
 
 **Discovery protocol:**
-1. Navigate to the page via `browser_navigate`
-2. Capture a snapshot via `browser_snapshot`
-3. Note all interactive elements: buttons, inputs, links, tabs, dialogs, dropdowns
+1. Open your dedicated session: `npx playwright-cli -s=tc-<journey-slug> open --browser=chromium <URL>`
+2. Capture a snapshot: `npx playwright-cli -s=tc-<journey-slug> snapshot`
+3. Note all interactive elements: buttons, inputs, links, tabs, dialogs, dropdowns (each appears as `[ref=eN]` in the ARIA snapshot)
 4. Note the page's text content (headings, labels) for selector creation
-5. Click interactive elements to discover hidden UI (dropdowns, modals, menus)
+5. Click interactive elements to discover hidden UI (dropdowns, modals, menus): `npx playwright-cli -s=tc-<journey-slug> click eN`
+6. When done, close the session: `npx playwright-cli -s=tc-<journey-slug> close`
 
-**If MCP is unavailable:** Ask the user to provide screenshots or describe the page structure. Do not guess selectors.
+**If `@playwright/cli` is unavailable:** Ask the user to provide screenshots or describe the page structure. Do not guess selectors.
 
 **Record discoveries in a structured format AND save to app-context.md (see Rule 8):**
 ```
@@ -252,7 +253,7 @@ After coverage verification confirms the journey is `covered-exhaustively`, run 
 
 ## Step 8: Return
 
-Emit a structured report to the caller. Do not paste test source, DOM snapshots, or MCP transcripts into the return — the caller will not read them.
+Emit a structured report to the caller. Do not paste test source, DOM snapshots, or `playwright-cli` transcripts into the return — the caller will not read them.
 
 ### Canonical return schema
 

@@ -300,7 +300,7 @@ Brand overrides:
 
 ## Context discipline
 
-This skill is a **single-run** skill. No parallel subagents. No orchestration. No MCP browser work. It reads spec files and the journey map, writes HTML + PDF, and exits.
+This skill is a **single-run** skill. No parallel subagents. No orchestration. No live browser sessions (`playwright-cli` or otherwise). It reads spec files and the journey map, writes HTML + PDF, and exits.
 
 If spec parsing produces an Unmapped bucket with > 10 tests, **warn the user** that the journey map is stale — do not try to auto-repair it. Repair belongs to the `journey-mapping` skill.
 

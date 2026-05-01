@@ -63,18 +63,18 @@ Phase 5 runs **after** test-composer completes, not during mapping. It's the ver
 
 ## Phase 1: Page Discovery
 
-Visit every reachable page in the application via the Playwright MCP. Build the app context document incrementally as you go.
+Visit every reachable page in the application via `@playwright/cli` (see [`../element-interactions/references/playwright-cli-protocol.md`](../element-interactions/references/playwright-cli-protocol.md)). Build the app context document incrementally as you go.
 
-### Discovery Tool Rule — MCP only
+### Discovery Tool Rule — `playwright-cli` only
 
-Page discovery **must** be performed through the Playwright MCP browser tools (`browser_navigate`, `browser_snapshot`, `browser_click`, `browser_evaluate`, etc.). This is non-negotiable:
+Page discovery **must** be performed through `@playwright/cli` from the Bash tool (`playwright-cli open`, `playwright-cli snapshot`, `playwright-cli click`, `playwright-cli eval`, etc.). This is non-negotiable:
 
 - **Do not** infer pages from reading source files, route tables, router configs, sitemaps, or existing tests. Static inspection misses runtime-only routes, feature flags, auth-gated redirects, and client-side navigation state.
 - **Do not** use `fetch`/`curl`/WebFetch to scrape HTML — those bypass client-side rendering and produce a false map.
-- **Do not** substitute a headless Playwright test runner or shell scripts for the MCP. Discovery runs in the live MCP session so snapshots, console errors, and navigation timing are observable and recordable.
-- **Every URL in the site map must have a corresponding MCP snapshot** taken during this phase. If a page appears in the map without an MCP visit, it was guessed — remove it and visit it, or mark it gated.
+- **Do not** substitute a headless Playwright test runner or shell scripts for the CLI. Discovery runs in a live `playwright-cli` session so snapshots, console errors, and navigation timing are observable and recordable.
+- **Every URL in the site map must have a corresponding `playwright-cli` snapshot** taken during this phase. If a page appears in the map without a CLI visit, it was guessed — remove it and visit it, or mark it gated.
 
-If the Playwright MCP is unavailable, stop and tell the user. Do not fall back to static analysis.
+`@playwright/cli` ships as a hard dependency of `@civitas-cerebrum/element-interactions`, so it is always reachable via `npx playwright-cli` after the package is installed. If the binary is somehow unreachable, the install is corrupted — `npm install` fixes it. If the browser binary is missing on the dev machine, the first `... open` call exits with a clear error; run `npx playwright-cli install-browser chromium` once, then retry. Do not fall back to static analysis.
 
 ### Process
 
@@ -93,27 +93,20 @@ If the Playwright MCP is unavailable, stop and tell the user. Do not fall back t
 
 ### Parallel discovery
 
-For apps with multiple known entry points, Phase 1 parallelizes. **Parallel is the default**; only fall back to sequential crawl when fewer than two entry points are known or when the agent **cannot confirm** per-subagent MCP isolation in the current environment (see Rule 11 in the `element-interactions` orchestrator). Do not default-fallback to serial without running the check — silent fallback masks unprovisioned isolation and is the failure mode this protocol exists to prevent.
-
-**Agent-owned prerequisite (do this before dispatching).** The agent must confirm one of the following holds *before* dispatching parallel subagents, because sharing a browser across parallel agents corrupts snapshots and poisons the parent's context:
-
-1. The subagent-dispatch primitive available to the agent runs each subagent in its **own agent session with its own MCP connection** — in which case isolation is automatic when the Playwright MCP tools are named in each subagent's prompt.
-2. Or the agent can provision a fresh Playwright MCP process per subagent on an isolated port, and wire each subagent's MCP configuration to its own port.
-
-If neither condition can be confirmed, the agent must **not** dispatch in parallel — it must serialize and log `[mcp-isolation: serializing]` instead.
+For apps with multiple known entry points, Phase 1 parallelizes. **Parallel is the default** whenever two or more entry points are known. There is no isolation-prerequisite check: every dispatched subagent issues `playwright-cli -s=<unique-slug> open` and gets its own OS-isolated browser process by construction (see Rule 11 in the `element-interactions` orchestrator and `references/playwright-cli-protocol.md` §1).
 
 **Protocol:**
 
 1. Enumerate entry points: homepage (`/`), login page, and any other known top-level URLs (dashboard, known subsystem roots, explicitly user-listed starting points).
-2. Run the prerequisite check above. Only proceed to step 3 if one of the two conditions is confirmed.
-3. For each entry point, dispatch a discovery subagent. Each subagent gets:
+2. Quarantine: run `npx playwright-cli close-all` once at the start of the phase to reap any stale sessions from prior interrupted runs.
+3. For each entry point, dispatch a discovery subagent in parallel. Each subagent gets:
    - Its assigned entry point URL.
-   - An **isolated Playwright MCP browser instance** — provided by whichever prerequisite condition held at step 2 (session-boundary isolation or a dedicated MCP process).
+   - A unique session slug (`phase1-<entry-slug>`, per `playwright-cli-protocol.md` §3.1).
    - Its own fresh context window — no prior session content.
    - A terse brief: crawl the subtree breadth-first, capture snapshots, return a structured list of discovered pages + interactive elements.
-4. Parent journey-mapping agent merges each subagent's returned page list into `tests/e2e/docs/app-context.md` and the flat site map. Parent does **not** paste raw DOM snapshots or MCP transcripts into its own context.
+4. Parent journey-mapping agent merges each subagent's returned page list into `tests/e2e/docs/app-context.md` and the flat site map. Parent does **not** paste raw DOM snapshots or CLI transcripts into its own context.
 5. Deduplicate pages discovered by multiple subagents (common boundary pages show up twice; keep one entry with merged metadata).
-6. Once all subagents return, proceed to Phase 2 with the consolidated site map.
+6. After every subagent has returned and closed its session, the parent runs `npx playwright-cli close-all` as belt-and-suspenders cleanup, then proceeds to Phase 2 with the consolidated site map.
 
 **Concrete dispatch shape:**
 
@@ -128,19 +121,24 @@ dispatchSubagent({
     Return a structured list of discovered pages and interactive elements.
     Do not paste raw DOM into the return — summarize.
 
-    Use mcp__plugin_playwright_playwright__browser_navigate,
-    mcp__plugin_playwright_playwright__browser_snapshot,
-    mcp__plugin_playwright_playwright__browser_click, and related
-    mcp__plugin_playwright_playwright__* tools as needed.
+    Browser automation: use @playwright/cli from the Bash tool. Open and close
+    your own session — siblings have their own slugs and sessions are isolated
+    by construction (one browser process per -s= name).
+
+        npx playwright-cli -s=phase1-<entry-slug> open --browser=chromium <entry-point-URL>
+        # ...crawl with snapshot / click / goto...
+        npx playwright-cli -s=phase1-<entry-slug> close
+
+    Snapshot format and command surface:
+    skills/element-interactions/references/playwright-cli-protocol.md §3 + §5.
+    Do NOT call close-all (the parent owns that).
   `,
 })
 ```
 
-Dispatch one subagent per entry point, all in parallel. Each dispatched subagent opens its own MCP browser (either via session-boundary isolation or via its own dedicated MCP process, per the prerequisite check). The parent does **not** share its browser with the children and must not issue its own `browser_*` calls during the parallel phase.
+Dispatch one subagent per entry point, all in parallel. Each dispatched subagent opens its own browser session via `-s=<slug> open`. The parent does **not** drive its own browser during the parallel phase.
 
-**Parallelism:** dispatch as many subagents in parallel as the independence graph allows — there is no fixed cap. In Phase 1, every entry point is an independent root, so dispatch N subagents for N entry points. Only narrow this if the prerequisite check at step 2 forces serialization.
-
-**Fallback (last resort only):** if the prerequisite check at step 2 fails, serialize the crawl and emit a `[mcp-isolation: serializing]` progress line. Do not try to share one browser across subagents, and do not treat serialization as the expected path.
+**Parallelism:** dispatch as many subagents in parallel as the independence graph allows — there is no fixed cap and no isolation-driven serialization. In Phase 1, every entry point is an independent root, so dispatch N subagents for N entry points.
 
 ### Discovery Scope Rules
 

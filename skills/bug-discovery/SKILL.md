@@ -44,7 +44,7 @@ Before starting, verify ALL of these:
 
 - A passing test suite exists (Stages 1-4 complete, optionally Stage 5 / Test Composer)
 - `page-repository.json` has selectors for the app's pages
-- Playwright MCP is connected — if not, stop and tell the user: *"I need the Playwright MCP to probe the live app. Please add it to your Claude Code MCP settings and restart."*
+- `@playwright/cli` is reachable (`npx --no-install playwright-cli --version` exits 0). Since the CLI ships as a hard dependency of `@civitas-cerebrum/element-interactions`, this almost always passes; a non-zero exit means a corrupted install and the fix is `npm install`, not a separate dep add. The browser binary may still need a one-shot fetch — `npx playwright-cli install-browser chromium`.
 - `app-context.md` exists (used in cross-reference phases; probing can proceed without it but phases 2 and 4 will be limited)
 
 If the test suite is not passing, stop: *"Bug discovery requires a green test suite as baseline. Please fix failing tests first."*
@@ -91,7 +91,7 @@ When standalone, derive an analogous per-page negative-case list on the fly: for
 
 ## Phase 1a: Element Probing
 
-Visit every page via MCP with **zero context** — do NOT read `app-context.md`, existing tests, or scenario docs. Pure adversarial exploration.
+Visit every page via `playwright-cli` (open a `-s=bd-<journey-slug>` session per [`../element-interactions/references/playwright-cli-protocol.md`](../element-interactions/references/playwright-cli-protocol.md) §3) with **zero context** — do NOT read `app-context.md`, existing tests, or scenario docs. Pure adversarial exploration.
 
 ### Probing Categories
 
@@ -108,8 +108,8 @@ Apply to every interactive element found on every page:
 
 ### Process per Page
 
-1. Navigate via MCP
-2. Take a snapshot
+1. Navigate via `playwright-cli` (`-s=bd-<journey-slug> goto <URL>`)
+2. Take a snapshot (`-s=bd-<journey-slug> snapshot`)
 3. Identify all interactive elements
 4. **Visibility gate:** For each element, check `getBoundingClientRect()` — if width and height are both 0, or if any ancestor has `display: none`, `visibility: hidden`, or zero height, mark the element as **DOM-only**. Continue probing both visible and DOM-only elements, but tag all findings accordingly.
 5. Systematically try each probing category on each element
@@ -142,7 +142,7 @@ Construct and test **adversarial user journeys** — complete flows designed to 
 
 1. Read the app's route structure to identify all multi-step flows
 2. For each flow, design 2-3 adversarial variations from the categories above
-3. Execute each variation via MCP
+3. Execute each variation via `playwright-cli`
 4. Log anomalies with full flow description, screenshots at each step, and expected vs actual outcome
 
 ---
@@ -432,12 +432,12 @@ Parameter parsing: recognise the literal substrings `1a-element-probing`, `1b-fl
 
 | Mode | Behaviour |
 |---|---|
-| `mode: 'live'` (default) | Probe the running application through Playwright MCP as documented in Phases 1a–1b. Requires MCP availability. |
+| `mode: 'live'` (default) | Probe the running application through `@playwright/cli` as documented in Phases 1a–1b. Requires the CLI to be installed. |
 | `mode: 'static'` | First-class static-only adversarial probing. No live navigation. See below. |
 
 ## Static mode — first-class adversarial probing
 
-`mode: static` is a **first-class probing mode**, not a degraded fallback for when live probing fails. In environments where MCP is unavailable — CI runners without a browser, restricted sandboxes, read-only review checkouts — static mode is the default. Static findings stand on their own merit; they are simply a different class of evidence than live findings, and they are labelled as such.
+`mode: static` is a **first-class probing mode**, not a degraded fallback for when live probing fails. In environments where `@playwright/cli` is unavailable — CI runners without a browser, restricted sandboxes, read-only review checkouts — static mode is the default. Static findings stand on their own merit; they are simply a different class of evidence than live findings, and they are labelled as such.
 
 ### What the subagent reads
 
@@ -475,7 +475,7 @@ Being first-class is not only framing — it is a constraint on how orchestrator
 
 - **Ranking.** Static findings rank by **severity**, not by evidence class. A `severity: high` inferred finding outranks a `severity: low` live-verified finding in any ordered list.
 - **Inclusion in reports and decks.** Static findings appear in the onboarding-report and the summary deck on the same footing as live findings. The `inferred: true` flag is shown explicitly so readers can judge epistemic weight, but the finding is not buried or collapsed.
-- **Follow-up suggestion.** When static findings landed in an earlier run and MCP later becomes available, the orchestrator SHOULD suggest re-running the affected journeys in `mode: live` to confirm or refute each `inferred: true` finding. "Suggest" means a one-line progress note to the caller, not an autonomous re-run.
+- **Follow-up suggestion.** When static findings landed in an earlier run and `@playwright/cli` later becomes available, the orchestrator SHOULD suggest re-running the affected journeys in `mode: live` to confirm or refute each `inferred: true` finding. "Suggest" means a one-line progress note to the caller, not an autonomous re-run.
 
 **Rationalizations to reject:**
 
@@ -484,4 +484,4 @@ Being first-class is not only framing — it is a constraint on how orchestrator
 | "Inferred findings are weaker so I'll bucket them separately in the deck" | Bucketing by evidence class rather than severity buries high-impact static findings. The flag carries the epistemic weight — ranking stays severity-first. |
 | "Static-mode findings are probably false positives, so I'll drop the low-severity ones" | Every finding's severity is the subagent's judgement; filtering on evidence class on top of severity is double-discounting. |
 | "Live mode ran fine so I can ignore any earlier static findings" | A live pass that failed to reproduce an inferred finding does not refute it — it demotes evidence, but the finding stays in the report unless the live pass reached the specific pattern. The orchestrator marks the inference as `live-unconfirmed`, not deleted. |
-| "MCP is available so there's no reason to run static mode" | Correct for that one run. Static mode is not opportunistic redundancy — it is for environments where live is unavailable. Do not run static mode in parallel with live unless the caller specifically requested a code-audit pass. |
+| "`@playwright/cli` is available so there's no reason to run static mode" | Correct for that one run. Static mode is not opportunistic redundancy — it is for environments where live is unavailable. Do not run static mode in parallel with live unless the caller specifically requested a code-audit pass. |

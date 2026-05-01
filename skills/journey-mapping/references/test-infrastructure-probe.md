@@ -11,7 +11,7 @@ In parallel with `journey-mapping`'s Phase 1 breadth-first crawl. The probe coll
 ## Inputs
 
 - `playwright.config.ts` `baseURL` (the host being probed).
-- The Playwright MCP browser instance used for Phase 1 crawl (the probe attaches to its network listeners).
+- The `playwright-cli` session used for Phase 1 crawl. Network observations come from `playwright-cli requests` against that session; HTTP details come from `playwright-cli request <index>` / `playwright-cli response-headers <index>` / `playwright-cli response-body <index>`. See [`../../element-interactions/references/playwright-cli-protocol.md`](../../element-interactions/references/playwright-cli-protocol.md) §3 for the session model.
 
 ## Probe categories
 

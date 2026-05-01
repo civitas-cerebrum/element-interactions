@@ -192,6 +192,37 @@ test.describe('Verifications — direct method validation', () => {
     await interactions.verify.urlContains('buttons');
   });
 
+  test('html family — element-scoped innerHTML/outerHTML assertions', async ({ page, steps, interactions }) => {
+    await steps.navigateTo('/buttons');
+    const btn = new WebElement(page.locator('[data-testid="btn-primary"]'));
+
+    await interactions.verify.html(btn, 'Primary');
+    await interactions.verify.htmlContains(btn, 'rim');
+    await interactions.verify.htmlMatches(btn, /^Pri/);
+    await interactions.verify.htmlStartsWith(btn, 'Pri');
+    await interactions.verify.htmlEndsWith(btn, 'ary');
+  });
+
+  test('pageHtml family — document-level body/outerHTML assertions', async ({ steps, interactions }) => {
+    await steps.navigateTo('/buttons');
+
+    await interactions.verify.pageHtmlContains('btn-primary');
+    await interactions.verify.pageHtmlStartsWith('<', { outer: true });
+    await interactions.verify.pageHtmlEndsWith('html>', { outer: true });
+
+    const fullBody = await interactions.extract.getPageHtml();
+    await interactions.verify.pageHtml(fullBody);
+  });
+
+  test('Steps.verifyHtml / Steps.verifyPageHtml — exact-match wrappers', async ({ page, steps }) => {
+    await steps.navigateTo('/buttons');
+    const expected = await page.locator('[data-testid="btn-primary"]').innerHTML();
+    await steps.verifyHtml('primaryButton', 'ButtonsPage', expected);
+
+    const fullBody = await page.evaluate(() => document.body.innerHTML);
+    await steps.verifyPageHtml(fullBody);
+  });
+
   test('urlContains — fails when URL does not match', async ({ page, steps }) => {
     await steps.navigateTo('/buttons');
     const { Verifications } = await import('../src/interactions/Verification');

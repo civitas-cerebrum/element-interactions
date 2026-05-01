@@ -126,7 +126,7 @@ verification-misses:
     - file: <path>
     - test-name: <test(...) title>
     - asserted: <what the test currently asserts>
-    - live-observed: <what the reviewer saw via MCP>
+    - live-observed: <what the reviewer saw via playwright-cli>
     - suggested-fix: <concrete remediation>
 ````
 

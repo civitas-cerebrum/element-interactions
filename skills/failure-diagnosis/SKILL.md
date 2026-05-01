@@ -29,9 +29,9 @@ A structured diagnostic protocol for failing Playwright tests. Every failure get
 Do NOT guess from the error message alone. Collect visual and structural evidence first.
 
 1. **Read the error message and stack trace.** Note the test file, line number, step name, and error type.
-2. **Open the Playwright HTML report.** Run `npx playwright show-report` and inspect the failure screenshot via Playwright MCP or browser MCP. The base fixture captures a `failure-screenshot` on every failure automatically.
+2. **Open the Playwright HTML report.** Run `npx playwright show-report` and read the failure screenshot from the on-disk report directory (`playwright-report/data/...`). The base fixture captures a `failure-screenshot` on every failure automatically — open the file directly with the Read tool.
 3. **Describe what the screenshot shows.** State explicitly: page state, visible elements, error messages, unexpected UI, loading indicators, overlays. Write this down — it informs every subsequent decision.
-4. **If the screenshot is insufficient:** use Playwright MCP to navigate to the failing page URL and take a fresh snapshot. Inspect the DOM for the element the test was trying to interact with.
+4. **If the screenshot is insufficient:** use `@playwright/cli` (see [`../element-interactions/references/playwright-cli-protocol.md`](../element-interactions/references/playwright-cli-protocol.md)) to navigate to the failing page URL and take a fresh snapshot — `npx playwright-cli -s=fd-<short-slug> open --browser=chromium <URL>` then `npx playwright-cli -s=fd-<short-slug> snapshot`. Inspect the DOM for the element the test was trying to interact with.
 5. **Check the error context file.** Failed tests produce an `error-context.md` in `test-results/` — read it for additional diagnostic information.
 
 ### Stage 2 — Group Failures
@@ -72,7 +72,7 @@ Common test issues:
 - DOM inspection confirms the element genuinely doesn't exist or the app produces incorrect output
 - The test logic is correct per the scenario — the app simply doesn't do what it should
 
-Additionally: the bug must be **reproducible** (not a one-off network blip). Navigate to the page manually via Playwright MCP to confirm.
+Additionally: the bug must be **reproducible** (not a one-off network blip). Navigate to the page manually via `playwright-cli` (`-s=fd-<short-slug> open ...`, then `goto`/`snapshot`/`click`) to confirm.
 
 **When you identify an app bug: STOP.** Do NOT modify the test to accommodate the bug. Report it (see Stage 6).
 
@@ -126,7 +126,7 @@ The precondition columns exist to keep you honest: any heal applied without meet
 
 ### Stage 4b — Live DOM re-learning (for heal strategy (a) only)
 
-When the heal strategy is (a) selector re-learn, do NOT guess a replacement selector. Use Playwright MCP to open the page at the navigation state where the lookup fails, and locate candidates by stable signals.
+When the heal strategy is (a) selector re-learn, do NOT guess a replacement selector. Use `playwright-cli` to open the page at the navigation state where the lookup fails (`npx playwright-cli -s=fd-<short-slug> open --browser=chromium <URL>` followed by whatever `goto` / `click` chain reproduces the failure state), then locate candidates by stable signals.
 
 1. **Exact text match** — does the previous selector have known text content? Search the live DOM for an element with the same text.
 2. **Role + accessible name fuzzy match** — e.g. previous target was a button labeled "Submit"; find a `role="button"` whose name contains "Submit" (or close variants like "Place Order", "Confirm").
@@ -165,7 +165,7 @@ Present the bug report to the user with this structure:
 >
 > **Screenshot:** [describe what the screenshot shows]
 > **DOM:** [describe what DOM inspection revealed — e.g., error page rendered, expected component absent]
-> **Reproducible:** Yes — confirmed by navigating manually via Playwright MCP
+> **Reproducible:** Yes — confirmed by navigating manually via `playwright-cli`
 >
 > This is an application bug. The test has NOT been modified.
 

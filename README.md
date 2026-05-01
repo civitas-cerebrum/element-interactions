@@ -18,7 +18,7 @@ You drive it in plain English. The orchestrators detect project state and route 
 > *"Repair the suite."*
 > *"Verify the checkout flow with evidence."*
 
-> **Tip:** Enable the Playwright MCP plugin in Claude Code (`/plugins` → Playwright) so the harness can inspect the live DOM before writing any locator. This removes the most common source of AI-generated test flakiness.
+> **Tip:** This package bundles `@playwright/cli` and the skills drive it from the Bash tool — no MCP plugin to enable, no `.mcp.json` to write. After `npm install`, run `npx playwright-cli install-browser chromium` once so the headless-shell binary is available, and the harness can inspect the live DOM before writing any locator. This removes the most common source of AI-generated test flakiness.
 
 ### Features
 

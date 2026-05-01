@@ -15,15 +15,15 @@ A **staff-level QA engineer**, dispatched fresh for each journey-and-cycle pair.
 5. The Stage A return from the current cycle, in full. For compositional passes this is the `test-composer` return (including the list of committed test paths and the structured discovery report). For adversarial passes this is the adversarial-subagent return (ledger appends, regression tests if any, probe summary).
 6. For passes 4–5: the journey's current section in `tests/e2e/docs/adversarial-findings.md` (so the reviewer can verify ledger well-formedness against the canonical schema), AND the journey's **negative-case matrix** that Stage A was given (see `adversarial-subagent-contract.md` §"Negative-case matrix — full QA scope"). The matrix is the adversarial coverage floor; the reviewer grades Stage A's matrix coverage explicitly, not just Stage A's probe-category breadth.
 7. App credentials from `app-context.md`.
-8. Live app URL + any secondary user accounts needed for MCP-based verification.
+8. Live app URL + any secondary user accounts needed for `playwright-cli`-based verification.
 9. Prior-cycle review history for this journey in this pass (cycle N's reviewer receives cycles 1..N-1's `must-fix` lists in compressed form — enough to detect a stalled loop, not the full review bodies).
 
 ## Behavior
 
-1. **MCP prerequisite check.** Before anything else, confirm that an isolated Playwright MCP browser is available to this subagent per the element-interactions orchestrator's Rule 11. Reviewers must verify — not assume — isolation.
+1. **Open the dedicated `playwright-cli` session.** Open your assigned session at the start: `npx playwright-cli -s=<journey-slug>-<pass>-stage-b open --browser=chromium <baseURL>`. Sessions are OS-isolated by construction — there is no isolation-prerequisite check (see [`../../element-interactions/references/playwright-cli-protocol.md`](../../element-interactions/references/playwright-cli-protocol.md) §1). Close it at the end with `npx playwright-cli -s=<your-slug> close`.
 2. **Read on-disk context.** Read the journey block, page-repo slice, app-context slice. Read the Stage A return in full. Do not hold unrelated journey blocks or other subagents' transcripts.
 3. **Read the tests (compositional passes).** For passes 1–3, read every `.spec.ts` file Stage A wrote or modified this cycle. For passes 4–5, read the ledger entries, any regression test files, AND the negative-case matrix Stage A was given (per §"Inputs" item 6). Cross-reference the matrix against ledger entries: every matrix entry MUST appear as a ledger finding (`Boundaries verified`, `Suspected bugs`, or `Ambiguous`). A matrix entry with no corresponding ledger finding is a coverage gap Stage A failed to probe.
-4. **Navigate the live app.** Use the isolated MCP browser to inspect the pages the journey touches. Verify that the tests' assertions match the live DOM. For adversarial passes, independently attempt 2–3 probes that Stage A did not try — pick categories under-represented in Stage A's probe list, prioritising matrix entries that have no ledger finding.
+4. **Navigate the live app via `playwright-cli`.** Use your dedicated session to inspect the pages the journey touches: `npx playwright-cli -s=<your-slug> goto <URL>`, then `npx playwright-cli -s=<your-slug> snapshot` and `... eval`/`... cookie-get`/`... requests` as needed. Verify that the tests' assertions match the live DOM. For adversarial passes, independently attempt 2–3 probes that Stage A did not try — pick categories under-represented in Stage A's probe list, prioritising matrix entries that have no ledger finding.
 5. **Judge and classify findings.** Per the canonical return schema (§2.4 of `skills/element-interactions/references/subagent-return-schema.md`): findings fall into `missing-scenarios`, `craft-issues`, `verification-misses`. Every recorded finding carries the fixed bracket `[must-fix]`. There is no nice-to-have bracket and no third return state — the recording decision in step 6 IS the must-fix decision.
 6. **Must-fix calibration (what to record; everything else is not surfaced).** Recording a finding triggers `improvements-needed` and a Stage A retry, so this list is the gate. Observations that do not match a recording rule below are not surfaced — the reviewer must NOT promote a borderline observation to a recorded finding to "make sure it gets heard." The calibration is closed.
    - Any `missing-scenarios` finding corresponding to an unimplemented item in the journey's `Test expectations:` list → record.
@@ -42,7 +42,7 @@ A **staff-level QA engineer**, dispatched fresh for each journey-and-cycle pair.
 
 - **Do not write test code.** The reviewer's role is adversarial inspection, not implementation. A reviewer that writes tests has merged two roles and lost the fresh-eyes property.
 - **Do not append to the adversarial ledger.** Even if the reviewer's independent probes (passes 4–5) land findings, those findings are returned to the orchestrator as `missing-scenarios` so Stage A can attempt them properly on retry. Only Stage A writes to the ledger.
-- **Do not reuse a prior reviewer's context.** Every reviewer dispatch is a fresh subagent with a fresh MCP browser. The fresh-eyes property is load-bearing; inheriting context from the previous cycle's reviewer (or from the paired Stage A) defeats the adversarial role.
+- **Do not reuse a prior reviewer's context.** Every reviewer dispatch is a fresh subagent with a fresh `playwright-cli` session. The fresh-eyes property is load-bearing; inheriting context from the previous cycle's reviewer (or from the paired Stage A) defeats the adversarial role.
 - **Never return `covered-exhaustively` or `no-new-tests-by-rationalisation`.** Those are Stage A return states. A reviewer with no findings returns `greenlight`; a reviewer with one or more `must-fix` findings returns `improvements-needed`. There is no third state — `nice-to-have` and `greenlight-with-notes` are not part of the contract.
 - **Never authorise a `skipped` status.** Skipping a journey requires explicit user authorisation per PR #105's no-skip contract. The reviewer has no authorisation power.
 
@@ -71,13 +71,15 @@ Inputs:
 - Credentials: <per app-context.md>
 
 Procedure:
-1. Verify isolated MCP availability per element-interactions Rule 11.
+1. Open your dedicated playwright-cli session:
+       npx playwright-cli -s=<journey-slug>-<pass>-stage-b open --browser=chromium <baseURL>
+   (Sessions are OS-isolated by construction — no prerequisite check.)
 2. Read Stage A's output:
    - Passes 1–3: read the .spec.ts files Stage A wrote or modified (paths in the Stage A return).
    - Passes 4–5: read the ledger entries Stage A appended this cycle and any regression-test files Stage A wrote (paths in the Stage A return).
-3. Navigate the live app via MCP. Inspect each page the tests claim to exercise. For passes 4–5, additionally attempt 2–3 adversarial probes Stage A did not try this cycle — pick categories under-represented in Stage A's probe list.
+3. Navigate the live app via playwright-cli. Inspect each page the tests claim to exercise (`-s=<your-slug> goto / snapshot / eval`). For passes 4–5, additionally attempt 2–3 adversarial probes Stage A did not try this cycle — pick categories under-represented in Stage A's probe list.
 4. Classify findings per §2.4 of the canonical return schema.
 5. Apply must-fix calibration per the reviewer contract.
 6. Detect stalled loops — if your must-fix list matches BOTH the prior-1 AND prior-2 cycles' lists (three identical lists in a row), flag stalled:true. Never flag from cycles 1–2 (the three-cycle condition cannot hold). See full rule in step 7 of this contract.
-7. Return using the canonical schema. Do NOT commit, do NOT modify files, do NOT append to the ledger.
+7. Close your session: `npx playwright-cli -s=<your-slug> close`. Return using the canonical schema. Do NOT commit, do NOT modify files, do NOT append to the ledger. Do NOT run `close-all` (the parent owns that).
 ~~~

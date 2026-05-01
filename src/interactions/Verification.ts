@@ -165,6 +165,193 @@ export class Verifications {
         await expect(this.page).toHaveURL(new RegExp(escaped, 'i'), { timeout: this.ELEMENT_TIMEOUT });
     }
 
+    // ==========================================
+    // HTML Assertions
+    // ==========================================
+    //
+    // Playwright has no built-in `toHaveHTML` matcher, so the html family is
+    // implemented on top of `expect.poll` to retain the same retry semantics
+    // as the rest of the verification surface (web-first, custom timeout,
+    // negation, error message). Each method shares one polling helper so the
+    // exact-match / contains / regex / starts-with / ends-with branches stay
+    // a single line of dispatch.
+
+    /** Read innerHTML / outerHTML for an element-scoped html assertion. Locator-only — caller resolves the WebElement. */
+    private readElementHtml(locator: Locator, outer: boolean): Promise<string> {
+        const target = locator.first();
+        return outer
+            ? target.evaluate((el: globalThis.Element) => el.outerHTML)
+            : target.innerHTML();
+    }
+
+    /** Read the page-level HTML — body innerHTML by default, full document outerHTML when `outer`. */
+    private readPageHtml(outer: boolean): Promise<string> {
+        return outer
+            ? this.page.evaluate(() => document.documentElement.outerHTML)
+            : this.page.evaluate(() => document.body.innerHTML);
+    }
+
+    /**
+     * Polls a string predicate against an HTML source until it satisfies the
+     * predicate (or its negation) or the timeout expires. Single source of
+     * truth for every html / pageHtml assertion variant.
+     */
+    private async pollHtml(
+        readHtml: () => Promise<string>,
+        predicate: (html: string) => boolean,
+        describe: string,
+        scope: string,
+        options?: VerifyOptions,
+    ): Promise<void> {
+        const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
+        const negated = options?.negated ?? false;
+        const neg = negated ? 'not ' : '';
+        const header = options?.errorMessage ?? `expected ${scope} html ${neg}${describe}`;
+
+        let lastHtml: string | null = null;
+        try {
+            await expect.poll(async () => {
+                try {
+                    const html = await readHtml();
+                    lastHtml = html;
+                    return predicate(html) !== negated;
+                } catch {
+                    return false;
+                }
+            }, { timeout, message: header }).toBe(true);
+        } catch {
+            // expect.poll rethrows with its own "Timeout … while waiting on the
+            // predicate" message and drops the `message` option from the thrown
+            // Error string (it only surfaces in the report). Repackage so the
+            // assertion header always shows up in the thrown message — same UX
+            // as `expect(locator).toHaveText(..., { timeout })` in the rest of
+            // the verification surface.
+            const actual: string = lastHtml ?? '<unavailable>';
+            const truncated = actual.length > 200 ? `${actual.slice(0, 200)}…` : actual;
+            throw new Error(`${header}\n  actual: "${truncated}"`);
+        }
+    }
+
+    /** Asserts the element's `innerHTML` (or `outerHTML` with `{ outer: true }`) equals the expected string exactly. */
+    async html(target: WebElement, expected: string, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+        const outer = options?.outer ?? false;
+        await this.pollHtml(
+            () => this.readElementHtml(resolveLocator(target), outer),
+            html => html === expected,
+            `to be "${expected}"`,
+            `element`,
+            options,
+        );
+    }
+
+    /** Asserts the element's HTML contains the given substring. */
+    async htmlContains(target: WebElement, substring: string, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+        const outer = options?.outer ?? false;
+        await this.pollHtml(
+            () => this.readElementHtml(resolveLocator(target), outer),
+            html => html.includes(substring),
+            `to contain "${substring}"`,
+            `element`,
+            options,
+        );
+    }
+
+    /** Asserts the element's HTML matches a regular expression. */
+    async htmlMatches(target: WebElement, regex: RegExp, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+        const outer = options?.outer ?? false;
+        await this.pollHtml(
+            () => this.readElementHtml(resolveLocator(target), outer),
+            html => regex.test(html),
+            `to match ${regex}`,
+            `element`,
+            options,
+        );
+    }
+
+    /** Asserts the element's HTML starts with the given prefix. */
+    async htmlStartsWith(target: WebElement, prefix: string, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+        const outer = options?.outer ?? false;
+        await this.pollHtml(
+            () => this.readElementHtml(resolveLocator(target), outer),
+            html => html.startsWith(prefix),
+            `to start with "${prefix}"`,
+            `element`,
+            options,
+        );
+    }
+
+    /** Asserts the element's HTML ends with the given suffix. */
+    async htmlEndsWith(target: WebElement, suffix: string, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+        const outer = options?.outer ?? false;
+        await this.pollHtml(
+            () => this.readElementHtml(resolveLocator(target), outer),
+            html => html.endsWith(suffix),
+            `to end with "${suffix}"`,
+            `element`,
+            options,
+        );
+    }
+
+    /** Asserts the page-level HTML equals the expected string exactly. Defaults to `document.body.innerHTML`; pass `{ outer: true }` for the full document outerHTML. */
+    async pageHtml(expected: string, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+        const outer = options?.outer ?? false;
+        await this.pollHtml(
+            () => this.readPageHtml(outer),
+            html => html === expected,
+            `to be "${expected}"`,
+            outer ? 'document' : 'body',
+            options,
+        );
+    }
+
+    /** Asserts the page-level HTML contains the given substring. */
+    async pageHtmlContains(substring: string, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+        const outer = options?.outer ?? false;
+        await this.pollHtml(
+            () => this.readPageHtml(outer),
+            html => html.includes(substring),
+            `to contain "${substring}"`,
+            outer ? 'document' : 'body',
+            options,
+        );
+    }
+
+    /** Asserts the page-level HTML matches a regular expression. */
+    async pageHtmlMatches(regex: RegExp, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+        const outer = options?.outer ?? false;
+        await this.pollHtml(
+            () => this.readPageHtml(outer),
+            html => regex.test(html),
+            `to match ${regex}`,
+            outer ? 'document' : 'body',
+            options,
+        );
+    }
+
+    /** Asserts the page-level HTML starts with the given prefix. */
+    async pageHtmlStartsWith(prefix: string, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+        const outer = options?.outer ?? false;
+        await this.pollHtml(
+            () => this.readPageHtml(outer),
+            html => html.startsWith(prefix),
+            `to start with "${prefix}"`,
+            outer ? 'document' : 'body',
+            options,
+        );
+    }
+
+    /** Asserts the page-level HTML ends with the given suffix. */
+    async pageHtmlEndsWith(suffix: string, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+        const outer = options?.outer ?? false;
+        await this.pollHtml(
+            () => this.readPageHtml(outer),
+            html => html.endsWith(suffix),
+            `to end with "${suffix}"`,
+            outer ? 'document' : 'body',
+            options,
+        );
+    }
+
     /**
      * Asserts that an element has a specific HTML attribute with an exact value.
      * @param target - A Playwright Locator or Element pointing to the target element.
