@@ -560,6 +560,10 @@ After a pass's per-journey subagents return clean and per-pass completion criter
 
 **Why it runs here:** per-journey subagent stabilization confirms each journey's tests pass in isolation, but cumulative state across the suite (DB pollution, port collisions, fixture drift, shared-resource depletion) only surfaces when the whole suite runs together. Running this gate at every pass exit catches integration-time regressions at the earliest pass that introduces them, rather than at end-of-pipeline.
 
+**Harness-enforced as a windowed ratchet (issue #131).** The same gate is enforced at the commit boundary by `hooks/suite-gate-ratchet.sh` (auto-installed alongside the dispatch-guard). The hook tracks the **last N runs** in a sliding window — default `N=3`, override via `CIVITAS_SUITE_GATE_WINDOW=<int>` — and blocks phase-progression commits (`test(j-...)`, `docs(ledger)`, `docs(coverage-expansion-state)`) if ANY run in the window was red, OR the window is not yet filled, OR the oldest run is more than 1 hour old. The state file is `<repo>/.claude/last-suite-result.json` (legacy single-object format auto-migrates to the new array shape on the next PostToolUse).
+
+The windowed shape catches a class of failure single-shot gates miss: serial-mode flakes, click-PUT race conditions, and auth-state eviction that pass an isolated single run but fail across 3-5 reviewer-driven re-runs. A flake that passes 70% of the time displaces no failed entry from a 3-run window — by design — so the gate can't be cleared by one lucky re-run after a real regression. Pair this with §"Whole-suite re-run gate" above for end-to-end coverage: the orchestrator-side check fires at every pass exit; the harness ratchet fires at every commit on top of the same window.
+
 ### Parallelism
 
 The parallelism model has three layers:
