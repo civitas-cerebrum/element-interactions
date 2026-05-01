@@ -77,37 +77,72 @@ try {
   console.warn(`[@civitas-cerebrum/element-interactions] Could not install Claude Code skill: ${err.message}`);
 }
 
-// Install the coverage-expansion dispatch-guard hook into the user's
-// ~/.claude/hooks/ directory and register it as a PreToolUse:Agent hook in
-// ~/.claude/settings.json. Markdown rules in the skill ("dispatch one
-// journey per Agent call") are skippable; the harness-level hook is not.
+// Install the @civitas-cerebrum/element-interactions harness hooks into the
+// user's ~/.claude/hooks/ directory and register them in ~/.claude/settings.json.
+// Markdown rules in the skills ("dispatch one journey per Agent call",
+// "use playwright-cli not the MCP browser tools", "preserve the journey-map
+// sentinel", etc.) are skippable; the harness-level hooks are not.
+//
+// Per-hook manifest below — each entry: { file, event, matcher, timeout?, async? }.
+//   file     — script name in <package>/hooks/, copied to ~/.claude/hooks/<file>
+//   event    — PreToolUse | PostToolUse | SubagentStop | Stop | …
+//   matcher  — tool-name match string for the event (null for events without
+//              matchers, e.g. SubagentStop)
+//   timeout  — seconds the harness waits before killing the hook (default 10)
+//   async    — true for fire-and-forget hooks (used for cleanup)
 //
 // Idempotent:
-//   - Hook file is copied iff missing or older than the bundled version.
-//   - Hook entry in settings.json is added iff a matching command is not
-//     already registered (other PreToolUse:Agent hooks are preserved).
+//   - Each hook file is copied iff missing or older than the bundled version.
+//   - Each settings.json entry is added iff a matching {event, matcher, command}
+//     triple is not already registered. Pre-existing user hooks are preserved.
 //
 // Opt-out: set CIVITAS_SKIP_HOOK_INSTALL=1 — useful for enterprise managed
 // settings where postinstall scripts must not modify ~/.claude/settings.json.
-function installDispatchGuardHook() {
-  if (process.env.CIVITAS_SKIP_HOOK_INSTALL === '1') {
-    console.log('[civitas-cerebrum] CIVITAS_SKIP_HOOK_INSTALL=1 — dispatch guard hook install skipped.');
-    return;
-  }
+const MCP_PLAYWRIGHT_BROWSER_TOOLS = [
+  'mcp__plugin_playwright_playwright__browser_click',
+  'mcp__plugin_playwright_playwright__browser_close',
+  'mcp__plugin_playwright_playwright__browser_console_messages',
+  'mcp__plugin_playwright_playwright__browser_drag',
+  'mcp__plugin_playwright_playwright__browser_drop',
+  'mcp__plugin_playwright_playwright__browser_evaluate',
+  'mcp__plugin_playwright_playwright__browser_file_upload',
+  'mcp__plugin_playwright_playwright__browser_fill_form',
+  'mcp__plugin_playwright_playwright__browser_handle_dialog',
+  'mcp__plugin_playwright_playwright__browser_hover',
+  'mcp__plugin_playwright_playwright__browser_navigate',
+  'mcp__plugin_playwright_playwright__browser_navigate_back',
+  'mcp__plugin_playwright_playwright__browser_network_request',
+  'mcp__plugin_playwright_playwright__browser_network_requests',
+  'mcp__plugin_playwright_playwright__browser_press_key',
+  'mcp__plugin_playwright_playwright__browser_resize',
+  'mcp__plugin_playwright_playwright__browser_run_code_unsafe',
+  'mcp__plugin_playwright_playwright__browser_select_option',
+  'mcp__plugin_playwright_playwright__browser_snapshot',
+  'mcp__plugin_playwright_playwright__browser_tabs',
+  'mcp__plugin_playwright_playwright__browser_take_screenshot',
+  'mcp__plugin_playwright_playwright__browser_type',
+  'mcp__plugin_playwright_playwright__browser_wait_for',
+].join('|');
 
-  const hookSrc = path.join(packageDir, 'hooks', 'coverage-expansion-dispatch-guard.sh');
-  if (!fs.existsSync(hookSrc)) {
-    // Bundled hook missing — quietly skip rather than failing the consumer's npm install.
-    return;
-  }
+const HOOK_MANIFEST = [
+  // PreToolUse — guards (fail-closed)
+  { file: 'coverage-expansion-dispatch-guard.sh', event: 'PreToolUse', matcher: 'Agent',       timeout: 10 },
+  { file: 'playwright-cli-isolation-guard.sh',    event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
+  { file: 'commit-message-gate.sh',               event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
+  { file: 'suite-gate-ratchet.sh',                event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
+  { file: 'journey-map-sentinel-guard.sh',        event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
+  { file: 'coverage-state-schema-guard.sh',       event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
+  { file: 'mcp-browser-tool-redirect.sh',         event: 'PreToolUse', matcher: MCP_PLAYWRIGHT_BROWSER_TOOLS, timeout: 10 },
 
-  const userHooksDir = path.join(homeDir, '.claude', 'hooks');
-  const hookDest = path.join(userHooksDir, 'coverage-expansion-dispatch-guard.sh');
-  const settingsPath = path.join(homeDir, '.claude', 'settings.json');
+  // PostToolUse — observers (record + warn)
+  { file: 'suite-gate-ratchet.sh',                event: 'PostToolUse', matcher: 'Bash',       timeout: 10 },
+  { file: 'raw-playwright-api-warning.sh',        event: 'PostToolUse', matcher: 'Write|Edit', timeout: 10 },
 
-  fs.mkdirSync(userHooksDir, { recursive: true });
+  // SubagentStop — cleanup
+  { file: 'playwright-cli-cleanup-on-stop.sh',    event: 'SubagentStop', matcher: null,        timeout: 30, async: true },
+];
 
-  // Copy hook iff missing or bundled version is newer (mtime-based).
+function copyHookFile(hookSrc, hookDest) {
   let shouldCopy = !fs.existsSync(hookDest);
   if (!shouldCopy) {
     try {
@@ -122,8 +157,50 @@ function installDispatchGuardHook() {
     fs.copyFileSync(hookSrc, hookDest);
     fs.chmodSync(hookDest, 0o755);
   }
+  return shouldCopy;
+}
 
-  // Register PreToolUse:Agent hook in ~/.claude/settings.json — idempotent.
+function registerHookInSettings(settings, entry, hookDest) {
+  const { event, matcher, timeout, async: isAsync } = entry;
+
+  settings.hooks = settings.hooks || {};
+  settings.hooks[event] = settings.hooks[event] || [];
+
+  // Find an existing matcher group for this {event, matcher} pair. matcher may
+  // be null (e.g. SubagentStop has no matcher) — match nullish-to-nullish.
+  let group = settings.hooks[event].find(g => g && (g.matcher || null) === (matcher || null));
+  if (!group) {
+    group = matcher ? { matcher, hooks: [] } : { hooks: [] };
+    settings.hooks[event].push(group);
+  }
+  group.hooks = group.hooks || [];
+
+  const alreadyRegistered = group.hooks.some(h =>
+    h && h.type === 'command' && h.command === hookDest
+  );
+  if (alreadyRegistered) {
+    return false;
+  }
+
+  const hookEntry = { type: 'command', command: hookDest };
+  if (typeof timeout === 'number') hookEntry.timeout = timeout;
+  if (isAsync === true) hookEntry.async = true;
+  group.hooks.push(hookEntry);
+  return true;
+}
+
+function installCivitasHooks() {
+  if (process.env.CIVITAS_SKIP_HOOK_INSTALL === '1') {
+    console.log('[civitas-cerebrum] CIVITAS_SKIP_HOOK_INSTALL=1 — harness hook install skipped.');
+    return;
+  }
+
+  const userHooksDir = path.join(homeDir, '.claude', 'hooks');
+  const settingsPath = path.join(homeDir, '.claude', 'settings.json');
+  fs.mkdirSync(userHooksDir, { recursive: true });
+
+  // Load current settings.json (or {} if missing). Bail out preserving the
+  // file on parse error — never overwrite malformed user config.
   let settings = {};
   if (fs.existsSync(settingsPath)) {
     try {
@@ -135,31 +212,37 @@ function installDispatchGuardHook() {
     }
   }
 
-  settings.hooks = settings.hooks || {};
-  settings.hooks.PreToolUse = settings.hooks.PreToolUse || [];
+  let copiedCount = 0;
+  let registeredCount = 0;
+  let settingsModified = false;
 
-  // Find an existing PreToolUse entry whose matcher targets the Agent tool.
-  let agentEntry = settings.hooks.PreToolUse.find(e => e && e.matcher === 'Agent');
-  if (!agentEntry) {
-    agentEntry = { matcher: 'Agent', hooks: [] };
-    settings.hooks.PreToolUse.push(agentEntry);
+  for (const entry of HOOK_MANIFEST) {
+    const hookSrc = path.join(packageDir, 'hooks', entry.file);
+    if (!fs.existsSync(hookSrc)) {
+      // Bundled hook missing — silently skip; don't fail consumer's npm install.
+      continue;
+    }
+    const hookDest = path.join(userHooksDir, entry.file);
+
+    if (copyHookFile(hookSrc, hookDest)) copiedCount++;
+    if (registerHookInSettings(settings, entry, hookDest)) {
+      registeredCount++;
+      settingsModified = true;
+    }
   }
-  agentEntry.hooks = agentEntry.hooks || [];
 
-  const alreadyRegistered = agentEntry.hooks.some(h => h && h.type === 'command' && h.command === hookDest);
-  if (!alreadyRegistered) {
-    agentEntry.hooks.push({ type: 'command', command: hookDest });
+  if (settingsModified) {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
   }
 
-  console.log(`[civitas-cerebrum] Installed coverage-expansion dispatch guard at ${hookDest} and registered PreToolUse hook.`);
+  console.log(`[civitas-cerebrum] Harness hooks: ${copiedCount} script${copiedCount === 1 ? '' : 's'} copied, ${registeredCount} registration${registeredCount === 1 ? '' : 's'} added (others already present). Restart Claude Code to pick them up.`);
 }
 
 try {
-  installDispatchGuardHook();
+  installCivitasHooks();
 } catch (err) {
-  console.warn(`[civitas-cerebrum] Could not install dispatch guard hook: ${err.message}`);
+  console.warn(`[civitas-cerebrum] Could not install harness hooks: ${err.message}`);
 }
 
 // @playwright/cli is shipped as a hard dependency of this package, so skills
