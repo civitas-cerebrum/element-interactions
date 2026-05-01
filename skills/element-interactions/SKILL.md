@@ -97,10 +97,10 @@ These rules are non-negotiable. They override helpfulness, initiative, and assum
 ### 4. Do NOT invent selectors — inspect the live site or use user-provided entries
 
 - You do not know what selectors exist on the page. Do not guess.
-- Use the Playwright MCP to navigate to the page and inspect the real DOM.
-- If the Playwright MCP is not available, tell the user:
-  > "I don't have the Playwright MCP to inspect the site. You can either enable it in your Claude Code MCP settings, or provide me with the `page-repository.json` entries directly and I'll use those."
-- Without the MCP, the user must supply all selectors. Do NOT guess or infer selectors from the scenario description alone.
+- Use `@playwright/cli` (see [`references/playwright-cli-protocol.md`](references/playwright-cli-protocol.md)) to navigate to the page and inspect the real DOM.
+- If the CLI is not installed (`npx --no-install playwright-cli --version` exits non-zero), tell the user:
+  > "I don't have `@playwright/cli` to inspect the site. You can install it with `npm install -D @playwright/cli`, or provide me with the `page-repository.json` entries directly and I'll use those."
+- Without the CLI, the user must supply all selectors. Do NOT guess or infer selectors from the scenario description alone.
 
 ### 5. Do NOT invent type definitions
 - If a type is missing, tell the user. Do not create `.d.ts` stubs or workarounds.
@@ -143,7 +143,7 @@ These rules are non-negotiable. They override helpfulness, initiative, and assum
 ### 10. Save application context on every page visit or component discovery
 This is a **critical action** that must happen automatically during Stages 1, 2, and 5 (Test Composer).
 
-Every time you navigate to a new page or discover a new component (via Playwright MCP snapshot, DOM inspection, or test execution), you MUST save what you learned to a context file at `tests/e2e/docs/app-context.md`. This file is the team's living knowledge base of the application under test.
+Every time you navigate to a new page or discover a new component (via `playwright-cli` snapshot, DOM inspection, or test execution), you MUST save what you learned to a context file at `tests/e2e/docs/app-context.md`. This file is the team's living knowledge base of the application under test.
 
 **What to save per page/component:**
 - **URL pattern** — the route (e.g. `/jobs/{id}/validation`)
@@ -175,31 +175,22 @@ Every time you navigate to a new page or discover a new component (via Playwrigh
 
 **Why this matters:** Without accumulated context, every new session starts from zero. This file lets future sessions understand the app's structure, known states, and edge cases without re-inspecting every page. It also serves as the source of truth for identifying test coverage gaps.
 
-### 11. Isolated MCP instances for parallel subagents
+### 11. Browser automation goes through `@playwright/cli`
 
-Any skill that dispatches **parallel** subagents using the Playwright MCP must provide each subagent with an **isolated MCP browser instance**. Two subagents sharing one browser fight over the active tab and corrupt each other's snapshots — discovery results become non-deterministic, tests compose against stale state, and the parent's own context fills with corrupted transcripts.
+Every skill in this suite that drives a live browser — `journey-mapping`, `coverage-expansion`, `test-composer`, `bug-discovery`, `failure-diagnosis`, `companion-mode`, this orchestrator's Stages 1–2, `onboarding`'s discovery phases — invokes `@playwright/cli` from the Bash tool. The protocol is documented in [`references/playwright-cli-protocol.md`](references/playwright-cli-protocol.md); read it before composing any browser-using subagent brief.
 
-**Agent-owned prerequisite.** Before dispatching any parallel MCP-using subagents, the agent running this orchestrator **must confirm that per-subagent browser isolation is achievable in the current environment**. This is the agent's responsibility, not an assumption about the host. If the agent cannot confirm isolation, it must fall back to serial and log the fallback — it must not dispatch in parallel and hope for the best. Failing this prerequisite silently is what causes the context failures this rule exists to prevent.
+**Why this rule exists.** Two parallel subagents sharing one browser fight over the active tab and corrupt each other's snapshots — discovery results become non-deterministic, tests compose against stale state, and the parent's own context fills with corrupted transcripts. The CLI's `-s=<name> open` primitive spawns an **isolated browser process per session** with its own user-data directory, so this corruption mode is impossible by construction. There is no isolation-prerequisite check; the OS provides isolation, not the orchestrator.
 
-Before dispatching, confirm **at least one** of the following holds (ordered from the easy default to rarer edge cases):
+**What this means for parallel dispatch:**
 
-- **Default — subagent-session dispatch with per-session MCP:** the agent's subagent-dispatch primitive runs each subagent in its **own agent session with its own MCP connection**. In that case, the agent names the `mcp__plugin_playwright_playwright__*` tools in each subagent's prompt and dispatches N subagents in parallel — per-subagent browser isolation comes from the session boundary, no extra configuration needed. The parent itself does **not** share its browser with the children. **This is the expected path.** Do not assume isolation is hard to provision; when the dispatch primitive gives each subagent its own session, isolation is the out-of-the-box behavior.
+- Every browser-using subagent is given a unique session slug in its dispatch brief (see `playwright-cli-protocol.md` §3.1 for the naming convention).
+- The subagent runs `npx playwright-cli -s=<its-slug> open --browser=chromium <URL>` at the start and `npx playwright-cli -s=<its-slug> close` at the end.
+- Siblings have their own slugs; they never share a session.
+- The parent runs `npx playwright-cli close-all` at the end of the phase as belt-and-suspenders cleanup.
 
-- **Alternative — custom MCP server per subagent:** on dispatch primitives without per-session MCP, the agent must spawn a fresh Playwright MCP process per subagent on an isolated port with its own state directory, and wire each subagent's MCP configuration to its own port. Requires the dispatch mechanism to accept custom MCP server configuration.
+**No `[mcp-isolation: serializing]` fallback exists** — there is no condition under which the orchestrator should serialize parallel work because of "isolation concerns." The only reason to serialize is when the work itself is sequential (e.g. login required before crawl).
 
-- **Fallback (last resort) — serialize:** if the agent cannot confirm either of the above in the current environment, it must serialize the work, emit a `[mcp-isolation: serializing]` progress line, and run the crawl sequentially. Serialization is the **fallback**, not the expected path. Never try to share one browser across parallel agents.
-
-Skills currently affected:
-- `journey-mapping` Phase 1 — parallel page discovery across entry points.
-- `coverage-expansion` — parallel per-journey test composition and adversarial probing.
-
-**Orchestrator's responsibility, step by step:**
-
-1. Before the parallel phase, the agent verifies which of the three conditions above holds in the current environment.
-2. If the default condition holds, the agent proceeds with parallel dispatch.
-3. If only the alternative holds, the agent provisions the per-subagent MCP processes first and only then dispatches.
-4. If neither holds, the agent logs `[mcp-isolation: serializing]` and runs the work sequentially.
-5. Never silently share a browser across parallel subagents, and never default-fallback to serial without checking the prerequisites first. Silent fallback re-introduces the exact corruption this rule prevents — the agent must run the check explicitly and log its decision.
+**Skill-availability gate.** If the CLI is not installed (`npx --no-install playwright-cli --version` exits non-zero), tell the user once: *"Install `@playwright/cli` for parallel browser automation: `npm install -D @playwright/cli`."* Skills that need live browsing then stop; static-only work continues. Do NOT auto-install, do NOT write `.mcp.json`, do NOT prompt for a Claude Code reload — these were explicit constraints during the migration from MCP and remain in force.
 
 ### 12. Orchestrator context discipline
 
@@ -209,7 +200,7 @@ Orchestrator skills (`coverage-expansion`, `onboarding`, this orchestrator) hold
 
 They do NOT hold:
 - Full journey step lists, branches, or state variations beyond what is needed to dispatch.
-- Any DOM snapshot or MCP transcript from subagent work.
+- Any DOM snapshot or CLI transcript from subagent work.
 - Any subagent's produced test source.
 - Any stabilization transcript.
 
@@ -272,13 +263,13 @@ digraph element_interactions {
     "Get app URL or context" [shape=box];
     "User provided\ncomplete scenario?" [shape=diamond];
     "Reformat into\nGiven/When/Then" [shape=box];
-    "Discover app via Playwright MCP" [shape=box];
+    "Discover app via playwright-cli" [shape=box];
     "Ask clarifying questions\n(one at a time)" [shape=box];
     "Present formatted scenario" [shape=box];
     "User approves scenario?" [shape=diamond];
 
     "STAGE 2: Element Inspection" [shape=box, style=bold];
-    "MCP available?" [shape=diamond];
+    "playwright-cli available?" [shape=diamond];
     "Navigate and inspect DOM" [shape=box];
     "Ask user for selectors" [shape=box];
     "Propose page-repository entries" [shape=box];
@@ -322,16 +313,16 @@ digraph element_interactions {
     "Get app URL or context" -> "User provided\ncomplete scenario?";
     "User provided\ncomplete scenario?" -> "Reformat into\nGiven/When/Then" [label="yes — fast path"];
     "Reformat into\nGiven/When/Then" -> "Present formatted scenario";
-    "User provided\ncomplete scenario?" -> "Discover app via Playwright MCP" [label="no"];
-    "Discover app via Playwright MCP" -> "Ask clarifying questions\n(one at a time)";
+    "User provided\ncomplete scenario?" -> "Discover app via playwright-cli" [label="no"];
+    "Discover app via playwright-cli" -> "Ask clarifying questions\n(one at a time)";
     "Ask clarifying questions\n(one at a time)" -> "Present formatted scenario";
     "Present formatted scenario" -> "User approves scenario?";
     "User approves scenario?" -> "Ask clarifying questions\n(one at a time)" [label="no, revise"];
     "User approves scenario?" -> "STAGE 2: Element Inspection" [label="yes"];
 
-    "STAGE 2: Element Inspection" -> "MCP available?";
-    "MCP available?" -> "Navigate and inspect DOM" [label="yes"];
-    "MCP available?" -> "Ask user for selectors" [label="no"];
+    "STAGE 2: Element Inspection" -> "playwright-cli available?";
+    "playwright-cli available?" -> "Navigate and inspect DOM" [label="yes"];
+    "playwright-cli available?" -> "Ask user for selectors" [label="no"];
     "Navigate and inspect DOM" -> "Propose page-repository entries";
     "Ask user for selectors" -> "Propose page-repository entries";
     "Propose page-repository entries" -> "User approves selectors?";
@@ -440,8 +431,8 @@ If the user provides a complete scenario or detailed acceptance criteria upfront
 
 When the user provides a URL, a vague idea, or needs help figuring out what to test:
 
-1. **Get the app URL or acceptance criteria.** The user may provide a URL, a description of the scenario, or both. If they provide a URL, use the Playwright MCP to navigate and explore.
-2. **Discover the app.** Use the Playwright MCP to navigate to the app, take snapshots, and understand what the application does. Explore the pages relevant to the scenario.
+1. **Get the app URL or acceptance criteria.** The user may provide a URL, a description of the scenario, or both. If they provide a URL, use `playwright-cli` (see [`references/playwright-cli-protocol.md`](references/playwright-cli-protocol.md)) to navigate and explore.
+2. **Discover the app.** Use `playwright-cli` to navigate to the app, take snapshots (`playwright-cli snapshot`), and understand what the application does. Explore the pages relevant to the scenario.
 3. **Ask clarifying questions — one at a time.** Focus on understanding:
    - What is the user flow being tested?
    - What are the preconditions (logged in? specific data state?)
@@ -473,19 +464,22 @@ For complex flows, break into multiple scenarios.
 
 **Goal:** Identify all elements needed for the approved scenario and propose page-repository entries.
 
-### With Playwright MCP
+### With `playwright-cli`
 
-1. **Navigate to each page** involved in the scenario using the Playwright MCP.
-2. **Take snapshots** and inspect the DOM to find reliable selectors for each element referenced in the scenario.
+1. **Open a session and navigate** to each page involved in the scenario:
+   - `npx playwright-cli -s=stage2-<scenario-slug> open --browser=chromium <URL>`
+   - subsequent `goto` / `click` / `fill` calls reuse the same `-s=` session.
+2. **Take snapshots** (`npx playwright-cli -s=stage2-<scenario-slug> snapshot`) and inspect the DOM to find reliable selectors for each element referenced in the scenario.
 3. **Prefer selectors in this order:** `data-test` / `data-testid` attributes > `id` > stable CSS selectors > text > XPath.
 4. **Build the page-repository entries.** For each element, determine the best selector strategy.
 5. **Check existing `page-repository.json`** — if some elements already exist, note which ones are new vs already covered.
+6. **Close the session** when done: `npx playwright-cli -s=stage2-<scenario-slug> close`.
 
-### Without Playwright MCP
+### Without `playwright-cli`
 
-If the MCP is not available, ask the user to provide the selectors:
+If the CLI is not installed, ask the user to provide the selectors:
 
-> "I don't have the Playwright MCP to inspect the page. Could you provide the selectors for the elements in the scenario? I need entries for: [list elements from the approved scenario]. You can give me CSS selectors, IDs, text values, or full page-repository JSON entries."
+> "I don't have `@playwright/cli` to inspect the page. Could you install it (`npm install -D @playwright/cli`) or provide the selectors for the elements in the scenario? I need entries for: [list elements from the approved scenario]. You can give me CSS selectors, IDs, text values, or full page-repository JSON entries."
 
 Use whatever the user provides to build the page-repository entries. Do NOT guess or infer selectors.
 
@@ -539,7 +533,7 @@ Show the user the exact JSON entries you want to add:
 
    Only in rare, explicitly documented cases where the action genuinely has no observable effect at any layer (e.g. a framework-level smoke exercise of an API's call shape) may you fall back to `verifyState('visible')` on the target element — and the reason must be stated in a one-line comment. Never leave a test trailing on an action.
 6. **Run the test** with `npx playwright test <test-file>`.
-7. **If the test fails:** invoke the `failure-diagnosis` protocol — collect evidence (screenshot, DOM, error context), group failures by root cause, classify (test issue vs app bug vs ambiguous), check edge cases, then fix test issues autonomously with stability validation (3-5 passing runs) or report app bugs with full evidence. If the fix requires new selectors, use Playwright MCP to inspect the DOM, propose the new entry, and get approval before editing.
+7. **If the test fails:** invoke the `failure-diagnosis` protocol — collect evidence (screenshot, DOM, error context), group failures by root cause, classify (test issue vs app bug vs ambiguous), check edge cases, then fix test issues autonomously with stability validation (3-5 passing runs) or report app bugs with full evidence. If the fix requires new selectors, use `playwright-cli` to inspect the DOM, propose the new entry, and get approval before editing.
 8. **If the test passes:** commit immediately.
 
 ### Skip-to-Stage-3 (Fix/Edit Mode)

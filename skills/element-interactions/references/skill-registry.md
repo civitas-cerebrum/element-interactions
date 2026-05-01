@@ -58,6 +58,7 @@ The registry is one of two canonical reference documents in this directory. Call
 | [`skill-registry.md`](skill-registry.md) (this file) | Canonical skill names, invocation strings, sentinel strings. |
 | [`subagent-return-schema.md`](subagent-return-schema.md) | Canonical subagent finding-return format, return states (`covered-exhaustively`, `no-new-tests-by-rationalisation`), and adversarial-ledger schema. |
 | [`cascade-detector.md`](cascade-detector.md) | Canonical onboarding-state probe (Levels A/B/C/None) and caller-specific responses. Cited by `onboarding`, `element-interactions` (routing), and `companion-mode` (Phase 6) — drift between callers is the bug it exists to prevent. |
+| [`playwright-cli-protocol.md`](playwright-cli-protocol.md) | Canonical browser-automation primitive: `@playwright/cli` session model, parallel-isolation guarantee, dispatch-brief template, snapshot/ref-ID format, auth-state replay, lifecycle, troubleshooting. Replaces the prior MCP-based protocol and dissolves the Rule-11-era isolation prereq check. Cited by every skill that drives a live browser. |
 
 Commit-message conventions for every pass in every skill are governed by `coverage-expansion`'s §"Commit-message conventions" (the per-pass table) and referenced from `test-composer` and `bug-discovery`. If a commit template drift is observed, fix the table in `coverage-expansion/SKILL.md` first; the caller skills cite it rather than re-defining it.
 
