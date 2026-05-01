@@ -95,30 +95,64 @@ SLUG=$(basename "$FILE_PATH" | sed -E 's/\.spec\.ts$//' | sed -E 's/-regression$
 
 emit_warn "[WARN] Direct composition of \`$SLUG\` during active coverage-expansion run.
 
-File: $FILE_PATH
-
-In coverage-expansion's depth mode, journey-spec writes belong to a dispatched \`composer-j-<slug>:\` subagent (or \`probe-j-<slug>:\` for adversarial passes 4-5), not to direct orchestrator action. Writing the spec here means the orchestrator is absorbing:
-  - DOM snapshots from \`playwright-cli\` selector inspection
-  - Test source as it gets composed
-  - Stabilization run output
-
-…all of which violates §\"Orchestrator context discipline\" (the orchestrator stays at index-level state only).
-
-This warning fires because \`coverage-expansion-state.json\` exists — signal that you're in a coverage-expansion run, not in element-interactions Stage 3 / companion-mode (where direct orchestrator composition is the contract).
-
-If you bailed into direct composition because parallel composer dispatch felt unsafe (e.g., \`/api/reset\` racing across workers), the right fix is the per-test-user pattern in test-optimization.md §1.A — adopting it makes parallel composer dispatch safe and lets you fan out to \`P_dispatch\` composers per wave.
-
-Re-dispatch this journey via:
+──────────────────────────────────────────────────────────────────
+Do this instead — dispatch a composer subagent:
+──────────────────────────────────────────────────────────────────
 
   Agent({
     description: \"composer-$SLUG: cycle 1\",
-    prompt: \"<journey block from journey-map.md> + <must-fix list or 'none — cycle 1'> + <session slug> + <pointer to subagent-return-schema.md>\",
+    prompt: \`
+## Journey block
+<paste the ### $SLUG: block from journey-map.md, this journey only>
+
+## Must-fix list
+(none — cycle 1)
+
+## Session slug
+composer-$SLUG-1-c1
+
+## Return shape
+See skills/element-interactions/references/subagent-return-schema.md.
+\`,
     subagent_type: \"general-purpose\"
   })
 
-See:
-  skills/coverage-expansion/SKILL.md §\"Orchestrator context discipline\"
-  skills/coverage-expansion/references/anti-rationalizations.md §\"Orchestrator-direct composition\"
-  skills/element-interactions/references/test-optimization.md §1.A (per-test-user isolation)"
+…and fan out one Agent call per journey IN THE SAME MESSAGE for parallel
+dispatch (subject to the P_dispatch cap from the audit).
+
+──────────────────────────────────────────────────────────────────
+What was wrong:
+──────────────────────────────────────────────────────────────────
+File: $FILE_PATH
+
+This warning fires because \`coverage-expansion-state.json\` exists — you're
+in an active coverage-expansion run. Journey-spec writes here belong to a
+dispatched \`composer-j-<slug>:\` subagent (or \`probe-j-<slug>:\` for
+adversarial passes), not to direct orchestrator action. Writing the spec
+yourself absorbs DOM snapshots, test source, and stabilization output into
+your own context — violates §\"Orchestrator context discipline\".
+
+Cost of staying on this path:
+  • 3× slower wall-clock vs parallel dispatch with P_dispatch composers.
+  • Orchestrator context burns proportional to total work (vs O(structured-
+    return summaries) with subagent dispatch).
+  • Stage B reviewers disappear → dual-stage no-skip contract silently broken.
+
+──────────────────────────────────────────────────────────────────
+If parallel dispatch felt unsafe — read this:
+──────────────────────────────────────────────────────────────────
+
+If you bailed because of shared-DB races (e.g. \`/api/reset\` across workers),
+the upstream fix is the per-test-user pattern. The audit emits a
+\`global-reset:cross-test-race\` tag when it detects this; under that tag,
+test-optimization.md §1.A inverts §1 — forbids \`beforeEach(reset)\`,
+mandates a \`freshUser\` helper + once-per-suite \`globalSetup\`. Per-test-
+user makes parallel composer dispatch safe; you can fan out to P_dispatch
+composers per wave again.
+
+References:
+  coverage-expansion/SKILL.md §\"Orchestrator context discipline\"
+  coverage-expansion/references/anti-rationalizations.md §\"Orchestrator-direct composition\"
+  element-interactions/references/test-optimization.md §1.A (per-test-user isolation)"
 
 exit 0
