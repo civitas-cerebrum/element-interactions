@@ -52,8 +52,11 @@ if [ ${#CMD} -gt 160 ]; then
   CMD_PREVIEW="${CMD:0:160}..."
 fi
 
-# Extract -s=<slug>.
+# Extract slug from either form: `-s=<slug>` or `-s <slug>`.
 SLUG=$(echo "$CMD" | grep -oE -- '-s=[A-Za-z0-9_.-]+' | head -1 | sed 's/^-s=//' || true)
+if [ -z "$SLUG" ]; then
+  SLUG=$(echo "$CMD" | grep -oE -- '-s[[:space:]]+[A-Za-z0-9_.-]+' | head -1 | sed -E 's/^-s[[:space:]]+//' || true)
+fi
 
 # Allowed slug prefixes — must match dispatch-guard's role prefixes. The
 # trailing `[a-z0-9-]+` enforces a non-empty suffix so bare prefixes like

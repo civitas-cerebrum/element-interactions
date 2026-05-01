@@ -30,15 +30,18 @@ DESCRIPTION=$(echo "$INPUT" | jq -r '.tool_input.description // ""')
 PROMPT=$(echo "$INPUT" | jq -r '.tool_input.prompt // ""')
 
 # Only inspect dispatches that look like coverage-expansion / orchestration work.
-if ! echo "$PROMPT" | grep -qE 'coverage-expansion|test-composer|Stage [AB]|journey-map\.md|pass[ -][0-9]|j-[a-z0-9-]+|JOURNEYS YOU OWN'; then
+# Each marker chosen to be specific to the skill suite so unrelated prompts
+# that happen to mention "Pass 1" or "Stage A" don't trigger inspection.
+if ! echo "$PROMPT" | grep -qE 'coverage-expansion|test-composer|JOURNEYS YOU OWN|cycle-[0-9]+ Stage [AB]|journey-map\.md|element-interactions[ /]|playwright-cli[[:space:]]+-s='; then
   exit 0
 fi
 
 # Allowed description prefixes (single-journey scope).
 ALLOWED_PREFIX_REGEX='^(j-[a-z0-9-]+|sj-[a-z0-9-]+|phase1-[a-z0-9-]+|phase2-[a-z0-9-]+|stage2-[a-z0-9-]+|composer-[a-z0-9-]+|reviewer-[a-z0-9-]+|probe-[a-z0-9-]+|cleanup-[a-z0-9-]+)(:|[[:space:]]|$)'
 
-# P3 batch form: `[P3-batch] j-a,j-b,j-c:`  (cap 7 enforced via comma count).
-P3_BATCH_REGEX='^\[P3-batch\][[:space:]]+j-[a-z0-9-]+(,j-[a-z0-9-]+){0,6}([[:space:]]*:|[[:space:]]|$)'
+# P3 batch form: `[P3-batch] j-a, j-b, j-c:`  (cap 7 enforced via comma count).
+# Allows optional whitespace after each comma for human-friendly listings.
+P3_BATCH_REGEX='^\[P3-batch\][[:space:]]+j-[a-z0-9-]+([[:space:]]*,[[:space:]]*j-[a-z0-9-]+){0,6}([[:space:]]*:|[[:space:]]|$)'
 
 if echo "$DESCRIPTION" | grep -qE "$ALLOWED_PREFIX_REGEX"; then
   exit 0

@@ -59,6 +59,10 @@ s = sys.stdin.read()
 s = re.sub(r'\"(?:[^\"\\\\]|\\\\.)*\"', '\"___MSG___\"', s)
 # Remove single-quoted strings.
 s = re.sub(r\"'(?:[^'\\\\]|\\\\.)*'\", \"'___MSG___'\", s)
+# Remove backtick-quoted command substitutions.
+s = re.sub(r'\`(?:[^\`\\\\]|\\\\.)*\`', '\`___SUBST___\`', s)
+# Remove \$(...) command substitutions (non-greedy, single level).
+s = re.sub(r'\\\$\\([^)]*\\)', '\\\$(___SUBST___)', s)
 sys.stdout.write(s)
 " 2>/dev/null || echo "$CMD")
 

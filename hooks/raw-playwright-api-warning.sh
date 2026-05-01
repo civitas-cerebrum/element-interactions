@@ -53,10 +53,26 @@ elif [ "$TOOL_NAME" = "Edit" ]; then
   CONTENT=$(echo "$INPUT" | jq -r '.tool_input.new_string // ""')
 fi
 
-# Match raw Playwright APIs that have a Steps equivalent.
+# Match raw Playwright APIs that have a Steps equivalent. Strip line and block
+# comments + string literals before scanning so warnings don't fire on
+# documentation, error messages, or commented-out code.
 RAW_PATTERNS='page\.locator\(|page\.click\(|page\.fill\(|page\.type\(|page\.press\(|page\.hover\(|page\.check\(|page\.uncheck\(|page\.selectOption\(|page\.goto\(|page\.reload\('
 
-HITS=$(echo "$CONTENT" | grep -oE "$RAW_PATTERNS" | sort -u || true)
+CONTENT_STRIPPED=$(echo "$CONTENT" | python3 -c "
+import sys, re
+src = sys.stdin.read()
+# Remove block comments /* ... */ (multi-line, non-greedy).
+src = re.sub(r'/\*.*?\*/', '', src, flags=re.DOTALL)
+# Remove line comments //... (to end of line).
+src = re.sub(r'//[^\n]*', '', src)
+# Remove single, double, and template-string literals (non-greedy, allow escaped quotes/backticks).
+src = re.sub(r'\"(?:[^\"\\\\]|\\\\.)*\"', '\"\"', src)
+src = re.sub(r\"'(?:[^'\\\\]|\\\\.)*'\", \"''\", src)
+src = re.sub(r'\`(?:[^\`\\\\]|\\\\.)*\`', '\`\`', src)
+sys.stdout.write(src)
+" 2>/dev/null || echo "$CONTENT")
+
+HITS=$(echo "$CONTENT_STRIPPED" | grep -oE "$RAW_PATTERNS" | sort -u || true)
 
 if [ -z "$HITS" ]; then
   exit 0
