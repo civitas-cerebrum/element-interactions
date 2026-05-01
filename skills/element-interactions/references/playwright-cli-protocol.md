@@ -15,6 +15,20 @@ This was empirically validated on 2026-05-01: four parallel sessions opened agai
 
 Consequence: the orchestrator no longer needs to "confirm per-subagent isolation is achievable" before dispatching. The parent dispatches N subagents in parallel; each subagent issues `playwright-cli -s=<unique-slug> open ...` in its own Bash; the OS provides isolation.
 
+### 1.1 Empirical parallelism (G4 — what to expect)
+
+Controlled benchmark on book-hive-pw-cli (4 sessions × {open, snapshot, close} on darwin, single-host docker stack, 2026-05-01):
+
+```
+serial wall-clock:   45.26s   (4 sequential iterations × ~11s avg)
+parallel wall-clock: 21.39s   (all 4 backgrounded; finished within ~70ms of each other)
+speedup:             2.12x    (ideal: 4.00x)
+```
+
+**Read the numbers honestly.** Parallel is genuinely concurrent — all four iterations finished within ~70ms of each other, bounded by the slowest. The 2.12x speedup (well below 4.00x) is hardware contention, not a serialization defect: four chromium-headless-shell processes share one laptop's CPU and memory, and a single backend container handles four concurrent connections, so each parallel iteration took roughly 2× the serial-average per-iteration time. On hardware with more cores or a horizontally-scaled backend, the ratio approaches the ideal.
+
+**Implication for orchestrator design.** Cap parallel dispatch at the point where contention erases speedup — for `coverage-expansion` on a single-host stack, that's typically `P=4`. Going wider (P=8, P=16) on the same host adds no wall-clock benefit and risks chromium OOM. The `coverage-expansion` skill parallelises across independent journeys, not across subagent count; if you find yourself wanting `P>4` on a single-host setup, scale the stack first.
+
 ---
 
 ## 2. Detection and install
