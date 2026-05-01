@@ -40,6 +40,19 @@ There is no third exit. Any framing that implies "partial run, but reasonable" �
 
 If you are about to dispatch fewer passes than the mode requires, or fewer journeys than the map contains, you must EITHER (a) have explicit user authorisation in this conversation naming the reduction, OR (b) take exit #2 above. Self-authorisation is not authorisation. Auto-mode is not authorisation. Inferred user preference is not authorisation. Estimated session length is not authorisation.
 
+### Reviewer parallelism is non-negotiable
+
+Stage B reviewers run **at host max parallelism**, not one at a time. A pass with 16 journeys dispatches up to 16 reviewers in one parallel wave (subject to the shared-resource audit's credential caps — see §"Parallel cap — lifted and jointly applied"). Reviewer dispatch is NOT a serialised cost.
+
+The contract:
+- **Per-journey**: each reviewer reads ONE journey's spec + journey block + live app (Stage B is never batched).
+- **Across journeys**: dispatched in parallel up to the host-max cap, sharing the same in-flight pool with Stage A retries.
+- **Within a journey**: Stage A and Stage B are sequential (a journey's own A and B never overlap), but its B can run while a sibling journey's A is in flight.
+
+If you are about to stop after Stage A claiming "running 16 reviewers is too much for this session" — re-read this section. 16 reviewers in parallel is one wave. The wave is the contract.
+
+See §"Parallelism — Intra-group pipelining (dual-stage)" for the full pipelining model.
+
 ---
 
 ## Self-talk red flags
@@ -54,6 +67,7 @@ If your internal narrative includes any of the following framings, stop and re-r
 | "I'll run [subset] and report state — that's resume-friendly" | Resume is for budget-driven mid-pipeline stops, not for pre-emptive scope reduction at the start. The state file is a resume marker, not a scope-reduction certificate. |
 | "Running all 5 passes is excessive for this app" | The map's content drives scope, not the orchestrator's judgement of "excessive". If the map has 16 journeys, every pass dispatches 16 journeys. |
 | "I'll be honest with the user that I'm reducing scope" | Naming the violation does not undo the violation. "Honest scope compression" is still scope compression. The fix is not honesty — it is asking the user before reducing, or running the full pipeline. |
+| "16 individual reviewer dispatches is too many" / "Stage B is too expensive to dispatch per-journey" | The dispatch count is not the cost. Stage B is parallel by design — 16 reviewers in one wave, not 16 sequential calls. The skill mandates host-max parallelism for both Stage A AND Stage B (see §"Parallelism — Intra-group pipelining"). If you find yourself counting reviewer dispatches as if each were sequential, you are misreading the parallelism model. Dispatch the wave. |
 
 ---
 
@@ -498,6 +512,7 @@ Co-residence on pages is the only dependency signal. Two journeys that both touc
 #### Intra-group pipelining (dual-stage)
 
 Within an independence group:
+- **Both stages are parallel by default.** Stage B is not a serial follow-up to Stage A — it is dispatched per-journey-as-soon-as-Stage-A-returns, sharing the parallel pool with sibling journeys' Stage A retries. An orchestrator that finishes Stage A for the whole pass and then begins Stage B serially is implementing a different (slower, contract-violating) protocol.
 - All journeys in the group start Stage A concurrently (subject to the parallel cap — see below).
 - Each journey's Stage B fires **as soon as that journey's Stage A returns** and the parallel cap has a slot — not after the whole group's Stage A completes.
 - Each journey's Stage A retry fires **as soon as that journey's Stage B returns with `improvements-needed`** and the cap has a slot.
