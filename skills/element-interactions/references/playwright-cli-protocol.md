@@ -61,18 +61,18 @@ Every multi-session workflow uses the `-s=<name>` flag. Sessions are isolated br
 
 ```bash
 # parent process — open one session per parallel worker
-playwright-cli -s=phase1-/dashboard open --browser=chromium http://app/dashboard
-playwright-cli -s=phase1-/settings  open --browser=chromium http://app/settings
+playwright-cli -s=phase1-dashboard open --browser=chromium http://app/dashboard
+playwright-cli -s=phase1-settings  open --browser=chromium http://app/settings
 
 # from the same parent, drive a session by its name (no re-open)
-playwright-cli -s=phase1-/dashboard --raw snapshot
-playwright-cli -s=phase1-/dashboard click e5
+playwright-cli -s=phase1-dashboard --raw snapshot
+playwright-cli -s=phase1-dashboard click e5
 
 # enumerate
 playwright-cli list
 
 # tear down
-playwright-cli -s=phase1-/dashboard close
+playwright-cli -s=phase1-dashboard close
 playwright-cli close-all      # graceful — close every session
 playwright-cli kill-all       # forceful — only when close-all leaves zombies
 ```
@@ -90,7 +90,7 @@ Use `<phase>-<role>-<slug>` so `playwright-cli list` reads as a workflow summary
 | `failure-diagnosis` per-failure debug session | `fd-<short-slug>` | `fd-cart-update-flake` |
 | `companion-mode` single-task verification | `companion-<task-slug>` | `companion-onb-form` |
 
-Slugs use ASCII, lowercase, dash-separated. Avoid `/` (it appears in URL paths but is fine in session names — the CLI tolerates it; just be aware `playwright-cli list` will print the literal name).
+Slugs use ASCII, lowercase, dash-separated. Do not use `/` — match the dash-separated forms in the table above so `playwright-cli list` reads cleanly.
 
 **Slug-length budget — keep under ~25 chars on darwin.** The CLI opens a Unix domain socket at `$TMPDIR/pw-<8>/cli/<16-hash>-<slug>.sock`. macOS's `sockaddr_un.sun_path` caps at 104 bytes, and after the `pw-XXXXXXXX/cli/<16-hash>-` prefix you have only ~25–30 characters of slug headroom before `listen()` fails with `EINVAL`. Empirically observed during Phase-2 validation on book-hive-pw-cli: `phase1-marketplace` (18 chars) failed; `phase1-mkt` (10 chars) worked. The cap is per-socket-path, not per-slug-string, so `$TMPDIR` length matters too.
 
@@ -143,7 +143,7 @@ playwright-cli --json snapshot
 # { "snapshot": "- generic [active] [ref=e1]:\n  - heading \"Dashboard\" [level=1] [ref=e2]\n  ..." }
 
 playwright-cli list --json
-# [{"name":"phase1-/dashboard","status":"open","browser-type":"chrome-for-testing", ...}, ...]
+# [{"name":"phase1-dashboard","status":"open","browser-type":"chrome-for-testing", ...}, ...]
 ```
 
 ---
