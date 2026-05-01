@@ -2,19 +2,46 @@
 name: contributing-to-element-interactions
 description: >
   Use this skill when contributing to the @civitas-cerebrum/element-interactions
-  package itself (adding/modifying source in src/, opening a PR, reviewing
-  contributions, debugging the package's own tests), or when a user of the
-  package runs into an API gap — they need a method/option that doesn't exist
-  yet, or they're tempted to drop down to raw Playwright Locator calls because
-  the framework doesn't expose what they need. This skill explains the
-  separation of concerns between element-repository and element-interactions,
-  the test coverage rules, the design principles that must be respected when
-  scaling the package, and the exact workflow for adding new APIs cleanly.
-  Triggers on phrases like: "contribute to element-interactions", "extend the
-  Steps API", "add a new method to ElementAction", "no equivalent in the
-  framework", "the package doesn't have", "missing API in element-interactions",
-  "how do I add to this framework", "drop down to raw Playwright", or any
-  request to modify files under /Users/Ay/GitHub/element-interactions/src/.
+  package or its skill suite — and, just as importantly, when a consumer hits
+  the package's edges from the outside. Two trigger families:
+
+  (A) **API gap.** A user, test, or skill needs a method, option, matcher, or
+  assertion shape that does not exist on Steps / ElementAction / ExpectMatchers
+  / the matcher tree, and the temptation is to drop down to raw Playwright
+  `Locator.*` calls. Triggers: "extend the Steps API", "add a new method to
+  ElementAction", "no equivalent in the framework", "the package doesn't have",
+  "missing API in element-interactions", "missing matcher", "drop down to raw
+  Playwright", "fall back to page.locator", "the framework doesn't expose X",
+  "how do I add to this framework".
+
+  (B) **Structural / framework / protocol gap.** A skill, workflow, or
+  documented invariant declares a rule that the package's current architecture
+  cannot satisfy without changing the package itself, switching its underlying
+  tooling, or relaxing the rule. The MCP→playwright-cli migration (#121, #122)
+  is the canonical example: the parallel-isolation rule was structurally
+  unsatisfiable on top of the Playwright MCP plugin and required a tooling
+  change at the package layer, not a skill-level workaround. Triggers: "the
+  framework can't satisfy", "framework limitation", "this rule cannot be
+  satisfied", "the package's architecture prevents", "structural gap",
+  "protocol gap", "isolation can't be guaranteed", "this prereq isn't
+  satisfiable", "the underlying tooling doesn't support", "should I file an
+  issue against the package", "is this a skill issue or a package issue", "do
+  we need to change the package to fix this", any case where a skill is about
+  to silently weaken or skip a documented invariant because the package can't
+  back it.
+
+  Also use when contributing to the skill suite under `skills/` (adding,
+  modifying, or registering a skill, debugging the package's own tests, or
+  opening a PR against this repo). This skill explains the separation of
+  concerns between element-repository and element-interactions, the test
+  coverage rules, the design principles that must be respected when scaling
+  the package, the exact workflow for adding new APIs cleanly, and how to
+  distinguish an API gap from a structural gap.
+
+  Triggers also on: "contribute to element-interactions", any request to
+  modify files under the package's `src/`, "open an issue on element-
+  interactions", "open a PR on element-interactions", or any of the structural
+  / protocol-gap phrases above.
 ---
 
 # Contributing to @civitas-cerebrum/element-interactions
@@ -123,7 +150,7 @@ The same shape applies to actions — `steps.on('btn', 'Page').click()` flows th
 - `tests/` — Playwright tests, all hitting the real Vue test app.
 - `tests/fixture/` — test fixture wiring + shared helper functions (e.g. `pageHelpers.ts`).
 - `tests/data/` — `page-repository.json` and any fixture data.
-- `skills/element-interactions/` — agent-facing skill files (this file lives here).
+- `skills/contributing-to-element-interactions/` — this skill (top-level so the harness auto-discovers it). Agent-facing skill files for the broader suite live under sibling directories at `skills/<skill-name>/SKILL.md`.
 
 When you add a new file:
 - New public API entrypoint? `src/steps/`.
@@ -662,6 +689,42 @@ Stop. The right path:
 4. **If you need to ship NOW**, the documented escape hatch is `interactions.interact.*`, `interactions.verify.*`, `interactions.extract.*` — they accept either `Locator` or `Element`. Use these for the one-off, but file the issue so the proper API can land.
 
 5. **Never** check raw `locator.*()` calls into a test file or into the element-interactions src/. The audit grep above will catch it in code review.
+
+---
+
+## 🧱 When the framework cannot satisfy a documented rule
+
+Sometimes the problem is not a missing method on `Steps` — it's that a skill, workflow, or invariant declares a rule the package's current architecture cannot back. The MCP→playwright-cli migration (#121, #122) is the canonical case: every browser-using skill in this suite required parallel-subagent isolation, but the Playwright MCP plugin shared one browser process across all subagents. The rule was unsatisfiable until the package switched tooling.
+
+Distinguishing a structural gap from an API gap:
+
+| Symptom | Class | What you're missing |
+|---|---|---|
+| User wants `steps.foo()` and it doesn't exist | API gap | A method on the public surface |
+| Skill prereq says "X must be true at dispatch time" and the package can't make X true | Structural gap | A primitive / mechanism the package doesn't currently provide |
+| Workaround would mean turning off, weakening, or silently skipping a documented invariant | Structural gap | The invariant is load-bearing; the fix is at the package layer |
+| Two parallel subagents corrupt each other's state through the package's chosen tool | Structural gap | OS-level isolation the current tool can't give |
+| The package's protocol assumes a host capability the runtime doesn't expose | Structural gap | A different protocol or a different tool |
+
+**If it's a structural gap, the workflow is different from "open an API-gap issue":**
+
+1. **Write down the unsatisfied invariant precisely.** Quote the rule from the skill that depends on it (file + line). State the mechanism in the package that fails to back it. Without this, the issue reads as "a thing didn't work" instead of "this contract is structurally broken."
+
+2. **Don't relax the invariant in the consuming skill.** The rest of the suite is built on it. Patching around it locally hides the structural problem and creates inconsistencies between skills that respect the rule and skills that don't.
+
+3. **Open an issue on `civitas-cerebrum/element-interactions`** (the package, not the consuming skill repo, even if you found the gap while writing a skill) — with the duplicate-prevention checks above and a "smallest credible structural fix" sketch. Examples of "smallest fix": switch underlying tool, expose a new primitive, change a protocol shape. If the fix is large, that's fine — name it; don't hide it.
+
+4. **The PR that fixes it lands in the package**, not in the consuming skill. The consuming skill only updates once the new primitive is published — and at that point, the consuming skill's job is to *delete* its workaround and trust the new contract.
+
+5. **Decide between "block the rollout" and "ship a documented workaround."** A structural gap blocks the rollout when the invariant is safety-critical (data corruption, cross-tenant leakage, false-pass tests). A documented workaround is acceptable when (a) the workaround is local and reversible, (b) the cost of waiting exceeds the cost of the workaround, and (c) the issue is filed and the cleanup is tracked.
+
+**Examples that should trigger this skill, not a skill-level workaround:**
+
+- "I need parallel browser isolation, but the package's MCP protocol shares one browser." → File an issue; consider a tool swap. (#121 / #122 — actual case.)
+- "My skill needs auth state to survive a failure boundary, but the package doesn't expose state-save / state-load." → File an issue against the package; do not write a brittle re-login loop in the skill.
+- "The orchestrator's Rule X requires Y before dispatch, but the package can't tell us Y." → File an issue; add the primitive in the package; consume it from the orchestrator.
+
+If a skill's prereq check is consistently failing because the package can't satisfy it, that's a structural gap, not a skill bug. Route it here.
 
 ---
 

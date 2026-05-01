@@ -38,8 +38,8 @@ function discoverSkills(root) {
     .filter(name => fs.existsSync(path.join(root, name, 'SKILL.md')));
 }
 
-// Recursively copy one skill directory. Copies SKILL.md, contributing.md,
-// and the whole references/ tree — everything SKILL.md's instructions refer to.
+// Recursively copy one skill directory. Copies SKILL.md and the whole
+// references/ tree — everything SKILL.md's instructions refer to.
 function copyDirRecursive(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
