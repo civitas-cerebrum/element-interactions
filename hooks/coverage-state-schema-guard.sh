@@ -1,12 +1,53 @@
 #!/bin/bash
-# coverage-state-schema-guard.sh
+# coverage-state-schema-guard.sh — coverage-expansion-state.json shape validator
 #
-# PreToolUse hook for Write/Edit. Validates the JSON shape of writes/edits to
-# `tests/e2e/docs/coverage-expansion-state.json` per the schema documented in
-# skills/coverage-expansion/SKILL.md §"Authoritative state file — read first".
+# Hook    : PreToolUse:Write|Edit  (filters to coverage-expansion-state.json only)
+# Mode    : DENY (malformed state-file writes)
+# State   : none (the file being written is itself the state — this hook
+#                 validates writes, doesn't track state)
+# Env     : none
+#
+# Rule
+# ----
+# Writes / edits to `tests/e2e/docs/coverage-expansion-state.json` must
+# conform to the schema documented in
+#   skills/coverage-expansion/references/state-file-schema.md
+# (canonical) and summarised in
+#   skills/coverage-expansion/SKILL.md §"Authoritative state file"
+# (kernel-resident invariants).
+#
+# Why
+# ---
+# The state file is the resume marker — corrupt writes break resume on the
+# next invocation, which silently restarts the entire pipeline from scratch.
+# Catching shape violations at the write boundary is cheap; debugging a
+# silent-restart after the fact is not.
+#
+# Canonical reference
+# -------------------
+# skills/coverage-expansion/references/state-file-schema.md
+#
+# Failure → action
+# ----------------
+# - Top-level not an object                                → DENY
+# - Missing required fields (status, currentPass, etc.)    → DENY
+# - dispatches[] entry missing dual-stage fields           → DENY
+# - Anything else                                          → silent allow
 
 set -euo pipefail
 
+# --- helpers ---
+emit_deny() {
+  jq -n --arg r "$1" '{
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "deny",
+      "permissionDecisionReason": $r
+    }
+  }'
+}
+
+# --- input ---
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 
@@ -20,16 +61,6 @@ case "$FILE_PATH" in
   *tests/e2e/docs/coverage-expansion-state.json) ;;
   *) exit 0 ;;
 esac
-
-emit_deny() {
-  jq -n --arg r "$1" '{
-    "hookSpecificOutput": {
-      "hookEventName": "PreToolUse",
-      "permissionDecision": "deny",
-      "permissionDecisionReason": $r
-    }
-  }'
-}
 
 # Resolve target content: for Write, the new content. For Edit, simulate.
 if [ "$TOOL_NAME" = "Write" ]; then

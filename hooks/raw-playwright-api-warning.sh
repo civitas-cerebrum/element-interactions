@@ -1,37 +1,64 @@
 #!/bin/bash
-# raw-playwright-api-warning.sh
+# raw-playwright-api-warning.sh — Steps-API-equivalent early visibility
 #
-# PostToolUse hook for Write/Edit on tests/e2e/*.spec.ts files. Warns (does
-# NOT block) when raw Playwright APIs appear that have a Steps API equivalent.
-# Stage 4b reviewer handles authoritative compliance review; this hook
-# provides early visibility.
+# Hook    : PostToolUse:Write|Edit  (filters to tests/e2e/*.spec.ts only)
+# Mode    : WARN (no DENY path — Stage 4b reviewer is the authoritative gate)
+# State   : none
+# Env     : none
 #
-# Allowed framework-bridge primitives (NEVER warn on these):
-#   page.context().clearCookies()       — no Steps equivalent
-#   page.context().cookies()            — no Steps equivalent
-#   page.context().addCookies()         — no Steps equivalent
-#   page.url()                           — no Steps equivalent
-#   page.evaluate()                      — used for DOM/JS bridges
-#   page.waitForResponse(...)            — no Steps equivalent
-#   page.on('console', ...)              — no Steps equivalent
-#   page.on('dialog', ...)               — no Steps equivalent
-#   page.on('pageerror', ...)            — no Steps equivalent
+# Rule
+# ----
+# Writes / edits to spec files that contain a raw Playwright API call which
+# has a Steps API equivalent emit a `systemMessage` warning naming the
+# raw call(s) and the Steps replacement. The hook never blocks — the
+# canonical compliance check is Stage 4b of the element-interactions
+# pipeline; this hook gives the model early visibility so it can self-fix
+# before the Stage 4b gate.
 #
-# Warned-on (use Steps API instead):
-#   page.locator(...)
-#   page.click(...)
-#   page.fill(...)
-#   page.type(...)
-#   page.press(...)
-#   page.hover(...)
-#   page.check(...)
-#   page.uncheck(...)
-#   page.selectOption(...)
-#   page.goto(...)              -> steps.navigateTo
-#   page.reload()               -> steps.refresh
+# Why
+# ---
+# Catching `page.click(...)` immediately after the Write/Edit shortens the
+# loop from "Stage 4b says no, redo Stage 3" to "I just wrote a raw call,
+# fix it now". Documentation comments and string literals are stripped
+# before scanning so a JSDoc example or a regex template doesn't false-fire.
+#
+# Canonical reference
+# -------------------
+# skills/element-interactions/references/api-reference.md  (Steps API surface)
+# skills/element-interactions/references/stages-protocol.md §"Stage 4b: API Compliance Review"
+#
+# Allowed framework-bridge primitives (NEVER warn — no Steps equivalent)
+# ----------------------------------------------------------------------
+#   page.context().clearCookies()      page.context().cookies()
+#   page.context().addCookies()         page.url()
+#   page.evaluate()                     page.waitForResponse(...)
+#   page.on('console', ...)             page.on('dialog', ...)
+#   page.on('pageerror', ...)
+#
+# Warned-on (use Steps API instead)
+# ---------------------------------
+#   page.locator(...)         page.click(...)         page.fill(...)
+#   page.type(...)            page.press(...)         page.hover(...)
+#   page.check(...)           page.uncheck(...)       page.selectOption(...)
+#   page.goto(...)   → steps.navigateTo
+#   page.reload()    → steps.refresh
+#
+# Failure → action
+# ----------------
+# - Spec file write/edit containing any warned-on API call → WARN (systemMessage)
+# - Anything else                                          → silent allow
 
 set -euo pipefail
 
+# --- helpers ---
+emit_warn() {
+  jq -n --arg m "$1" '{
+    "systemMessage": $m,
+    "suppressOutput": false
+  }'
+}
+
+# --- input ---
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 
@@ -114,9 +141,6 @@ Stage 4b API Compliance Review will flag these. The Steps API uses page-reposito
 (This is a warning — the write proceeded. Address before commit.)"
 
 # PostToolUse warning — emit systemMessage, not block.
-jq -n --arg m "$MESSAGE" '{
-  "systemMessage": $m,
-  "suppressOutput": false
-}'
+emit_warn "$MESSAGE"
 
 exit 0

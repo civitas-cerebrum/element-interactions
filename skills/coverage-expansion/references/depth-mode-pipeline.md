@@ -21,8 +21,8 @@ Every pass in depth mode runs this pipeline; steps 4 and 7 differ between compos
 1. **Read the map** (sentinel-verified). Build an in-memory index: `[(j-id, priority, pages-touched, test-expectations)]`. Read **only** these fields per journey — not full step lists, branches, or state variations.
 2. **Recompute priority ordering.** Honour the map's priorities, but if a journey's `Test expectations` or pages touched have changed since the last pass, adjust position.
 3. **Build the journey independence graph.** The graph is the same across compositional and adversarial passes.
-4. **Emit the per-pass scope preview** (see §"Per-pass scope preview"). Declarative only; no confirmation prompt. The scope preview names the dual-stage dispatch band (see that section).
-5. **Run the per-journey dual-stage retry loop** for every journey in the map — parallel for independent journeys, sequential for dependent ones, per §"Parallelism". Each journey's A↔B loop follows §"Retry loop (orchestrator, per journey per pass)". The loop terminates when the journey has one of the four terminal `review_status` values.
+4. **Emit the per-pass scope preview** (the declarative pre-dispatch summary documented near the end of §"Model selection" — `[coverage-expansion] Pass <N>/5 — dispatching ...`). Declarative only; no confirmation prompt.
+5. **Run the per-journey dual-stage retry loop** for every journey in the map — parallel for independent journeys, sequential for dependent ones, per §"Parallelism". Each journey's A↔B loop follows [`dual-stage-retry-loop.md` §"Retry loop"](dual-stage-retry-loop.md). The loop terminates when the journey has one of the four terminal `review_status` values.
    - Model selection per §"Model selection" — default opus for both stages.
    - P3 batching narrowed per §"Batched dispatch for P3 peripheral journeys" — Stage A may be batched; Stage B never is.
 6. **Collect all journey outputs.** Each journey contributes: its committed test files (from the final greenlit or blocked-with-tests-landed Stage A cycle), its `review_status`, its cycle counts, and (if blocked) its final `must-fix` list. The orchestrator does NOT hold Stage A test source or Stage B review bodies — only structured summaries and the on-disk file paths.
@@ -65,7 +65,7 @@ Anti-patterns — do NOT use:
 
 ### Per-pass completion criteria
 
-A pass is complete only when **every** criterion for that pass is met. "Ran some journeys, ran out of budget" is not complete — see §"Non-negotiables for depth mode" for the resume-state contract.
+A pass is complete only when **every** criterion for that pass is met. "Ran some journeys, ran out of budget" is not complete — see `coverage-expansion/SKILL.md` §"Non-negotiables for depth mode" for the resume-state contract.
 
 - **Pass 1** complete = `test-composer` has been dispatched for and has returned on **every** journey in the map. Not "enough journeys", not "the P0/P1 tier", not "the journeys that fit the budget". Every journey.
 - **Pass 2** complete = `test-composer` has been re-dispatched and returned for every journey, AND the map has been reconciled with any newly-promoted branches or sub-journeys surfaced in pass 1 or 2, AND — if the reconciliation produced map edits — the reconciliation commit has landed. If no map edits were needed, the pass still completes, but the orchestrator records `"pass 2 reconciliation — no map edits required"` in the state file / progress log rather than silently skipping the commit.
@@ -92,6 +92,10 @@ After a pass's per-journey subagents return clean and per-pass completion criter
 4. Delete `.stage4a-suite.json` after parsing.
 
 **Why it runs here:** per-journey subagent stabilization confirms each journey's tests pass in isolation, but cumulative state across the suite (DB pollution, port collisions, fixture drift, shared-resource depletion) only surfaces when the whole suite runs together. Running this gate at every pass exit catches integration-time regressions at the earliest pass that introduces them, rather than at end-of-pipeline.
+
+**Harness-enforced as a windowed ratchet (issue #131).** The same gate is enforced at the commit boundary by `hooks/suite-gate-ratchet.sh` (auto-installed alongside the dispatch-guard). The hook tracks the **last N runs** in a sliding window — default `N=3`, override via `CIVITAS_SUITE_GATE_WINDOW=<int>` — and blocks phase-progression commits (`test(j-...)`, `docs(ledger)`, `docs(coverage-expansion-state)`) if ANY run in the window was red, OR the window is not yet filled, OR the oldest run is more than 1 hour old. The state file is `<repo>/.claude/last-suite-result.json` (legacy single-object format auto-migrates to the new array shape on the next PostToolUse).
+
+The windowed shape catches a class of failure single-shot gates miss: serial-mode flakes, click-PUT race conditions, and auth-state eviction that pass an isolated single run but fail across 3-5 reviewer-driven re-runs. A flake that passes 70% of the time displaces no failed entry from a 3-run window — by design — so the gate can't be cleared by one lucky re-run after a real regression. Pair this with the orchestrator-side check above for end-to-end coverage: orchestrator-side fires at every pass exit; the harness ratchet fires at every commit on top of the same window.
 
 ### Parallelism
 
@@ -139,6 +143,8 @@ The prior sonnet-for-P2/P3 heuristic is removed. The prior sonnet-for-small-jour
 
 **Rationalizations to reject:**
 
+> ↗ Cross-cutting category: see [`anti-rationalizations.md` §"Sonnet cost-down rationalisation"](anti-rationalizations.md) for the failure-mode pattern this table instantiates. The registry consolidates patterns across the suite; this table's specific phrasings reinforce the pattern at point of use.
+
 | Excuse | Reality |
 |--------|---------|
 | "The journey was attempted last pass and ended at `blocked-cycle-stalled` / `blocked-cycle-exhausted` / `blocked-dispatch-failure` — that counts as 'previously-greenlit' for the sonnet exception" | A blocked journey is not greenlit. The narrow exception requires explicit `greenlight` in the previous pass, not "attempted." Any blocked-* terminal in the prior pass means opus on cycle 1 of the next pass. |
@@ -168,10 +174,10 @@ Between passes — after the per-pass commit and state-file rewrite (step 8), be
 
 If the orchestrator's context is **>70% consumed**:
 
-1. Write full state to `tests/e2e/docs/coverage-expansion-state.json` (journey roster, completed IDs, in-flight IDs, pass counter, adversarial totals, AND the dual-stage `dispatches[]` per-journey fields — `stage_a_cycles`, `stage_b_cycles`, `review_status`, `final_must_fix` — the shape documented in §"Authoritative state file — read first, always"). The dual-stage fields MUST be written before the compaction crosses; without them the post-compact resume cannot reconstruct which journeys are mid-A↔B-cycle, which are blocked, or which are greenlit.
+1. Write full state to `tests/e2e/docs/coverage-expansion-state.json` (journey roster, completed IDs, in-flight IDs, pass counter, adversarial totals, AND the dual-stage `dispatches[]` per-journey fields — `stage_a_cycles`, `stage_b_cycles`, `review_status`, `final_must_fix` — the shape documented in [`state-file-schema.md`](state-file-schema.md) (the canonical schema; kernel-resident invariants are in `coverage-expansion/SKILL.md` §"Authoritative state file")). The dual-stage fields MUST be written before the compaction crosses; without them the post-compact resume cannot reconstruct which journeys are mid-A↔B-cycle, which are blocked, or which are greenlit.
 2. Emit exactly one line: `[coverage-expansion] context approaching budget — auto-compacting and resuming from state file`.
 3. Invoke `/compact` (or the platform-equivalent compaction primitive exposed to the orchestrator).
-4. On the post-compact turn, the skill's first action — reading the state file — picks up the run exactly where it left off, including any in-flight A↔B cycles. That's why §"Authoritative state file" is non-negotiable as the first action.
+4. On the post-compact turn, the skill's first action — reading the state file — picks up the run exactly where it left off, including any in-flight A↔B cycles. That's why [`state-file-schema.md`](state-file-schema.md)'s "read first, always" rule is non-negotiable.
 
 **Mid-cycle compaction.** The 70% threshold is checked between passes by default, but if a single journey's A↔B retry loop pushes context past 70% mid-pass, the same flow applies: write state with the in-progress `stage_a_cycles` / `stage_b_cycles` / latest reviewer findings, then compact.
 
@@ -182,6 +188,8 @@ If the orchestrator's context is **>70% consumed**:
 Framing: this is a platform-aware seam for long runs. It is not a cost-reduction mechanism. The optimisation target remains complete coverage; auto-compaction exists so complete coverage doesn't get halved by a context ceiling.
 
 **Rationalizations to reject:**
+
+> ↗ Cross-cutting category: see [`anti-rationalizations.md` §"Auto-compact threshold creep"](anti-rationalizations.md).
 
 | Excuse | Reality |
 |--------|---------|
@@ -214,6 +222,8 @@ The re-pass mode's contribution is **disciplined justification**, not speed. Eve
 
 **Rationalizations to reject (subagent side):**
 
+> ↗ Cross-cutting category: see [`anti-rationalizations.md` §"Self-certifying greenlight"](anti-rationalizations.md).
+
 | Excuse | Reality |
 |--------|---------|
 | "Obvious no-op — I'll mark `covered-exhaustively` without reading Pass-1 returns" | The three-trigger check requires evidence. Fabricating "Pass-1 reported no gaps" without reading the return is the exact failure the orchestrator's rejection-and-redispatch step is designed to catch; the redispatch wastes more time than reading the return would have. |
@@ -226,7 +236,7 @@ The re-pass mode's contribution is **disciplined justification**, not speed. Eve
 
 ### Batched dispatch for P3 peripheral journeys
 
-**Reminder: P3 only. P0/P1/P2 never batch.** Adjacent low-impact journeys — typically P3 smoke or admin-portal siblings sharing one Playwright project — MAY have Stage A batched into a single brief, cap 7 journeys per brief. Every other journey (P0, P1, P2) dispatches one subagent per journey, full stop. If you are tempted to batch a P0/P1/P2 journey because it "shares pages with P3 siblings" or "fits naturally with this group", STOP — that temptation is the failure mode this section's narrowness exists to prevent. Re-read §"Stage A per-journey dispatch is non-negotiable" before continuing.
+**Reminder: P3 only. P0/P1/P2 never batch.** Adjacent low-impact journeys — typically P3 smoke or admin-portal siblings sharing one Playwright project — MAY have Stage A batched into a single brief, cap 7 journeys per brief. Every other journey (P0, P1, P2) dispatches one subagent per journey, full stop. If you are tempted to batch a P0/P1/P2 journey because it "shares pages with P3 siblings" or "fits naturally with this group", STOP — that temptation is the failure mode this section's narrowness exists to prevent. Re-read `coverage-expansion/SKILL.md` §"Stage A per-journey dispatch is non-negotiable" before continuing.
 
 Dual-stage narrows this:
 
@@ -238,6 +248,8 @@ Dual-stage narrows this:
 - If any journey's cycle-1 Stage B returns `improvements-needed`: split the batch. From cycle 2 onward, the affected journey breaks out and runs its own per-journey Stage A plus its own Stage B. The batched cycle-1 Stage A return is retained as history input to the broken-out cycle-2 Stage A brief. The remaining greenlit journeys in the batch stay accepted at cycle 1 and proceed.
 
 **Rationalizations to reject:**
+
+> ↗ Cross-cutting category: see [`anti-rationalizations.md` §"Self-authorised batching (Stage A grouping)"](anti-rationalizations.md).
 
 | Excuse | Reality |
 |--------|---------|

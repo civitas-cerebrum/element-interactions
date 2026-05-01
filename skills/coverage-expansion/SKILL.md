@@ -115,6 +115,12 @@ This file is the orchestrator-side contract kernel. The heavy spec lives in `ref
 | [`references/adversarial-subagent-contract.md`](references/adversarial-subagent-contract.md) | Stage A contract for passes 4–5: probe categories, negative-case matrix, ledger append protocol, regression-test authoring rules. |
 | [`../element-interactions/references/subagent-return-schema.md`](../element-interactions/references/subagent-return-schema.md) | Canonical return + ledger schema. §1 finding-return shape; §2 return states; §2.4 reviewer-return; §3 ledger schema; §4 caller contract; §4.1 grep-based conformance check; §4.2 harness validator (issue #127). |
 
+### Kernel-resident invariants — convention
+
+Throughout this file, sections that point at a reference for the full spec also include a `### Hard rules — kernel-resident` subsection listing the 3-10 invariants that MUST stay in working memory even when the reference is not loaded. These restated rules are deliberate redundancy — the canonical text lives in the reference, this file holds the no-load-required floor. Skills are loaded eagerly when activated; references are loaded on demand. A hard contract rule that lives only in a reference can be silently ignored if the model proceeds without loading the reference, so reinforced embedding (kernel + canonical) is the right pattern for rules whose violation produces broken state, contract violations, or unsafe behavior.
+
+When a kernel-resident rule changes, the editor updates BOTH the kernel block here AND the canonical text in the reference. The redundancy is the cost of correct behavior under context pressure.
+
 ## Reading order for new contributors
 
 1. **This file** — orchestrator-side kernel: two valid exits, role prefixes, no-skip contract, mandatory intent declaration, modes table.
@@ -328,9 +334,7 @@ The skill's first action on entry is to read `tests/e2e/docs/coverage-expansion-
 
 The full per-pass pipeline (steps 1–8), pass differences, commit-message conventions, per-pass completion criteria, the whole-suite re-run gate, the parallelism model, model selection (cost-blind), auto-compaction between passes, re-pass mode for compositional passes 2–3, batched dispatch for P3 peripheral journeys, and the post-pass-5 ledger dedup are specified in [`references/depth-mode-pipeline.md`](references/depth-mode-pipeline.md). Read it before authoring or modifying any depth-mode pass.
 
-### Hard rules — kernel-resident (never violate, even without loading the reference)
-
-These are restated here so they're in working memory even when `references/depth-mode-pipeline.md` is not loaded. Canonical text in the reference; this list is the no-load-required floor.
+### Hard rules — kernel-resident
 
 - **Five passes + cleanup, in order, every run.** Three compositional (1–3) + two adversarial (4–5) + one ledger-dedup cleanup. "Pass 1 only" is one-fifth of the pipeline, never a valid completion state for `mode: depth`.
 - **Every journey, every pass.** Pass N is complete only when every journey in the map has been dispatched AND returned. Not "enough journeys", not "the P0/P1 tier", not "the journeys that fit the budget" — every journey. Pass 4 with 0 journeys is not Pass 4.

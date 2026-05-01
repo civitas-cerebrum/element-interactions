@@ -1,18 +1,58 @@
 #!/bin/bash
-# mcp-browser-tool-redirect.sh
+# mcp-browser-tool-redirect.sh — block MCP browser tools, redirect to playwright-cli
 #
-# PreToolUse hook for the harness's MCP playwright browser tools. Denies the
-# call and redirects to the equivalent `playwright-cli` invocation, citing
-# the role-prefixed slug convention.
+# Hook    : PreToolUse:mcp__plugin_playwright_playwright__browser_*
+# Mode    : DENY (always — no allowed MCP browser-tool invocation)
+# State   : none
+# Env     : none
+#
+# Rule
+# ----
+# Every MCP playwright browser-tool call is denied with a redirect message
+# naming the equivalent `playwright-cli` invocation. The CLI is the only
+# sanctioned browser-automation channel across the skill suite (per
+# playwright-cli-protocol.md §1).
+#
+# Why
+# ---
+# MCP browser tools spawn a separate Chrome process with a different
+# user-data-dir, write to `.playwright-mcp/` instead of `.playwright-cli/`,
+# and break the per-session OS-isolation guarantee that makes parallel
+# subagent dispatch safe. The CLI's session-per-process model is what
+# enables host-max parallelism without cross-contamination.
+#
+# Canonical reference
+# -------------------
+# skills/element-interactions/references/playwright-cli-protocol.md §1, §3
+# skills/element-interactions/SKILL.md §"Rule 11 — browser automation goes
+#   through @playwright/cli"
+#
+# Failure → action
+# ----------------
+# - Any mcp__*_browser_* tool call → DENY with redirect message naming the
+#                                    equivalent playwright-cli subcommand.
+# - Any other tool                 → silent allow (exit 0).
 
 set -euo pipefail
 
+# --- helpers ---
+emit_deny() {
+  jq -n --arg r "$1" '{
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "deny",
+      "permissionDecisionReason": $r
+    }
+  }'
+}
+
+# --- input ---
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 
 [[ "$TOOL_NAME" != mcp__plugin_playwright_playwright__browser_* ]] && exit 0
 
-# Map MCP tool → the CLI subcommand it should be re-issued as.
+# --- map MCP tool → the CLI subcommand it should be re-issued as ---
 case "$TOOL_NAME" in
   *_browser_navigate)        EQUIV='-s=<slug> open --browser=chromium <URL>   (or `goto <URL>` if session is already open)' ;;
   *_browser_snapshot)        EQUIV='-s=<slug> snapshot' ;;
@@ -40,7 +80,7 @@ case "$TOOL_NAME" in
   *)                         EQUIV='-s=<slug> <subcommand> ...                see skills/element-interactions/references/playwright-cli-protocol.md §3' ;;
 esac
 
-REASON="[BLOCKED] MCP browser tool — use playwright-cli instead.
+emit_deny "[BLOCKED] MCP browser tool — use playwright-cli instead.
 
 Tool: $TOOL_NAME
 
@@ -48,18 +88,12 @@ Re-issue via the Bash tool as:
   npx playwright-cli ${EQUIV}
 
 <slug> must follow the role-prefix convention (matching this subagent's Agent description):
-  j-<slug>-<pass>-stage-{a,b}    composer / reviewer / probe
-  phase1-<entry>                  Phase-1 discovery
-  stage2-<scenario>               element inspection
+  composer-j-<slug>-<pass>-c<N>    Stage A composer
+  reviewer-j-<slug>-<pass>-c<N>    Stage B reviewer
+  probe-j-<slug>-<pass>            adversarial probe (passes 4-5)
+  phase1-<entry>                    Phase-1 discovery
+  stage2-<scenario>                 element inspection
 
 Why: MCP browser tools spawn a separate Chrome (different user-data-dir, writes to .playwright-mcp/ instead of .playwright-cli/) and break per-session OS isolation. See element-interactions Rule 11 + playwright-cli-protocol.md §3.1."
-
-jq -n --arg r "$REASON" '{
-  "hookSpecificOutput": {
-    "hookEventName": "PreToolUse",
-    "permissionDecision": "deny",
-    "permissionDecisionReason": $r
-  }
-}'
 
 exit 0
