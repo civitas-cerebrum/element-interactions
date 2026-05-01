@@ -72,7 +72,7 @@ Before I run, I need two things:
 I will then, autonomously and without further prompts:
   <bullet list of phases that apply at the detected level, with the scaffolding /
    install items elided for Level C and the install item elided for Level B>
-  • Full Phase-1 discovery (breadth-first crawl via Playwright MCP)
+  • Full Phase-1 discovery (breadth-first crawl via @playwright/cli)
   • Automate the happy path you described (Stages 1–4 inline)
   • Full journey-mapping (Phases 2–4)
   • 5 coverage-expansion passes (priority + depth tiered)
@@ -111,7 +111,7 @@ Wait for the user's reply. On `y` / `yes` / `proceed` / equivalent affirmative, 
 
   `journeys_low`/`journeys_high` is a journey-count band estimated from:
   - the user-provided happy-path description (≥1 journey per major flow named),
-  - the top-level nav/link count on the app's homepage (one MCP fetch before the gate, counted as discovery preamble), and
+  - the top-level nav/link count on the app's homepage (one `playwright-cli snapshot` before the gate, counted as discovery preamble), and
   - a fallback band of 15–40 if neither signal is reliable.
 - `<M_low>–<M_high>` = `journeys_low × 0.5` to `journeys_high × 0.5` (bug hunts target ~half the journey set).
 - `<P>` = min(4, credential-count-per-role from Phase-0 pre-flight) unless the shared-resource audit (below) reports a parallelism cap.
@@ -164,7 +164,7 @@ The audit does not introduce a new prompt. The user still only sees `y / cancel`
 
 ## Progress output
 
-After every major milestone, emit a single line prefixed with `[onboarding]` to the terminal. Do not emit multi-line status dumps, do not paginate logs from companion skills, do not print intermediate MCP transcripts.
+After every major milestone, emit a single line prefixed with `[onboarding]` to the terminal. Do not emit multi-line status dumps, do not paginate logs from companion skills, do not print intermediate `playwright-cli` transcripts.
 
 Examples:
 
@@ -254,7 +254,7 @@ Do **not** add, remove, or upgrade any other dependencies. Do **not** modify the
 
 **Screenshot-path contract for dispatched subagents.** Every subagent brief this skill writes — Phase-3 happy-path agent, Phase-5 `coverage-expansion` subagents, Phase-6 `bug-discovery` subagents — must restate the following rule verbatim:
 
-> All screenshot artifacts write to `screenshots/<descriptive-name>.png`. Never bare basenames. This applies to MCP `browser_take_screenshot({ filename: ... })`, Playwright `page.screenshot({ path: ... })`, and any ledger reference citing a screenshot as evidence. Playwright failure screenshots write to `screenshots/failures/<test-name>-<timestamp>.png` (gitignored).
+> All screenshot artifacts write to `screenshots/<descriptive-name>.png`. Never bare basenames. This applies to `playwright-cli screenshot --filename=<path>`, Playwright `page.screenshot({ path: ... })`, and any ledger reference citing a screenshot as evidence. Playwright failure screenshots write to `screenshots/failures/<test-name>-<timestamp>.png` (gitignored).
 
 This is a pure-hygiene rule enforced at the skill-brief level — bare-basename screenshots litter the repo root and break ledger references whose resolution depends on Node's CWD.
 
@@ -290,7 +290,7 @@ The companion reads the existing sentinel-bearing Phase-1 map and fills in Phase
 
 **Delegate to:** `coverage-expansion` with `args: "mode: depth"`.
 
-That skill runs five journey-by-journey passes internally (3 compositional via test-composer + 2 adversarial via bug-discovery), each pass split per-journey into Stage A (compose/probe) + Stage B (fresh staff-QA reviewer with isolated MCP) running an A↔B retry loop up to 7 cycles per journey per pass. Subagent dispatch is opus-default (cost-blind), parallelised for independent journeys, with map growth reconciled between passes. Onboarding's role here is simply to invoke it and relay `[coverage-expansion]` progress lines upstream — no per-pass or per-cycle orchestration at this layer.
+That skill runs five journey-by-journey passes internally (3 compositional via test-composer + 2 adversarial via bug-discovery), each pass split per-journey into Stage A (compose/probe) + Stage B (fresh staff-QA reviewer with its own isolated `playwright-cli` session) running an A↔B retry loop up to 7 cycles per journey per pass. Subagent dispatch is opus-default (cost-blind), parallelised for independent journeys, with map growth reconciled between passes. Onboarding's role here is simply to invoke it and relay `[coverage-expansion]` progress lines upstream — no per-pass or per-cycle orchestration at this layer.
 
 Between and after the five passes, `coverage-expansion` itself refreshes its view of `app-context.md` and `journey-map.md`; onboarding does not need its own refresh step at this phase. When the skill returns, append a "Coverage expansion — new knowledge" section to `onboarding-report.md` summarising total tests added, new journeys discovered, and any sub-journeys promoted.
 
@@ -378,29 +378,19 @@ Every failure — in any phase — routes through `failure-diagnosis`. Four clas
 | Test issue | Fix autonomously, re-run. If still failing after 3 stabilization cycles, skip with a comment and log to the onboarding report. |
 | App bug | Skip the test with a comment referencing the report; append the bug to `onboarding-report.md` under "App bugs logged"; continue. |
 | Ambiguous | Skip + log + continue. |
-| MCP / infra error | Halt. Commit what is stable. Print a clear stop reason with the last progress line. |
+| `playwright-cli` / infra error | Halt. Commit what is stable. Print a clear stop reason with the last progress line. |
 
 The only halt conditions are infra errors. The pipeline never halts on test or app failures.
 
-### MCP watchdog heartbeat
+### CLI call duration discipline
 
-Subagents driving long-running MCP probes (Phase-3 happy-path stabilization, Phase-5 adversarial passes, Phase-6 bug-hunts, Phase-7 deck generation) risk tripping the MCP watchdog's 600s no-output kill when a single tool call stalls or when analysis between calls runs long. A 10-minute stall loses all in-flight progress and forces a fresh dispatch with a narrower brief.
+With `@playwright/cli` invoked from the Bash tool, the relevant time bound is the Bash tool's per-call timeout (default 2min, max 10min) — there is no MCP watchdog and no 600s silent-kill behaviour. Subagents driving long-running probes (Phase-3 happy-path stabilization, Phase-5 adversarial passes, Phase-6 bug-hunts) just need to keep each individual CLI call short enough to fit comfortably within the Bash timeout.
 
-Skill-level guidance, included verbatim in every subagent brief that uses MCP:
+Skill-level guidance, included verbatim in every subagent brief that drives `@playwright/cli`:
 
-> When the MCP has not produced output for ~120s, emit a heartbeat step — a trivial `browser_snapshot` or `browser_evaluate(() => Date.now())` — before continuing the main probe. This keeps the watchdog awake and prevents the silent 600s kill. The heartbeat is not a checkpoint and is not persisted to the ledger; its only purpose is to reset the watchdog clock.
+> Issue one CLI command per Bash call. Do not chain more than a few commands per call (`-s=<name> open`, then `goto`, then `snapshot` is fine; a 50-page crawl in one Bash call is not). If a single command will plausibly take longer than ~90s (e.g. a `goto` against a slow staging environment, a long `tracing-stop` flush), pass `timeout: 180000` or higher to the Bash call explicitly. Do not run `playwright-cli show` (the interactive dashboard) or `playwright-cli pause-at` from a non-interactive subagent — those block on user input.
 
-This is skill-level guidance, not a config knob. No flag to toggle, no threshold to tune — subagents emit the heartbeat when they notice the 120s window closing, and the orchestrator does not need to track it.
-
-**Rationalizations to reject:**
-
-| Excuse | Reality |
-|--------|---------|
-| "My current tool call is already in flight, no need for a heartbeat" | A tool call that's been in flight for 120s has already burned the window. The heartbeat is not for when the MCP is actively producing — it is for the gap *between* your own tool calls and for any single call whose server-side work exceeds the window. |
-| "I'll heartbeat every 30s to be safe" | Over-heartbeating wastes MCP round-trips and clutters subagent transcripts. 120s is the floor; heartbeat when the window is closing, not preemptively. |
-| "The watchdog is 600s, I have plenty of margin" | You have 600s of *total* silence. Each prior tool's analysis and reasoning eats into it. By the time you notice, you have seconds left. Heartbeat at ~120s gives you four safe resets. |
-| "Skipping the heartbeat saves a tool call" | Losing the session and re-dispatching with a narrower brief costs 10–100× more than one heartbeat. |
-| "The subagent will figure it out" | This is the orchestrator-brief-level rule. If the brief doesn't include the heartbeat instruction verbatim, the subagent won't know to emit it — so the orchestrator must include it, every dispatch, no exceptions. |
+This is skill-level guidance, not a config knob. The CLI's `--raw` and `--json` modes both flush on completion; there is no streaming-keepalive concern.
 
 ---
 

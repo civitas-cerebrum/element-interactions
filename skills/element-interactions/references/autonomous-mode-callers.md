@@ -28,7 +28,7 @@ The orchestrator supports two autonomous entry points, distinguished by the `ent
 
 ### Behaviour
 
-- `happyPathDescription` replaces the Stage-1 discovery conversation. The orchestrator reformats it into Given/When/Then silently and proceeds to Stage 2 (selector inspection) using the Playwright MCP.
+- `happyPathDescription` replaces the Stage-1 discovery conversation. The orchestrator reformats it into Given/When/Then silently and proceeds to Stage 2 (selector inspection) using `@playwright/cli` (see [`playwright-cli-protocol.md`](playwright-cli-protocol.md)).
 - For `coverage-expansion`: `journey: "<j-id>"` references an entry in `tests/e2e/docs/journey-map.md`. The orchestrator loads only that journey's block, not the whole map.
 - The orchestrator runs the full Stage 1 → 2 → 3 → 4 sequence under autonomous gates.
 
@@ -55,7 +55,7 @@ When `entry: "stage3"` is set, the orchestrator MUST read the following from `<b
 
 ### Behaviour
 
-- The orchestrator does **not** re-run Phase 2 discovery (no MCP snapshot, no DOM walk). Companion-mode already did the equivalent work.
+- The orchestrator does **not** re-run Phase 2 discovery (no `playwright-cli` snapshot, no DOM walk). Companion-mode already did the equivalent work.
 - Selectors that already exist in the project's `page-repository.json` are referenced as-is. Selectors that companion-mode inlined in the bundle's `spec.ts` are proposed for addition during Stage 3 under the autonomous Stage-2 gate-suspension rule (proposed entries are written directly).
 - Stage 3 writes the durable spec at the standard `tests/<name>.spec.ts` location — NOT inside the bundle directory. The bundle remains read-only post-Phase-5 per `companion-mode` Rule 11.
 - Stage 4 runs as usual.

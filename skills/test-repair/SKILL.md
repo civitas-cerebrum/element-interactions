@@ -99,7 +99,7 @@ Pattern-driven, not count-driven. For each cluster, form a hypothesis and verify
 | "All 8 failures share missing `CheckoutPage.payment-section`" | Run just those 8 tests in isolation — if they still fail identically, confirmed |
 | "State leaks from the login test into the dashboard tests" | Re-run affected tests with a fresh context each — if they pass in isolation, confirmed |
 | "Timing dependency on the `/products` page" | Re-run at slower network profile (`--slow-mo` or throttled CDP) — if failure rate increases, confirmed |
-| "Flow changed — app now shows a consent modal between login and dashboard" | Run one affected test with Playwright MCP observing; compare actual page steps to expected |
+| "Flow changed — app now shows a consent modal between login and dashboard" | Open a `playwright-cli` session against the live app and step through the failing flow manually (`-s=test-repair-<short> open / goto / snapshot / click ...`); compare actual page steps to expected |
 
 **Adaptive iteration rule** (not hardcoded):
 
@@ -166,7 +166,7 @@ Write `test-results/repair-session-<ISO-timestamp>.md` with a clear audit trail:
 - ...
 
 ## Reported bugs
-- `tests/cart.spec.ts::TC_012` — dashboard shows 500 after successful login. Screenshot: test-results/.../screenshot.png. Reproducible via manual MCP navigation. Test left unchanged.
+- `tests/cart.spec.ts::TC_012` — dashboard shows 500 after successful login. Screenshot: test-results/.../screenshot.png. Reproducible via manual `playwright-cli` navigation. Test left unchanged.
 - ...
 
 ## Operator-pending
