@@ -208,6 +208,18 @@ Parallel subagents own their own context windows. Context weight lives with the 
 
 If the skill contract says "dispatch per journey" or "run both phases," the orchestrator dispatches per journey and runs both phases. An orchestrator that silently narrows scope is violating the contract regardless of budget, time, or perceived no-op likelihood. Budget-constrained runs return early with a resume-needed message; they do not silently narrow.
 
+### 14. Companion-skill invocations run on the companion's contract, not the caller's estimate
+
+When this orchestrator (or `onboarding`, or any caller) invokes a companion skill — `journey-mapping`, `coverage-expansion`, `test-composer`, `bug-discovery`, `test-repair` — the companion's contract governs the run. The caller does NOT get to pre-emptively decide "I'll only run part of coverage-expansion because the full pipeline is too long," "I'll skip Pass 4–5 because adversarial probing is excessive for this app," or "I'll dispatch a subset of test-composer's variant set because the journey is small."
+
+If the caller estimates the companion's full contract is more work than the session can absorb, the caller has exactly two options:
+- **Invoke the companion as designed.** The companion itself owns budget pressure: its own §"Auto-compaction" / resume-needed message handles mid-pipeline budget hits. The caller's job is to dispatch and let the companion run its own contract.
+- **Ask the user for an explicit scope reduction before dispatching.** Quote the user's authorisation verbatim when relaying it to the companion (companions like `coverage-expansion` will have their own intent-declaration step that requires the verbatim quote).
+
+Auto-mode does not satisfy "explicit scope reduction." Inferred user preference does not satisfy it. Session-length anxiety does not satisfy it. If the caller cannot fill in a verbatim user quote authorising a reduced scope, the caller dispatches the full contract — period. Calling a companion with a self-authorised "lighter" scope is the same contract violation as silently narrowing one's own scope, just one layer higher.
+
+This rule applies regardless of how reasonable the caller's estimate is. "16 journeys × 5 passes = many hours" is a true statement and not authorisation. Onboarding's front-load gate already disclosed "tens of minutes to several hours" to the user — that disclosure is the user's authorisation for the full pipeline, and the caller is bound by it.
+
 ### Workflow
 - **Run the tests** to validate your work. Do not skip this.
 - **Commit** after every confirmed success. Do not batch.
