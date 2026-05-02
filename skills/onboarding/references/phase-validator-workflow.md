@@ -212,15 +212,84 @@ If the run pauses between cycles (e.g., context-budget auto-compaction), the led
 
 ---
 
-## 6. Mechanical enforcement (PR B follow-up)
+## 6. Mechanical enforcement
 
-Today (PR A — v0.3.6) the phase-validator pattern is markdown-only at the dispatch level: the dispatch-guard accepts `phase-validator-<N>:` prefixes and the schema-guard validates the return shape, but nothing mechanically forces Onboarding to dispatch the validator before advancing.
+Two harness hooks enforce the validator dispatch + ledger contract:
 
-PR B (v0.3.7) ships `hooks/phase-validator-dispatch-required.sh`:
-- PreToolUse:Agent — denies "advance to phase N+1" dispatches when the ledger doesn't show phase N greenlight.
-- PostToolUse:Agent — auto-updates the ledger on phase-validator returns (greenlight = record, improvements-needed = increment cycle, cycle 10 = mark stalled).
+### 6.1 `hooks/subagent-return-schema-guard.sh` — return-shape conformance
 
-Until PR B ships, the orchestrator must self-discipline: dispatch the validator at every phase end. The schema-guard hook (PR A — v0.3.6) catches malformed validator returns; the dispatch-required hook (PR B — v0.3.7) catches missing validator dispatches.
+PostToolUse:Agent. Routes `phase-validator-<N>:` returns through §2.5 of `subagent-return-schema.md` (status enum, phase 1–7, exit-criteria-checked array, summary required on both statuses, `findings: []` on greenlight, ≥1 `pv-<phase>-<nn>` must-fix on improvements-needed, banned tokens). Emits a non-blocking `systemMessage` listing missing markers when the validator's return is malformed. Shipped in PR A (v0.3.6).
+
+### 6.2 `hooks/phase-validator-dispatch-required.sh` — dispatch-required gate + auto-ledger
+
+Two-event hook. Shipped in PR B (v0.3.7).
+
+**PreToolUse:Agent (gate advance)**
+
+When the orchestrator about to dispatch a Phase N+1 subagent (today: composer-/reviewer-/probe-/cleanup-/process-validator- prefixes = entering Phase 5), the hook reads `tests/e2e/docs/onboarding-phase-ledger.json` and checks Phase N's status:
+
+| Ledger state for Phase N | Hook decision |
+|---|---|
+| `greenlight` | ALLOW — advance is authorised |
+| `in-progress` (cycle 1-9, last validator returned improvements-needed) | DENY — re-dispatch phase-validator-N first; the deny message includes the next cycle number |
+| `blocked-phase-validator-stalled` (cycle 10 cap reached) | DENY — terminal state; surface to user with unresolved findings |
+| Missing entry / ledger absent | DENY — no validator has been dispatched yet |
+
+`phase-validator-<N>:` dispatches are always allowed regardless of ledger state — gating the gate would deadlock the pipeline.
+
+**PostToolUse:Agent (record ledger)**
+
+When a `phase-validator-<N>:` Agent returns:
+
+- `status: greenlight` → write Phase N entry: `{ status: "greenlight", validator: "phase-validator-N", cycle: <N>, at: "<ISO>", evidence: [...] }`. Cycle counter resets on next phase.
+- `status: improvements-needed` AND cycle < 10 → write `{ status: "in-progress", cycle: <bumped>, at: "<ISO>" }`.
+- `status: improvements-needed` AND cycle == 10 → write `{ status: "blocked-phase-validator-stalled", cycle: 10, at: "<ISO>", "unresolved-findings": [<pv-IDs>] }`.
+
+The hook is the source of truth for the ledger. Onboarding MUST NOT hand-write entries — they only become valid via the harness layer.
+
+### 6.3 Ledger state-file shape
+
+`tests/e2e/docs/onboarding-phase-ledger.json`:
+
+```json
+{
+  "phases": {
+    "<N>": {
+      "status": "greenlight" | "in-progress" | "blocked-phase-validator-stalled",
+      "validator": "phase-validator-<N>",
+      "cycle": <integer 1-10>,
+      "at": "<ISO-8601 timestamp>",
+      "evidence": ["<pointer>", "<pointer>", ...],            // greenlight only
+      "unresolved-findings": ["pv-<N>-01", "pv-<N>-02", ...]  // blocked only
+    },
+    ...
+  }
+}
+```
+
+Field rules:
+
+| Field | Rule |
+|---|---|
+| `phases` | Top-level object. Keys are phase numbers as strings (`"1"` ... `"7"`). Missing key = phase not yet validated. |
+| `phases.<N>.status` | One of `greenlight | in-progress | blocked-phase-validator-stalled`. No other values. |
+| `phases.<N>.validator` | Must be `phase-validator-<N>` (matches the role-prefix convention). |
+| `phases.<N>.cycle` | Integer 1–10. The cycle the most recent validator dispatch ran. Resets on advance to next phase. |
+| `phases.<N>.at` | ISO-8601 UTC timestamp of the most recent ledger update. |
+| `phases.<N>.evidence` | Array of strings — pointers (file paths, state-file fields, commit hashes) the validator extracted from `exit-criteria-checked`. Present only on `status: "greenlight"`. |
+| `phases.<N>.unresolved-findings` | Array of `pv-<N>-<nn>` finding-IDs from the cycle-10 validator return. Present only on `status: "blocked-phase-validator-stalled"`. |
+
+The ledger is committed alongside Phase N's regular commits. Resume across sessions reads the ledger to determine which phase to enter; advancing requires the ledger to show the prior phase greenlit.
+
+### 6.4 What this enforcement closes
+
+| Failure mode | PR A (schema-guard) catches | PR B (dispatch-required) catches |
+|---|---|---|
+| Validator dispatched but return is malformed | ✅ | (PR B doesn't re-validate the return shape — PR A's schema-guard handles) |
+| Validator return is well-formed but the orchestrator doesn't act on findings | (markdown-only — orchestrator must read the findings) | ✅ (next dispatch denied because ledger still shows `in-progress` with cycle bumped) |
+| Orchestrator skips phase-validator dispatch entirely and dispatches Phase N+1 work | (markdown-only) | ✅ (PreToolUse deny because Phase N has no greenlight in ledger) |
+| Cycle 10 reached with unresolved findings | (markdown-only) | ✅ (PostToolUse writes `blocked-phase-validator-stalled`; subsequent advance attempts hit a clear deny with the unresolved findings list) |
+| Onboarding is invoked from scratch (no ledger) | (n/a) | ✅ (deny on first Phase N+1 dispatch with the "no ledger" message guides to dispatch phase-validator-N first) |
 
 ---
 
