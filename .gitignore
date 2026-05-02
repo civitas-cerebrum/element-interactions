@@ -13,11 +13,14 @@ tests/e2e/docs/.in-flight-composers.json
 tests/e2e/docs/.coverage-expansion-cycle-*.json
 tests/e2e/docs/onboarding-phase-ledger.json
 tests/e2e/docs/coverage-expansion-state.json
+tests/e2e/docs/.adversarial-findings.lock
 
 # Subagent spillover bodies (§2.6 of subagent-return-schema.md) — written
 # by reviewer / probe / etc. subagents on return; consumed by the next
 # composer-cycle brief. Per-run state, never source.
 tests/e2e/docs/.subagent-returns/
+tests/e2e/docs/.handover-payloads/
+
 api-coverage-report.txt
 
 .env
@@ -29,12 +32,3 @@ test-coverage-report.md
 /docs
 /skills/*-workspace
 /solution-designs
-
-# Runtime state files written by hooks during testing / live runs.
-tests/e2e/docs/.in-flight-composers.json
-tests/e2e/docs/.handover-payloads/
-tests/e2e/docs/.subagent-returns/
-tests/e2e/docs/.adversarial-findings.lock
-tests/e2e/docs/.coverage-expansion-cycle-*.json
-tests/e2e/docs/coverage-expansion-state.json
-tests/e2e/docs/onboarding-phase-ledger.json

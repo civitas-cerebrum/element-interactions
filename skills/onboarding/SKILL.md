@@ -263,6 +263,23 @@ Onboarding dispatches `phase-validator-<N>:` at the **end of every phase**, befo
 
 Full workflow spec — manifest shape, per-phase verification table, response handling, cycle counting across resume — in [`references/phase-validator-workflow.md`](references/phase-validator-workflow.md). Return shape canonical in `../element-interactions/references/subagent-return-schema.md` §2.5. Schema-conformance enforced by `hooks/subagent-return-schema-guard.sh` (validates phase-validator returns at PostToolUse). Mechanical dispatch-required enforcement (deny advance without prior-phase greenlight in the ledger) is the planned v0.3.7 follow-up; until then, the orchestrator self-disciplines per the kernel rules.
 
+#### Inter-phase auto-compact
+
+After each phase greenlights via its `phase-validator-<N>:` and BEFORE the orchestrator begins phase N+1's work, Onboarding runs `/compact` (or emits the safe-compact line for manual compaction on platforms without programmatic compaction). Phase N's accumulated context — per-entry-point summaries, validator returns, in-flight composer bookkeeping — should not persist into Phase N+1. Only the structured state files survive across the compact (the `app-context.md`, `journey-map.md`, `coverage-expansion-state.json`, `onboarding-phase-ledger.json`, `adversarial-findings.md`).
+
+**Why routine, not threshold-only.** Coverage-expansion's `references/depth-mode-pipeline.md` §"Auto-compaction between passes" already runs auto-compact when context crosses a 70%-threshold. That handles the within-phase case (e.g. when Pass 5's adversarial-totals counter approaches budget mid-run). The inter-phase auto-compact is independent: even at 30% utilisation, flushing Phase N's context before Phase N+1 keeps the orchestrator at index-level state across phase boundaries — which is what the per-phase completion contract assumes.
+
+**Sequence:**
+
+1. Phase N's sub-skill returns. Orchestrator dispatches `phase-validator-<N>:` per the kernel rule above.
+2. Validator returns greenlight. Onboarding records the entry in `onboarding-phase-ledger.json` (handled by `hooks/phase-validator-dispatch-required.sh`).
+3. **Onboarding runs `/compact`** (or emits the safe-compact line). The orchestrator's first action on the post-compact turn is to re-read the ledger + relevant state files; it picks up from the ledger's recorded greenlight and proceeds to phase N+1.
+4. Phase N+1 begins.
+
+A skipped inter-phase compact is not a hard error — it just leaves Phase N's load on the orchestrator. Routine compact is the cheap, deliberate alternative to the >70%-threshold panic case.
+
+**Phase 7 exception.** No compact after Phase 7 — the run is done; the report and deck are the deliverables.
+
 #### Other invariants
 
 - **All seven phases run in order.** No reordering, no skipping. The front-load gate authorises Phases 1–7 up-front; the user does not get re-prompted between phases.

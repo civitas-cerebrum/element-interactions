@@ -112,11 +112,16 @@ Total: X pages discovered
 Gated: Y pages behind authentication
 ```
 
-### Test Infrastructure probe (parallel with crawl)
+### Test Infrastructure probe (split: per-entry observation + post-crawl `phase1-test-infra:` subagent)
 
-Phase 1 also captures the application's test-infrastructure surface — auth model, reset endpoint, persistent banners, mutation endpoints, stable seed resources — for downstream consumption by Stage 4a of the test-composition pipeline.
+Phase 1 captures the application's test-infrastructure surface — auth model, reset endpoint, persistent banners, mutation endpoints, stable seed resources — for downstream consumption by Stage 4a of the test-composition pipeline.
 
-Load `references/test-infrastructure-probe.md` and run the protocol described there. The probe runs in parallel with the breadth-first page crawl: observations from network traffic and DOM snapshots accumulate during the crawl; the deliberate reset-endpoint probe runs once the crawl completes.
+Load `references/test-infrastructure-probe.md` and run the protocol described there. The probe runs in **two coordinated layers**:
+
+1. **In parallel with the crawl** — each per-entry-point `phase1-<entry>:` subagent records observed items (auth-model network shapes, mutation endpoints fired by the browser) in its structured return.
+2. **After the crawl completes** — the orchestrator dispatches a single **`phase1-test-infra:` subagent** that runs the deliberate post-crawl probes (reset-endpoint detection, banner / modal selector resolution, stable-seed enumeration) AND reconciles the per-entry-point observations into a single deduplicated list, then writes the canonical `## Test Infrastructure` section to `tests/e2e/docs/app-context.md`.
+
+**Why a subagent for the post-crawl probe.** The deliberate probe generates several thousand tokens of network output and DOM snapshots. Confining it to a throwaway subagent context keeps the orchestrator at index-level state — the orchestrator only sees the structured return (the `## Test Infrastructure` Markdown block + the audit-tag list). Same context-discipline rule coverage-expansion enforces for composer/probe work, applied here.
 
 **Output:** a `## Test Infrastructure` section appended to `tests/e2e/docs/app-context.md`, in the canonical format documented in `references/test-infrastructure-probe.md`.
 
