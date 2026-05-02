@@ -4,7 +4,7 @@ import { ElementInteractions } from '../interactions/facade/ElementInteractions'
 import { Utils } from '../utils/ElementUtilities';
 import { EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
-import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions } from '../enum/Options';
+import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions, StorageVerifyOptions } from '../enum/Options';
 import { stepLog as log } from '../logger/Logger';
 import { ElementAction } from './ElementAction';
 import { ExpectBuilder } from './ExpectMatchers';
@@ -599,6 +599,33 @@ export class Steps {
     }
 
     /**
+     * Reads a value from the browser's `window.localStorage`. Returns `null`
+     * when the key is absent — same contract as the native `getItem`.
+     *
+     * Use for state the framework cannot reach through the DOM: persisted
+     * theme preference, dismissed-banner flag, feature toggle, auth tokens, etc.
+     *
+     * @example
+     * ```ts
+     * await steps.click('themeToggle', 'NavBar');
+     * expect(await steps.getLocalStorage('theme')).toBe('dark');
+     * ```
+     */
+    async getLocalStorage(key: string): Promise<string | null> {
+        log.extract('Getting localStorage[%s]', JSON.stringify(key));
+        return await this.extract.getLocalStorage(key);
+    }
+
+    /**
+     * Reads a value from the browser's `window.sessionStorage`. Returns `null`
+     * when the key is absent — same contract as the native `getItem`.
+     */
+    async getSessionStorage(key: string): Promise<string | null> {
+        log.extract('Getting sessionStorage[%s]', JSON.stringify(key));
+        return await this.extract.getSessionStorage(key);
+    }
+
+    /**
      * Extracts text content or attribute values from all elements matching the locator.
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
@@ -908,6 +935,70 @@ export class Steps {
     async verifyPageHtmlMatches(regex: RegExp, options?: { outer?: boolean; negated?: boolean; timeout?: number; errorMessage?: string }): Promise<void> {
         log.verify('Verifying page %s HTML matches regex %s', options?.outer ? 'outer' : 'inner', regex);
         await this.verify.pageHtmlMatches(regex, options);
+    }
+
+    /**
+     * Asserts a property of `localStorage[key]`. Pick one matcher: `equals`
+     * (exact match), `contains` (substring), `matches` (regex), or `present`
+     * (existence). The chosen matcher is enforced at the type level by the
+     * `StorageVerifyOptions` discriminated union — passing two is a type error.
+     *
+     * Polls until the predicate holds or the timeout expires, so this survives
+     * the race between a UI action firing and its persistence side-effect.
+     *
+     * @example
+     * ```ts
+     * await steps.verifyLocalStorage('theme', { equals: 'dark' });
+     * await steps.verifyLocalStorage('flag', { contains: 'enabled' });
+     * await steps.verifyLocalStorage('build', { matches: /^v\d+$/ });
+     * await steps.verifyLocalStorage('seen', { present: true });
+     * await steps.verifyLocalStorage('seen', { present: false });          // absence
+     * await steps.verifyLocalStorage('seen', { present: true, negated: true });  // same
+     * ```
+     */
+    async verifyLocalStorage(key: string, options: StorageVerifyOptions): Promise<void> {
+        await this.verifyStorage('local', key, options);
+    }
+
+    /** See `verifyLocalStorage` — same matcher shape, against `window.sessionStorage`. */
+    async verifySessionStorage(key: string, options: StorageVerifyOptions): Promise<void> {
+        await this.verifyStorage('session', key, options);
+    }
+
+    /** Single dispatcher for `verifyLocalStorage` / `verifySessionStorage`. */
+    private async verifyStorage(type: 'local' | 'session', key: string, options: StorageVerifyOptions): Promise<void> {
+        const label = type === 'local' ? 'localStorage' : 'sessionStorage';
+        const modifiers = { negated: options.negated, timeout: options.timeout, errorMessage: options.errorMessage };
+        if ('equals' in options && options.equals !== undefined) {
+            log.verify('Verifying %s[%s] is %s', label, JSON.stringify(key), JSON.stringify(options.equals));
+            await (type === 'local' ? this.verify.localStorage(key, options.equals, modifiers) : this.verify.sessionStorage(key, options.equals, modifiers));
+            return;
+        }
+        if ('contains' in options && options.contains !== undefined) {
+            log.verify('Verifying %s[%s] contains %s', label, JSON.stringify(key), JSON.stringify(options.contains));
+            await (type === 'local' ? this.verify.localStorageContains(key, options.contains, modifiers) : this.verify.sessionStorageContains(key, options.contains, modifiers));
+            return;
+        }
+        if ('matches' in options && options.matches !== undefined) {
+            log.verify('Verifying %s[%s] matches %s', label, JSON.stringify(key), options.matches);
+            await (type === 'local' ? this.verify.localStorageMatches(key, options.matches, modifiers) : this.verify.sessionStorageMatches(key, options.matches, modifiers));
+            return;
+        }
+        // 'present' branch. The underlying `localStoragePresent` assertion only
+        // knows "is present" — we flip it (`negated: true`) to assert absence.
+        // `present: false` is an absence check; an explicit `negated: true`
+        // flips again. Two flips cancel: underlyingNegated holds when wantPresent
+        // and userNegated are both true OR both false (i.e. they agree).
+        const wantPresent = options.present !== false;
+        const userNegated = modifiers.negated ?? false;
+        const negated = wantPresent === userNegated;
+        log.verify('Verifying %s[%s] is %spresent', label, JSON.stringify(key), negated ? 'not ' : '');
+        const presentOptions = { ...modifiers, negated };
+        if (type === 'local') {
+            await this.verify.localStoragePresent(key, presentOptions);
+        } else {
+            await this.verify.sessionStoragePresent(key, presentOptions);
+        }
     }
 
     /**

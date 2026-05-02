@@ -1,0 +1,52 @@
+{
+  "$schema": "./schemas/contribution-handover.schema.json",
+  "schemaVersion": 1,
+  "pr": {
+    "title": "<imperative summary, e.g. 'feat: add steps.X for Y use case'>",
+    "branch": "<feature-branch-name>",
+    "summary": "<1–3 sentences describing what shipped and why>"
+  },
+  "preflight": {
+    "branchSyncedWithMain": null,
+    "duplicateIssuesSearched": null,
+    "duplicatePRsSearched": null,
+    "depVersionsChecked": null
+  },
+  "design": {
+    "argumentOrderConvention": null,
+    "asyncEverywhere": null,
+    "stepsKeptLightweight": null,
+    "namingConvention": null,
+    "noRawLocatorInSrc": null,
+    "presenceDetectInActions": null,
+    "webOnlyCastAtSite": null,
+    "errorMessageFormatFollowed": null,
+    "loggingPresent": null,
+    "typescriptDiscipline": null
+  },
+  "tests": {
+    "implemented": null,
+    "exerciseRealVueApp": null,
+    "nonTautologicalAssertions": null,
+    "passing": null,
+    "specFiles": []
+  },
+  "build": {
+    "buildPasses": null,
+    "fullSuitePassing": null,
+    "knownFailures": ""
+  },
+  "coverage": {
+    "apiCoverageGate100": null
+  },
+  "docs": {
+    "readmeUpdated": null,
+    "apiReferenceUpdated": null,
+    "skillFilesUpdated": null
+  },
+  "version": {
+    "patchBumpedOnce": null,
+    "from": "<starting version, e.g. 0.3.4>",
+    "to":   "<bumped version, e.g. 0.3.5>"
+  }
+}

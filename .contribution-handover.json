@@ -1,0 +1,59 @@
+{
+  "$schema": "./schemas/contribution-handover.schema.json",
+  "schemaVersion": 1,
+  "pr": {
+    "title": "feat: add browser-storage API + contribution handover gate",
+    "branch": "feat/storage-api",
+    "summary": "Closes the page.evaluate escape hatch for localStorage / sessionStorage by exposing getLocalStorage / getSessionStorage / verifyLocalStorage / verifySessionStorage on Steps with a discriminated StorageVerifyOptions matcher (equals | contains | matches | present). Variety stays in the Verifications layer (8 specialised methods) per the new Rule 18. Also introduces the contribution-handover format + gate hook so future PRs sign off against the rule index in structured form."
+  },
+  "preflight": {
+    "branchSyncedWithMain": true,
+    "duplicateIssuesSearched": true,
+    "duplicatePRsSearched": true,
+    "depVersionsChecked": true
+  },
+  "design": {
+    "argumentOrderConvention": "n/a",
+    "argumentOrderConventionReason": "Storage methods are page-level (key, options); they have no element/page positional pair, so the (elementName, pageName, ...) convention does not apply.",
+    "asyncEverywhere": true,
+    "stepsKeptLightweight": true,
+    "namingConvention": true,
+    "noRawLocatorInSrc": true,
+    "presenceDetectInActions": "n/a",
+    "presenceDetectInActionsReason": "PR adds verifications and extractions only — no new action methods on Element, so the ensureAttached preamble does not apply.",
+    "webOnlyCastAtSite": "n/a",
+    "webOnlyCastAtSiteReason": "Storage API is a page-level read via Page.evaluate (the documented seam for non-element browser-state access); no WebElement-only narrowing is involved.",
+    "errorMessageFormatFollowed": true,
+    "loggingPresent": true,
+    "typescriptDiscipline": true
+  },
+  "tests": {
+    "implemented": true,
+    "exerciseRealVueApp": true,
+    "nonTautologicalAssertions": true,
+    "passing": true,
+    "specFiles": [
+      "tests/storage-api.spec.ts",
+      "hooks/tests/cases/06-contribution-handover-gate.sh"
+    ]
+  },
+  "build": {
+    "buildPasses": true,
+    "fullSuitePassing": true,
+    "knownFailures": "1 unrelated failure in tests/api-steps.spec.ts (TC_API_001 BookHive backend) — beforeAll cannot reach localhost:8080; the docker-compose service is not running locally. Pre-existing on origin/main; not caused by this PR."
+  },
+  "coverage": {
+    "apiCoverageGate100": true
+  },
+  "docs": {
+    "readmeUpdated": true,
+    "apiReferenceUpdated": true,
+    "skillFilesUpdated": true,
+    "skillFilesUpdatedReason": "skills/contributing-to-element-interactions/SKILL.md adds Rule 18 (Steps lightness), Rule 19 (mandatory README + api-reference for new public API), the Contribution Handover section, and the Hook error message format standard."
+  },
+  "version": {
+    "patchBumpedOnce": true,
+    "from": "0.3.4",
+    "to":   "0.3.5"
+  }
+}
