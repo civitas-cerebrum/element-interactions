@@ -32,6 +32,7 @@
 # - Top-level not an object                                → DENY
 # - Missing required fields (status, currentPass, etc.)    → DENY
 # - dispatches[] entry missing dual-stage fields           → DENY
+# - currentPass >= 1 with zero dispatches recorded         → DENY (pre-emptive-stop pattern)
 # - Anything else                                          → silent allow
 
 set -euo pipefail
@@ -126,6 +127,73 @@ currentPass: $CP
 
 Fix: must be an integer 0-5 (0 = before pass 1, 1-3 = compositional, 4-5 = adversarial). See coverage-expansion SKILL.md."
     exit 0
+  fi
+
+  # 5. Pre-emptive-stop detection. If currentPass >= 1, at least one dispatch
+  # MUST be recorded somewhere in the file. A state file with currentPass=1
+  # and zero dispatches is the "honest stopping point before doing any work"
+  # anti-pattern: the orchestrator writes the state file framed as exit #2
+  # (commit-what-landed + resume) BEFORE actually dispatching anything. Exit
+  # #2 is for budget-driven mid-pipeline stops AFTER at least one dispatch
+  # is in flight, NOT for refusing to start.
+  #
+  # The state file is a post-action ledger, not a pre-action plan. It must
+  # reflect work that actually happened.
+  #
+  # Reference: coverage-expansion/references/anti-rationalizations.md
+  #   §"Pre-emptive scope reduction" + §"Honest pre-dispatch stop"
+  if [ "$CP" -ge 1 ]; then
+    # Walk the JSON looking for any object that has a `journey` key — that's
+    # a per-dispatch entry. Works whether dispatches live at top-level or
+    # nested under `passes.<N>-compositional.dispatches`.
+    DISPATCH_COUNT=$(echo "$TARGET" | jq -r '[.. | objects | select(has("journey"))] | length' 2>/dev/null || echo 0)
+    if [ "$DISPATCH_COUNT" -eq 0 ]; then
+      emit_deny "[BLOCKED] State-file write claims currentPass=${CP} with zero dispatches recorded.
+
+──────────────────────────────────────────────────────────────────
+Do this instead — pick one:
+──────────────────────────────────────────────────────────────────
+
+  Option A — you have NOT dispatched any subagent yet.
+    Either:
+      (a) Don't write this file. An absent file means 'start Pass 1 from
+          scratch' on the next orchestrator entry — that's the legitimate
+          'haven't started' state.
+      (b) OR set \"currentPass\": 0 (with empty passes:{}). currentPass=0
+          is also a legitimate 'haven't started' marker.
+    Then dispatch Pass 1's first wave:
+      Agent({ description: \"composer-j-<slug>: cycle 1\", ... })
+      ...one Agent call per journey, in parallel in the SAME message.
+
+  Option B — you intend exit #2 (mid-pipeline stop with resume marker).
+    Exit #2 requires AT LEAST ONE dispatch in flight before it's invocable.
+    Dispatch the first wave first. Capture the structured returns. THEN
+    write the state file with the actual dispatches[] entries populated —
+    that's the resume marker the next session reads.
+
+──────────────────────────────────────────────────────────────────
+What was wrong:
+──────────────────────────────────────────────────────────────────
+File:           $FILE_PATH
+journeyRoster:  ${ROSTER_LEN} entries
+dispatches:     0  ← required: at least 1 when currentPass >= 1
+
+The state file is a post-action ledger, not a pre-action plan. A state
+file with currentPass>=1 and zero recorded dispatches is the pre-emptive-
+stop anti-pattern — writing the resume marker BEFORE any actual work
+happened, typically dressed in 'honest' / 'pragmatic' / 'I want to surface
+this back upstream' framing.
+
+If the run feels too long: the front-load gate already authorised the
+FULL pipeline ('tens of minutes to several hours'). Auto-mode is not
+authorisation to skip work. Inferred user preference is not authorisation.
+Estimated session length is not authorisation.
+
+References:
+  coverage-expansion/SKILL.md §\"Two valid exits\"
+  coverage-expansion/references/anti-rationalizations.md §\"Pre-emptive scope reduction\""
+      exit 0
+    fi
   fi
 fi
 

@@ -36,9 +36,13 @@ There are exactly two ways for a coverage-expansion run to terminate:
 1. **All 5 passes + cleanup complete** for `mode: depth` (or the one breadth sweep complete for `mode: breadth`), with every journey dispatched in every pass.
 2. **Commit-what-landed + write `coverage-expansion-state.json` + stop with an explicit "resume needed" message** naming the completed passes, the in-flight pass, and the pending journeys.
 
-There is no third exit. Any framing that implies "partial run, but reasonable" — *"pragmatic Pass 1"*, *"honest Pass 1 only"*, *"most of the work done"*, *"deferred Passes 2–5 to a follow-up"*, *"reduced scope given session constraints"* — is the contract violation this skill exists to prevent. Tone does not change the contract: a "transparent" scope reduction is still a scope reduction, and silent scope reduction dressed in candid language is still silent scope reduction.
+There is no third exit. Any framing that implies "partial run, but reasonable" — *"pragmatic Pass 1"*, *"honest Pass 1 only"*, *"most of the work done"*, *"deferred Passes 2–5 to a follow-up"*, *"reduced scope given session constraints"*, *"the realistic depth-mode contract for this app is an evening-or-overnight wall-clock run"*, *"the honest stopping point right now is to write state and resume in a fresh conversation"* — is the contract violation this skill exists to prevent. Tone does not change the contract: a "transparent" scope reduction is still a scope reduction, and silent scope reduction dressed in candid language is still silent scope reduction.
 
-If you are about to dispatch fewer passes than the mode requires, or fewer journeys than the map contains, you must EITHER (a) have explicit user authorisation in this conversation naming the reduction, OR (b) take exit #2 above. Self-authorisation is not authorisation. Auto-mode is not authorisation. Inferred user preference is not authorisation. Estimated session length is not authorisation.
+**Exit #2 is for budget-driven mid-pipeline stops, not for refusing to start.** Exit #2 requires AT LEAST ONE DISPATCH IN FLIGHT before it is invocable. A `coverage-expansion-state.json` written with `currentPass: 1` and zero recorded dispatches is not exit #2 — it is the pre-emptive-stop anti-pattern. The state file is a post-action ledger reflecting work that actually happened, not a pre-action plan. **Harness-enforced**: `hooks/coverage-state-schema-guard.sh` denies state-file writes where `currentPass >= 1` and `dispatches[]` is empty across all passes.
+
+If you are about to dispatch fewer passes than the mode requires, or fewer journeys than the map contains, you must EITHER (a) have explicit user authorisation in this conversation naming the reduction, OR (b) take exit #2 above (which requires at least one dispatch already in flight). Self-authorisation is not authorisation. Auto-mode is not authorisation. Inferred user preference is not authorisation. Estimated session length is not authorisation.
+
+**Onboarding-pipeline contract**: when invoked from `onboarding` Phase 5 (autonomous mode), the front-load gate has already authorised the full pipeline ("tens of minutes to several hours"). The orchestrator may not stop pre-emptively in autonomous mode — the only valid mid-run stop is exit #2 *after at least one wave has returned*. "Mostly done with Phase 3 happy-path, surfacing back to user" is not a valid Phase 5 exit.
 
 ### Reviewer parallelism is non-negotiable
 
@@ -421,6 +425,13 @@ Never hold in context:
 One bounded exception for pass 5: when dispatching a pass-5 subagent, the orchestrator does read the journey's pass-4 ledger section from the ledger file and pass it along as an input. This is strictly bounded to one journey's section for one subagent; the orchestrator releases it from context as soon as the dispatch is sent.
 
 If orchestrator context approaches a budget boundary, follow the auto-compaction flow in §"Auto-compaction between passes". The authoritative state file is `tests/e2e/docs/coverage-expansion-state.json` (see §"Authoritative state file — read first, always"); resumption on any subsequent invocation is driven from that file.
+
+### Hard rules — kernel-resident
+
+- **The orchestrator does NOT compose tests directly.** Spec writes for `tests/e2e/j-<slug>.spec.ts` and `tests/e2e/sj-<slug>.spec.ts` (and their `-regression` variants) come from a dispatched `composer-j-<slug>:` / `composer-sj-<slug>:` / `probe-j-<slug>:` subagent — never from direct orchestrator action. Harness-enforced by `hooks/coverage-expansion-direct-compose-warning.sh` (PostToolUse warning when `coverage-expansion-state.json` exists). `tests/e2e/happy-path.spec.ts` is exempt (Phase 3 of onboarding writes it before coverage-expansion's Pass 1).
+- **The orchestrator does NOT run `playwright-cli` for selector inspection.** The CLI session belongs to the dispatched subagent (its slug carries the subagent's role prefix — see §"Role prefixes"). Orchestrator-side `playwright-cli` use during coverage-expansion is a discipline violation: it pulls DOM snapshots into the orchestrator's context.
+- **The orchestrator does NOT run `npx playwright test` for stabilization.** Stabilization happens inside the composer subagent's loop, with the result captured in the structured return. The orchestrator-level test run is the **whole-suite re-run gate** at pass exit, not per-spec stabilization.
+- **If parallel composer dispatch feels unsafe (e.g., shared-DB races), the fix is the per-test-user pattern**, not "absorb the composer work serially". See `../element-interactions/references/test-optimization.md` §1.A. The onboarding shared-resource audit's `global-reset:cross-test-race` tag is the trigger for §1.A.
 
 ---
 

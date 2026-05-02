@@ -138,6 +138,7 @@ const HOOK_MANIFEST = [
   { file: 'suite-gate-ratchet.sh',                event: 'PostToolUse', matcher: 'Bash',       timeout: 10 },
   { file: 'raw-playwright-api-warning.sh',        event: 'PostToolUse', matcher: 'Write|Edit', timeout: 10 },
   { file: 'subagent-return-schema-guard.sh',      event: 'PostToolUse', matcher: 'Agent',      timeout: 10 },
+  { file: 'coverage-expansion-direct-compose-warning.sh', event: 'PostToolUse', matcher: 'Write|Edit', timeout: 10 },
 
   // SubagentStop — cleanup
   { file: 'playwright-cli-cleanup-on-stop.sh',    event: 'SubagentStop', matcher: null,        timeout: 30, async: true },
