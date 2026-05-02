@@ -427,6 +427,68 @@ assert_allow "$H" "$PAYLOAD" "missing journey/pass/cycle → silent allow (PostT
 rm -f /tmp/sst-rewrite-counter-agent-test-*
 rm -rf "$TMP_PROJ"
 
+section "coverage-expansion-orchestrator-cli-block"
+H="$HOOK_DIR/coverage-expansion-orchestrator-cli-block.sh"
+TMP_PROJ=$(mktemp -d)
+mkdir -p "$TMP_PROJ/tests/e2e/docs"
+cd "$TMP_PROJ" && git init -q && cd - >/dev/null
+NOW_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# No state file: orchestrator-direct CLI is allowed (Stage 1-4 / companion-mode etc.).
+assert_allow "$H" "$(payload tool_name=Bash command='npx playwright-cli -s=composer-j-foo-1-c1 open https://x.com' cwd="$TMP_PROJ")" "no state file → silent allow (Stage 3 / companion-mode context)"
+
+# Establish the active-run state file.
+echo '{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-checkout"],"passes":{"1-compositional":{"dispatches":[{"journey":"j-checkout","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]}},"updatedAt":"'"$NOW_ISO"'"}' > "$TMP_PROJ/tests/e2e/docs/coverage-expansion-state.json"
+
+# Active run + session-agnostic subcommands → silent allow (orchestrator legitimately runs close-all).
+assert_allow "$H" "$(payload tool_name=Bash command='npx playwright-cli close-all' cwd="$TMP_PROJ")" "active run + close-all → silent allow"
+assert_allow "$H" "$(payload tool_name=Bash command='npx playwright-cli list' cwd="$TMP_PROJ")" "active run + list → silent allow"
+assert_allow "$H" "$(payload tool_name=Bash command='npx playwright-cli --version' cwd="$TMP_PROJ")" "active run + --version → silent allow"
+assert_allow "$H" "$(payload tool_name=Bash command='npx playwright-cli install-browser chromium' cwd="$TMP_PROJ")" "active run + install-browser → silent allow"
+
+# Active run + composer slug NOT in registry → DENY.
+assert_deny "$H" "$(payload tool_name=Bash command='npx playwright-cli -s=composer-j-checkout-1-c1 open https://x.com' cwd="$TMP_PROJ")" "active run + composer slug, no registry → DENY" "Orchestrator-direct"
+assert_deny "$H" "$(payload tool_name=Bash command='npx playwright-cli -s=probe-j-foo-4 eval window' cwd="$TMP_PROJ")" "active run + probe slug, no registry → DENY" "Orchestrator-direct"
+
+# Active run + composer slug IN registry within TTL → ALLOW.
+cat > "$TMP_PROJ/tests/e2e/docs/.in-flight-composers.json" <<EOF
+{"composers":{"j-checkout":{"description_prefix":"composer-j-checkout: cycle 1","cycle":1,"started_at":"$NOW_ISO"}}}
+EOF
+assert_allow "$H" "$(payload tool_name=Bash command='npx playwright-cli -s=composer-j-checkout-1-c1 open https://x.com' cwd="$TMP_PROJ")" "active run + composer-j-checkout slug in registry → silent allow"
+assert_allow "$H" "$(payload tool_name=Bash command='npx playwright-cli -s=composer-j-checkout-1-c1 eval window.title' cwd="$TMP_PROJ")" "active run + same slug, eval subcommand → silent allow"
+
+# Active run + sj- slug in registry → ALLOW.
+cat > "$TMP_PROJ/tests/e2e/docs/.in-flight-composers.json" <<EOF
+{"composers":{"sj-bar":{"description_prefix":"composer-sj-bar: cycle 1","cycle":1,"started_at":"$NOW_ISO"}}}
+EOF
+assert_allow "$H" "$(payload tool_name=Bash command='npx playwright-cli -s=composer-sj-bar-2-c1 open https://x.com' cwd="$TMP_PROJ")" "active run + composer-sj-bar slug in registry → silent allow"
+
+# Active run + stale entry (>30 min) → DENY (stale slug doesn't authorize).
+OLD_ISO="2026-04-30T00:00:00Z"
+cat > "$TMP_PROJ/tests/e2e/docs/.in-flight-composers.json" <<EOF
+{"composers":{"j-checkout":{"description_prefix":"composer-j-checkout: cycle 1","cycle":1,"started_at":"$OLD_ISO"}}}
+EOF
+assert_deny "$H" "$(payload tool_name=Bash command='npx playwright-cli -s=composer-j-checkout-1-c1 open https://x.com' cwd="$TMP_PROJ")" "active run + stale entry → DENY" "Orchestrator-direct"
+
+# Reviewer / phase1 / stage2 / cleanup slugs not in registry → silent allow (those subagents
+# aren't tracked in the registry by design; the dispatch-guard authorised them at Agent-tool time).
+rm -f "$TMP_PROJ/tests/e2e/docs/.in-flight-composers.json"
+assert_allow "$H" "$(payload tool_name=Bash command='npx playwright-cli -s=reviewer-j-checkout-1-c1 eval window' cwd="$TMP_PROJ")" "active run + reviewer slug → silent allow (not registry-tracked)"
+assert_allow "$H" "$(payload tool_name=Bash command='npx playwright-cli -s=phase1-public open https://x.com' cwd="$TMP_PROJ")" "active run + phase1 slug → silent allow"
+assert_allow "$H" "$(payload tool_name=Bash command='npx playwright-cli -s=stage2-cart eval document' cwd="$TMP_PROJ")" "active run + stage2 slug → silent allow"
+assert_allow "$H" "$(payload tool_name=Bash command='npx playwright-cli -s=cleanup-ledger close' cwd="$TMP_PROJ")" "active run + cleanup slug → silent allow"
+
+# Active run + missing -s= flag → silent allow (defer to playwright-cli-isolation-guard).
+assert_allow "$H" "$(payload tool_name=Bash command='npx playwright-cli open https://x.com' cwd="$TMP_PROJ")" "active run + missing -s= → silent allow (defer to isolation guard)"
+
+# Mention of playwright-cli inside echo → silent allow (regex anchored to invocation).
+assert_allow "$H" "$(payload tool_name=Bash command='echo \"playwright-cli not found\"' cwd="$TMP_PROJ")" "playwright-cli inside echo string → silent allow"
+
+# Non-Bash tool → silent allow.
+assert_allow "$H" "$(payload tool_name=Write file_path='/x/y.ts' content='whatever' cwd="$TMP_PROJ")" "non-Bash tool → silent allow"
+
+rm -rf "$TMP_PROJ"
+
 section "raw-playwright-api-warning"
 H="$HOOK_DIR/raw-playwright-api-warning.sh"
 assert_warn "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/foo.spec.ts' content='await page.click(\"#submit\");')" "page.click → WARN" "page.click"
