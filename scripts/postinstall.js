@@ -142,7 +142,8 @@ const HOOK_MANIFEST = [
   { file: 'coverage-expansion-direct-compose-block.sh', event: 'PostToolUse', matcher: 'Write|Edit', timeout: 10 },
   { file: 'phase-validator-dispatch-required.sh', event: 'PostToolUse', matcher: 'Agent',      timeout: 10 },
 
-  // SubagentStop — cleanup
+  // SubagentStop — enforcement (must run synchronously) + cleanup (async)
+  { file: 'subagent-spillover-rewrite-gate.sh',   event: 'SubagentStop', matcher: null,        timeout: 10 },
   { file: 'playwright-cli-cleanup-on-stop.sh',    event: 'SubagentStop', matcher: null,        timeout: 30, async: true },
 ];
 

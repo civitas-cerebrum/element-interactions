@@ -13,6 +13,11 @@ tests/e2e/docs/.in-flight-composers.json
 tests/e2e/docs/.coverage-expansion-cycle-*.json
 tests/e2e/docs/onboarding-phase-ledger.json
 tests/e2e/docs/coverage-expansion-state.json
+
+# Subagent spillover bodies (§2.6 of subagent-return-schema.md) — written
+# by reviewer / probe / etc. subagents on return; consumed by the next
+# composer-cycle brief. Per-run state, never source.
+tests/e2e/docs/.subagent-returns/
 api-coverage-report.txt
 
 .env
