@@ -362,14 +362,50 @@ if [ "$ROLE" = "reviewer" ]; then
   check_marker '(^|\n)[[:space:]]*pass:'     'pass: <N>'
   check_marker '(^|\n)[[:space:]]*cycle:'    'cycle: <cycle-number>'
 
-  # Greenlight requires summary; improvements-needed requires at least one
-  # findings sub-list header.
+  # Greenlight requires summary; improvements-needed requires either an
+  # inline findings sub-list (legacy / pre-spillover shape) OR a findings:
+  # list with finding-IDs (post-spillover shape per §2.6). Either form
+  # satisfies the schema; the spillover-specific check below WARNs about
+  # the absent spill file when the shape is post-spillover.
   if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*greenlight'; then
     check_marker '(^|\n)[[:space:]]*summary:' 'summary: <one sentence>  (REQUIRED on greenlight per §4.1)'
   fi
   if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*improvements-needed'; then
-    if ! echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*(missing-scenarios|craft-issues|verification-misses):'; then
-      MISSING+=('at least one of: missing-scenarios: / craft-issues: / verification-misses:  (required when status=improvements-needed)')
+    HAS_INLINE_SUBLIST=false
+    HAS_FINDINGS_LIST=false
+    if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*(missing-scenarios|craft-issues|verification-misses):'; then
+      HAS_INLINE_SUBLIST=true
+    fi
+    if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*findings:[[:space:]]*$'; then
+      HAS_FINDINGS_LIST=true
+    fi
+    if [ "$HAS_INLINE_SUBLIST" = false ] && [ "$HAS_FINDINGS_LIST" = false ]; then
+      MISSING+=('at least one of: findings: <ID-list> (post-spillover, §2.6) or missing-scenarios: / craft-issues: / verification-misses: (legacy inline form)  (required when status=improvements-needed)')
+    fi
+  fi
+
+  # === Spillover contract (§2.6, Stage 1 soft) ==========================
+  # When status=improvements-needed, the reviewer should write the full
+  # finding sub-lists to a canonical spill file at:
+  #   tests/e2e/docs/.subagent-returns/reviewer-<journey>-<pass>-c<cycle>.md
+  #
+  # WARN when the file is absent. WARN-only at Stage 1; Stage 2 (a follow-up
+  # PR) closes the loop with a SubagentStop rewrite-gate that forces the
+  # subagent to spillover before the orchestrator sees the non-compliant
+  # first attempt. See §2.6 + #145 for the full rationale.
+  if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*improvements-needed'; then
+    SPILL_JOURNEY=$(echo "$RESPONSE" | grep -E '^[[:space:]]*journey:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*journey:[[:space:]]*//' | tr -d '[:space:]' || true)
+    SPILL_PASS=$(echo "$RESPONSE" | grep -E '^[[:space:]]*pass:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*pass:[[:space:]]*//' | tr -d '[:space:]' || true)
+    SPILL_CYCLE=$(echo "$RESPONSE" | grep -E '^[[:space:]]*cycle:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*cycle:[[:space:]]*//' | tr -d '[:space:]' || true)
+
+    if [ -n "$SPILL_JOURNEY" ] && [ -n "$SPILL_PASS" ] && [ -n "$SPILL_CYCLE" ]; then
+      SPILL_CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+      SPILL_REPO_ROOT=$(git -C "$SPILL_CWD" rev-parse --show-toplevel 2>/dev/null || echo "$SPILL_CWD")
+      SPILL_PATH="$SPILL_REPO_ROOT/tests/e2e/docs/.subagent-returns/reviewer-${SPILL_JOURNEY}-${SPILL_PASS}-c${SPILL_CYCLE}.md"
+
+      if [ ! -f "$SPILL_PATH" ]; then
+        HANDOVER_WARNS+=("spillover (§2.6): expected spill file not found at tests/e2e/docs/.subagent-returns/reviewer-${SPILL_JOURNEY}-${SPILL_PASS}-c${SPILL_CYCLE}.md. The reviewer's improvements-needed return should write missing-scenarios / craft-issues / verification-misses sub-lists to this file and emit only finding-IDs inline. Stage 1 is WARN-mode; orchestrator should re-dispatch the reviewer with a brief that names the spill-file path verbatim. Stage 2 (follow-up) will enforce via SubagentStop rewrite-gate.")
+      fi
     fi
   fi
 

@@ -327,6 +327,106 @@ fi
 
 rm -rf "$TMP_PROJ"
 
+section "subagent-spillover-rewrite-gate (§2.6 hard enforcement)"
+H="$HOOK_DIR/subagent-spillover-rewrite-gate.sh"
+TMP_PROJ=$(mktemp -d)
+mkdir -p "$TMP_PROJ/tests/e2e/docs/.subagent-returns"
+cd "$TMP_PROJ" && git init -q && cd - >/dev/null
+
+NL=$'\n'
+ENV_REV='handover:'"$NL"'  role: reviewer-j-checkout'"$NL"'  cycle: 1'"$NL"'  status: improvements-needed'"$NL"'  next-action: redispatch composer cycle 2'"$NL"''"$NL"
+ENV_REV_GREEN='handover:'"$NL"'  role: reviewer-j-checkout'"$NL"'  cycle: 1'"$NL"'  status: greenlight'"$NL"'  next-action: advance pass'"$NL"''"$NL"
+
+# --- Compliant: spillover-shape body + spill file present → silent allow ---
+SPILL_FILE="$TMP_PROJ/tests/e2e/docs/.subagent-returns/reviewer-j-checkout-1-c1.md"
+echo "<!-- subagent-returns:reviewer:j-checkout:pass-1:cycle-1 -->" > "$SPILL_FILE"
+COMPLIANT_BODY="${ENV_REV}status: improvements-needed${NL}journey: j-checkout${NL}pass: 1${NL}cycle: 1${NL}spill: tests/e2e/docs/.subagent-returns/reviewer-j-checkout-1-c1.md${NL}findings:${NL}  - **j-checkout-1-1-R-01**${NL}  - **j-checkout-1-1-R-02**"
+PAYLOAD=$(payload last_assistant_message="$COMPLIANT_BODY" agent_id="agent-test-001" cwd="$TMP_PROJ" hook_event_name=SubagentStop)
+assert_allow "$H" "$PAYLOAD" "compliant body + spill file present → silent allow"
+
+# --- Non-compliant: spill file absent → exit 2 with stderr feedback -------
+rm -f "$SPILL_FILE"
+rm -f "/tmp/sst-rewrite-counter-agent-test-002"
+PAYLOAD=$(payload last_assistant_message="$COMPLIANT_BODY" agent_id="agent-test-002" cwd="$TMP_PROJ" hook_event_name=SubagentStop)
+assert_block_subagent "$H" "$PAYLOAD" "spill file absent → exit 2 + REWRITE-NEEDED stderr" "SPILLOVER-REWRITE-NEEDED"
+
+# Counter incremented to 1.
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ "$(cat /tmp/sst-rewrite-counter-agent-test-002 2>/dev/null)" = "1" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1)); echo "${CLR_PASS}  ✓${CLR_RST} non-compliant attempt 1 → counter=1"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAIL_DETAILS+=("counter not incremented to 1"); echo "${CLR_FAIL}  ✗${CLR_RST} counter increment"
+fi
+
+# --- Non-compliant: body inlines sub-list → exit 2 ------------------------
+echo "<!-- subagent-returns:reviewer:j-checkout:pass-1:cycle-1 -->" > "$SPILL_FILE"
+INLINE_BODY="${ENV_REV}status: improvements-needed${NL}journey: j-checkout${NL}pass: 1${NL}cycle: 1${NL}${NL}missing-scenarios:${NL}  - **j-checkout-1-1-R-01** [must-fix] — mobile breakpoint missing${NL}    - why: high-value variant${NL}    - category: mobile${NL}    - suggested-test: add it"
+rm -f "/tmp/sst-rewrite-counter-agent-test-003"
+PAYLOAD=$(payload last_assistant_message="$INLINE_BODY" agent_id="agent-test-003" cwd="$TMP_PROJ" hook_event_name=SubagentStop)
+assert_block_subagent "$H" "$PAYLOAD" "body inlines sub-list → exit 2" "body inlines"
+
+# --- Cap: counter=3 → exit 0 with [CAP-REACHED] stderr WARN ---------------
+echo "3" > "/tmp/sst-rewrite-counter-agent-test-004"
+rm -f "$SPILL_FILE"
+PAYLOAD=$(payload last_assistant_message="$COMPLIANT_BODY" agent_id="agent-test-004" cwd="$TMP_PROJ" hook_event_name=SubagentStop)
+TESTS_RUN=$((TESTS_RUN + 1))
+err=$(printf '%s' "$PAYLOAD" | bash "$H" 2>&1 >/dev/null) || ec=$?
+ec=${ec:-0}
+if [ "$ec" = "0" ] && echo "$err" | grep -q "CAP-REACHED"; then
+  TESTS_PASSED=$((TESTS_PASSED + 1)); echo "${CLR_PASS}  ✓${CLR_RST} counter≥cap → exit 0 with [CAP-REACHED] WARN"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAIL_DETAILS+=("cap behavior: exit=$ec stderr=${err:0:200}"); echo "${CLR_FAIL}  ✗${CLR_RST} counter≥cap behavior"
+fi
+ec=0
+# Counter cleared after cap.
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ ! -f "/tmp/sst-rewrite-counter-agent-test-004" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1)); echo "${CLR_PASS}  ✓${CLR_RST} counter cleared after cap reached"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAIL_DETAILS+=("counter not cleared at cap"); echo "${CLR_FAIL}  ✗${CLR_RST} counter cleanup at cap"
+fi
+
+# --- Counter cleared on success ------------------------------------------
+echo "<!-- subagent-returns:reviewer:j-checkout:pass-1:cycle-1 -->" > "$SPILL_FILE"
+echo "1" > "/tmp/sst-rewrite-counter-agent-test-005"
+PAYLOAD=$(payload last_assistant_message="$COMPLIANT_BODY" agent_id="agent-test-005" cwd="$TMP_PROJ" hook_event_name=SubagentStop)
+assert_allow "$H" "$PAYLOAD" "rewrite became compliant → silent allow + counter cleared"
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ ! -f "/tmp/sst-rewrite-counter-agent-test-005" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1)); echo "${CLR_PASS}  ✓${CLR_RST} counter cleared on compliant return"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAIL_DETAILS+=("counter not cleared on success"); echo "${CLR_FAIL}  ✗${CLR_RST} counter cleanup on success"
+fi
+
+# --- Greenlight is exempt → silent allow ---------------------------------
+GREEN_BODY="${ENV_REV_GREEN}status: greenlight${NL}journey: j-checkout${NL}pass: 1${NL}cycle: 1${NL}summary: All 8 expectations covered."
+PAYLOAD=$(payload last_assistant_message="$GREEN_BODY" agent_id="agent-test-006" cwd="$TMP_PROJ" hook_event_name=SubagentStop)
+assert_allow "$H" "$PAYLOAD" "greenlight reviewer → silent allow"
+
+# --- Non-reviewer roles → silent allow -----------------------------------
+ENV_COMP='handover:'"$NL"'  role: composer-j-checkout'"$NL"'  cycle: 1'"$NL"'  status: new-tests-landed'"$NL"'  next-action: dispatch reviewer'"$NL"''"$NL"
+COMP_BODY="${ENV_COMP}status: new-tests-landed${NL}tests-added: 6${NL}run-time: 12s"
+PAYLOAD=$(payload last_assistant_message="$COMP_BODY" agent_id="agent-test-007" cwd="$TMP_PROJ" hook_event_name=SubagentStop)
+assert_allow "$H" "$PAYLOAD" "composer return → silent allow (out of §2.6 scope)"
+
+# --- No envelope → silent allow (defer to PostToolUse audit) -------------
+NO_ENV_BODY="status: improvements-needed${NL}journey: j-checkout${NL}pass: 1${NL}cycle: 1"
+PAYLOAD=$(payload last_assistant_message="$NO_ENV_BODY" agent_id="agent-test-008" cwd="$TMP_PROJ" hook_event_name=SubagentStop)
+assert_allow "$H" "$PAYLOAD" "no envelope → silent allow (defer to schema-guard)"
+
+# --- Empty last_assistant_message → silent allow -------------------------
+PAYLOAD=$(payload last_assistant_message="" agent_id="agent-test-009" cwd="$TMP_PROJ" hook_event_name=SubagentStop)
+assert_allow "$H" "$PAYLOAD" "empty last_assistant_message → silent allow"
+
+# --- Missing journey/pass/cycle → silent allow (defer) -------------------
+INCOMPLETE_BODY="${ENV_REV}status: improvements-needed${NL}findings:${NL}  - **j-checkout-1-1-R-01**"
+PAYLOAD=$(payload last_assistant_message="$INCOMPLETE_BODY" agent_id="agent-test-010" cwd="$TMP_PROJ" hook_event_name=SubagentStop)
+assert_allow "$H" "$PAYLOAD" "missing journey/pass/cycle → silent allow (PostToolUse schema-guard catches)"
+
+# Cleanup
+rm -f /tmp/sst-rewrite-counter-agent-test-*
+rm -rf "$TMP_PROJ"
+
 section "raw-playwright-api-warning"
 H="$HOOK_DIR/raw-playwright-api-warning.sh"
 assert_warn "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/foo.spec.ts' content='await page.click(\"#submit\");')" "page.click → WARN" "page.click"

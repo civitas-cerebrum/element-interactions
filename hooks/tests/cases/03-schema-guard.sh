@@ -95,14 +95,19 @@ assert_warn "$H" "$(payload tool_name=Agent description='reviewer-j-checkout: cy
 journey: j-checkout
 pass: 1
 cycle: 1')" "reviewer greenlight missing summary → WARN" "summary"
-assert_allow "$H" "$(payload tool_name=Agent description='reviewer-j-checkout: cycle 2' response_text="${ENV_R_IMP}status: improvements-needed
+# Reviewer improvements-needed with legacy inline sub-list. Pre-§2.6 this
+# was a silent allow; under §2.6's soft contract (Stage 1) it now WARNs
+# about the absent spillover file. The legacy shape is still accepted by
+# the schema (no MISSING fields), but the spillover WARN fires regardless.
+# Stage 2 (follow-up) will tighten this further via SubagentStop.
+assert_warn "$H" "$(payload tool_name=Agent description='reviewer-j-checkout: cycle 2' response_text="${ENV_R_IMP}status: improvements-needed
 journey: j-checkout
 pass: 1
 cycle: 2
 
 missing-scenarios:
   - **j-checkout-1-2-R-01** [must-fix] — mobile variant missing
-    - why: Test expectations bullet 4 mentions mobile")" "reviewer improvements-needed + missing-scenarios → ALLOW"
+    - why: Test expectations bullet 4 mentions mobile")" "reviewer improvements-needed + legacy inline sub-list → WARN (§2.6 spillover absent)" "spillover"
 assert_warn "$H" "$(payload tool_name=Agent description='reviewer-j-checkout: cycle 2' response_text='status: improvements-needed
 journey: j-checkout
 pass: 1
@@ -272,6 +277,62 @@ assert_warn "$H" '{"tool_name":"Agent","tool_input":{"description":"composer-j-x
 assert_allow "$H" '{"tool_name":"Agent","tool_input":{"description":"composer-j-x:"},"tool_response":null}' "tool_response=null → silent allow"
 assert_allow "$H" '{"tool_name":"Agent","tool_input":{"description":"composer-j-x:"},"tool_response":{}}' "tool_response={} → silent allow"
 assert_allow "$H" '{"tool_name":"Agent","tool_input":{"description":"composer-j-x:"},"tool_response":""}' "tool_response='' → silent allow"
+
+section "schema-guard: reviewer spillover (§2.6, Stage 1 soft contract)"
+
+SPILL_TMP=$(mktemp -d)
+mkdir -p "$SPILL_TMP/tests/e2e/docs/.subagent-returns"
+cd "$SPILL_TMP" && git init -q && cd - >/dev/null
+
+# Compliant: spillover-shape return + spill file present → silent allow.
+echo "<!-- subagent-returns:reviewer:j-checkout:pass-1:cycle-1 -->" > "$SPILL_TMP/tests/e2e/docs/.subagent-returns/reviewer-j-checkout-1-c1.md"
+SPILL_BODY="${ENV_R_IMP}status: improvements-needed
+journey: j-checkout
+pass: 1
+cycle: 1
+spill: tests/e2e/docs/.subagent-returns/reviewer-j-checkout-1-c1.md
+findings:
+  - **j-checkout-1-1-R-01** [must-fix] — mobile breakpoint never exercised
+  - **j-checkout-1-1-R-02** [must-fix] — error toast never asserted"
+assert_allow "$H" "$(payload tool_name=Agent description='reviewer-j-checkout: cycle 1' response_text="$SPILL_BODY" cwd="$SPILL_TMP")" "improvements-needed + findings list + spill file present → silent allow"
+
+# Non-compliant: spillover-shape return BUT spill file ABSENT → WARN about §2.6.
+rm -f "$SPILL_TMP/tests/e2e/docs/.subagent-returns/reviewer-j-checkout-1-c1.md"
+assert_warn "$H" "$(payload tool_name=Agent description='reviewer-j-checkout: cycle 1' response_text="$SPILL_BODY" cwd="$SPILL_TMP")" "improvements-needed + spill file absent → WARN (§2.6)" "spillover (§2.6)"
+
+# Compatibility: legacy inline sub-list shape, no spill file → WARN about §2.6
+# (the legacy shape is still accepted by the schema check, but the spillover
+# WARN fires because the spill file is missing).
+LEGACY_BODY="${ENV_R_IMP}status: improvements-needed
+journey: j-checkout
+pass: 1
+cycle: 1
+
+missing-scenarios:
+  - **j-checkout-1-1-R-01** [must-fix] — mobile breakpoint never exercised
+    - why: high-value variant
+    - category: mobile
+    - suggested-test: add mobile checkpoint test"
+assert_warn "$H" "$(payload tool_name=Agent description='reviewer-j-checkout: cycle 1' response_text="$LEGACY_BODY" cwd="$SPILL_TMP")" "legacy inline sub-list, no spill file → WARN (§2.6)" "spillover"
+
+# Greenlight is exempt: no spillover required.
+GREEN_BODY="${ENV_R_GREEN}status: greenlight
+journey: j-checkout
+pass: 1
+cycle: 1
+summary: All 8 test-expectations covered"
+assert_allow "$H" "$(payload tool_name=Agent description='reviewer-j-checkout: cycle 1' response_text="$GREEN_BODY" cwd="$SPILL_TMP")" "greenlight + no spill file → silent allow (greenlight exempt from §2.6)"
+
+# Non-compliant: improvements-needed without findings list AND without inline
+# sub-list → MISSING (must have one of the two forms). Sub-message verifies
+# the relaxed enforcement language (post-spillover OR legacy form acceptable).
+EMPTY_BODY="${ENV_R_IMP}status: improvements-needed
+journey: j-checkout
+pass: 1
+cycle: 1"
+assert_warn "$H" "$(payload tool_name=Agent description='reviewer-j-checkout: cycle 1' response_text="$EMPTY_BODY" cwd="$SPILL_TMP")" "improvements-needed without findings/sub-list → WARN" "post-spillover"
+
+rm -rf "$SPILL_TMP"
 
 section "schema-guard: tool-name filtering"
 assert_allow "$H" "$(payload tool_name=Bash command='git commit -m \"x\"')" "Bash invocation → silent allow"
