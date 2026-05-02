@@ -129,6 +129,44 @@ findings: []
 summary: ok'
 assert_warn "$H" "$(payload tool_name=Agent description='phase-validator-5: cycle 1' response_text="$PV_NO_CRITERIA")" "phase-validator missing exit-criteria-checked → WARN" "exit-criteria-checked"
 
+# Negative test (review fix): empty exit-criteria-checked array. The field
+# header is present but no `- criterion:` rows follow. Earlier hook only
+# checked the header marker; now also requires ≥1 row.
+PV_EMPTY_CRITERIA='status: greenlight
+phase: 5
+exit-criteria-checked:
+findings: []
+summary: ok'
+assert_warn "$H" "$(payload tool_name=Agent description='phase-validator-5: cycle 1' response_text="$PV_EMPTY_CRITERIA")" "phase-validator empty exit-criteria-checked array → WARN" "≥1"
+
+# Negative test (review fix): phase: <multi-digit> like phase: 12.
+# Earlier regex [1-7] without trailing anchor matched the leading 1.
+# Now anchored on end-of-line so multi-digit phases fail.
+PV_BAD_PHASE='status: greenlight
+phase: 12
+exit-criteria-checked:
+  - criterion: x
+    satisfied: true
+findings: []
+summary: ok'
+assert_warn "$H" "$(payload tool_name=Agent description='phase-validator-5: cycle 1' response_text="$PV_BAD_PHASE")" "phase-validator phase: 12 (multi-digit) → WARN" "phase: <1-7>"
+
+# Negative test (review fix): pv-<phase>-<single-digit> finding-ID like
+# pv-5-1. §2.5 says <nn> is two-digit zero-padded; regex now [0-9]{2,}
+# so single-digit forms WARN as "missing must-fix finding with valid ID".
+PV_BAD_ID='status: improvements-needed
+phase: 5
+exit-criteria-checked:
+  - criterion: x
+    satisfied: false
+findings:
+  - **pv-5-1** [must-fix] — single-digit ID
+    - criterion: x
+    - issue: y
+    - fix: z
+summary: 1 finding (with malformed single-digit ID).'
+assert_warn "$H" "$(payload tool_name=Agent description='phase-validator-5: cycle 1' response_text="$PV_BAD_ID")" "phase-validator pv-5-1 single-digit ID → WARN (rejected as missing valid finding)" "pv-<phase>-<nn>"
+
 PV_IN_FULL='status: improvements-needed
 phase: 5
 sub-skill: coverage-expansion

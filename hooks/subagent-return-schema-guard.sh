@@ -234,9 +234,19 @@ if [ "$ROLE" = "phase-validator" ]; then
   if ! echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*(greenlight|improvements-needed)'; then
     MISSING+=('status: <greenlight|improvements-needed>')
   fi
-  check_marker '(^|\n)[[:space:]]*phase:[[:space:]]*[1-7]'    'phase: <1-7>'
-  check_marker '(^|\n)[[:space:]]*exit-criteria-checked:'      'exit-criteria-checked: <array, ≥1 row>'
-  check_marker '(^|\n)[[:space:]]*summary:'                    'summary: <one sentence>  (REQUIRED on both statuses)'
+  # phase: <single digit 1-7> — anchored on end-of-line / non-digit so
+  # phase: 12, phase: 71, phase: 8a all FAIL (without the anchor [1-7]
+  # would match the leading 1 of "12" and accept multi-digit phases that
+  # don't exist).
+  check_marker '(^|\n)[[:space:]]*phase:[[:space:]]*[1-7][[:space:]]*$'    'phase: <1-7>'
+  check_marker '(^|\n)[[:space:]]*exit-criteria-checked:'                  'exit-criteria-checked: <array, ≥1 row>'
+  # exit-criteria-checked must have at least one `- criterion:` row.
+  # The field-marker check above only verifies the header line; the row
+  # check verifies the array isn't empty (§2.5 mandates ≥1 row).
+  if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*exit-criteria-checked:'; then
+    check_marker '(^|\n)[[:space:]]*-[[:space:]]+criterion:'                'exit-criteria-checked: ≥1 `- criterion:` row (the array cannot be empty)'
+  fi
+  check_marker '(^|\n)[[:space:]]*summary:'                                'summary: <one sentence>  (REQUIRED on both statuses)'
 
   # On greenlight, findings: [] is required (explicit empty array).
   if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*greenlight'; then
@@ -246,8 +256,11 @@ if [ "$ROLE" = "phase-validator" ]; then
   fi
   # On improvements-needed, ≥1 must-fix finding with pv-<phase>-<nn> ID.
   if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*improvements-needed'; then
-    if ! echo "$RESPONSE" | grep -qE '\*\*pv-[1-7]-[0-9]+\*\*[[:space:]]*\[must-fix\]'; then
-      MISSING+=('at least one must-fix finding with pv-<phase>-<nn> ID  (required when status=improvements-needed)')
+    # pv-<phase>-<nn> finding-ID: <nn> is two-digit zero-padded per §2.5
+    # (matches §1's <nn> rule across the schema). [0-9]{2,} accepts 2+
+    # digits, rejects single-digit forms like pv-5-1.
+    if ! echo "$RESPONSE" | grep -qE '\*\*pv-[1-7]-[0-9]{2,}\*\*[[:space:]]*\[must-fix\]'; then
+      MISSING+=('at least one must-fix finding with pv-<phase>-<nn> ID — <nn> must be ≥2 digits zero-padded (required when status=improvements-needed)')
     fi
   fi
 
