@@ -42,26 +42,120 @@ assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverag
 assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content='{\"status\":\"in-progress\"}')" "missing required keys → DENY"
 assert_allow "$H" "$(payload tool_name=Write file_path='/x/some-other-file.json' content='{}')" "non-state file → silent allow"
 
-section "coverage-expansion-direct-compose-warning"
-H="$HOOK_DIR/coverage-expansion-direct-compose-warning.sh"
+section "coverage-expansion-direct-compose-block (in-flight gated)"
+H="$HOOK_DIR/coverage-expansion-direct-compose-block.sh"
+
 # Set up a temp project with an active coverage-expansion state file
 TMP_PROJ=$(mktemp -d)
 mkdir -p "$TMP_PROJ/tests/e2e/docs"
 cd "$TMP_PROJ" && git init -q && cd - >/dev/null
 echo '{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-x"],"passes":{"1-compositional":{"dispatches":[{"journey":"j-x","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]}},"updatedAt":"2026-05-02T00:00:00Z"}' > "$TMP_PROJ/tests/e2e/docs/coverage-expansion-state.json"
 
-assert_warn "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/j-checkout.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "j-spec write during coverage-expansion → WARN" "Direct composition"
-assert_warn "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/sj-payment.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "sj-spec write during coverage-expansion → WARN"
-assert_warn "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/j-checkout-regression.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "j-regression-spec write during coverage-expansion → WARN"
+# No in-flight registrations → all journey-spec writes DENY
+assert_deny "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/j-checkout.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "j-spec write during coverage-expansion + no in-flight → DENY" "Direct composition"
+assert_deny "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/sj-payment.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "sj-spec write during coverage-expansion + no in-flight → DENY" "Direct composition"
+assert_deny "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/j-checkout-regression.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "j-regression-spec write during coverage-expansion + no in-flight → DENY" "Direct composition"
+
+# happy-path / non-spec / non-j-prefixed → exempt
 assert_allow "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/happy-path.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "happy-path.spec.ts → ALLOW (exempt)"
 assert_allow "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/utils.ts" content='helpers' cwd="$TMP_PROJ")" "non-spec file → ALLOW"
 assert_allow "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/scenarios.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "non-j-prefixed spec → ALLOW"
 
-# Without state file, j-spec writes are allowed (element-interactions Stage 3 / companion-mode context)
+# In-flight registration ALLOWS legitimate composer-subagent writes for that slug.
+NOW_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+cat > "$TMP_PROJ/tests/e2e/docs/.in-flight-composers.json" <<EOF
+{"composers":{"j-checkout":{"description_prefix":"composer-j-checkout","started_at":"$NOW_ISO"}}}
+EOF
+assert_allow "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/j-checkout.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "j-checkout in-flight + j-checkout write → ALLOW (legit composer subagent)"
+# Edit also allowed
+assert_allow "$H" "$(payload tool_name=Edit file_path="$TMP_PROJ/tests/e2e/j-checkout.spec.ts" new_string='small fix' cwd="$TMP_PROJ")" "j-checkout in-flight + j-checkout edit → ALLOW"
+# Different slug NOT in-flight → still DENY
+assert_deny "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/j-cart.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "j-checkout in-flight + j-cart write → DENY (different slug)" "Direct composition"
+# Regression spec uses the base slug (j-checkout-regression strips to j-checkout)
+assert_allow "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/j-checkout-regression.spec.ts" content='regression' cwd="$TMP_PROJ")" "j-checkout in-flight + j-checkout-regression write → ALLOW (regression maps to base slug)"
+
+# TTL expired (>30 min ago) → entry stale, DENY
+OLD_ISO="2026-04-30T15:00:00Z"
+cat > "$TMP_PROJ/tests/e2e/docs/.in-flight-composers.json" <<EOF
+{"composers":{"j-checkout":{"description_prefix":"composer-j-checkout","started_at":"$OLD_ISO"}}}
+EOF
+assert_deny "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/j-checkout.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "j-checkout in-flight but stale (>30min) → DENY" "Direct composition"
+
+# Without active coverage-expansion run, j-spec writes are allowed (Stage 3 / companion-mode)
 rm "$TMP_PROJ/tests/e2e/docs/coverage-expansion-state.json"
+rm -f "$TMP_PROJ/tests/e2e/docs/.in-flight-composers.json"
 assert_allow "$H" "$(payload tool_name=Write file_path="$TMP_PROJ/tests/e2e/j-checkout.spec.ts" content='test stuff' cwd="$TMP_PROJ")" "j-spec write WITHOUT coverage-expansion state → ALLOW"
 
-# Cleanup
+rm -rf "$TMP_PROJ"
+
+section "dispatch-guard: in-flight composer registration"
+H="$HOOK_DIR/coverage-expansion-dispatch-guard.sh"
+TMP_PROJ=$(mktemp -d)
+mkdir -p "$TMP_PROJ/tests/e2e/docs"
+cd "$TMP_PROJ" && git init -q && cd - >/dev/null
+
+# Dispatching composer-j-checkout: should write the in-flight entry.
+out=$(printf '%s' "$(payload tool_name=Agent description='composer-j-checkout: cycle 1' prompt='cover j-checkout' cwd="$TMP_PROJ")" | bash "$H")
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ -f "$TMP_PROJ/tests/e2e/docs/.in-flight-composers.json" ] && \
+   jq -e '.composers."j-checkout".description_prefix == "composer-j-checkout: cycle 1"' "$TMP_PROJ/tests/e2e/docs/.in-flight-composers.json" >/dev/null 2>&1; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} composer-j-checkout: dispatch → in-flight registered"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("dispatch registration: in-flight file missing or wrong shape")
+  echo "${CLR_FAIL}  ✗${CLR_RST} composer-j-checkout: dispatch in-flight registration"
+fi
+
+# probe-j-foo: also registers
+out=$(printf '%s' "$(payload tool_name=Agent description='probe-j-foo: pass 4' prompt='probe j-foo' cwd="$TMP_PROJ")" | bash "$H")
+TESTS_RUN=$((TESTS_RUN + 1))
+if jq -e '.composers."j-foo".description_prefix == "probe-j-foo: pass 4"' "$TMP_PROJ/tests/e2e/docs/.in-flight-composers.json" >/dev/null 2>&1; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} probe-j-foo: dispatch → in-flight registered"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("probe registration: missing")
+  echo "${CLR_FAIL}  ✗${CLR_RST} probe-j-foo: registration"
+fi
+
+# composer-sj-bar: with sj- prefix
+out=$(printf '%s' "$(payload tool_name=Agent description='composer-sj-bar: cycle 1' prompt='compose sj-bar' cwd="$TMP_PROJ")" | bash "$H")
+TESTS_RUN=$((TESTS_RUN + 1))
+if jq -e '.composers."sj-bar".description_prefix == "composer-sj-bar: cycle 1"' "$TMP_PROJ/tests/e2e/docs/.in-flight-composers.json" >/dev/null 2>&1; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} composer-sj-bar: dispatch → sj- slug registered"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("composer-sj registration: missing")
+  echo "${CLR_FAIL}  ✗${CLR_RST} composer-sj-bar: registration"
+fi
+
+# reviewer-j-x: should NOT register (reviewers don't write spec files).
+out=$(printf '%s' "$(payload tool_name=Agent description='reviewer-j-baz: cycle 1' prompt='review j-baz' cwd="$TMP_PROJ")" | bash "$H")
+TESTS_RUN=$((TESTS_RUN + 1))
+if jq -e '.composers."j-baz" // empty' "$TMP_PROJ/tests/e2e/docs/.in-flight-composers.json" >/dev/null 2>&1; then
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("reviewer-j-baz wrongly registered")
+  echo "${CLR_FAIL}  ✗${CLR_RST} reviewer-j-baz: should NOT register"
+else
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} reviewer-j-baz: dispatch → NOT registered (reviewers don't write specs)"
+fi
+
+# phase-validator-5: should NOT register
+out=$(printf '%s' "$(payload tool_name=Agent description='phase-validator-5: cycle 1' prompt='validate' cwd="$TMP_PROJ")" | bash "$H")
+TESTS_RUN=$((TESTS_RUN + 1))
+COUNT=$(jq -r '.composers | keys | length' "$TMP_PROJ/tests/e2e/docs/.in-flight-composers.json" 2>/dev/null || echo 0)
+if [ "$COUNT" = "3" ]; then  # j-checkout, j-foo, sj-bar — phase-validator added nothing
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} phase-validator-5: dispatch → NOT registered (count stays 3)"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("phase-validator wrongly registered. count=$COUNT")
+  echo "${CLR_FAIL}  ✗${CLR_RST} phase-validator-5: registration count is $COUNT (expected 3)"
+fi
+
 rm -rf "$TMP_PROJ"
 
 section "raw-playwright-api-warning"

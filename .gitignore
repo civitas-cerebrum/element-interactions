@@ -7,6 +7,12 @@
 /.playwright-mcp
 /.playwright-cli
 /.claude
+
+# Hook runtime state — recreated by harness hooks on each run, never source.
+tests/e2e/docs/.in-flight-composers.json
+tests/e2e/docs/.coverage-expansion-cycle-*.json
+tests/e2e/docs/onboarding-phase-ledger.json
+tests/e2e/docs/coverage-expansion-state.json
 api-coverage-report.txt
 
 .env
