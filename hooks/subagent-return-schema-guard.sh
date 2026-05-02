@@ -337,7 +337,38 @@ if [ "$ROLE" = "composer" ]; then
     check_marker '(^|\n)[[:space:]]*run-time:'      'run-time: <duration>  (required when status=new-tests-landed)'
   fi
   if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*covered-exhaustively'; then
-    check_marker '\| *Expectation *\| *Covering spec *\| *Test name *\|' 'per-expectation mapping table header  (required when status=covered-exhaustively)'
+    # Relaxed per §2.6: either inline mapping table (legacy) OR a `spill:`
+    # pointer (post-spillover) satisfies the schema. The spillover-specific
+    # WARN below fires when the spill file is absent.
+    HAS_INLINE_TABLE=false
+    HAS_SPILL_PTR=false
+    if echo "$RESPONSE" | grep -qE '\| *Expectation *\| *Covering spec *\| *Test name *\|'; then
+      HAS_INLINE_TABLE=true
+    fi
+    if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*spill:[[:space:]]*tests/e2e/docs/.subagent-returns/composer-'; then
+      HAS_SPILL_PTR=true
+    fi
+    if [ "$HAS_INLINE_TABLE" = false ] && [ "$HAS_SPILL_PTR" = false ]; then
+      MISSING+=('per-expectation mapping table inline (legacy) OR spill: pointer to tests/e2e/docs/.subagent-returns/composer-<journey>-<pass>-c<cycle>.md (post-spillover, §2.6)  (required when status=covered-exhaustively)')
+    fi
+  fi
+
+  # === Spillover audit-trail (§2.6) — composer covered-exhaustively =====
+  # Defense-in-depth WARN. The SubagentStop rewrite-gate should have
+  # prevented absent spill; this WARN catches mis-installed-hook /
+  # cap-reached cases.
+  if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*covered-exhaustively'; then
+    SPILL_J=$(echo "$RESPONSE" | grep -E '^[[:space:]]*journey:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*journey:[[:space:]]*//' | tr -d '[:space:]' || true)
+    SPILL_P=$(echo "$RESPONSE" | grep -E '^[[:space:]]*pass:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*pass:[[:space:]]*//' | tr -d '[:space:]' || true)
+    SPILL_C=$(echo "$RESPONSE" | grep -E '^[[:space:]]*cycle:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*cycle:[[:space:]]*//' | tr -d '[:space:]' || true)
+    if [ -n "$SPILL_J" ] && [ -n "$SPILL_P" ] && [ -n "$SPILL_C" ]; then
+      SPILL_CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+      SPILL_REPO_ROOT=$(git -C "$SPILL_CWD" rev-parse --show-toplevel 2>/dev/null || echo "$SPILL_CWD")
+      SPILL_PATH="$SPILL_REPO_ROOT/tests/e2e/docs/.subagent-returns/composer-${SPILL_J}-${SPILL_P}-c${SPILL_C}.md"
+      if [ ! -f "$SPILL_PATH" ]; then
+        HANDOVER_WARNS+=("spillover (§2.6): expected composer spill file not found at tests/e2e/docs/.subagent-returns/composer-${SPILL_J}-${SPILL_P}-c${SPILL_C}.md. The SubagentStop rewrite-gate should have prevented this; PostToolUse audit fires this WARN as defense-in-depth — check that hooks/subagent-spillover-rewrite-gate.sh is installed and the cap was not reached.")
+      fi
+    fi
   fi
   if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*blocked'; then
     check_marker '(^|\n)[[:space:]]*reason:'        'reason: <text>  (required when status=blocked)'
@@ -384,15 +415,11 @@ if [ "$ROLE" = "reviewer" ]; then
     fi
   fi
 
-  # === Spillover contract (§2.6, Stage 1 soft) ==========================
-  # When status=improvements-needed, the reviewer should write the full
-  # finding sub-lists to a canonical spill file at:
-  #   tests/e2e/docs/.subagent-returns/reviewer-<journey>-<pass>-c<cycle>.md
-  #
-  # WARN when the file is absent. WARN-only at Stage 1; Stage 2 (a follow-up
-  # PR) closes the loop with a SubagentStop rewrite-gate that forces the
-  # subagent to spillover before the orchestrator sees the non-compliant
-  # first attempt. See §2.6 + #145 for the full rationale.
+  # === Spillover audit-trail (§2.6) — reviewer improvements-needed =====
+  # Defense-in-depth WARN. The SubagentStop rewrite-gate
+  # (hooks/subagent-spillover-rewrite-gate.sh) is the primary enforcer
+  # and prevents the body from reaching the orchestrator. This WARN
+  # catches mis-installed-hook / cap-reached cases.
   if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*improvements-needed'; then
     SPILL_JOURNEY=$(echo "$RESPONSE" | grep -E '^[[:space:]]*journey:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*journey:[[:space:]]*//' | tr -d '[:space:]' || true)
     SPILL_PASS=$(echo "$RESPONSE" | grep -E '^[[:space:]]*pass:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*pass:[[:space:]]*//' | tr -d '[:space:]' || true)
@@ -404,7 +431,7 @@ if [ "$ROLE" = "reviewer" ]; then
       SPILL_PATH="$SPILL_REPO_ROOT/tests/e2e/docs/.subagent-returns/reviewer-${SPILL_JOURNEY}-${SPILL_PASS}-c${SPILL_CYCLE}.md"
 
       if [ ! -f "$SPILL_PATH" ]; then
-        HANDOVER_WARNS+=("spillover (§2.6): expected spill file not found at tests/e2e/docs/.subagent-returns/reviewer-${SPILL_JOURNEY}-${SPILL_PASS}-c${SPILL_CYCLE}.md. The reviewer's improvements-needed return should write missing-scenarios / craft-issues / verification-misses sub-lists to this file and emit only finding-IDs inline. Stage 1 is WARN-mode; orchestrator should re-dispatch the reviewer with a brief that names the spill-file path verbatim. Stage 2 (follow-up) will enforce via SubagentStop rewrite-gate.")
+        HANDOVER_WARNS+=("spillover (§2.6): expected reviewer spill file not found at tests/e2e/docs/.subagent-returns/reviewer-${SPILL_JOURNEY}-${SPILL_PASS}-c${SPILL_CYCLE}.md. The SubagentStop rewrite-gate should have prevented this; PostToolUse audit fires this WARN as defense-in-depth — check that hooks/subagent-spillover-rewrite-gate.sh is installed and the cap was not reached.")
       fi
     fi
   fi
@@ -426,15 +453,47 @@ if [ "$ROLE" = "probe" ]; then
   check_banned '(^|[^a-zA-Z0-9])AF-[0-9]+'       'AF-NN finding-ID (banned — use <journey-slug>-<pass>-<nn>)'
   check_banned '(^|[^a-zA-Z0-9])P4-[A-Z]+-BUG-[0-9]+' 'P4-XX-BUG-NN finding-ID (banned — use <journey-slug>-<pass>-<nn>)'
   check_banned '(^|[^a-zA-Z0-9])REG-[0-9]+'      'REG-NN finding-ID (banned — use <journey-slug>-<pass>-<nn>)'
+
+  # === Spillover audit-trail (§2.6) — probe findings-emitted ============
+  if [ "$HANDOVER_STATUS" = "findings-emitted" ]; then
+    SPILL_J=$(echo "$RESPONSE" | grep -E '^[[:space:]]*journey:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*journey:[[:space:]]*//' | tr -d '[:space:]' || true)
+    SPILL_P=$(echo "$RESPONSE" | grep -E '^[[:space:]]*pass:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*pass:[[:space:]]*//' | tr -d '[:space:]' || true)
+    SPILL_C=$(echo "$RESPONSE" | grep -E '^[[:space:]]*cycle:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*cycle:[[:space:]]*//' | tr -d '[:space:]' || true)
+    if [ -n "$SPILL_J" ] && [ -n "$SPILL_P" ] && [ -n "$SPILL_C" ]; then
+      SPILL_CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+      SPILL_REPO_ROOT=$(git -C "$SPILL_CWD" rev-parse --show-toplevel 2>/dev/null || echo "$SPILL_CWD")
+      SPILL_PATH="$SPILL_REPO_ROOT/tests/e2e/docs/.subagent-returns/probe-${SPILL_J}-${SPILL_P}-c${SPILL_C}.md"
+      if [ ! -f "$SPILL_PATH" ]; then
+        HANDOVER_WARNS+=("spillover (§2.6): expected probe spill file not found at tests/e2e/docs/.subagent-returns/probe-${SPILL_J}-${SPILL_P}-c${SPILL_C}.md. The SubagentStop rewrite-gate should have prevented this; PostToolUse audit fires this WARN as defense-in-depth — check that hooks/subagent-spillover-rewrite-gate.sh is installed and the cap was not reached.")
+      fi
+    fi
+  fi
 fi
 
 # === Process-validator schema (mirrors reviewer one level up) =============
 if [ "$ROLE" = "process-validator" ]; then
-  if ! echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*(greenlight|improvements-needed)'; then
-    MISSING+=('status: <greenlight|improvements-needed>')
+  # The §2.0 envelope's status enum for process-validator is greenlight | block.
+  # The body status was historically greenlight | improvements-needed (pre-§2.0).
+  # Accept either to remain backwards-compatible with legacy returns.
+  if ! echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*(greenlight|improvements-needed|block)'; then
+    MISSING+=('status: <greenlight|block> (§2.0) or <greenlight|improvements-needed> (legacy body)')
   fi
   check_marker '(^|\n)[[:space:]]*findings:' 'findings: <array, may be empty>'
   check_marker '(^|\n)[[:space:]]*summary:'  'summary: <one sentence>'
+
+  # === Spillover audit-trail (§2.6) — process-validator block ===========
+  if [ "$HANDOVER_STATUS" = "block" ]; then
+    SPILL_SCOPE=$(echo "$DESCRIPTION" | sed -E 's/^process-validator-([a-z0-9-]+).*/\1/' || true)
+    SPILL_C=$(echo "$RESPONSE" | grep -E '^[[:space:]]*cycle:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*cycle:[[:space:]]*//' | tr -d '[:space:]' || true)
+    if [ -n "$SPILL_SCOPE" ] && [ -n "$SPILL_C" ]; then
+      SPILL_CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+      SPILL_REPO_ROOT=$(git -C "$SPILL_CWD" rev-parse --show-toplevel 2>/dev/null || echo "$SPILL_CWD")
+      SPILL_PATH="$SPILL_REPO_ROOT/tests/e2e/docs/.subagent-returns/process-validator-${SPILL_SCOPE}-c${SPILL_C}.md"
+      if [ ! -f "$SPILL_PATH" ]; then
+        HANDOVER_WARNS+=("spillover (§2.6): expected process-validator spill file not found at tests/e2e/docs/.subagent-returns/process-validator-${SPILL_SCOPE}-c${SPILL_C}.md. The SubagentStop rewrite-gate should have prevented this; PostToolUse audit fires this WARN as defense-in-depth — check that hooks/subagent-spillover-rewrite-gate.sh is installed and the cap was not reached.")
+      fi
+    fi
+  fi
 fi
 
 # === Phase-validator schema (Onboarding phase exit checkpoint, §2.5) =====
@@ -476,6 +535,20 @@ if [ "$ROLE" = "phase-validator" ]; then
   check_banned '(^|[^a-z-])nice-to-have([^a-z-]|$)'             'nice-to-have (banned — phase-validator findings carry [must-fix] only)'
   check_banned '(^|[^a-z-])greenlight-with-notes([^a-z-]|$)'    'greenlight-with-notes (banned — there is no third return state)'
   check_banned '(^|\n)[[:space:]]*notes:'                       'notes: sub-list (banned — observations are either must-fix or unrecorded)'
+
+  # === Spillover audit-trail (§2.6) — phase-validator improvements-needed
+  if [ "$HANDOVER_STATUS" = "improvements-needed" ]; then
+    SPILL_PHASE=$(echo "$RESPONSE" | grep -E '^[[:space:]]*phase:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*phase:[[:space:]]*//' | tr -d '[:space:]' || true)
+    SPILL_C=$(echo "$RESPONSE" | grep -E '^[[:space:]]*cycle:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*cycle:[[:space:]]*//' | tr -d '[:space:]' || true)
+    if [ -n "$SPILL_PHASE" ] && [ -n "$SPILL_C" ]; then
+      SPILL_CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+      SPILL_REPO_ROOT=$(git -C "$SPILL_CWD" rev-parse --show-toplevel 2>/dev/null || echo "$SPILL_CWD")
+      SPILL_PATH="$SPILL_REPO_ROOT/tests/e2e/docs/.subagent-returns/phase-validator-${SPILL_PHASE}-c${SPILL_C}.md"
+      if [ ! -f "$SPILL_PATH" ]; then
+        HANDOVER_WARNS+=("spillover (§2.6): expected phase-validator spill file not found at tests/e2e/docs/.subagent-returns/phase-validator-${SPILL_PHASE}-c${SPILL_C}.md. The SubagentStop rewrite-gate should have prevented this; PostToolUse audit fires this WARN as defense-in-depth — check that hooks/subagent-spillover-rewrite-gate.sh is installed and the cap was not reached.")
+      fi
+    fi
+  fi
 fi
 
 # Nothing missing, banned, or envelope-warned — silent allow.

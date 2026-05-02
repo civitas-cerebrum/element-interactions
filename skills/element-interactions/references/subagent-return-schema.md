@@ -322,33 +322,66 @@ The minimal grep-based conformance check (per §4.1's pattern, applied to phase-
 
 The harness validator hook (`hooks/subagent-return-schema-guard.sh`) routes `phase-validator-` returns through this conformance check, same as it routes `composer-` / `reviewer-` / `probe-` / `process-validator-` returns.
 
-### 2.6 Spillover contract (hard enforcement, scoped to reviewer `improvements-needed`)
+### 2.6 Spillover contract (hard enforcement, all five subagent roles)
 
-The Q1 work in #144 (handover envelope, in-flight registry, cycle-aware deregistration) gave the orchestrator a leash on subagent dispatches. It did not address the orthogonal pollution path: the **subagent's own return body lands verbatim in the orchestrator's transcript**. A reviewer `improvements-needed` return today carries the full `missing-scenarios:` / `craft-issues:` / `verification-misses:` sub-lists with all sub-bullets — typically 1-3k tokens of structured detail — into the orchestrator's context, every cycle, every retry.
+The Q1 work in #144 (handover envelope, in-flight registry, cycle-aware deregistration) gave the orchestrator a leash on subagent dispatches. It did not address the orthogonal pollution path: the **subagent's own return body lands verbatim in the orchestrator's transcript**. A composer's per-expectation mapping table, a probe's findings list, a reviewer's missing-scenarios sub-list, a phase-validator's exit-criteria array, a process-validator's per-violation block — all carry hundreds to thousands of tokens of structured detail into the orchestrator's context, every cycle, every retry.
 
-The spillover contract addresses this by moving the bulk content to disk while keeping the index-level fields the orchestrator structurally needs (status, journey/pass/cycle, finding-ID list) inline.
+The spillover contract addresses this by moving the bulk content to disk while keeping the index-level fields the orchestrator structurally needs (status, identity, finding-ID list) inline.
 
-**Scope.** Reviewer `improvements-needed` returns only. Composer mapping tables, probe finding lists, and phase-validator finding lists are extended in follow-up PRs after this initial rollout produces real-world data on subagent compliance.
+**Scope (this contract covers all five subagent roles dispatched by the suite).**
 
-**Enforcement is hard, not soft.** The compliance check is binary (spill file at canonical path exists or doesn't; body inlines sub-list headers or doesn't) — there is no fuzzy zone that needs calibration. WARN-only enforcement would be a porous fence: every non-compliant first return leaks the body into the orchestrator's transcript before any post-hoc check fires. Hard enforcement at `SubagentStop` closes that gap by intercepting BEFORE the parent sees anything. The subagent's stop is blocked, stderr feedback is injected, the subagent rewrites in-session, and the orchestrator's tool result is the FINAL compliant return. Empirical verification of the `SubagentStop` exit-2-with-stderr in-session-rewrite mechanism is captured in the implementation thread on #145.
+| Role | Status that triggers spillover | Body content moved to disk | Statuses NOT subject to spillover (already index-only) |
+|---|---|---|---|
+| `composer-` | `covered-exhaustively` | Per-expectation mapping table | `new-tests-landed`, `blocked`, `skipped` |
+| `reviewer-` | `improvements-needed` | `missing-scenarios:` / `craft-issues:` / `verification-misses:` sub-lists | `greenlight` |
+| `probe-` | `findings-emitted` | `findings:` sub-list with full finding-blocks | `clean`, `blocked` |
+| `process-validator-` | `block` | Per-violation block | `greenlight` |
+| `phase-validator-` | `improvements-needed` | `exit-criteria-checked:` array + `pv-<phase>-<nn>` finding blocks | `greenlight` (already requires `findings: []` literal) |
+
+**Enforcement is hard, not soft.** The compliance check is binary (spill file at canonical path exists or doesn't; body inlines forbidden shape or doesn't) — there is no fuzzy zone that needs calibration. WARN-only enforcement would be a porous fence: every non-compliant first return leaks the body into the orchestrator's transcript before any post-hoc check fires. Hard enforcement at `SubagentStop` closes that gap by intercepting BEFORE the parent sees anything. The subagent's stop is blocked, stderr feedback is injected, the subagent rewrites in-session, and the orchestrator's tool result is the FINAL compliant return. Empirical verification of the `SubagentStop` exit-2-with-stderr in-session-rewrite mechanism is captured in the implementation thread on #145.
 
 **Cap on rewrite attempts.** A subagent that genuinely cannot produce a compliant return (broken understanding, contradictory feedback, environment issue) would otherwise loop indefinitely. The hook caps rewrites at 3 per `agent_id`. After the cap, the hook exits 0 with a loud `[CAP-REACHED]` stderr WARN and the non-compliant return lands in the orchestrator's context as a last resort — visible failure beats silent loop. Manual review surfaces what the subagent could not produce.
 
-#### Spill file path convention
+#### Spill file path conventions
 
 ```
+tests/e2e/docs/.subagent-returns/composer-<journey-slug>-<pass>-c<cycle>.md
 tests/e2e/docs/.subagent-returns/reviewer-<journey-slug>-<pass>-c<cycle>.md
+tests/e2e/docs/.subagent-returns/probe-<journey-slug>-<pass>-c<cycle>.md
+tests/e2e/docs/.subagent-returns/process-validator-<scope>-c<cycle>.md
+tests/e2e/docs/.subagent-returns/phase-validator-<phase>-c<cycle>.md
 ```
 
-- `<journey-slug>` is the `j-<slug>` or `sj-<slug>` form from the dispatch description.
-- `<pass>` is the pass number (1-5) from the brief.
-- `<cycle>` is the 1-indexed retry-cycle number.
+- `<journey-slug>` is the `j-<slug>` or `sj-<slug>` form from the dispatch description (composer / reviewer / probe).
+- `<pass>` is the pass number (1-5) from the brief (composer / reviewer / probe).
+- `<cycle>` is the 1-indexed retry-cycle number (all roles).
+- `<scope>` is the process-validator scope (e.g., `stage-a-wave`).
+- `<phase>` is the phase-validator phase number (1-7).
 
-Example: `tests/e2e/docs/.subagent-returns/reviewer-j-checkout-1-c2.md` for the Pass 1 reviewer's cycle-2 return on journey `j-checkout`.
+Each spill file's first line carries a sentinel comment so unrelated tooling can identify spillover files:
 
-#### Compliant return body shape (`improvements-needed`)
+```
+<!-- subagent-returns:<role>:<identity-keys>:cycle-<C> -->
+```
 
-Index-level fields stay inline — the orchestrator routes the next dispatch's brief from these. Detail moves to the spill file:
+Examples: `<!-- subagent-returns:reviewer:j-checkout:pass-1:cycle-2 -->`, `<!-- subagent-returns:phase-validator:5:cycle-1 -->`, `<!-- subagent-returns:process-validator:stage-a-wave:cycle-1 -->`.
+
+#### Compliant return body shapes (per role)
+
+Each role's spillover-compliant body contains only the index-level fields the orchestrator structurally needs to make next-action decisions. Bulk content is the spill file at the canonical path.
+
+**Composer (`covered-exhaustively`).** The mapping table moves to disk; body keeps identity + a count summary.
+
+```
+status: covered-exhaustively
+journey: j-<slug>
+pass: <N>
+cycle: <cycle-number>
+spill: tests/e2e/docs/.subagent-returns/composer-<slug>-<pass>-c<cycle>.md
+expectations-mapped: <count>
+```
+
+**Reviewer (`improvements-needed`).** Sub-lists move to disk; body keeps the finding-ID list (orchestrator routes the next composer-cycle brief from IDs).
 
 ```
 status: improvements-needed
@@ -359,14 +392,71 @@ spill: tests/e2e/docs/.subagent-returns/reviewer-<slug>-<pass>-c<cycle>.md
 findings:
   - <FINDING-ID-1>
   - <FINDING-ID-2>
-  - <FINDING-ID-3>
 ```
 
-The `findings:` line carries finding-IDs **only**, not full blocks. The orchestrator constructs the next composer-cycle brief by referencing the IDs and the spill-file path; the composer subagent reads the spill file and consumes the full must-fix list there.
+**Probe (`findings-emitted`).** Findings list moves to disk; body keeps probe/boundary counts and finding-IDs.
 
-#### Spill file body (canonical)
+```
+status: findings-emitted
+journey: j-<slug>
+pass: <N>
+cycle: <cycle-number>
+spill: tests/e2e/docs/.subagent-returns/probe-<slug>-<pass>-c<cycle>.md
+probes: <count>
+boundaries: <count>
+findings:
+  - <FINDING-ID-1>
+  - <FINDING-ID-2>
+```
 
-The spill file's body is the exact set of finding-block sub-lists (`missing-scenarios:` / `craft-issues:` / `verification-misses:`) that the reviewer would have emitted inline before this contract — no schema change to the finding-block shape itself, only its location.
+**Process-validator (`block`).** Per-violation blocks move to disk; body keeps a one-sentence summary + the violation-ID list.
+
+```
+status: block
+scope: <scope>
+cycle: <cycle-number>
+spill: tests/e2e/docs/.subagent-returns/process-validator-<scope>-c<cycle>.md
+summary: <one sentence — e.g., "3 of 16 dispatches violate slug-length / brief-minimalism rules">
+findings:
+  - <VIOLATION-ID-1>
+  - <VIOLATION-ID-2>
+```
+
+**Phase-validator (`improvements-needed`).** Exit-criteria array + per-finding blocks move to disk; body keeps the `pv-<phase>-<nn>` ID list.
+
+```
+status: improvements-needed
+phase: <1-7>
+sub-skill: <name>
+cycle: <cycle-number>
+spill: tests/e2e/docs/.subagent-returns/phase-validator-<phase>-c<cycle>.md
+summary: <one sentence — N findings, phase N, blocking advance to N+1>
+findings:
+  - pv-<phase>-<nn-1>
+  - pv-<phase>-<nn-2>
+```
+
+In each shape, `findings:` (or `expectations-mapped:` for composer) carries IDs / counts **only**, not full blocks. The orchestrator constructs the next dispatch's brief by referencing the IDs and the spill-file path; the next subagent reads the spill file and consumes the detail there.
+
+#### Spill file body (per role)
+
+Each spill file's body is the exact role-specific structured block the subagent would have emitted inline before this contract — no schema change to the block shapes themselves, only their location.
+
+**Composer spill body (`covered-exhaustively`):**
+
+```markdown
+<!-- subagent-returns:composer:j-<slug>:pass-<N>:cycle-<C> -->
+
+# Composer return — j-<slug> (Pass <N>, cycle <C>) — covered-exhaustively
+
+| Expectation | Covering spec | Test name |
+|---|---|---|
+| <verbatim text from journey block> | tests/e2e/<file>.spec.ts | <test(...) title> |
+| <verbatim text> | tests/e2e/<file>.spec.ts | <test(...) title> |
+... (one row per `Test expectations:` entry)
+```
+
+**Reviewer spill body (`improvements-needed`):**
 
 ```markdown
 <!-- subagent-returns:reviewer:j-<slug>:pass-<N>:cycle-<C> -->
@@ -394,29 +484,108 @@ verification-misses:
     - suggested-fix: <concrete remediation>
 ```
 
-The sentinel comment on line 1 is required so other tooling can ignore non-spillover files in the directory.
+**Probe spill body (`findings-emitted`):**
 
-#### `greenlight` returns are NOT subject to spillover
+```markdown
+<!-- subagent-returns:probe:j-<slug>:pass-<N>:cycle-<C> -->
 
-A reviewer `greenlight` return carries no finding sub-lists — its body is just `status` / `journey` / `pass` / `cycle` / `summary`, already index-level by definition. No spill file, no change.
+# Probe return — j-<slug> (Pass <N>, cycle <C>) — findings-emitted
+
+findings:
+  - **<FINDING-ID>** [<severity>] — <one-line title>
+    - scope: <what was probed>
+    - expected: <what should happen>
+    - observed: <what happened>
+    - coverage: <existing test or none>
+  - **<FINDING-ID>** [<severity>] — <title>
+    ...
+```
+
+The probe spill is independent of the cross-pass canonical ledger at `tests/e2e/docs/adversarial-findings.md` (per §3) — the spill is a per-cycle artifact for orchestrator-context isolation, the ledger is the cross-cycle authoritative log. Both coexist. The probe writes to both within its dispatch (the ledger via the documented append discipline; the spill via the spillover contract).
+
+**Process-validator spill body (`block`):**
+
+```markdown
+<!-- subagent-returns:process-validator:<scope>:cycle-<C> -->
+
+# Process-validator return — <scope> (cycle <C>) — block
+
+violations:
+  - **<VIOLATION-ID>** [must-fix] — <one-line title>
+    - dispatch: <which manifest entry>
+    - rule: <which contract rule was violated>
+    - fix: <concrete remediation>
+```
+
+**Phase-validator spill body (`improvements-needed`):**
+
+```markdown
+<!-- subagent-returns:phase-validator:<phase>:cycle-<C> -->
+
+# Phase-validator return — phase <phase> (cycle <C>) — improvements-needed
+
+exit-criteria-checked:
+  - criterion: <verbatim text from per-phase completion contract>
+    satisfied: false
+    evidence: absent — <why no evidence was found>
+  - criterion: <verbatim text>
+    satisfied: true
+    evidence: <pointer>
+  ...
+
+findings:
+  - **pv-<phase>-<nn>** [must-fix] — <one-line title>
+    - criterion: <verbatim text from the failed exit criterion>
+    - issue: <what's wrong; quote evidence pointers where relevant>
+    - fix: <concrete remediation — what the orchestrator does to satisfy this criterion>
+```
+
+The sentinel comment on line 1 is required for every spill file so other tooling can identify spillover files in the directory.
+
+#### Statuses NOT subject to spillover (already index-only)
+
+These returns require no spill file because their bodies are already small:
+
+- **Composer** `new-tests-landed` (carries `tests-added: <count>` + `run-time: <duration>` — no large block).
+- **Composer** `blocked` (one `reason:` line).
+- **Composer** `skipped` (`reason:` + `authorizer:`).
+- **Reviewer** `greenlight` (just `summary:` + identity).
+- **Probe** `clean` (no findings; counts only).
+- **Probe** `blocked` (one `reason:` line).
+- **Process-validator** `greenlight` (`findings: []` + `summary:`).
+- **Phase-validator** `greenlight` (already requires `findings: []` literal — bodies are bounded by the per-phase completion-contract criteria count, kept small).
+
+For these statuses, the SubagentStop hook silent-allows; no spill file expected.
 
 #### Hook architecture
 
 Two hooks share the work, each at the right boundary:
 
-1. **`hooks/subagent-spillover-rewrite-gate.sh`** — `SubagentStop` matcher. The **enforcer**. Reads `last_assistant_message` from input, parses the §2.0 handover envelope, validates the body shape against §2.6 for reviewer `improvements-needed` returns. On non-compliance: exit 2 with stderr feedback that names the exact spill-file path and the index-only body shape. The subagent's stop is blocked, stderr injects as next-turn input, subagent rewrites in-session. Per-`agent_id` rewrite counter at `/tmp/sst-rewrite-counter-<agent_id>`; cap at 3 → exit 0 with `[CAP-REACHED]` WARN. Compliant returns clear the counter.
+1. **`hooks/subagent-spillover-rewrite-gate.sh`** — `SubagentStop` matcher. The **enforcer**. Reads `last_assistant_message` from input, parses the §2.0 handover envelope, dispatches to per-role validation by `role + status`. For each spillover-triggering case, validates the body shape against §2.6 (spill file present at canonical path + body has no inline forbidden shape). On non-compliance: exit 2 with role-specific stderr feedback that names the exact spill-file path and the index-only body shape. The subagent's stop is blocked, stderr injects as next-turn input, subagent rewrites in-session. Per-`agent_id` rewrite counter at `/tmp/sst-rewrite-counter-<agent_id>`; cap at 3 → exit 0 with `[CAP-REACHED]` WARN. Compliant returns clear the counter.
 
-2. **`hooks/subagent-return-schema-guard.sh`** — `PostToolUse:Agent` matcher. The **audit trail**. WARNs about absent spill file when status is `improvements-needed`. With the SubagentStop enforcer in place, this WARN is rare (the enforcer ensures compliance before PostToolUse fires). It exists as defense-in-depth: if the SubagentStop hook is mis-installed, mis-configured, or hits the cap, the PostToolUse audit catches the leak post-hoc.
+2. **`hooks/subagent-return-schema-guard.sh`** — `PostToolUse:Agent` matcher. The **audit trail**. WARNs about absent spill file when status triggers spillover. With the SubagentStop enforcer in place, this WARN is rare (the enforcer ensures compliance before PostToolUse fires). It exists as defense-in-depth: if the SubagentStop hook is mis-installed, mis-configured, or hits the cap, the PostToolUse audit catches the leak post-hoc.
 
-Both hooks ship in this batch. The SubagentStop enforcer is the primary mechanism; the PostToolUse WARN is a backstop.
+Both hooks share the same role-routing logic. The SubagentStop enforcer is the primary mechanism; the PostToolUse WARN is a backstop.
 
-#### Caller contract addition
+#### Caller contract addition (per role)
 
-Callers dispatching reviewer subagents (today: `coverage-expansion`) must:
+Callers dispatching subagents in any of the five roles must:
 
-1. Include the spillover instruction in the reviewer brief — name the exact spill-file path the subagent must write.
-2. Read the spill file when constructing the next composer-cycle brief; pass the file path through, do NOT inline its contents.
+1. Include the spillover instruction in the dispatch brief — name the exact spill-file path the subagent must write, with the canonical sentinel comment.
+2. Read the spill file when constructing the next-cycle brief (or when consuming the spill content for state-file updates / ledger writes); pass the file path through, do NOT inline its contents.
 3. Treat WARN messages from the schema-guard about spillover as a re-dispatch trigger (stricter brief) rather than a soft acknowledgement.
+
+For each role, the dispatch-brief template lives in:
+
+| Role | Brief template |
+|---|---|
+| `composer-` | `skills/test-composer/SKILL.md` (or coverage-expansion's composer dispatch section) |
+| `reviewer-` | `skills/coverage-expansion/references/reviewer-subagent-contract.md` |
+| `probe-` | `skills/coverage-expansion/references/adversarial-subagent-contract.md` |
+| `process-validator-` | `skills/coverage-expansion/references/process-validator-workflow.md` |
+| `phase-validator-` | `skills/onboarding/SKILL.md` (phase-validator dispatch section) |
+
+Each template carries a "Writeback contract" subsection naming its role's spill-path convention.
 
 ---
 

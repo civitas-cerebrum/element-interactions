@@ -427,6 +427,137 @@ assert_allow "$H" "$PAYLOAD" "missing journey/pass/cycle → silent allow (PostT
 rm -f /tmp/sst-rewrite-counter-agent-test-*
 rm -rf "$TMP_PROJ"
 
+section "subagent-spillover-rewrite-gate: composer (§2.6)"
+H="$HOOK_DIR/subagent-spillover-rewrite-gate.sh"
+TMP_PROJ=$(mktemp -d)
+mkdir -p "$TMP_PROJ/tests/e2e/docs/.subagent-returns"
+cd "$TMP_PROJ" && git init -q && cd - >/dev/null
+NL=$'\n'
+
+ENV_COMP_CE='handover:'"$NL"'  role: composer-j-checkout'"$NL"'  cycle: 1'"$NL"'  status: covered-exhaustively'"$NL"'  next-action: dispatch reviewer'"$NL"''"$NL"
+ENV_COMP_NEW='handover:'"$NL"'  role: composer-j-checkout'"$NL"'  cycle: 1'"$NL"'  status: new-tests-landed'"$NL"'  next-action: dispatch reviewer'"$NL"''"$NL"
+
+SPILL_FILE_C="$TMP_PROJ/tests/e2e/docs/.subagent-returns/composer-j-checkout-1-c1.md"
+
+# Compliant: spillover-shape body + spill file present → silent allow.
+echo "<!-- subagent-returns:composer:j-checkout:pass-1:cycle-1 -->" > "$SPILL_FILE_C"
+COMP_OK="${ENV_COMP_CE}status: covered-exhaustively${NL}journey: j-checkout${NL}pass: 1${NL}cycle: 1${NL}spill: tests/e2e/docs/.subagent-returns/composer-j-checkout-1-c1.md${NL}expectations-mapped: 8"
+assert_allow "$H" "$(payload last_assistant_message="$COMP_OK" agent_id="comp-001" cwd="$TMP_PROJ" hook_event_name=SubagentStop)" "composer covered-exhaustively + spill present → silent allow"
+
+# Non-compliant: spill absent → exit 2.
+rm -f "$SPILL_FILE_C"
+rm -f "/tmp/sst-rewrite-counter-comp-002"
+assert_block_subagent "$H" "$(payload last_assistant_message="$COMP_OK" agent_id="comp-002" cwd="$TMP_PROJ" hook_event_name=SubagentStop)" "composer covered-exhaustively + spill absent → exit 2" "SPILLOVER-REWRITE-NEEDED"
+
+# Body inlines mapping table → exit 2.
+echo "<!-- subagent-returns:composer:j-checkout:pass-1:cycle-1 -->" > "$SPILL_FILE_C"
+COMP_INLINE="${ENV_COMP_CE}status: covered-exhaustively${NL}journey: j-checkout${NL}pass: 1${NL}cycle: 1${NL}${NL}| Expectation | Covering spec | Test name |${NL}|---|---|---|${NL}| happy path | tests/e2e/j-checkout.spec.ts | covers happy |"
+rm -f "/tmp/sst-rewrite-counter-comp-003"
+assert_block_subagent "$H" "$(payload last_assistant_message="$COMP_INLINE" agent_id="comp-003" cwd="$TMP_PROJ" hook_event_name=SubagentStop)" "composer body inlines mapping table → exit 2" "mapping table"
+
+# Non-triggering status (new-tests-landed) → silent allow.
+COMP_NEW="${ENV_COMP_NEW}status: new-tests-landed${NL}tests-added: 6${NL}run-time: 12s"
+assert_allow "$H" "$(payload last_assistant_message="$COMP_NEW" agent_id="comp-004" cwd="$TMP_PROJ" hook_event_name=SubagentStop)" "composer new-tests-landed → silent allow (out of scope)"
+
+rm -f /tmp/sst-rewrite-counter-comp-* ; rm -rf "$TMP_PROJ"
+
+section "subagent-spillover-rewrite-gate: probe (§2.6)"
+TMP_PROJ=$(mktemp -d)
+mkdir -p "$TMP_PROJ/tests/e2e/docs/.subagent-returns"
+cd "$TMP_PROJ" && git init -q && cd - >/dev/null
+
+ENV_PROBE_FE='handover:'"$NL"'  role: probe-j-checkout'"$NL"'  cycle: 1'"$NL"'  status: findings-emitted'"$NL"'  next-action: append ledger'"$NL"''"$NL"
+ENV_PROBE_CLEAN='handover:'"$NL"'  role: probe-j-checkout'"$NL"'  cycle: 1'"$NL"'  status: clean'"$NL"'  next-action: advance pass'"$NL"''"$NL"
+
+SPILL_FILE_P="$TMP_PROJ/tests/e2e/docs/.subagent-returns/probe-j-checkout-4-c1.md"
+
+# Compliant: spillover-shape body + spill file present.
+echo "<!-- subagent-returns:probe:j-checkout:pass-4:cycle-1 -->" > "$SPILL_FILE_P"
+PROBE_OK="${ENV_PROBE_FE}status: findings-emitted${NL}journey: j-checkout${NL}pass: 4${NL}cycle: 1${NL}spill: tests/e2e/docs/.subagent-returns/probe-j-checkout-4-c1.md${NL}probes: 12${NL}boundaries: 8${NL}findings:${NL}  - **j-checkout-4-01**${NL}  - **j-checkout-4-02**"
+assert_allow "$H" "$(payload last_assistant_message="$PROBE_OK" agent_id="probe-001" cwd="$TMP_PROJ" hook_event_name=SubagentStop)" "probe findings-emitted + spill present → silent allow"
+
+# Non-compliant: spill absent → exit 2.
+rm -f "$SPILL_FILE_P"
+rm -f "/tmp/sst-rewrite-counter-probe-002"
+assert_block_subagent "$H" "$(payload last_assistant_message="$PROBE_OK" agent_id="probe-002" cwd="$TMP_PROJ" hook_event_name=SubagentStop)" "probe findings-emitted + spill absent → exit 2" "SPILLOVER-REWRITE-NEEDED"
+
+# Body inlines findings sub-list → exit 2.
+echo "<!-- subagent-returns:probe:j-checkout:pass-4:cycle-1 -->" > "$SPILL_FILE_P"
+PROBE_INLINE="${ENV_PROBE_FE}status: findings-emitted${NL}journey: j-checkout${NL}pass: 4${NL}cycle: 1${NL}${NL}probes: 12${NL}boundaries: 8${NL}${NL}findings:${NL}  - **j-checkout-4-01** [high] — server accepts negative quantity${NL}    - scope: cart update${NL}    - expected: 400${NL}    - observed: 200${NL}    - coverage: none"
+rm -f "/tmp/sst-rewrite-counter-probe-003"
+assert_block_subagent "$H" "$(payload last_assistant_message="$PROBE_INLINE" agent_id="probe-003" cwd="$TMP_PROJ" hook_event_name=SubagentStop)" "probe body inlines findings sub-list → exit 2" "findings: sub-list"
+
+# clean status → silent allow.
+PROBE_CLEAN="${ENV_PROBE_CLEAN}status: clean${NL}journey: j-checkout${NL}pass: 4${NL}cycle: 1${NL}probes: 8${NL}boundaries: 4${NL}findings: []"
+assert_allow "$H" "$(payload last_assistant_message="$PROBE_CLEAN" agent_id="probe-004" cwd="$TMP_PROJ" hook_event_name=SubagentStop)" "probe clean → silent allow (no findings to spill)"
+
+rm -f /tmp/sst-rewrite-counter-probe-* ; rm -rf "$TMP_PROJ"
+
+section "subagent-spillover-rewrite-gate: phase-validator (§2.6)"
+TMP_PROJ=$(mktemp -d)
+mkdir -p "$TMP_PROJ/tests/e2e/docs/.subagent-returns"
+cd "$TMP_PROJ" && git init -q && cd - >/dev/null
+
+ENV_PV_IN='handover:'"$NL"'  role: phase-validator-5'"$NL"'  cycle: 1'"$NL"'  status: improvements-needed'"$NL"'  next-action: address findings'"$NL"''"$NL"
+ENV_PV_GREEN='handover:'"$NL"'  role: phase-validator-5'"$NL"'  cycle: 1'"$NL"'  status: greenlight'"$NL"'  next-action: advance phase'"$NL"''"$NL"
+
+SPILL_FILE_PV="$TMP_PROJ/tests/e2e/docs/.subagent-returns/phase-validator-5-c1.md"
+
+echo "<!-- subagent-returns:phase-validator:5:cycle-1 -->" > "$SPILL_FILE_PV"
+PV_OK="${ENV_PV_IN}status: improvements-needed${NL}phase: 5${NL}sub-skill: coverage-expansion${NL}cycle: 1${NL}spill: tests/e2e/docs/.subagent-returns/phase-validator-5-c1.md${NL}summary: 1 finding — Pass 4 missing${NL}findings:${NL}  - pv-5-01"
+assert_allow "$H" "$(payload last_assistant_message="$PV_OK" agent_id="pv-001" cwd="$TMP_PROJ" hook_event_name=SubagentStop)" "phase-validator improvements-needed + spill present → silent allow"
+
+rm -f "$SPILL_FILE_PV"
+rm -f "/tmp/sst-rewrite-counter-pv-002"
+assert_block_subagent "$H" "$(payload last_assistant_message="$PV_OK" agent_id="pv-002" cwd="$TMP_PROJ" hook_event_name=SubagentStop)" "phase-validator + spill absent → exit 2" "SPILLOVER-REWRITE-NEEDED"
+
+# Body inlines exit-criteria-checked → exit 2.
+echo "<!-- subagent-returns:phase-validator:5:cycle-1 -->" > "$SPILL_FILE_PV"
+PV_INLINE_EXIT="${ENV_PV_IN}status: improvements-needed${NL}phase: 5${NL}cycle: 1${NL}${NL}exit-criteria-checked:${NL}  - criterion: state file complete${NL}    satisfied: false${NL}    evidence: absent${NL}summary: 1 finding"
+rm -f "/tmp/sst-rewrite-counter-pv-003"
+assert_block_subagent "$H" "$(payload last_assistant_message="$PV_INLINE_EXIT" agent_id="pv-003" cwd="$TMP_PROJ" hook_event_name=SubagentStop)" "phase-validator body inlines exit-criteria-checked → exit 2" "exit-criteria-checked"
+
+# Body inlines pv-finding blocks → exit 2.
+PV_INLINE_FIND="${ENV_PV_IN}status: improvements-needed${NL}phase: 5${NL}cycle: 1${NL}summary: 1 finding${NL}findings:${NL}  - **pv-5-01** [must-fix] — Pass 4 not run${NL}    - criterion: foo${NL}    - issue: x${NL}    - fix: y"
+rm -f "/tmp/sst-rewrite-counter-pv-004"
+assert_block_subagent "$H" "$(payload last_assistant_message="$PV_INLINE_FIND" agent_id="pv-004" cwd="$TMP_PROJ" hook_event_name=SubagentStop)" "phase-validator body inlines pv-<phase>-<nn> finding blocks → exit 2" "pv-<phase>-<nn>"
+
+# greenlight → silent allow.
+PV_GREEN="${ENV_PV_GREEN}status: greenlight${NL}phase: 5${NL}cycle: 1${NL}findings: []${NL}summary: All criteria satisfied"
+assert_allow "$H" "$(payload last_assistant_message="$PV_GREEN" agent_id="pv-005" cwd="$TMP_PROJ" hook_event_name=SubagentStop)" "phase-validator greenlight → silent allow"
+
+rm -f /tmp/sst-rewrite-counter-pv-* ; rm -rf "$TMP_PROJ"
+
+section "subagent-spillover-rewrite-gate: process-validator (§2.6)"
+TMP_PROJ=$(mktemp -d)
+mkdir -p "$TMP_PROJ/tests/e2e/docs/.subagent-returns"
+cd "$TMP_PROJ" && git init -q && cd - >/dev/null
+
+ENV_PSV_BL='handover:'"$NL"'  role: process-validator-stage-a-wave'"$NL"'  cycle: 1'"$NL"'  status: block'"$NL"'  next-action: revise manifest'"$NL"''"$NL"
+ENV_PSV_GREEN='handover:'"$NL"'  role: process-validator-stage-a-wave'"$NL"'  cycle: 1'"$NL"'  status: greenlight'"$NL"'  next-action: dispatch wave'"$NL"''"$NL"
+
+SPILL_FILE_PSV="$TMP_PROJ/tests/e2e/docs/.subagent-returns/process-validator-stage-a-wave-c1.md"
+
+echo "<!-- subagent-returns:process-validator:stage-a-wave:cycle-1 -->" > "$SPILL_FILE_PSV"
+PSV_OK="${ENV_PSV_BL}status: block${NL}scope: stage-a-wave${NL}cycle: 1${NL}spill: tests/e2e/docs/.subagent-returns/process-validator-stage-a-wave-c1.md${NL}summary: 2 violations${NL}findings:${NL}  - pv-stage-a-wave-01${NL}  - pv-stage-a-wave-02"
+assert_allow "$H" "$(payload last_assistant_message="$PSV_OK" agent_id="psv-001" cwd="$TMP_PROJ" hook_event_name=SubagentStop)" "process-validator block + spill present → silent allow"
+
+rm -f "$SPILL_FILE_PSV"
+rm -f "/tmp/sst-rewrite-counter-psv-002"
+assert_block_subagent "$H" "$(payload last_assistant_message="$PSV_OK" agent_id="psv-002" cwd="$TMP_PROJ" hook_event_name=SubagentStop)" "process-validator block + spill absent → exit 2" "SPILLOVER-REWRITE-NEEDED"
+
+# Body inlines violations: sub-list → exit 2.
+echo "<!-- subagent-returns:process-validator:stage-a-wave:cycle-1 -->" > "$SPILL_FILE_PSV"
+PSV_INLINE="${ENV_PSV_BL}status: block${NL}scope: stage-a-wave${NL}cycle: 1${NL}summary: 1 violation${NL}${NL}violations:${NL}  - **pv-stage-a-wave-01** [must-fix] — slug exceeds cap${NL}    - manifest-row: 7${NL}    - issue: 31 chars${NL}    - fix: shorten"
+rm -f "/tmp/sst-rewrite-counter-psv-003"
+assert_block_subagent "$H" "$(payload last_assistant_message="$PSV_INLINE" agent_id="psv-003" cwd="$TMP_PROJ" hook_event_name=SubagentStop)" "process-validator body inlines violations sub-list → exit 2" "violations: sub-list"
+
+# greenlight → silent allow.
+PSV_GREEN="${ENV_PSV_GREEN}status: greenlight${NL}scope: stage-a-wave${NL}cycle: 1${NL}findings: []${NL}summary: 16 dispatches conform"
+assert_allow "$H" "$(payload last_assistant_message="$PSV_GREEN" agent_id="psv-004" cwd="$TMP_PROJ" hook_event_name=SubagentStop)" "process-validator greenlight → silent allow"
+
+rm -f /tmp/sst-rewrite-counter-psv-* ; rm -rf "$TMP_PROJ"
+
 section "coverage-expansion-orchestrator-cli-block"
 H="$HOOK_DIR/coverage-expansion-orchestrator-cli-block.sh"
 TMP_PROJ=$(mktemp -d)

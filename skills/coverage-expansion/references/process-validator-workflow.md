@@ -160,6 +160,25 @@ summary: 2 findings — one slug-length cap violation, one brief-leak. Block thi
 
 The `summary:` line on `improvements-needed` is allowed but not required (matches the reviewer-return spec). The `findings:` array has at least one entry.
 
+### Spillover contract (`block` / `improvements-needed`) — §2.6
+
+When the validator's verdict is `block` (or the legacy body-status `improvements-needed`) AND there are ≥1 findings, the full per-violation blocks (under a `violations:` header in the spill file) move to disk per §2.6 of `subagent-return-schema.md`. The return body inlines only the index-level fields:
+
+````
+status: block
+scope: <stage-a-wave | stage-b-wave | adversarial-wave | retry-wave>
+cycle: <cycle-number>
+spill: tests/e2e/docs/.subagent-returns/process-validator-<scope>-c<cycle>.md
+summary: <one sentence>
+findings:
+  - <VIOLATION-ID-1>
+  - <VIOLATION-ID-2>
+````
+
+The spill file starts with the sentinel `<!-- subagent-returns:process-validator:<scope>:cycle-<C> -->`. Per-violation blocks (with `manifest-row:` / `issue:` / `fix:` sub-bullets) go in the spill body, NOT inline in the return.
+
+The `SubagentStop` rewrite-gate (`hooks/subagent-spillover-rewrite-gate.sh`) enforces the contract — non-compliant returns are blocked at stop and the validator rewrites in-session. The orchestrator's tool result is the FINAL compliant return; the verbose violation blocks never reach the parent's transcript. `greenlight` returns are exempt (already index-only with `findings: []`).
+
 ### Banned tokens
 
 The validator's return MUST NOT contain `nice-to-have`, `greenlight-with-notes`, or a top-level `notes:` sub-list — those are banned by `subagent-return-schema.md` §4.1 (this file follows the same vocabulary). Findings that don't meet must-fix calibration are not surfaced; if the validator noticed it and recorded it, the parent retries.
