@@ -10,34 +10,35 @@
 #
 # Rule
 # ----
-# When a reviewer subagent stops with `status: improvements-needed`, its
-# return body MUST conform to §2.6 of subagent-return-schema.md:
+# When a subagent stops with a status that triggers spillover (per the
+# §2.6 table below), its return body MUST conform: the structured detail
+# moves to a canonical spill file on disk, the body inlines only
+# index-level fields.
 #
-#   1. The full `missing-scenarios:` / `craft-issues:` /
-#      `verification-misses:` sub-lists are written to a canonical spill
-#      file at:
-#          tests/e2e/docs/.subagent-returns/reviewer-<journey>-<pass>-c<cycle>.md
-#      The file's first line carries the sentinel comment
-#          <!-- subagent-returns:reviewer:<journey>:pass-<N>:cycle-<C> -->
-#   2. The return body inlines only index-level fields:
-#          status / journey / pass / cycle / spill: <path> / findings: <ID-list>
-#      No inline `missing-scenarios:` / `craft-issues:` /
-#      `verification-misses:` sub-list headers.
+#   Role                 Status that triggers spillover
+#   -------------------  -------------------------------
+#   composer-            covered-exhaustively
+#   reviewer-            improvements-needed
+#   probe-               findings-emitted
+#   process-validator-   block
+#   phase-validator-     improvements-needed
+#
+# All other status / role combinations are silent-allowed.
 #
 # Non-compliance triggers exit 2 with stderr feedback. Claude Code blocks
 # the subagent's stop and injects the feedback as the next-turn input;
 # the subagent rewrites in-session. The orchestrator's tool result is
 # the FINAL compliant return; the original verbose body is suppressed.
 #
-# Why hard enforcement (not WARN) at Stage 1
-# -------------------------------------------
+# Why hard enforcement (not WARN)
+# -------------------------------
 # The §2.6 schema is binary: spill file exists at the canonical path or
-# it doesn't; body has inline sub-list headers or it doesn't. Calibration
-# of fuzzy non-compliance is not needed — there is no fuzzy zone. WARN-
-# only enforcement is a porous fence: every non-compliant first return
-# leaks the body into the orchestrator's transcript before the WARN
-# fires post-hoc. Hard enforcement at SubagentStop closes the gap by
-# intercepting BEFORE the parent sees anything.
+# it doesn't; body has the role's inline forbidden shape or it doesn't.
+# Calibration of fuzzy non-compliance is not needed — there is no fuzzy
+# zone. WARN-only enforcement is a porous fence: every non-compliant
+# first return leaks the body into the orchestrator's transcript before
+# the WARN fires post-hoc. Hard enforcement at SubagentStop closes the
+# gap by intercepting BEFORE the parent sees anything.
 #
 # Empirical verification of the SubagentStop exit-2-stderr in-session
 # rewrite mechanism: see the implementation thread on issue #145.
@@ -49,59 +50,18 @@
 # issue) would loop indefinitely. The cap converts that failure mode
 # from "infinite spinning" to "visible loud WARN after 3 attempts" —
 # the orchestrator sees the failure, surfaces it, and the operator can
-# intervene. The cap is generous (3 rewrites cover the most likely
-# single-misunderstanding cases) but not unbounded.
+# intervene.
 #
 # Canonical reference
 # -------------------
 # skills/element-interactions/references/subagent-return-schema.md §2.6
-#   (spillover contract — path convention, body shape, schema-guard
-#    audit-trail role, this hook's enforcement role)
-#
-# Failure → action
-# ----------------
-# - Non-reviewer role                                           → silent allow
-# - Reviewer + status != improvements-needed (e.g. greenlight)  → silent allow
-# - Reviewer + improvements-needed + spill file present + body
-#   has no inline sub-list headers                              → silent allow,
-#                                                                 counter cleared
-# - Reviewer + improvements-needed + spill file absent OR body
-#   inlines sub-list headers                                    → exit 2 with
-#                                                                 stderr feedback,
-#                                                                 counter
-#                                                                 incremented
-# - Counter ≥ 3                                                 → exit 0 with
-#                                                                 [CAP-REACHED]
-#                                                                 stderr WARN,
-#                                                                 counter cleared
-# - Empty / unparseable last_assistant_message                  → silent allow
-# - Cannot extract handover envelope                            → silent allow
-#                                                                 (defer to
-#                                                                 PostToolUse
-#                                                                 schema-guard)
+#   (spillover contract — per-role path conventions, body shapes,
+#    schema-guard audit-trail role, this hook's enforcement role)
 
 set -euo pipefail
 
 # --- input ---
 INPUT=$(cat)
-
-# Claude Code SubagentStop input shape (verified empirically — see
-# implementation thread on #145):
-#   {
-#     "session_id": "...",
-#     "transcript_path": "...",
-#     "cwd": "...",
-#     "permission_mode": "auto",
-#     "agent_id": "...",
-#     "agent_type": "general-purpose",
-#     "hook_event_name": "SubagentStop",
-#     "stop_hook_active": false,
-#     "agent_transcript_path": "...",
-#     "last_assistant_message": "<the subagent's final return text>"
-#   }
-#
-# `last_assistant_message` is the subagent's final return as a single
-# string — exactly what we need to validate. No JSONL parsing required.
 
 RESPONSE=$(echo "$INPUT" | jq -r '.last_assistant_message // ""' 2>/dev/null || echo "")
 [ -z "$RESPONSE" ] && exit 0
@@ -111,9 +71,6 @@ CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
 REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || echo "$CWD")
 
 # --- handover envelope parse (§2.0) ---------------------------------------
-# Extract the indented block under a top-level `handover:` line. Same
-# pattern as subagent-return-schema-guard.sh. `|| true` guards against
-# set -e + pipefail when input doesn't contain an envelope.
 HANDOVER_BLOCK=""
 if echo "$RESPONSE" | grep -qE '(^|\n)handover:[[:space:]]*$'; then
   HANDOVER_BLOCK=$(echo "$RESPONSE" | awk '
@@ -128,16 +85,37 @@ fi
 HANDOVER_ROLE=$(echo "$HANDOVER_BLOCK" | grep -E '^[[:space:]]+role:' | head -1 | sed -E 's/^[[:space:]]+role:[[:space:]]*//' | tr -d '[:space:]' || true)
 HANDOVER_STATUS=$(echo "$HANDOVER_BLOCK" | grep -E '^[[:space:]]+status:' | head -1 | sed -E 's/^[[:space:]]+status:[[:space:]]*//' | tr -d '[:space:]' || true)
 
-# --- scope: reviewer + improvements-needed only ---------------------------
-case "$HANDOVER_ROLE" in
-  reviewer-j-*|reviewer-sj-*) ;;
-  *) exit 0 ;;  # not in scope
-esac
-[ "$HANDOVER_STATUS" != "improvements-needed" ] && exit 0
+# --- dispatch on role + status to determine spillover applicability -------
+# ROLE_KIND becomes one of: composer | reviewer | probe | process-validator
+# | phase-validator. Empty (silent-allow) for unmatched roles or non-
+# triggering statuses. Each ROLE_KIND has its own spill-path computation
+# and body-shape inline-violation detector below.
 
-# --- extract body fields needed for spill path ----------------------------
+ROLE_KIND=""
+case "$HANDOVER_ROLE" in
+  composer-j-*|composer-sj-*)
+    [ "$HANDOVER_STATUS" = "covered-exhaustively" ] && ROLE_KIND="composer"
+    ;;
+  reviewer-j-*|reviewer-sj-*)
+    [ "$HANDOVER_STATUS" = "improvements-needed" ] && ROLE_KIND="reviewer"
+    ;;
+  probe-j-*|probe-sj-*)
+    [ "$HANDOVER_STATUS" = "findings-emitted" ] && ROLE_KIND="probe"
+    ;;
+  process-validator-*)
+    [ "$HANDOVER_STATUS" = "block" ] && ROLE_KIND="process-validator"
+    ;;
+  phase-validator-*)
+    [ "$HANDOVER_STATUS" = "improvements-needed" ] && ROLE_KIND="phase-validator"
+    ;;
+esac
+
+# Not in scope (other role / non-triggering status) → silent allow.
+[ -z "$ROLE_KIND" ] && exit 0
+
+# --- extract body fields needed for spill path computation ----------------
 # Strip envelope from RESPONSE so body fields don't collide with envelope
-# fields of the same name. Same pattern as subagent-return-schema-guard.sh.
+# fields of the same name.
 BODY=$(echo "$RESPONSE" | awk '
   /^handover:[[:space:]]*$/ { in_block = 1; next }
   in_block {
@@ -147,19 +125,49 @@ BODY=$(echo "$RESPONSE" | awk '
   { print }
 ' || true)
 
-JOURNEY=$(echo "$BODY" | grep -E '^[[:space:]]*journey:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*journey:[[:space:]]*//' | tr -d '[:space:]' || true)
-PASS=$(echo "$BODY" | grep -E '^[[:space:]]*pass:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*pass:[[:space:]]*//' | tr -d '[:space:]' || true)
-CYCLE=$(echo "$BODY" | grep -E '^[[:space:]]*cycle:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*cycle:[[:space:]]*//' | tr -d '[:space:]' || true)
+extract_field() {
+  # extract_field <field-name>
+  echo "$BODY" | grep -E "^[[:space:]]*${1}:[[:space:]]*" | head -1 | sed -E "s/^[[:space:]]*${1}:[[:space:]]*//" | tr -d '[:space:]' || true
+}
 
-# Without journey/pass/cycle, we can't construct a spill path. Defer to
-# PostToolUse:Agent schema-guard which will WARN about missing fields.
-if [ -z "$JOURNEY" ] || [ -z "$PASS" ] || [ -z "$CYCLE" ]; then
-  exit 0
-fi
+# --- per-role spill path computation --------------------------------------
+SPILL_REL=""
+SPILL_SENTINEL=""
+case "$ROLE_KIND" in
+  composer|reviewer|probe)
+    JOURNEY=$(extract_field journey)
+    PASS=$(extract_field pass)
+    CYCLE=$(extract_field cycle)
+    if [ -z "$JOURNEY" ] || [ -z "$PASS" ] || [ -z "$CYCLE" ]; then
+      # Missing identifying fields. Defer to PostToolUse:Agent schema-guard
+      # to WARN about the malformed return.
+      exit 0
+    fi
+    SPILL_REL="tests/e2e/docs/.subagent-returns/${ROLE_KIND}-${JOURNEY}-${PASS}-c${CYCLE}.md"
+    SPILL_SENTINEL="<!-- subagent-returns:${ROLE_KIND}:${JOURNEY}:pass-${PASS}:cycle-${CYCLE} -->"
+    ;;
+  phase-validator)
+    PHASE=$(extract_field phase)
+    CYCLE=$(extract_field cycle)
+    if [ -z "$PHASE" ] || [ -z "$CYCLE" ]; then
+      exit 0
+    fi
+    SPILL_REL="tests/e2e/docs/.subagent-returns/phase-validator-${PHASE}-c${CYCLE}.md"
+    SPILL_SENTINEL="<!-- subagent-returns:phase-validator:${PHASE}:cycle-${CYCLE} -->"
+    ;;
+  process-validator)
+    # Scope is in the role suffix: process-validator-stage-a-wave → stage-a-wave
+    SCOPE=$(echo "$HANDOVER_ROLE" | sed -E 's/^process-validator-//' || true)
+    CYCLE=$(extract_field cycle)
+    if [ -z "$SCOPE" ] || [ -z "$CYCLE" ]; then
+      exit 0
+    fi
+    SPILL_REL="tests/e2e/docs/.subagent-returns/process-validator-${SCOPE}-c${CYCLE}.md"
+    SPILL_SENTINEL="<!-- subagent-returns:process-validator:${SCOPE}:cycle-${CYCLE} -->"
+    ;;
+esac
 
-SPILL_REL="tests/e2e/docs/.subagent-returns/reviewer-${JOURNEY}-${PASS}-c${CYCLE}.md"
 SPILL_PATH="$REPO_ROOT/$SPILL_REL"
-SPILL_DIR=$(dirname "$SPILL_PATH")
 
 # --- compliance checks ----------------------------------------------------
 VIOLATIONS=()
@@ -168,15 +176,55 @@ if [ ! -f "$SPILL_PATH" ]; then
   VIOLATIONS+=("spill file absent at $SPILL_REL")
 fi
 
-# Inline sub-list check: detail belongs in the spill file, not in the body.
-# Match a header line followed (within the body) by a `  - **<...>**` row
-# (the canonical finding-block bullet shape from §1).
-if echo "$BODY" | grep -qE '^[[:space:]]*(missing-scenarios|craft-issues|verification-misses):[[:space:]]*$'; then
-  # Header present. Check if any sub-bullets follow.
-  if echo "$BODY" | grep -qE '^[[:space:]]+-[[:space:]]+\*\*[a-z0-9-]+'; then
-    VIOLATIONS+=("body inlines missing-scenarios/craft-issues/verification-misses sub-list — that detail belongs in the spill file, return body should carry only the finding-ID list")
-  fi
-fi
+# Per-role inline-violation detection. The forbidden shape is the
+# structured detail block that should have moved to disk. If both the
+# header marker and a sub-bullet shape are present, the body is
+# inlining detail that belongs in the spill file.
+case "$ROLE_KIND" in
+  composer)
+    # Forbidden inline: per-expectation mapping table header.
+    if echo "$BODY" | grep -qE '^\|[[:space:]]*Expectation[[:space:]]*\|[[:space:]]*Covering spec[[:space:]]*\|[[:space:]]*Test name[[:space:]]*\|'; then
+      VIOLATIONS+=("body inlines per-expectation mapping table — that detail belongs in the spill file, return body should carry only expectations-mapped: <count>")
+    fi
+    ;;
+  reviewer)
+    # Forbidden inline: missing-scenarios / craft-issues / verification-misses
+    # header followed by a sub-bullet (`  - **<id>**` row).
+    if echo "$BODY" | grep -qE '^[[:space:]]*(missing-scenarios|craft-issues|verification-misses):[[:space:]]*$' && \
+       echo "$BODY" | grep -qE '^[[:space:]]+-[[:space:]]+\*\*[a-z0-9-]+'; then
+      VIOLATIONS+=("body inlines missing-scenarios/craft-issues/verification-misses sub-list — that detail belongs in the spill file, return body should carry only the finding-ID list")
+    fi
+    ;;
+  probe)
+    # Forbidden inline: findings: header followed by a finding sub-block
+    # (`  - **<id>** [severity]`). The index-only `findings:` line carries
+    # bare IDs, not full blocks.
+    if echo "$BODY" | grep -qE '^[[:space:]]*findings:[[:space:]]*$' && \
+       echo "$BODY" | grep -qE '^[[:space:]]+-[[:space:]]+\*\*[a-z0-9-]+\*\*[[:space:]]+\[(critical|high|medium|low|info)\]'; then
+      VIOLATIONS+=("body inlines findings: sub-list with full finding-blocks — that detail belongs in the spill file, return body should carry only the finding-ID list (one bullet per finding, IDs only)")
+    fi
+    ;;
+  process-validator)
+    # Forbidden inline: violations: header followed by a violation sub-block
+    # (`  - **<id>** [must-fix]` row).
+    if echo "$BODY" | grep -qE '^[[:space:]]*violations:[[:space:]]*$' && \
+       echo "$BODY" | grep -qE '^[[:space:]]+-[[:space:]]+\*\*[a-z0-9-]+\*\*[[:space:]]+\[must-fix\]'; then
+      VIOLATIONS+=("body inlines violations: sub-list with full blocks — that detail belongs in the spill file, return body should carry only the violation-ID list")
+    fi
+    ;;
+  phase-validator)
+    # Forbidden inline: exit-criteria-checked array OR pv-<phase>-<nn>
+    # finding blocks.
+    if echo "$BODY" | grep -qE '^[[:space:]]*exit-criteria-checked:[[:space:]]*$' && \
+       echo "$BODY" | grep -qE '^[[:space:]]+-[[:space:]]+criterion:'; then
+      VIOLATIONS+=("body inlines exit-criteria-checked: array — that detail belongs in the spill file, return body should carry only summary + finding-ID list")
+    fi
+    if echo "$BODY" | grep -qE '^[[:space:]]+-[[:space:]]+\*\*pv-[1-7]-[0-9]{2,}\*\*[[:space:]]+\[must-fix\]'; then
+      # Sub-bullet evidence — pv-finding blocks shouldn't be inlined.
+      VIOLATIONS+=("body inlines pv-<phase>-<nn> finding blocks with sub-bullets — that detail belongs in the spill file, return body should carry only the finding-ID list (just the pv-<phase>-<nn> IDs)")
+    fi
+    ;;
+esac
 
 # --- compliant: clear counter, allow stop ---------------------------------
 if [ ${#VIOLATIONS[@]} -eq 0 ]; then
@@ -198,63 +246,123 @@ fi
 CAP=3
 
 if [ "$COUNT" -ge "$CAP" ]; then
-  # Cap reached. Allow stop with a loud WARN visible to the orchestrator.
-  # The non-compliant return lands in the orchestrator's context as a last
-  # resort — better visible failure than silent loop.
-  echo "[CAP-REACHED] reviewer ${HANDOVER_ROLE} cycle ${CYCLE}: §2.6 spillover non-compliance after ${CAP} rewrite attempts. Final return left non-compliant; orchestrator will see the verbose body. Manual review required — check why the subagent could not produce: spill file at ${SPILL_REL}, body without inline sub-lists." >&2
+  echo "[CAP-REACHED] ${ROLE_KIND} ${HANDOVER_ROLE}: §2.6 spillover non-compliance after ${CAP} rewrite attempts. Final return left non-compliant; orchestrator will see the verbose body. Manual review required — check why the subagent could not produce: spill file at ${SPILL_REL}, body without inline forbidden shape." >&2
   if [ -n "$COUNTER_FILE" ]; then
     rm -f "$COUNTER_FILE" 2>/dev/null || true
   fi
   exit 0
 fi
 
-# Increment counter, emit feedback, exit 2 to block the stop.
 NEXT=$((COUNT + 1))
 if [ -n "$COUNTER_FILE" ]; then
   echo "$NEXT" > "$COUNTER_FILE" 2>/dev/null || true
 fi
 
-# Stderr feedback. Action-first format. Includes the exact compliant
-# shape so the subagent can rewrite without ambiguity.
-{
+# Per-role stderr feedback. Each role gets a tailored "rewrite as follows"
+# block naming the canonical spill path + the index-only body shape it
+# should emit. Format follows the action-first template so the subagent's
+# rewrite is mechanical.
+
+emit_feedback_header() {
   echo "[SPILLOVER-REWRITE-NEEDED — attempt ${NEXT}/${CAP}]"
   echo ""
-  echo "Your reviewer return is non-compliant with §2.6 of subagent-return-schema.md:"
+  echo "Your ${ROLE_KIND} return is non-compliant with §2.6 of subagent-return-schema.md:"
   for v in "${VIOLATIONS[@]}"; do
     echo "  - $v"
   done
   echo ""
   echo "Rewrite as follows:"
   echo ""
-  echo "1. Write the full missing-scenarios / craft-issues / verification-misses"
-  echo "   sub-lists (with their existing sub-bullets) to:"
-  echo ""
+  echo "1. Write the structured detail to:"
   echo "     ${SPILL_REL}"
-  echo ""
   echo "   Start the file with this sentinel as line 1:"
-  echo "     <!-- subagent-returns:reviewer:${JOURNEY}:pass-${PASS}:cycle-${CYCLE} -->"
+  echo "     ${SPILL_SENTINEL}"
+}
+
+emit_feedback_footer_common() {
+  echo "3. Keep the §2.0 handover envelope at the top, unchanged."
   echo ""
-  echo "   (Create the directory ${SPILL_DIR#${REPO_ROOT}/} if it does not exist.)"
+  echo "Why: the verbose detail carries hundreds-to-thousands of tokens each cycle. Inlining it absorbs that detail into the orchestrator's transcript every retry. The spillover contract keeps the orchestrator's context at index-level state; the next subagent (or the orchestrator's state-file update) reads the spill file when it needs the detail."
+}
+
+{
+  emit_feedback_header
   echo ""
   echo "2. Replace your return body with index-only fields:"
   echo ""
-  echo "     status: improvements-needed"
-  echo "     journey: ${JOURNEY}"
-  echo "     pass: ${PASS}"
-  echo "     cycle: ${CYCLE}"
-  echo "     spill: ${SPILL_REL}"
-  echo "     findings:"
-  echo "       - <FINDING-ID-1>"
-  echo "       - <FINDING-ID-2>"
-  echo "       (one bullet per finding, IDs only — no inline blocks)"
+  case "$ROLE_KIND" in
+    composer)
+      echo "     status: covered-exhaustively"
+      echo "     journey: ${JOURNEY}"
+      echo "     pass: ${PASS}"
+      echo "     cycle: ${CYCLE}"
+      echo "     spill: ${SPILL_REL}"
+      echo "     expectations-mapped: <count>"
+      echo ""
+      echo "   The mapping table itself goes in the spill file (rows under the"
+      echo "   | Expectation | Covering spec | Test name | header)."
+      ;;
+    reviewer)
+      echo "     status: improvements-needed"
+      echo "     journey: ${JOURNEY}"
+      echo "     pass: ${PASS}"
+      echo "     cycle: ${CYCLE}"
+      echo "     spill: ${SPILL_REL}"
+      echo "     findings:"
+      echo "       - <FINDING-ID-1>"
+      echo "       - <FINDING-ID-2>"
+      echo "       (one bullet per finding, IDs only — no inline blocks)"
+      echo ""
+      echo "   The missing-scenarios / craft-issues / verification-misses sub-lists"
+      echo "   with full sub-bullets go in the spill file."
+      ;;
+    probe)
+      echo "     status: findings-emitted"
+      echo "     journey: ${JOURNEY}"
+      echo "     pass: ${PASS}"
+      echo "     cycle: ${CYCLE}"
+      echo "     spill: ${SPILL_REL}"
+      echo "     probes: <count>"
+      echo "     boundaries: <count>"
+      echo "     findings:"
+      echo "       - <FINDING-ID-1>"
+      echo "       - <FINDING-ID-2>"
+      echo "       (one bullet per finding, IDs only — no inline blocks)"
+      echo ""
+      echo "   The findings sub-list with full scope/expected/observed/coverage"
+      echo "   sub-bullets goes in the spill file."
+      ;;
+    process-validator)
+      echo "     status: block"
+      echo "     scope: ${SCOPE}"
+      echo "     cycle: ${CYCLE}"
+      echo "     spill: ${SPILL_REL}"
+      echo "     summary: <one sentence>"
+      echo "     findings:"
+      echo "       - <VIOLATION-ID-1>"
+      echo "       - <VIOLATION-ID-2>"
+      echo ""
+      echo "   The per-violation blocks (under a violations: header) go in the"
+      echo "   spill file."
+      ;;
+    phase-validator)
+      echo "     status: improvements-needed"
+      echo "     phase: ${PHASE}"
+      echo "     sub-skill: <name>"
+      echo "     cycle: ${CYCLE}"
+      echo "     spill: ${SPILL_REL}"
+      echo "     summary: <one sentence>"
+      echo "     findings:"
+      echo "       - pv-${PHASE}-<nn-1>"
+      echo "       - pv-${PHASE}-<nn-2>"
+      echo "       (one bullet per finding, just the pv-<phase>-<nn> IDs)"
+      echo ""
+      echo "   The exit-criteria-checked: array AND the pv-<phase>-<nn> finding"
+      echo "   blocks (criterion / issue / fix sub-bullets) go in the spill file."
+      ;;
+  esac
   echo ""
-  echo "3. Keep the §2.0 handover envelope at the top, unchanged."
-  echo ""
-  echo "Why: the verbose finding sub-lists carry 1-3k tokens each cycle. Inlining"
-  echo "them in the return body absorbs that detail into the orchestrator's"
-  echo "transcript every retry. The spillover contract keeps the orchestrator's"
-  echo "context at index-level state; the next composer-cycle subagent reads"
-  echo "the spill file when it needs the must-fix detail."
+  emit_feedback_footer_common
 } >&2
 
 exit 2
