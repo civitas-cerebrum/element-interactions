@@ -146,6 +146,96 @@ Every reviewer finding carries `[must-fix]`. There is no nice-to-have bracket, n
 
 **Caller contract addition:** Callers dispatching reviewer subagents (currently `coverage-expansion` only) must accept `greenlight` and `improvements-needed` as valid return statuses and MUST NOT treat `improvements-needed` as a schema violation. The retry loop for `improvements-needed` is documented in `skills/coverage-expansion/SKILL.md` §"Retry loop".
 
+### 2.5 Phase-validator return (Onboarding phase exit checkpoint)
+
+Phase-validator subagents — dispatched by `onboarding` at the end of every phase to verify the phase's completion contract — use the same status vocabulary as §2.4 reviewer-return, with a phase-scoped finding-ID format and a per-criterion verification table.
+
+| Status | Meaning | Onboarding response |
+|---|---|---|
+| `greenlight` | Phase's per-phase completion contract satisfied. | Record in `tests/e2e/docs/onboarding-phase-ledger.json`; advance to phase N+1. |
+| `improvements-needed` | At least one exit criterion failed. | Re-attempt the phase (revise sub-skill brief / re-run sub-skill / address findings inline), re-dispatch phase-validator-N. Cycle cap: 10 per phase. After cycle 10 → `blocked-phase-validator-stalled`, surface to user. |
+
+#### Return body — `greenlight`
+
+````
+status: greenlight
+phase: <1-7>
+sub-skill: <name | "inline">
+exit-criteria-checked:
+  - criterion: <verbatim text from per-phase completion contract>
+    satisfied: true
+    evidence: <file path | state-field | commit hash>
+  - criterion: <verbatim text>
+    satisfied: true
+    evidence: <pointer>
+  ...
+findings: []
+summary: <one sentence — names what was verified>
+````
+
+`exit-criteria-checked` enumerates EVERY criterion from the phase's row in `onboarding/SKILL.md`'s "Per-phase completion contract" table. Each row in the array is one criterion; `satisfied: true` for every row on greenlight; `evidence` is a concrete pointer (file path, JSON field reference, or git commit hash) the orchestrator can verify independently if it doubts the validator. `findings: []` is REQUIRED on greenlight (explicit empty array) so parsers don't have to distinguish "no findings field" from "no findings".
+
+#### Return body — `improvements-needed`
+
+````
+status: improvements-needed
+phase: <N>
+sub-skill: <name>
+exit-criteria-checked:
+  - criterion: <verbatim>
+    satisfied: false
+    evidence: absent — <why no evidence was found>
+  - criterion: <other>
+    satisfied: true
+    evidence: <pointer>
+  ...
+findings:
+  - **pv-<phase>-<nn>** [must-fix] — <one-line title>
+    - criterion: <verbatim text from the failed exit criterion>
+    - issue: <what's wrong; quote evidence pointers where relevant>
+    - fix: <concrete remediation — what the orchestrator does to satisfy this criterion>
+  - **pv-<phase>-<nn>** [must-fix] — <one-line title>
+    - criterion: <verbatim>
+    - issue: <what's wrong>
+    - fix: <concrete remediation>
+summary: <one sentence — N findings, phase N, blocking advance to N+1>
+````
+
+`exit-criteria-checked` shows BOTH satisfied and unsatisfied criteria — the validator must verify every criterion to demonstrate it ran the full check, not just stopped at the first failure. Each unsatisfied criterion gets a corresponding `pv-<phase>-<nn>` finding with concrete `fix:` text the orchestrator can act on.
+
+#### Phase-validator finding-ID subformat
+
+`pv-<phase>-<nn>` where `<phase>` is `1`-`7` and `<nn>` is a two-digit zero-padded integer. The `pv-` prefix tags the finding as phase-validator-sourced (distinguishes it from Stage B's `<journey-slug>-<pass>-<cycle>-R-<nn>` format and Stage A's `<journey-slug>-<pass>-<nn>`). Phase-validator findings are NOT anchored to one journey — they're anchored to one phase across the whole onboarding pipeline.
+
+#### Banned tokens
+
+Inherited from §2.4: `nice-to-have`, `greenlight-with-notes`, top-level `notes:` sub-list. Inherited from §1: legacy finding-ID prefixes (`AF-`, `P4-`, `REG-`).
+
+#### Cycle cap
+
+10 per phase. The cap is intentionally generous (vs the 7-cycle A↔B retry within a journey) because phase scope varies widely — a Phase 3 fix can be small (re-run Stage 4b after addressing one api-reference violation) while a Phase 5 fix can require a multi-pass re-run. After cycle 10, terminal state is `blocked-phase-validator-stalled`; the orchestrator commits what it has, writes the phase ledger with the unresolved findings, and surfaces to the user.
+
+#### Caller contract addition
+
+`onboarding` is the only caller dispatching phase-validator subagents (today). It MUST:
+
+1. Dispatch `phase-validator-<N>:` at the end of every phase, before advancing.
+2. Read `tests/e2e/docs/onboarding-phase-ledger.json` to determine cycle count for the active phase.
+3. On `greenlight`, write the phase entry to the ledger and advance.
+4. On `improvements-needed`, address each finding's `fix:` action, re-dispatch the validator (incrementing cycle count). Apply the cycle-10 cap.
+5. Never accept a malformed phase-validator return (missing required fields, banned tokens, or finding-ID format violations) — re-dispatch with a brief that quotes the violation.
+
+The minimal grep-based conformance check (per §4.1's pattern, applied to phase-validator returns):
+- `^status:\s*(greenlight|improvements-needed)`
+- `^phase:\s*[1-7]`
+- `^exit-criteria-checked:` followed by ≥1 `- criterion:` row
+- On greenlight: `^findings:\s*\[\]` literal
+- On improvements-needed: ≥1 `^  - \*\*pv-[1-7]-\d+\*\* \[must-fix\]` line
+- `^summary:\s*` non-empty
+- No banned tokens
+
+The harness validator hook (`hooks/subagent-return-schema-guard.sh`) routes `phase-validator-` returns through this conformance check, same as it routes `composer-` / `reviewer-` / `probe-` / `process-validator-` returns.
+
 ---
 
 ## 3. Strict ledger schema — `tests/e2e/docs/adversarial-findings.md`
@@ -279,6 +369,7 @@ Callers do not run a parser — they grep the return for a short, fixed list of 
 - **Banned tokens:** the literal strings `no-new-tests-by-rationalisation`, `no-new-tests` (unqualified), `AF-`, `P4-`, `REG-` (legacy finding-ID prefixes — note: the `-R-` infix in reviewer IDs is NOT a prefix and is allowed), and any `[p0]` / `[blocker]` / `[no-impact]` severity bracket.
 - **Ledger append:** the `**Pass <N> — <kind> (YYYY-MM-DD)**` header line, the `Scope:` line, and the closing `**Pass <N> summary:** probes=…, boundaries=…, suspected-bugs=…` line, in that order, bracketing the finding blocks.
 - **Reviewer returns (§2.4):** the top-level `status:` is one of `greenlight` or `improvements-needed`. Finding blocks (when present under `missing-scenarios:`, `craft-issues:`, or `verification-misses:` sub-lists) match `^ {2}- \*\*[a-z0-9-]+-\d+-\d+-R-\d+\*\* \[must-fix\]`. **A `summary:` line is REQUIRED on `greenlight` returns** — a `greenlight` status without a `summary:` is a contract violation; treat as `improvements-needed` and re-dispatch. `greenlight` carries `summary:` and no finding blocks; `improvements-needed` has at least one `must-fix` finding and no `summary:` line. Returns containing the literal tokens `nice-to-have`, `greenlight-with-notes`, or a `notes:` sub-list are contract violations from a prior schema revision; reject and re-dispatch with a brief that quotes the banned token. The Stage A regex in the previous bullet does NOT apply to reviewer returns.
+- **Phase-validator returns (§2.5):** the top-level `status:` is one of `greenlight` or `improvements-needed`. `phase:` line carries an integer 1-7. `exit-criteria-checked:` array has ≥1 `- criterion:` row. **A `summary:` line is REQUIRED on both statuses.** **`findings: []` is REQUIRED on `greenlight`** (explicit empty array). On `improvements-needed`, finding blocks match `^ {2}- \*\*pv-[1-7]-\d+\*\* \[must-fix\]` with sub-bullets `criterion:` / `issue:` / `fix:`. Banned tokens inherited from §2.4: `nice-to-have`, `greenlight-with-notes`, top-level `notes:`. The reviewer regex from the previous bullet does NOT apply to phase-validator returns.
 
 If any of the above is missing or a banned token is present, the caller re-dispatches with a brief that quotes the specific violation. The grep-based check is sufficient — no AST, no JSON, no parser.
 
@@ -286,8 +377,8 @@ If any of the above is missing or a banned token is present, the caller re-dispa
 
 The same grep-based shape signals are enforced at the harness layer by `hooks/subagent-return-schema-guard.sh` (auto-installed via `scripts/postinstall.js`). The hook:
 
-- Routes by Agent description prefix (`composer-` / `reviewer-` / `probe-` / `process-validator-`); other prefixes (`phase1-`, `stage2-`, `cleanup-`) skip validation.
-- Greps the subagent's return for the §4.1 markers above plus the per-status evidence (`tests-added` + `run-time` for `new-tests-landed`, mapping table for `covered-exhaustively`, `reason` for `blocked` / `skipped`, etc.).
+- Routes by Agent description prefix (`composer-` / `reviewer-` / `probe-` / `process-validator-` / `phase-validator-`); other prefixes (`phase1-`, `stage2-`, `cleanup-`) skip validation.
+- Greps the subagent's return for the §4.1 markers above plus the per-status evidence (`tests-added` + `run-time` for `new-tests-landed`, mapping table for `covered-exhaustively`, `reason` for `blocked` / `skipped`, `exit-criteria-checked` array + `findings: []` on greenlight for `phase-validator`, etc.).
 - Emits a non-blocking `systemMessage` listing missing markers and any banned tokens detected. The orchestrator sees the warning and re-dispatches.
 
 The hook is a backstop, not a replacement: callers still run the orchestrator-side grep per §4.1. The harness layer catches malformed returns the orchestrator missed; the orchestrator-side check catches violations that depend on caller-specific context the hook can't see (e.g., whether a `Test expectations:` row is missing from the mapping table). Initial release is warn-only — a follow-up promotes to block-mode after a representative run produces a ≤2% false-positive rate.

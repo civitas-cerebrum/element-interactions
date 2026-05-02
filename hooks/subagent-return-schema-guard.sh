@@ -27,6 +27,12 @@
 #                                `findings:` count or list
 #   process-validator-<scope>:   Sub-orchestrator — reviewer-shape applied
 #                                to a manifest (`status:`, `findings:`, `summary:`)
+#   phase-validator-<N>:         Phase-exit checkpoint (§2.5) — `status:` +
+#                                `phase:` + `exit-criteria-checked:` array +
+#                                `summary:` (REQUIRED on both statuses) +
+#                                `findings: []` literal on greenlight |
+#                                ≥1 `pv-<phase>-<nn>` must-fix on
+#                                improvements-needed
 #   phase1- / stage2- / cleanup- / bare j- / bare sj- → silent allow
 #   (phase1/stage2 returns are free-form site-map / page-repository entries;
 #    cleanup is unstructured; bare j-/sj- are blocked upstream by
@@ -86,6 +92,7 @@ case "$DESCRIPTION" in
   reviewer-*)         ROLE="reviewer" ;;
   probe-*)            ROLE="probe" ;;
   process-validator-*) ROLE="process-validator" ;;
+  phase-validator-*)  ROLE="phase-validator" ;;
   *)                  exit 0 ;;  # silent allow — no schema for this role
 esac
 
@@ -220,6 +227,34 @@ if [ "$ROLE" = "process-validator" ]; then
   fi
   check_marker '(^|\n)[[:space:]]*findings:' 'findings: <array, may be empty>'
   check_marker '(^|\n)[[:space:]]*summary:'  'summary: <one sentence>'
+fi
+
+# === Phase-validator schema (Onboarding phase exit checkpoint, §2.5) =====
+if [ "$ROLE" = "phase-validator" ]; then
+  if ! echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*(greenlight|improvements-needed)'; then
+    MISSING+=('status: <greenlight|improvements-needed>')
+  fi
+  check_marker '(^|\n)[[:space:]]*phase:[[:space:]]*[1-7]'    'phase: <1-7>'
+  check_marker '(^|\n)[[:space:]]*exit-criteria-checked:'      'exit-criteria-checked: <array, ≥1 row>'
+  check_marker '(^|\n)[[:space:]]*summary:'                    'summary: <one sentence>  (REQUIRED on both statuses)'
+
+  # On greenlight, findings: [] is required (explicit empty array).
+  if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*greenlight'; then
+    if ! echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*findings:[[:space:]]*\[\]'; then
+      MISSING+=('findings: []  (REQUIRED on greenlight — explicit empty array)')
+    fi
+  fi
+  # On improvements-needed, ≥1 must-fix finding with pv-<phase>-<nn> ID.
+  if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*improvements-needed'; then
+    if ! echo "$RESPONSE" | grep -qE '\*\*pv-[1-7]-[0-9]+\*\*[[:space:]]*\[must-fix\]'; then
+      MISSING+=('at least one must-fix finding with pv-<phase>-<nn> ID  (required when status=improvements-needed)')
+    fi
+  fi
+
+  # Banned tokens (inherited from reviewer + finding-ID legacy prefixes).
+  check_banned '(^|[^a-z-])nice-to-have([^a-z-]|$)'             'nice-to-have (banned — phase-validator findings carry [must-fix] only)'
+  check_banned '(^|[^a-z-])greenlight-with-notes([^a-z-]|$)'    'greenlight-with-notes (banned — there is no third return state)'
+  check_banned '(^|\n)[[:space:]]*notes:'                       'notes: sub-list (banned — observations are either must-fix or unrecorded)'
 fi
 
 # Nothing missing or banned — silent allow.

@@ -27,6 +27,7 @@ The onboarding skill brings a fresh project from zero to a comprehensive test su
 | Reference file | What's in it |
 |---|---|
 | [`references/phases-walkthrough.md`](references/phases-walkthrough.md) | Phases 1–7 detail: per-phase task list, hard gates, progress-output discipline. |
+| [`references/phase-validator-workflow.md`](references/phase-validator-workflow.md) | Phase-validator subagent dispatched at every phase end: when to invoke, manifest shape, per-phase verification table, response shape, cycle cap (10), parent's response handling. |
 
 ---
 
@@ -250,6 +251,17 @@ Refusing to start a phase is not an exit — it's a contract violation, distinct
 
 - **Phase 5 must DISPATCH at least one composer wave** before exit #2 is invocable. Phase 3 (happy-path scaffolded test) is NOT a Phase 5 dispatch — different phases, different subagents, different work. Harness-enforced by `coverage-state-schema-guard.sh`.
 - The same principle generalises to every phase: an empty progress log + state file claiming "exit #2" is refusing to start, not exit #2.
+
+#### Phase-validator checkpoint — every phase ends with a dispatch
+
+Onboarding dispatches `phase-validator-<N>:` at the **end of every phase**, before advancing to phase N+1. The validator is a fresh-context subagent that reads the per-phase completion contract (this section) and verifies each criterion against the phase's actual artifacts (state files, journey-map sentinel, commits, etc.). It returns `greenlight` (advance) or `improvements-needed` (re-attempt with concrete `fix:` actions).
+
+- **Skipping the validator dispatch is a contract violation.** Same family as skipping the phase itself.
+- **Cycle cap: 10 per phase.** After cycle 10 still `improvements-needed` → terminal `blocked-phase-validator-stalled`, surface to user with unresolved findings.
+- **Onboarding advances only on `greenlight`.** Recorded in `tests/e2e/docs/onboarding-phase-ledger.json`.
+- **Phase 3 (happy path), Phase 4 (journey mapping), Phase 5 (coverage expansion), Phase 6 (bug hunts) all dispatch a validator.** Phases 1, 2, 7 also dispatch one (inline-phase verification — scaffolded files, app-context.md sections, onboarding-report.md commit).
+
+Full workflow spec — manifest shape, per-phase verification table, response handling, cycle counting across resume — in [`references/phase-validator-workflow.md`](references/phase-validator-workflow.md). Return shape canonical in `../element-interactions/references/subagent-return-schema.md` §2.5. Schema-conformance enforced by `hooks/subagent-return-schema-guard.sh` (validates phase-validator returns at PostToolUse). Mechanical dispatch-required enforcement (deny advance without prior-phase greenlight in the ledger) is the planned v0.3.7 follow-up; until then, the orchestrator self-disciplines per the kernel rules.
 
 #### Other invariants
 
