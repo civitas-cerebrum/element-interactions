@@ -588,6 +588,135 @@ No mocks, no spies, no fake locators. Every test in `tests/` runs against `https
 
 Every public method on `Steps`, `ElementAction`, `Verifications`, `Interactions`, `Extractions`, and the matcher classes must have at least one test that exercises it. The coverage tool (`@civitas-cerebrum/test-coverage`) introspects the public surface and fails the build if anything is uncovered. New methods need new tests.
 
+### 18. Keep `Steps` lightweight — fewer methods, more flexibility
+
+`Steps` is the user-facing facade. It is a dispatch surface, not an implementation surface. The implementation layers — `Interactions`, `Verifications`, `Extractions` — *should* grow many small specialized methods (`localStorage`, `localStorageContains`, `localStorageMatches`, `localStoragePresent`). `Steps` should grow as few methods as possible, each accepting a flexible options shape that selects between the underlying variants.
+
+**Why this split exists:**
+
+- **Grep-ability for users.** A user reads a test and asks "what assertions exist for X?" — finding one `verifyX(key, options)` plus typed options is faster than scanning five sibling methods.
+- **Discoverability via TypeScript.** A discriminated-union options type (e.g. `StorageVerifyOptions`) gives autocomplete the matcher names without forcing the user to recall five method suffixes.
+- **Refactor blast radius.** Adding a new matcher variant means adding one method to `Verifications` and one branch to a Steps dispatcher — not a full new public method on `Steps` (with logging, doc block, coverage test, surface-area churn).
+- **Cognitive load on the API surface.** Every method on `Steps` is a thing a user can call. The API budget is finite; spend it on distinct *resources* (an element, the URL, page HTML, browser storage), not on every variant of how to assert against them.
+
+**The rule:**
+
+When you add a new family of related verifications/extractions on `Steps`, the default shape is **one method per resource**, accepting a discriminated-union options type that picks the matcher.
+
+✓ DO:
+
+```ts
+// One Steps method, four matchers selected via discriminated union.
+type StorageVerifyOptions =
+    | { equals: string; contains?: never; matches?: never; present?: never; ... }
+    | { equals?: never; contains: string; matches?: never; present?: never; ... }
+    | { equals?: never; contains?: never; matches: RegExp; present?: never; ... }
+    | { equals?: never; contains?: never; matches?: never; present: boolean; ... };
+
+async verifyLocalStorage(key: string, options: StorageVerifyOptions): Promise<void> {
+    // Dispatch to verify.localStorage / localStorageContains / localStorageMatches / localStoragePresent.
+}
+```
+
+✗ DON'T:
+
+```ts
+// Four separate Steps methods — bloats the surface, splits docs, splits log lines.
+async verifyLocalStorage(key, expected, options?) { ... }
+async verifyLocalStorageContains(key, substring, options?) { ... }
+async verifyLocalStorageMatches(key, regex, options?) { ... }
+async verifyLocalStoragePresent(key, options?) { ... }
+```
+
+**Variety still belongs on `Interactions` / `Verifications` / `Extractions`.** Those classes are the implementation. They take *concrete* arguments and have *concrete* shapes — one method per matcher is the right granularity there because each method maps to a single Playwright primitive (e.g. `expect.toHaveText` vs `expect.toContainText` vs `expect.toMatch`). Don't try to merge `Verifications.localStorage` and `Verifications.localStorageContains` into one — the implementation layer benefits from specialization.
+
+**Existing technical debt.** Several legacy families on `Steps` *do* have multiple methods per resource (`verifyText` / `verifyTextContains` / `verifyTextMatches`, `verifyHtml` / `verifyHtmlContains` / etc.). These predate this rule. Don't refactor them in the same PR that adds new work — that's a separate cleanup. But every *new* family must follow this rule. When in doubt: one Steps method, dispatch via options.
+
+**Exception: matcher tree.** The matcher tree (`steps.expect(el, page).text.toBe(...)`) is *itself* the flexible-shape API — the chained matchers play the role that an options-union plays for flat methods. So `.text.toBe` / `.text.toContain` / `.text.toMatch` are correct on the matcher tree. The rule applies to flat `verifyX` methods on `Steps`, not to the chain.
+
+### 19. Doc updates are mandatory for new public API
+
+Any PR that adds a new public method to `Steps`, `ElementAction`, the matcher tree, or a new public matcher class **must** update both of:
+
+1. `README.md` — under the relevant `🛠️ API Reference: Steps` subsection (Interaction / Verification / Data Extraction / Visibility / Listed Elements / etc.). One bullet per new method, plus an inline code example block when the API has a non-obvious option shape (e.g. discriminated unions, multi-form matchers).
+2. `skills/element-interactions/references/api-reference.md` — under the matching section. The api-reference is the canonical documentation consumed by other skills (test-composer, coverage-expansion, bug-discovery), so missing entries here cause downstream agents to write tests that drop out of the framework.
+
+**No "headline-worthy" exception.** The previous version of this rule allowed README updates only for headline-worthy features and produced silent doc drift — the HTML extraction surface (commit `d2f200e`) shipped without a README entry. If the change adds a method a user can call from a test, both files get an entry. The PR description should quote the new bullets verbatim so reviewers can grep them.
+
+**Internal-only changes don't trigger this rule.** Adding a method to `Verifications`, `Interactions`, or `Extractions` *without* a corresponding `Steps` / `ElementAction` / matcher-tree entry point is internal — it's reachable only from the raw escape hatch (`interactions.verify.X`). The README docs the recommended surface; raw escape-hatch methods are documented inline via JSDoc on the class.
+
+**Skill files updates** (`skills/element-interactions/SKILL.md`, `skills/contributing-to-element-interactions/SKILL.md`, etc.) are required only when the change affects a workflow stage, the contribution rules, or a hard rule. A new `verify*` method does not normally require a SKILL.md change.
+
+---
+
+## 📝 Contribution Handover
+
+Every PR against this repo must ship a populated `.contribution-handover.json` at the repo root. The handover captures one boolean per guardrail in this skill, plus a small set of free-form fields (PR title, summary, version delta).
+
+The schema lives at `schemas/contribution-handover.schema.json`. A blank template lives at `.contribution-handover.template.json`. Copy the template, fill it in, and commit the result as `.contribution-handover.json` on your branch.
+
+The companion gate is `hooks/contribution-handover-gate.sh` — a `PreToolUse:Bash` hook that intercepts `git push origin` and `gh pr create` and refuses to let either run while the handover is missing, malformed, or has unset booleans. Install it by adding a `PreToolUse:Bash` entry pointing at the script in your `~/.claude/settings.json` (see the script's header for an exact wiring snippet).
+
+**Why a handover, not just a checklist:**
+- Structured booleans are machine-checkable. The gate spot-verifies a subset of claims against the actual repo state (e.g. `readmeUpdated: true` is cross-checked against the README diff vs. `origin/main`).
+- The handover travels with the branch, so reviewers see what the contributor signed off on, with reasons attached to any `false` field. A markdown checklist can be ticked without verification; a structured handover with mismatched claims fails CI.
+- The shape evolves with the rules. When a new hard rule lands in this skill, it gets a new field in the schema. Old handovers fail validation and contributors can't push until they review the new rule. The schema is the rule index.
+
+**Field families:**
+- `preflight` — duplicate-search, branch sync, dependency version checks (Hard Rule "Before filing").
+- `design` — argument order, async, no-raw-locator, action-presence-detect, lightweight Steps, naming, error format, logging, TypeScript discipline (Design Rules 1–18).
+- `tests` — implementation, real-Vue-app, non-tautological assertions, passing (Hard Rules "no mocked", "must verify causally").
+- `build` — TypeScript build clean, full suite green, knownFailures (free-form for legitimate skips).
+- `coverage` — 100% API coverage gate (Hard Rule).
+- `docs` — README, api-reference, skill files (Rule 19).
+- `version` — single patch bump (Rule 15).
+
+For any boolean set to `false` or `"n/a"`, the corresponding `*Reason` field must be populated. Vague reasons ("not applicable", "didn't need it") fail the gate; specific reasons ("change is internal-only on Verifications, no public Steps surface added — Rule 19 doesn't apply") pass.
+
+**Worked example.** This PR ships its own `.contribution-handover.json` — read it for the populated shape.
+
+### Hook error message format — repo standard
+
+Every hook under `hooks/*.sh` that emits a `permissionDecision: "deny"` (or a `systemMessage` warn) must format the reason text using the layout below. The shape is identical across hooks so contributors recognize a hook block instantly and know where to look.
+
+```
+[BLOCKED] <one-line headline — what's wrong, in present tense>
+
+──────────────────────────
+Do this instead:
+──────────────────────────
+  Option A — <case>
+    <concrete template / command / config diff>
+  Option B — <other case>
+    <concrete next step>
+
+──────────────────────────
+What was wrong:
+──────────────────────────
+File: <path or N/A>
+<observed values — claim, actual, diff, etc.>
+<one-paragraph why it matters — the rule, the prior incident, the cost of the failure>
+
+──────────────────────────
+If <common motivation> — read this:
+──────────────────────────
+<pointer to the upstream fix or the rule the contributor is bumping against>
+
+References:
+  <canonical docs — file paths or URLs>
+```
+
+`[WARN]` replaces `[BLOCKED]` for `systemMessage`-style soft warnings. Box-drawing characters are U+2500 — copy them from this skill, not from any other hook (existing hooks predate this standard and use ad-hoc formatting; they'll be normalized in a separate cleanup PR).
+
+**Why these sections exist:**
+- *Headline* — the contributor sees the failure in one line in their terminal. Don't bury the rule in paragraph two.
+- *Do this instead* — concrete, copy-pasteable. At least two options when there are two valid resolutions (fix the work vs. update the claim). One option when there's only one path (e.g. file-corruption → repair the file).
+- *What was wrong* — observed state, including the file path, the claim, and the actual value. This is the audit-log section; without it, contributors can't tell which check fired.
+- *If <motivation>* — the empathy line. Anticipates the most common reason a contributor hit this gate ("you ticked the box without updating the file") and routes them to the right fix path. Skip this section if there's no common motivation worth naming.
+- *References* — the canonical docs for the rule. Always include the SKILL.md section that defines the rule, plus the schema / config file the contributor will edit. Two to four lines.
+
+The `contribution-handover-gate.sh` hook is the canonical implementation — copy its `build_message` helper when writing a new hook.
+
 ---
 
 ## 🧰 Workflow: adding a new API
@@ -639,15 +768,21 @@ npm run build
 npm run test                                 # all tests must pass
 npx test-coverage --format=github-plain     # must show 100%
 
-# 4. Update docs (in this order):
+# 4. Update docs (Rule 19 — both files mandatory for any new public API):
 #    - skills/element-interactions/references/api-reference.md (the canonical source)
-#    - skills/element-interactions/SKILL.md (only if the change affects the workflow stages)
-#    - README.md (only for headline-worthy features)
+#    - README.md (the user-facing reference under "🛠️ API Reference: Steps")
+#    - skills/element-interactions/SKILL.md (only if the change affects workflow stages)
 
 # 5. Bump version once
 npm version patch --no-git-tag-version
 
-# 6. Commit + push + open PR
+# 6. Populate the contribution handover
+cp .contribution-handover.template.json .contribution-handover.json
+# fill in every boolean; pair every false / "n/a" with a *Reason field
+
+# 7. Commit + push + open PR
+#    The contribution-handover-gate.sh hook (PreToolUse:Bash) will refuse
+#    `git push origin` and `gh pr create` until the handover is valid.
 git add -A
 git commit -m "feat: add steps.<method> for <use case>"
 git push -u origin feat/your-feature
@@ -739,9 +874,10 @@ Before opening a PR on element-interactions:
 - [ ] Coverage 100%: `npx test-coverage --format=github-plain` shows ✅
 - [ ] No raw Playwright leak: `grep -rn "locator\.\(click\|fill\|...\)" src/ --include="*.ts"` returns zero matches in non-`Element`-impl code
 - [ ] Version bumped exactly once (`npm version patch` at first commit, not at every commit)
-- [ ] API reference updated (`skills/element-interactions/references/api-reference.md`) for any new public surface
-- [ ] README updated only if the change is headline-worthy (new entry point, new feature category)
+- [ ] API reference updated (`skills/element-interactions/references/api-reference.md`) — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
+- [ ] README updated under `🛠️ API Reference: Steps` — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] If adding a new method, it has a JSDoc block on the public-facing class
+- [ ] `.contribution-handover.json` populated against `schemas/contribution-handover.schema.json` — every boolean set; every `false` / `"n/a"` paired with a specific `*Reason` field (verified by `hooks/contribution-handover-gate.sh`)
 
 If you're adding to element-repository first:
 
