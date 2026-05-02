@@ -29,3 +29,12 @@ test-coverage-report.md
 /docs
 /skills/*-workspace
 /solution-designs
+
+# Runtime state files written by hooks during testing / live runs.
+tests/e2e/docs/.in-flight-composers.json
+tests/e2e/docs/.handover-payloads/
+tests/e2e/docs/.subagent-returns/
+tests/e2e/docs/.adversarial-findings.lock
+tests/e2e/docs/.coverage-expansion-cycle-*.json
+tests/e2e/docs/coverage-expansion-state.json
+tests/e2e/docs/onboarding-phase-ledger.json
