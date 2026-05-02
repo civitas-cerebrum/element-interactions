@@ -211,6 +211,11 @@ const color = await steps.getCssProperty('elementName', 'PageName', 'color');
 const allTexts = await steps.getAll('listItems', 'PageName');
 const allChildTexts = await steps.getAll('tableRows', 'PageName', { child: { pageName: 'TablePage', elementName: 'nameCell' } });
 const allHrefs = await steps.getAll('links', 'PageName', { extractAttribute: 'href' });
+
+// Browser storage — page-level reads, no element scope.
+// Returns null when the key is absent (matches native getItem contract).
+const theme = await steps.getLocalStorage('theme');           // string | null
+const cart  = await steps.getSessionStorage('cart.count');    // string | null
 ```
 
 ### Verification
@@ -228,6 +233,17 @@ await steps.verifyInputValue('elementName', 'PageName', 'expected');
 await steps.verifyImages('elementName', 'PageName');
 await steps.verifyUrlContains('/dashboard');
 await steps.verifyTabCount(2);
+
+// Browser storage — one method per store, discriminated matcher.
+// Pick exactly one: { equals } | { contains } | { matches } | { present }.
+// All forms accept { negated, timeout, errorMessage } modifiers.
+await steps.verifyLocalStorage('theme', { equals: 'dark' });
+await steps.verifyLocalStorage('flag', { contains: 'enabled' });
+await steps.verifyLocalStorage('build', { matches: /^v\d+$/ });
+await steps.verifyLocalStorage('seen', { present: true });
+await steps.verifyLocalStorage('temp', { present: false });                  // absence
+await steps.verifyLocalStorage('theme', { equals: 'light', negated: true }); // not equal
+await steps.verifySessionStorage('cart.count', { equals: '3' });             // same shape
 await steps.verifyOrder('listItems', 'PageName', ['First', 'Second', 'Third']);
 await steps.verifyListOrder('listItems', 'PageName', 'asc');               // or 'desc'
 await steps.verifyCssProperty('elementName', 'PageName', 'color', 'rgb(255, 0, 0)');

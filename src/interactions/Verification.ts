@@ -352,6 +352,142 @@ export class Verifications {
         );
     }
 
+    // ==========================================
+    // Browser Storage (localStorage / sessionStorage)
+    // ==========================================
+    //
+    // Storage assertions follow the same retry-on-poll pattern as html: a
+    // private `pollStorage` method is the single source of truth, and the
+    // exact-match / contains / regex / starts-with / ends-with / present /
+    // absent variants are one-line dispatches over it.
+
+    /** Read a value from `window.localStorage`. */
+    private readLocalStorage(key: string): Promise<string | null> {
+        return this.page.evaluate((k) => window.localStorage.getItem(k), key);
+    }
+
+    /** Read a value from `window.sessionStorage`. */
+    private readSessionStorage(key: string): Promise<string | null> {
+        return this.page.evaluate((k) => window.sessionStorage.getItem(k), key);
+    }
+
+    /**
+     * Polls a `string | null` predicate against a storage source until it
+     * satisfies the predicate (or its negation) or the timeout expires.
+     * Single source of truth for every localStorage / sessionStorage variant.
+     */
+    private async pollStorage(
+        readValue: () => Promise<string | null>,
+        predicate: (value: string | null) => boolean,
+        describe: string,
+        storageType: 'localStorage' | 'sessionStorage',
+        key: string,
+        options?: VerifyOptions,
+    ): Promise<void> {
+        const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
+        const negated = options?.negated ?? false;
+        const neg = negated ? 'not ' : '';
+        const header = options?.errorMessage ?? `expected ${storageType}[${JSON.stringify(key)}] ${neg}${describe}`;
+
+        let lastValue: string | null = null;
+        let captured = false;
+        try {
+            await expect.poll(async () => {
+                try {
+                    const value = await readValue();
+                    lastValue = value;
+                    captured = true;
+                    return predicate(value) !== negated;
+                } catch {
+                    return false;
+                }
+            }, { timeout, message: header }).toBe(true);
+        } catch {
+            const actual = !captured ? '<unavailable>' : lastValue === null ? 'null' : JSON.stringify(lastValue);
+            throw new Error(`${header}\n  actual: ${actual}`);
+        }
+    }
+
+    /** Asserts that `localStorage[key]` equals the expected string exactly. */
+    async localStorage(key: string, expected: string, options?: VerifyOptions): Promise<void> {
+        await this.pollStorage(
+            () => this.readLocalStorage(key),
+            v => v === expected,
+            `to be ${JSON.stringify(expected)}`,
+            'localStorage', key, options,
+        );
+    }
+
+    /** Asserts that `localStorage[key]` contains the given substring. Fails if the key is absent. */
+    async localStorageContains(key: string, substring: string, options?: VerifyOptions): Promise<void> {
+        await this.pollStorage(
+            () => this.readLocalStorage(key),
+            v => v !== null && v.includes(substring),
+            `to contain ${JSON.stringify(substring)}`,
+            'localStorage', key, options,
+        );
+    }
+
+    /** Asserts that `localStorage[key]` matches a regular expression. Fails if the key is absent. */
+    async localStorageMatches(key: string, regex: RegExp, options?: VerifyOptions): Promise<void> {
+        await this.pollStorage(
+            () => this.readLocalStorage(key),
+            v => v !== null && regex.test(v),
+            `to match ${regex}`,
+            'localStorage', key, options,
+        );
+    }
+
+    /** Asserts that the `localStorage` key is present (any non-null value). Use `{ negated: true }` to assert absence. */
+    async localStoragePresent(key: string, options?: VerifyOptions): Promise<void> {
+        await this.pollStorage(
+            () => this.readLocalStorage(key),
+            v => v !== null,
+            'to be present',
+            'localStorage', key, options,
+        );
+    }
+
+    /** Asserts that `sessionStorage[key]` equals the expected string exactly. */
+    async sessionStorage(key: string, expected: string, options?: VerifyOptions): Promise<void> {
+        await this.pollStorage(
+            () => this.readSessionStorage(key),
+            v => v === expected,
+            `to be ${JSON.stringify(expected)}`,
+            'sessionStorage', key, options,
+        );
+    }
+
+    /** Asserts that `sessionStorage[key]` contains the given substring. Fails if the key is absent. */
+    async sessionStorageContains(key: string, substring: string, options?: VerifyOptions): Promise<void> {
+        await this.pollStorage(
+            () => this.readSessionStorage(key),
+            v => v !== null && v.includes(substring),
+            `to contain ${JSON.stringify(substring)}`,
+            'sessionStorage', key, options,
+        );
+    }
+
+    /** Asserts that `sessionStorage[key]` matches a regular expression. Fails if the key is absent. */
+    async sessionStorageMatches(key: string, regex: RegExp, options?: VerifyOptions): Promise<void> {
+        await this.pollStorage(
+            () => this.readSessionStorage(key),
+            v => v !== null && regex.test(v),
+            `to match ${regex}`,
+            'sessionStorage', key, options,
+        );
+    }
+
+    /** Asserts that the `sessionStorage` key is present (any non-null value). Use `{ negated: true }` to assert absence. */
+    async sessionStoragePresent(key: string, options?: VerifyOptions): Promise<void> {
+        await this.pollStorage(
+            () => this.readSessionStorage(key),
+            v => v !== null,
+            'to be present',
+            'sessionStorage', key, options,
+        );
+    }
+
     /**
      * Asserts that an element has a specific HTML attribute with an exact value.
      * @param target - A Playwright Locator or Element pointing to the target element.

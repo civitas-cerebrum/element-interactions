@@ -55,6 +55,46 @@ export interface TextVerifyOptions {
 }
 
 /**
+ * Shared modifiers every storage assertion accepts.
+ * Kept separate from the matcher predicate so a single `verifyLocalStorage` /
+ * `verifySessionStorage` on `Steps` can accept any matcher shape with the
+ * same trailing modifier set.
+ */
+interface StorageVerifyModifiers {
+    /** When `true`, flips the assertion. */
+    negated?: boolean;
+    /** Override the class-level timeout for this single assertion. */
+    timeout?: number;
+    /** Custom message prepended to the failure header. */
+    errorMessage?: string;
+}
+
+/**
+ * Discriminated matcher for `verifyLocalStorage` / `verifySessionStorage`.
+ * Pick exactly one of `equals`, `contains`, `matches`, or `present` — TypeScript
+ * enforces the choice via `?: never` on the others.
+ *
+ * Steps stays lightweight (one method per storage type) by accepting this
+ * union; the variety lives in `Verifications` (`verify.localStorage`,
+ * `localStorageContains`, `localStorageMatches`, `localStoragePresent`).
+ *
+ * @example
+ * ```ts
+ * await steps.verifyLocalStorage('theme', { equals: 'dark' });
+ * await steps.verifyLocalStorage('flag', { contains: 'enabled' });
+ * await steps.verifyLocalStorage('build', { matches: /^v\d+$/ });
+ * await steps.verifyLocalStorage('seen', { present: true });
+ * await steps.verifyLocalStorage('temp', { present: false });   // absence
+ * await steps.verifyLocalStorage('seen', { present: true, negated: true });  // also absence
+ * ```
+ */
+export type StorageVerifyOptions =
+    | (StorageVerifyModifiers & { equals: string;   contains?: never; matches?: never; present?: never })
+    | (StorageVerifyModifiers & { equals?: never;   contains: string; matches?: never; present?: never })
+    | (StorageVerifyModifiers & { equals?: never;   contains?: never; matches: RegExp; present?: never })
+    | (StorageVerifyModifiers & { equals?: never;   contains?: never; matches?: never; present: boolean });
+
+/**
  * Configuration options for the `count` verification method.
  * At least one constraint is required: exactly, greaterThan, or lessThan.
  */

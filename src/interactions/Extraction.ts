@@ -91,6 +91,25 @@ export class Extractions {
         return await this.page.evaluate(() => document.body.innerHTML);
     }
 
+    /**
+     * Reads a value from the browser's `window.localStorage`. Returns `null` if
+     * the key is missing — matches the native `localStorage.getItem` contract.
+     *
+     * Use for reading persisted UI state the framework cannot reach through
+     * the DOM (theme preference, dismissed-banner flag, feature toggle, etc.).
+     */
+    async getLocalStorage(key: string): Promise<string | null> {
+        return await this.page.evaluate((k) => window.localStorage.getItem(k), key);
+    }
+
+    /**
+     * Reads a value from the browser's `window.sessionStorage`. Returns `null` if
+     * the key is missing — matches the native `sessionStorage.getItem` contract.
+     */
+    async getSessionStorage(key: string): Promise<string | null> {
+        return await this.page.evaluate((k) => window.sessionStorage.getItem(k), key);
+    }
+
     /** Captures a screenshot of the full page or a specific element. */
     async screenshot(target?: WebElement, options?: ScreenshotOptions): Promise<Buffer> {
         if (target) {

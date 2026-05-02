@@ -479,6 +479,8 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 
 * **`getText(pageName, elementName)`** — Returns the trimmed text content of an element, or an empty string if null.
 * **`getAttribute(pageName, elementName, attributeName: string)`** — Returns the value of an HTML attribute (e.g. `href`, `aria-pressed`), or `null` if it doesn't exist.
+* **`getLocalStorage(key: string)`** — Reads `window.localStorage[key]`. Returns the stored string or `null` if the key is absent (matches the native `getItem` contract). Use for state the framework cannot reach through the DOM — persisted theme, dismissed-banner flag, feature toggles, auth tokens.
+* **`getSessionStorage(key: string)`** — Same shape, against `window.sessionStorage`.
 
 ### ✅ Verification
 
@@ -493,6 +495,18 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 * **`verifyUrlContains(text: string)`** — Asserts that the current URL contains the expected substring.
 * **`verifyInputValue(pageName, elementName, expectedValue: string)`** — Asserts that an input, textarea, or select element has the expected value.
 * **`verifyTabCount(expectedCount: number)`** — Asserts the number of currently open tabs/pages in the browser context.
+* **`verifyLocalStorage(key: string, options: StorageVerifyOptions)`** — Asserts a property of `localStorage[key]`. Pick exactly one matcher in the options: `{ equals: string }` (exact match), `{ contains: string }` (substring), `{ matches: RegExp }`, or `{ present: boolean }` (existence). All four forms also accept `negated`, `timeout`, and `errorMessage`. Polls until the predicate holds or the timeout expires, so it survives the race between a UI action firing and its persistence side-effect landing.
+* **`verifySessionStorage(key: string, options: StorageVerifyOptions)`** — Same shape, against `window.sessionStorage`.
+
+```ts
+// Examples
+await steps.verifyLocalStorage('theme', { equals: 'dark' });
+await steps.verifyLocalStorage('flag', { contains: 'enabled' });
+await steps.verifyLocalStorage('build', { matches: /^v\d+$/ });
+await steps.verifyLocalStorage('seen', { present: true });
+await steps.verifyLocalStorage('temp', { present: false });                  // absence
+await steps.verifyLocalStorage('theme', { equals: 'light', negated: true }); // not equal
+```
 
 ### 🔍 Visibility — Probe + Gate
 
