@@ -200,8 +200,89 @@ Suggested cleanup: remove pipeline meta-talk from the brief. Subagent role + sco
   fi
 fi
 
-# If the description carries a recognized role prefix, no further checks.
+# === In-flight composer/probe registration =================================
+# Recorded for `composer-j-<slug>:` / `composer-sj-<slug>:` / `probe-j-<slug>:`
+# / `probe-sj-<slug>:` dispatches in `tests/e2e/docs/.in-flight-composers.json`
+# so the PostToolUse:Write|Edit gate (coverage-expansion-direct-compose-block.sh)
+# can mechanically distinguish a legitimate composer-subagent spec write
+# from an orchestrator-direct-composition violation.
+#
+# Done HERE (before the legit-dispatch early-exit) so it fires for the
+# actual dispatch we want to authorise — not for reviewer-/cleanup-/etc.
+# dispatches that don't write spec files.
+#
+# Each registration carries the cycle number so the downstream PostToolUse
+# return-schema guard (subagent-return-schema-guard.sh) can validate the
+# handover envelope's `cycle:` against the registered value and refuse to
+# deregister on mismatch — preventing a stale cycle-1 handover from clearing
+# a cycle-2 redispatch's slot. Cycle is extracted from the description
+# (`composer-j-checkout: cycle 2`), falling back to the prompt body, then
+# defaulting to 1.
+#
+# Dispatched slugs expire after a 30-minute TTL (rolling) as a failsafe for
+# crashed/abandoned dispatches. Explicit deregistration on terminal handover
+# status is the primary cleanup path; TTL only catches subagents that never
+# return. Subagents that take >30 min would need a longer cycle than the
+# 7-cycle A↔B retry budget allows; that's a different failure mode
+# (blocked-cycle-stalled) caught upstream.
 if [ "$DESCRIPTION_HAS_ROLE_PREFIX" = true ]; then
+  REG_SLUG=""
+  case "$DESCRIPTION" in
+    composer-j-*|composer-sj-*|probe-j-*|probe-sj-*)
+      REG_SLUG=$(echo "$DESCRIPTION" | sed -E 's/^(composer|probe)-((j|sj)-[a-z0-9-]+).*/\2/')
+      ;;
+  esac
+
+  if [ -n "$REG_SLUG" ] && echo "$REG_SLUG" | grep -qE '^(j|sj)-[a-z0-9-]+$'; then
+    REG_CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+    REG_REPO_ROOT=$(git -C "$REG_CWD" rev-parse --show-toplevel 2>/dev/null || echo "$REG_CWD")
+    REG_IN_FLIGHT="$REG_REPO_ROOT/tests/e2e/docs/.in-flight-composers.json"
+    mkdir -p "$REG_REPO_ROOT/tests/e2e/docs" 2>/dev/null || true
+
+    REG_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    REG_NOW_EPOCH=$(date -u +%s)
+    REG_TTL_CUTOFF=$((REG_NOW_EPOCH - 1800))   # 30 min ago
+
+    # Cycle extraction: description (`...: cycle N`) → prompt body → default 1.
+    # `|| true` guards against set -e + pipefail when no match is found.
+    REG_CYCLE=$(echo "$DESCRIPTION" | grep -oiE 'cycle[[:space:]]+[0-9]+' | grep -oE '[0-9]+' | head -1 || true)
+    if [ -z "$REG_CYCLE" ]; then
+      REG_CYCLE=$(echo "$PROMPT" | grep -oiE 'cycle[[:space:]]*[:=]?[[:space:]]*[0-9]+' | grep -oE '[0-9]+' | head -1 || true)
+    fi
+    [ -z "$REG_CYCLE" ] && REG_CYCLE=1
+
+    if [ -f "$REG_IN_FLIGHT" ]; then
+      REG_EXISTING=$(jq '.' "$REG_IN_FLIGHT" 2>/dev/null || echo '{"composers":{}}')
+    else
+      REG_EXISTING='{"composers":{}}'
+    fi
+
+    REG_UPDATED=$(echo "$REG_EXISTING" | jq \
+      --arg slug "$REG_SLUG" \
+      --arg desc "$DESCRIPTION" \
+      --arg ts "$REG_TIMESTAMP" \
+      --argjson cycle "$REG_CYCLE" \
+      --argjson cutoff "$REG_TTL_CUTOFF" \
+      '
+        # Drop entries older than TTL (best-effort).
+        .composers |= with_entries(
+          select((.value.started_at | fromdateiso8601 // 0) >= $cutoff)
+        )
+        # Register or refresh this slug. Redispatch under the same slug
+        # overwrites the prior cycle/timestamp — that is the documented
+        # refresh semantics for non-terminal handovers (reviewer
+        # improvements-needed, phase-validator improvements-needed) where
+        # the orchestrator MUST redispatch under the same slug.
+        | .composers[$slug] = {
+            description_prefix: $desc,
+            cycle: $cycle,
+            started_at: $ts
+          }
+      ' 2>/dev/null || echo "$REG_EXISTING")
+
+    echo "$REG_UPDATED" > "$REG_IN_FLIGHT.tmp" 2>/dev/null && mv "$REG_IN_FLIGHT.tmp" "$REG_IN_FLIGHT" || rm -f "$REG_IN_FLIGHT.tmp"
+  fi
+
   exit 0
 fi
 

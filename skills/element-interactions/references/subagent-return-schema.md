@@ -61,6 +61,92 @@ A compositional or adversarial pass subagent may end a journey without producing
 
 **Relationship to the broader return-state enum.** The full no-skip contract (see `coverage-expansion` §"No-skip contract") defines four possible subagent return types: `new-tests-landed`, `covered-exhaustively` (replaces the legacy `no-new-tests`), `blocked (reason)`, and `skipped (reason + who-authorized)`. The two states documented in this section (§2.1 and §2.2) apply specifically to the "journey was inspected and ended without new tests" fork. `blocked` and `skipped` are **separate return types** governed by the no-skip contract, not covered here — a subagent that cannot inspect (tenant data missing, credentials unavailable, malformed journey block) returns `blocked` with a reason, not `covered-exhaustively`.
 
+### 2.0 Handover envelope (mandatory)
+
+Every composer / reviewer / probe / process-validator / phase-validator subagent return MUST be prefaced with a `handover:` envelope. The envelope is the contract that pairs a return with its in-flight registration entry (`tests/e2e/docs/.in-flight-composers.json`, written by `hooks/coverage-expansion-dispatch-guard.sh`) and tells the harness whether to deregister the slot or hold it for a redispatch.
+
+The envelope sits at the top of the return body, separate from the role-specific schema below it (§2.1 / §2.4 / §2.5 etc.). A return that omits the envelope still gets schema-checked for the role-specific shape, but the dispatch's in-flight slot remains held by the registry until TTL (30 min) — explicit deregistration is the primary cleanup path; TTL is the failsafe for crashed or abandoned dispatches.
+
+#### Schema
+
+```
+handover:
+  role: <role-prefixed slug — e.g., composer-j-checkout>
+  cycle: <integer ≥ 1>
+  status: <role-specific enum — see table below>
+  next-action: <one-line directive for the orchestrator>
+```
+
+Field rules:
+
+| Field | Rule |
+|---|---|
+| `role` | Verbatim role-prefixed slug from the dispatching brief's description. Must match a registered slug. |
+| `cycle` | Integer cycle number. MUST equal the cycle on the matching registry entry; mismatch → harness refuses to deregister, asks for redispatch under the correct cycle. |
+| `status` | Role-specific enum (see table). Terminal statuses deregister immediately; non-terminal statuses hold the slot for redispatch under the same slug. |
+| `next-action` | One sentence telling the orchestrator what to do next ("dispatch reviewer-j-checkout cycle 1", "advance to Phase 4", "redispatch composer-j-checkout cycle 2 with must-fix list", etc.). |
+
+#### Per-role status enum
+
+| Role | Terminal (registry deregisters on handover) | Non-terminal (registry holds slot, orchestrator MUST redispatch under same slug) |
+|---|---|---|
+| `composer-` | `new-tests-landed`, `covered-exhaustively`, `blocked`, `skipped` | — |
+| `reviewer-` | `greenlight` | `improvements-needed` |
+| `probe-` | `clean`, `findings-emitted`, `blocked` | — |
+| `process-validator-` | `greenlight`, `block` | — |
+| `phase-validator-` | `greenlight` | `improvements-needed` |
+
+The non-terminal `improvements-needed` statuses (reviewer + phase-validator) deliberately keep the slot leashed: the orchestrator's contract is to redispatch under the SAME slug with a stricter brief, and the redispatch refreshes the registry entry's `started_at` timestamp + `cycle` value. This prevents a non-terminal handover from clearing the slot, then a parallel orchestrator-driven write attempt slipping through the direct-compose gate while the redispatch is in flight.
+
+The composer / probe / process-validator roles have no non-terminal statuses — every documented status is terminal because their failure modes (`blocked`, `skipped`, `block`) are themselves end-of-cycle outcomes the orchestrator handles by re-issuing under a NEW slug (different cycle, different brief), not by redispatching the current one.
+
+#### Cycle-mismatch contract
+
+If the envelope claims `cycle: 1` but the registry entry says `cycle: 2`, the registry refuses to deregister and emits a fix-message asking the orchestrator to redispatch under the correct cycle. This catches the failure mode where a stale cycle-1 handover (e.g., from a slow or auto-compacted subagent) returns AFTER a cycle-2 redispatch already overwrote the registry — without the strict-match rule, the stale handover would clear the cycle-2 slot mid-flight and the orchestrator-direct-compose gate would mis-fire.
+
+The match is strict — slug + cycle, both must agree. A handover with a slug not present in the registry (already deregistered by a sibling, or never registered) is silently allowed; the registry can't deregister what isn't there, and the validator falls through to role-specific schema checks.
+
+#### Worked example — composer terminal handover
+
+```
+handover:
+  role: composer-j-checkout
+  cycle: 1
+  status: new-tests-landed
+  next-action: dispatch reviewer-j-checkout cycle 1
+
+status: new-tests-landed
+tests-added: 6
+run-time: 47s
+
+(per-test breakdown below…)
+```
+
+#### Worked example — reviewer non-terminal handover
+
+```
+handover:
+  role: reviewer-j-checkout
+  cycle: 1
+  status: improvements-needed
+  next-action: redispatch composer-j-checkout cycle 2 with must-fix list j-checkout-1-1-R-{01,02}
+
+status: improvements-needed
+journey: j-checkout
+pass: 1
+cycle: 1
+
+missing-scenarios:
+  - **j-checkout-1-1-R-01** [must-fix] — mobile breakpoint never exercised
+    - …
+```
+
+Here the registry holds the `j-checkout` slot across cycles 1 → 2 because reviewer returned `improvements-needed`. The composer cycle-2 redispatch under the same `composer-j-checkout` slug refreshes the slot's `cycle` to `2`; if a second stale cycle-1 reviewer handover later arrives, the cycle-mismatch check catches it.
+
+#### Initial release: WARN-mode validation, deregistration always fires
+
+Per §4.3, the harness validator hook ships envelope-validation in WARN mode (matches the existing schema-guard mode) — missing or malformed envelopes emit a `systemMessage` but do not block. **Deregistration itself fires regardless of mode**: the registry-update mechanism is bookkeeping, not validation. A follow-up promotes envelope-validation to BLOCK after a representative run shows zero false positives.
+
 ### 2.1 `status: covered-exhaustively`
 
 Only valid when the subagent **inspected** the journey. Required evidence:
@@ -382,6 +468,20 @@ The same grep-based shape signals are enforced at the harness layer by `hooks/su
 - Emits a non-blocking `systemMessage` listing missing markers and any banned tokens detected. The orchestrator sees the warning and re-dispatches.
 
 The hook is a backstop, not a replacement: callers still run the orchestrator-side grep per §4.1. The harness layer catches malformed returns the orchestrator missed; the orchestrator-side check catches violations that depend on caller-specific context the hook can't see (e.g., whether a `Test expectations:` row is missing from the mapping table). Initial release is warn-only — a follow-up promotes to block-mode after a representative run produces a ≤2% false-positive rate.
+
+### 4.3 Harness validator — handover-envelope leash + deregistration
+
+The same `hooks/subagent-return-schema-guard.sh` hook also enforces the §2.0 handover envelope and drives the registry leash. Behavior on a `composer-` / `reviewer-` / `probe-` / `process-validator-` / `phase-validator-` return:
+
+1. **Envelope parse.** Greps the return for the four envelope fields (`role:`, `cycle:`, `status:`, `next-action:`). Missing or malformed envelope emits a WARN; does not block. Deregistration cannot proceed without a parseable envelope, so the registry slot remains held until TTL expiry — the WARN tells the orchestrator to revise the brief so future returns include the envelope.
+2. **Registry lookup.** Reads `tests/e2e/docs/.in-flight-composers.json` for an entry under the slug derived from `handover.role` (the `j-<slug>` / `sj-<slug>` portion). Slug not present → fall through to role-specific schema check; the registry can't deregister what isn't there.
+3. **Cycle-match check.** Compares `handover.cycle` against the registered `cycle`. Mismatch → emits a fix-message WARN asking the orchestrator to redispatch under the correct cycle; does NOT deregister.
+4. **Status routing.** On a terminal status (per §2.0 table), removes the slug from `.in-flight-composers.json`. On a non-terminal status, leaves the slug in place so the redispatch refreshes it.
+5. **Role-specific schema check.** Independently of envelope handling, the hook still runs the §4.1 / §4.2 grep checks against the role-specific schema and emits any missing-marker / banned-token WARNs.
+
+Envelope-validation mode is WARN initially; a follow-up promotes to BLOCK after a representative run shows zero false positives. **Deregistration itself fires in both WARN and BLOCK mode** — the registry update is mechanical bookkeeping, not validation, so the leash works correctly even before BLOCK promotion.
+
+The TTL (30 min) on registry entries remains as a failsafe for crashed / abandoned dispatches that never return an envelope. Explicit deregistration via terminal-status handover is the primary cleanup path; TTL is the secondary one.
 
 ---
 
