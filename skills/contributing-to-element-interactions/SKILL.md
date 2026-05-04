@@ -38,10 +38,20 @@ description: >
   the package, the exact workflow for adding new APIs cleanly, and how to
   distinguish an API gap from a structural gap.
 
+  (C) **Issue-queue / roadmap work on this repo.** Any request to triage,
+  plan, or implement open issues filed against `civitas-cerebrum/element-
+  interactions`. Triggers: "check the github issues", "look at the open
+  issues", "implementation roadmap", "implement issue #N", "ship issue #N",
+  "work on the open issues", "let's get started on the issues", "address
+  the issue queue", "pick up an issue", "what's left to ship", "go through
+  the issues", "what should we work on next" (when CWD is the package's
+  own repo).
+
   Triggers also on: "contribute to element-interactions", any request to
-  modify files under the package's `src/`, "open an issue on element-
-  interactions", "open a PR on element-interactions", or any of the structural
-  / protocol-gap phrases above.
+  modify files under the package's `src/`, `skills/`, or `hooks/`, "open an
+  issue on element-interactions", "open a PR on element-interactions", any
+  of the structural / protocol-gap phrases above, or any framing that
+  implies work *on the package itself* rather than *with it*.
 ---
 
 # Contributing to @civitas-cerebrum/element-interactions
@@ -184,6 +194,29 @@ If none of the above fit, **stop and discuss** before writing code. There's prob
 ---
 
 ## 🚨 Hard rules — don't violate
+
+### Methodology improvements ship as programmatic hooks, not just markdown
+
+**Every PR that adds, modifies, or strengthens a rule, workflow, phase, gate, invariant, or contract in any `skills/*/SKILL.md` (or its referenced files under `references/`) MUST ship a corresponding harness hook in `hooks/` that enforces the rule programmatically — or include an explicit, reviewer-visible note explaining why mechanical enforcement is impossible.**
+
+Markdown is documentation, not enforcement. Under context pressure, an orchestrator reading its own rule will rationalise around it ("this case is different", "given session constraints", "I'll be transparent about the trade-off") and stop / narrow / skip anyway. This is not a hypothetical — it is the documented failure pattern of issues #139, #154, #155, and #156. The harness layer is the only second-reader the orchestrator cannot talk past.
+
+**Decision rule** (apply when you write or edit any SKILL.md rule):
+
+| Rule shape | Hook surface |
+|---|---|
+| "Read X before doing Y" | `PreToolUse:Edit\|Write\|Agent` checks transcript for the required Read before allowing the dependent tool call. |
+| "Don't stop until Y is done" | `Stop` or `SubagentStop` reads a ledger / state file, denies stop when invariant fails. |
+| "Don't dispatch shape Z here" | `PreToolUse:Agent` greps `tool_input.prompt` for the forbidden pattern. |
+| "State file Z must satisfy invariant W" | `PreToolUse:Write` validates the JSON / markdown shape. |
+| "Subagent return must follow shape S" | `SubagentStop` parses the handover envelope, exit-2-blocks non-compliant returns. |
+| "After phase N, file F must exist" | `PreToolUse:Agent` denies advancing to phase N+1 when F is absent or stale. |
+
+If none of these apply because the rule is genuinely unenforceable mechanically (e.g. "use the right level of detail in the brief", "be honest about uncertainty"), the SKILL.md edit MUST add a `markdown-only` tag to the relevant entry in `coverage-expansion/references/anti-rationalizations.md` so the registry continues to track the failure surface even without harness backing.
+
+**Why this is non-negotiable:** every markdown-only methodology rule that survives a release is a future incident waiting to happen. The cost of writing the hook is hours; the cost of debugging a wrong-classification incident the rule was meant to prevent is days plus the operator trust the package is supposed to earn. The asymmetry is the rule.
+
+**Reference:** `skills/contributing-to-element-interactions/SKILL.md` §"Workflow: adding a harness hook" (line 803 of this file) details the hook authoring patterns, test-case expectations, and `scripts/postinstall.js` registration. Read it before authoring any SKILL.md edit so the hook is designed alongside the rule rather than retro-fitted.
 
 ### Before filing an issue or opening a PR — check existing work and sync status
 
@@ -804,13 +837,16 @@ Open both PRs in parallel. Element-repository PR ships first; element-interactio
 
 Hooks live in `hooks/<name>.sh`, are installed into `~/.claude/hooks/` by `scripts/postinstall.js`, and are registered in `~/.claude/settings.json` via the `HOOK_MANIFEST` array. They run at PreToolUse / PostToolUse / SubagentStop / Stop boundaries to enforce skill contracts mechanically — markdown rules can be rationalised away mid-run, hooks cannot.
 
-When to add a hook (vs leaving the rule markdown-only):
+This section is the **how**. The **when** is fixed by the Hard rule §"Methodology improvements ship as programmatic hooks": every SKILL.md rule edit comes paired with a hook unless the rule is genuinely unenforceable mechanically. Re-read that hard rule first if you're authoring a SKILL.md change — its decision table maps each rule shape to a concrete hook surface.
 
-- The rule is **mechanically detectable** at a tool-use boundary (specific tool, file path, command pattern, response-shape signal).
-- Markdown enforcement has been observed to fail under context pressure.
-- The cost of a violation is high (corrupt state, lost work, contract violation propagating downstream).
+When to add a hook (vs declaring the rule `markdown-only`):
 
-If the rule is too contextual to detect mechanically (e.g. "use the right level of detail in this brief"), it stays markdown-only. The anti-rationalization registry (`coverage-expansion/references/anti-rationalizations.md`) has a `markdown-only` tag for those.
+- The rule is **mechanically detectable** at a tool-use boundary (specific tool, file path, command pattern, response-shape signal). → Hook.
+- Markdown enforcement has been observed to fail under context pressure. → Hook (the failure mode is no longer hypothetical).
+- The cost of a violation is high (corrupt state, lost work, contract violation propagating downstream). → Hook.
+- The rule is too contextual to detect mechanically (e.g. "use the right level of detail in this brief", "be honest about uncertainty"). → Stays markdown-only **and** the rule gets tagged in `coverage-expansion/references/anti-rationalizations.md` so the un-backed surface stays visible.
+
+The default is "ship a hook." Choosing `markdown-only` is an explicit reviewer-visible exception, not the absence of a decision.
 
 ### Hook authoring — three required patterns
 
@@ -1038,6 +1074,7 @@ Before opening a PR on element-interactions:
 - [ ] README updated under `🛠️ API Reference: Steps` — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] If adding a new method, it has a JSDoc block on the public-facing class
 - [ ] `.contribution-handover.json` populated against `schemas/contribution-handover.schema.json` — every boolean set; every `false` / `"n/a"` paired with a specific `*Reason` field (verified by `hooks/contribution-handover-gate.sh`)
+- [ ] **If this PR adds, modifies, or strengthens any `skills/*/SKILL.md` rule, workflow, phase, gate, invariant, or contract, it ALSO ships a hook under `hooks/` that enforces the rule programmatically (Hard rule §"Methodology improvements ship as programmatic hooks"). When mechanical enforcement is genuinely impossible, the PR description includes a paragraph explaining why and the rule is tagged `markdown-only` in `coverage-expansion/references/anti-rationalizations.md`.**
 
 If you're adding to element-repository first:
 
