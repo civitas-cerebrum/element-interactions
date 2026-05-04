@@ -159,6 +159,26 @@ summary: <one sentence — N findings, phase N, blocking advance to N+1>
 
 `exit-criteria-checked` shows BOTH satisfied and unsatisfied criteria — the validator must verify every criterion to demonstrate it ran the full check, not just stopped at the first failure. Each unsatisfied criterion gets a corresponding `pv-<phase>-<nn>` finding with concrete `fix:` text.
 
+### Spillover contract (`improvements-needed`) — §2.6
+
+When the verdict is `improvements-needed`, the full `exit-criteria-checked:` array AND the `pv-<phase>-<nn>` finding blocks (with criterion / issue / fix sub-bullets) move to disk per §2.6 of `subagent-return-schema.md`. The return body inlines only the index-level fields:
+
+````
+status: improvements-needed
+phase: <N>
+sub-skill: <name>
+cycle: <cycle-number>
+spill: tests/e2e/docs/.subagent-returns/phase-validator-<phase>-c<cycle>.md
+summary: <one sentence — N findings, phase N, blocking advance to N+1>
+findings:
+  - pv-<phase>-<nn-1>
+  - pv-<phase>-<nn-2>
+````
+
+The spill file starts with the sentinel `<!-- subagent-returns:phase-validator:<phase>:cycle-<C> -->`. The exit-criteria audit (every criterion, satisfied + unsatisfied, with evidence pointers) AND the per-finding blocks (with criterion / issue / fix sub-bullets) live in the spill body.
+
+The `SubagentStop` rewrite-gate (`hooks/subagent-spillover-rewrite-gate.sh`) enforces the contract — non-compliant returns are blocked at stop, stderr feedback names the missing path / wrong shape, and the validator rewrites in-session. The orchestrator's tool result is the FINAL compliant return; the verbose audit + finding blocks never reach the parent's transcript. `greenlight` returns are exempt (already index-only with `findings: []` literal).
+
 ### Banned tokens
 
 Inherited from §2.4: `nice-to-have`, `greenlight-with-notes`, top-level `notes:` sub-list. Inherited from §1: legacy finding-ID prefixes (`AF-`, `P4-`, `REG-`).

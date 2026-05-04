@@ -108,6 +108,34 @@ assert_warn() {
   echo "${CLR_PASS}  ✓${CLR_RST} ${name}"
 }
 
+# assert_block_subagent <hook> <stdin> <case-name> [stderr-substring]
+#   For SubagentStop hooks: expect exit 2 (block stop) with feedback on
+#   stderr. Optionally check stderr contains <stderr-substring>.
+assert_block_subagent() {
+  local hook="$1" stdin="$2" name="$3" stderr_substr="${4:-}"
+  TESTS_RUN=$((TESTS_RUN + 1))
+  local out
+  local err
+  local ec=0
+  err=$(printf '%s' "$stdin" | bash "$hook" 2>&1 >/dev/null) || ec=$?
+  if [ "$ec" != "2" ]; then
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    FAIL_DETAILS+=("${name}: expected exit 2, got exit=${ec} stderr=${err:0:200}")
+    echo "${CLR_FAIL}  ✗${CLR_RST} ${name} ${CLR_DIM}(expected exit 2, got ${ec})${CLR_RST}"
+    return
+  fi
+  if [ -n "$stderr_substr" ]; then
+    if ! echo "$err" | grep -qF -- "$stderr_substr"; then
+      TESTS_FAILED=$((TESTS_FAILED + 1))
+      FAIL_DETAILS+=("${name}: stderr missing substring '${stderr_substr}'. stderr=${err:0:200}")
+      echo "${CLR_FAIL}  ✗${CLR_RST} ${name} ${CLR_DIM}(stderr missing substring)${CLR_RST}"
+      return
+    fi
+  fi
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} ${name}"
+}
+
 # Helper: section header in the test output.
 section() {
   echo
@@ -125,18 +153,20 @@ payload() {
     local v="${kv#*=}"
     case "$k" in
       tool_name)
-        out=$(echo "$out" | jq -c --arg v "$v" '. + {tool_name: $v}') ;;
+        out=$(printf '%s' "$out" | jq -c --arg v "$v" '. + {tool_name: $v}') ;;
       description|prompt|command|file_path|content|new_string)
-        out=$(echo "$out" | jq -c --arg v "$v" --arg k "$k" '.tool_input = ((.tool_input // {}) + {($k): $v})') ;;
+        out=$(printf '%s' "$out" | jq -c --arg v "$v" --arg k "$k" '.tool_input = ((.tool_input // {}) + {($k): $v})') ;;
       response_text)
-        out=$(echo "$out" | jq -c --arg v "$v" '.tool_response = ((.tool_response // {}) + {output: $v})') ;;
+        out=$(printf '%s' "$out" | jq -c --arg v "$v" '.tool_response = ((.tool_response // {}) + {output: $v})') ;;
       exit_code|stdout)
         local field="exitCode"; [ "$k" = "stdout" ] && field="stdout"
-        out=$(echo "$out" | jq -c --arg v "$v" --arg f "$field" '.tool_response = ((.tool_response // {}) + {($f): $v})') ;;
+        out=$(printf '%s' "$out" | jq -c --arg v "$v" --arg f "$field" '.tool_response = ((.tool_response // {}) + {($f): $v})') ;;
       cwd)
-        out=$(echo "$out" | jq -c --arg v "$v" '. + {cwd: $v}') ;;
+        out=$(printf '%s' "$out" | jq -c --arg v "$v" '. + {cwd: $v}') ;;
       hook_event_name)
-        out=$(echo "$out" | jq -c --arg v "$v" '. + {hook_event_name: $v}') ;;
+        out=$(printf '%s' "$out" | jq -c --arg v "$v" '. + {hook_event_name: $v}') ;;
+      last_assistant_message|agent_id|agent_type|session_id|transcript_path)
+        out=$(printf '%s' "$out" | jq -c --arg v "$v" --arg k "$k" '. + {($k): $v}') ;;
       *) echo "payload: unknown key $k" >&2; return 1 ;;
     esac
   done

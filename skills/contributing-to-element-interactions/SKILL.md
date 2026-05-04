@@ -927,7 +927,7 @@ Why this shape:
 - **Underlying concern + upstream fix.** When a violation is driven by a real concern (e.g., parallel dispatch felt unsafe due to shared-DB races), acknowledge the concern and point at the upstream fix (per-test-user pattern in test-optimization §1.A) — NOT the symptom-level workaround. Otherwise the agent re-violates as soon as the same concern recurs.
 - **References last.** Two to four canonical doc paths. Don't bury them in prose; list them.
 
-Examples to read: `hooks/coverage-state-schema-guard.sh` (pre-emptive-stop deny — Option A / Option B layout) and `hooks/coverage-expansion-direct-compose-warning.sh` (concrete Agent template substituted with the journey slug from the file path).
+Examples to read: `hooks/coverage-state-schema-guard.sh` (pre-emptive-stop deny — Option A / Option B layout) and `hooks/coverage-expansion-direct-compose-block.sh` (concrete Agent template substituted with the journey slug from the file path; gated on the `.in-flight-composers.json` registry written by `hooks/coverage-expansion-dispatch-guard.sh` to distinguish legitimate composer-subagent writes from orchestrator-direct composition without a harness `is_subagent` field).
 
 ### Hook checklist
 
@@ -942,6 +942,21 @@ When opening a PR that adds or modifies a hook:
 - [ ] `scripts/postinstall.js` HOOK_MANIFEST updated with the new entry (file, event, matcher, timeout, optional async).
 - [ ] If the hook gates a markdown rule, the kernel-resident invariants in the relevant SKILL.md mention the harness backstop ("Harness-enforced by `hooks/<name>.sh`").
 - [ ] If the rule has a category in the anti-rationalization registry, the registry entry's `Hooks that catch this:` list is updated.
+
+### Approximating `is_subagent` — the in-flight-registry pattern
+
+The Claude Code harness payload doesn't include an `is_subagent` field on hook input — `Write` calls from a dispatched subagent and `Write` calls from the orchestrator are indistinguishable at hook-fire time.
+
+When a hook needs to distinguish "was this tool call made by a legitimately-dispatched subagent doing its expected work" from "was this the orchestrator absorbing work that should have been delegated", use the **in-flight-registry pattern**:
+
+1. **PreToolUse:Agent (the dispatch-guard)** writes a registration entry to a state file (e.g. `tests/e2e/docs/.in-flight-composers.json`) when the dispatch matches a known role-prefix that produces specific tool calls (e.g. `composer-j-<slug>:` produces a `Write tests/e2e/j-<slug>.spec.ts`).
+2. **PostToolUse / PreToolUse on the produced tool call** reads the registry and gates the call: if the slug is in-flight (within a TTL window), the writer is the legitimate subagent — ALLOW. If not in-flight, it's the orchestrator absorbing — DENY with a redirect to dispatch the right subagent.
+3. **TTL / cleanup as a failsafe**: the registry uses a rolling 30-min TTL — entries that aren't deregistered explicitly (see point 4) expire on the next dispatch-guard run, so stale registrations don't accumulate when a subagent crashes or is abandoned mid-flight.
+4. **Explicit deregistration on terminal handover (the primary cleanup path).** Each subagent return is prefaced with a `handover:` envelope (`role`, `cycle`, `status`, `next-action` — schema in [`../element-interactions/references/subagent-return-schema.md`](../element-interactions/references/subagent-return-schema.md) §2.0). The PostToolUse return-schema guard parses the envelope, cycle-matches against the registry entry, and **deregisters the slot immediately on terminal status** instead of waiting for TTL. Cycle-mismatch (envelope claims a different cycle than the registered dispatch) refuses to deregister and asks the orchestrator to redispatch under the correct cycle. This shorter leash matters because the orchestrator's redispatch under the same slug can race with stale handovers from a slow / auto-compacted prior cycle — the cycle-match contract pins the deregistration to one specific dispatch.
+
+The reference implementation is `hooks/coverage-expansion-dispatch-guard.sh` (registers `composer-j-*` / `composer-sj-*` / `probe-j-*` / `probe-sj-*` dispatches with a `cycle` field) paired with `hooks/coverage-expansion-direct-compose-block.sh` (gates `tests/e2e/{j,sj}-*.spec.ts` writes against the registry) and `hooks/subagent-return-schema-guard.sh` (parses the handover envelope, cycle-matches, deregisters terminal handovers). The pattern avoids false positives that would otherwise force a WARN — the gate runs as a hard DENY because the registry mechanically distinguishes legitimate from violation, and the leash is bounded by the explicit handover instead of the looser 30-min window.
+
+When you ship a new harness pattern that needs the same distinction, register at the dispatch boundary, gate at the produced-tool-call boundary, deregister on the canonical handover envelope, and keep the TTL as a failsafe. Use a hidden state file under `tests/e2e/docs/.<topic>-<scope>.json` to keep the registry alongside other coverage-expansion state.
 
 ---
 

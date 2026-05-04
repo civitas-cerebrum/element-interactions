@@ -336,6 +336,23 @@ The `whole_suite_gate` block records the result of the whole-suite re-run at Ste
 
 For `status: covered-exhaustively`, append the per-expectation mapping table documented in the canonical schema immediately after the return block. The orchestrator uses the table to audit that the "no new tests" claim is supported by inspection, not rationalised.
 
+### Spillover contract (`covered-exhaustively`) — §2.6
+
+When the verdict is `covered-exhaustively`, the per-expectation mapping table moves to disk per §2.6 of `../element-interactions/references/subagent-return-schema.md`. The return body inlines only the index-level fields:
+
+```
+status: covered-exhaustively
+journey: j-<slug>
+pass: <N>
+cycle: <cycle-number>
+spill: tests/e2e/docs/.subagent-returns/composer-<slug>-<pass>-c<cycle>.md
+expectations-mapped: <count>
+```
+
+The spill file starts with the sentinel `<!-- subagent-returns:composer:<slug>:pass-<N>:cycle-<C> -->`. The full `| Expectation | Covering spec | Test name |` table (with one row per `Test expectations:` entry) goes in the spill body, NOT inline in the return.
+
+The `SubagentStop` rewrite-gate (`hooks/subagent-spillover-rewrite-gate.sh`) enforces the contract — non-compliant returns are blocked at stop, stderr feedback names the missing path / wrong shape, and the composer rewrites in-session. The orchestrator's tool result is the FINAL compliant return; the verbose mapping table never reaches the parent's transcript. Other composer statuses (`new-tests-landed`, `blocked`, `skipped`) are exempt from spillover (their bodies are already small — counts + reasons, no large block).
+
 ---
 
 ## AI-Assisted Test Patterns

@@ -297,7 +297,7 @@ The cost the orchestrator pays for the dodge:
 - Stage B disappears: direct composition has no reviewer pass, so the dual-stage no-skip contract is silently broken.
 
 **Hooks that catch this:**
-- `coverage-expansion-direct-compose-warning.sh` — PostToolUse:Write|Edit on `tests/e2e/j-*.spec.ts` / `tests/e2e/sj-*.spec.ts` when `coverage-expansion-state.json` exists. Emits a `systemMessage` warning with the redirect to dispatch-instead, plus a pointer to test-optimization.md §1.A (per-test-user pattern).
+- `coverage-expansion-direct-compose-block.sh` — PostToolUse:Write|Edit on `tests/e2e/j-*.spec.ts` / `tests/e2e/sj-*.spec.ts` (incl. `-regression`) when `coverage-expansion-state.json` exists. **Hard DENY** unless the slug is registered in `tests/e2e/docs/.in-flight-composers.json` — the in-flight-composer registry maintained by the dispatch-guard hook with a 30-min TTL. Legitimate composer-subagent writes pass (slug is in-flight from a recent `composer-j-<slug>:` / `probe-j-<slug>:` Agent dispatch); orchestrator-direct writes fail at the boundary. Deny message includes the redirect template + pointer to `test-optimization.md` §1.A (per-test-user pattern) for the upstream parallelism fix.
 
 **Origin:** v0.3.4 onboarding test surfaced this as a follow-on consequence of "Pre-emptive scope reduction" — the agent identified parallelism risk correctly, then absorbed the work to avoid the risk instead of fixing the risk's upstream cause. Hook + Stage 4a §1.A added in v0.3.5.
 
