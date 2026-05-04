@@ -127,6 +127,7 @@ const MCP_PLAYWRIGHT_BROWSER_TOOLS = [
 const HOOK_MANIFEST = [
   // PreToolUse — guards (fail-closed)
   { file: 'coverage-expansion-dispatch-guard.sh', event: 'PreToolUse', matcher: 'Agent',       timeout: 10 },
+  { file: 'parent-only-orchestrator-dispatch-block.sh', event: 'PreToolUse', matcher: 'Agent', timeout: 10 },
   { file: 'phase-validator-dispatch-required.sh', event: 'PreToolUse', matcher: 'Agent',       timeout: 10 },
   { file: 'playwright-cli-isolation-guard.sh',    event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'coverage-expansion-orchestrator-cli-block.sh', event: 'PreToolUse', matcher: 'Bash', timeout: 10 },
