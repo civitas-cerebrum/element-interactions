@@ -27,7 +27,34 @@ Do **not** add, remove, or upgrade any other dependencies. Do **not** modify the
 
 **Scaffold files** (Level A and B, whichever are missing):
 
-- `playwright.config.ts` — minimal config with `baseURL` from the front-load gate, `testDir: './tests/e2e'`, `reporter: 'html'`, headless true.
+- `playwright.config.ts` — scaffolded with the package's documented defaults (see `../element-interactions/references/playwright-config-defaults.md`):
+  - `baseURL` from the front-load gate
+  - `testDir: './tests/e2e'`
+  - `reporter: 'html'`
+  - `headless: true`
+  - **`retries: process.env.CI ? 2 : 1`** — at least one retry by default so transient failures get a second pass that produces video evidence.
+  - **`use.video: 'on-first-retry'`** — the canonical default. First-pass failures stay light; reruns capture video so failures are documented automatically.
+  - **`use.trace: 'on-first-retry'`** — full Playwright trace on the same boundary; pairs with the video for diagnosis.
+
+  Concrete starting content:
+
+  ```typescript
+  import { defineConfig } from '@playwright/test';
+
+  export default defineConfig({
+    testDir: './tests/e2e',
+    reporter: 'html',
+    retries: process.env.CI ? 2 : 1,
+    use: {
+      baseURL: '<from front-load gate>',
+      headless: true,
+      video: 'on-first-retry',
+      trace: 'on-first-retry',
+    },
+  });
+  ```
+
+  Consumers may override later, but the scaffold ships these on by default. The `playwright-config-defaults-guard.sh` hook surfaces a `systemMessage` warning when a `playwright.config.ts` write strips these defaults without a documented reason.
 - `tests/fixtures/base.ts` — `baseFixture` export wiring `Steps` and `ContextStore`, with four `HELPER SLOT` comment markers that Stage 4a (test optimization) populates on demand. Exact starting content:
 
   ```typescript

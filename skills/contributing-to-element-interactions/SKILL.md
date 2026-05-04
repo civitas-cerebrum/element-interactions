@@ -237,6 +237,36 @@ Local vs. origin/main: in sync (or: rebased onto <sha> and re-verified).
 Dependency version: element-repository pinned at 1.4.2; latest is 1.4.2.
 ```
 
+### Attribute issue reporters
+
+**Every commit and PR that closes a GitHub issue MUST credit the issue's author with a `Reported-by:` line in the commit body and the PR description.**
+
+The contract:
+
+- The commit body that includes a `Closes #N` / `Fixes #N` / `Resolves #N` reference also includes:
+
+  ```
+  Reported-by: @<github-handle>
+  ```
+
+  Multi-reporter is fine: `Reported-by: @umutayb, @Emmdb`.
+
+- The PR description repeats the same attribution near the top, before the rest of the summary.
+
+**Why:** issue-driven improvements are the load-bearing input that makes this package's methodology improve faster than any internal review process could. The minimum acknowledgement is a verifiable line in the commit body — it travels with the merge commit, survives squash-merge, surfaces in `git log`, and is mechanically detectable. Without it, the issue author's contribution silently disappears into the maintainer's PR description and the credit graph rots over time.
+
+**How to find the author:**
+
+```bash
+gh issue view <N> --json author -q .author.login
+# Multi-issue:
+for n in 156 157; do gh issue view $n --json author -q '.number, .author.login' --jq @csv; done
+```
+
+**Self-reported / chore caveat.** When the contributor is also the issue author, self-attribution is still appropriate — the audit trail is the value, not the social acknowledgement. For purely-chore commits with no upstream issue, the rule does not apply.
+
+**Harness-enforced by `hooks/commit-attribution-gate.sh`** (PreToolUse:Bash, filters to `git commit`). When the commit references an issue without a `Reported-by:` / `Issue-reported-by:` line, the hook emits a `systemMessage` with the gh-CLI snippet to fetch the author. Escape hatch for genuine edge cases: `COMMIT_ATTRIBUTION_GATE=off`.
+
 ### No raw `locator.*()` in element-interactions src/
 
 Every `locator.click()`, `locator.fill()`, `locator.evaluate()`, etc. that creeps into `src/` is a regression. If you need a primitive Playwright doesn't expose through `Element`, **add it to the Element interface in element-repository first**.
@@ -1038,6 +1068,7 @@ Before opening a PR on element-interactions:
 - [ ] README updated under `🛠️ API Reference: Steps` — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] If adding a new method, it has a JSDoc block on the public-facing class
 - [ ] `.contribution-handover.json` populated against `schemas/contribution-handover.schema.json` — every boolean set; every `false` / `"n/a"` paired with a specific `*Reason` field (verified by `hooks/contribution-handover-gate.sh`)
+- [ ] If this PR closes a GitHub issue, the commit body and the PR description both include `Reported-by: @<github-handle>` crediting the issue author (Hard rule §"Attribute issue reporters", verified by `hooks/commit-attribution-gate.sh`)
 
 If you're adding to element-repository first:
 
