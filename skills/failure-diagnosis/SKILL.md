@@ -28,6 +28,8 @@ A structured diagnostic protocol for failing Playwright tests. Every failure get
 
 Before collecting evidence on the failing test, read what the project already documents. Skipping this stage is how confidently-wrong "app bug" classifications get published — you compare the screenshot against your recollection of the page instead of against what the project already specifies.
 
+**Harness-enforced by `hooks/failure-diagnosis-stage0-preread-guard.sh`** (PreToolUse:Edit|Write). When `playwright-report/` or a `test-results/error-context*.md` is present, edits to test source files, `tests/data/page-repository.json`, or any new "Application Bug Report" markdown are denied unless the agent has Read the project's documented context files (`tests/e2e/docs/app-context.md`, `test-scenarios.md`, `journey-map.md`) earlier in the session. The deny message points back here. Escape hatch for confirmed non-failure-diagnosis edits: set `FD_STAGE0_GUARD=off` in the environment for that invocation.
+
 1. **`tests/e2e/docs/app-context.md`** — page structures, intended modal lifecycles, `data-qa` selectors, known UI quirks (single-method checkouts, redirect-pattern PayPal vs popup, Klarna-as-Sofort, async-loaded modal placeholders, etc.). Read the section for the page the test was on at the moment of failure. This is where the failing element's intended behaviour is documented.
 2. **`tests/e2e/docs/test-scenarios.md`** — the regression / scenario matrix. Confirms whether the failing scenario is even supposed to run on this configuration in the first place.
 3. **`tests/e2e/docs/journey-map.md`** (when present) — the user journey map produced by the `journey-mapping` skill. Tells you whether the app's flow has changed since the test was written.
