@@ -136,6 +136,36 @@ assert_block_subagent() {
   echo "${CLR_PASS}  ✓${CLR_RST} ${name}"
 }
 
+# assert_stop_block <hook> <stdin> <case-name> [reason-substring]
+#   For Stop hooks that emit `{ "decision": "block", "reason": "..." }`
+#   on stdout (the Claude Code Stop-event contract). Optionally checks
+#   that .reason contains <reason-substring>.
+assert_stop_block() {
+  local hook="$1" stdin="$2" name="$3" reason_substr="${4:-}"
+  TESTS_RUN=$((TESTS_RUN + 1))
+  run_hook "$hook" "$stdin"
+  local decision
+  decision=$(echo "$HOOK_OUT" | jq -r '.decision // empty' 2>/dev/null)
+  if [ "$decision" != "block" ]; then
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    FAIL_DETAILS+=("${name}: expected stop block, got decision='${decision}' output=${HOOK_OUT:0:200}")
+    echo "${CLR_FAIL}  ✗${CLR_RST} ${name} ${CLR_DIM}(expected stop block, got '${decision}')${CLR_RST}"
+    return
+  fi
+  if [ -n "$reason_substr" ]; then
+    local reason
+    reason=$(echo "$HOOK_OUT" | jq -r '.reason // empty' 2>/dev/null)
+    if ! echo "$reason" | grep -qF -- "$reason_substr"; then
+      TESTS_FAILED=$((TESTS_FAILED + 1))
+      FAIL_DETAILS+=("${name}: stop-block reason missing substring '${reason_substr}'. reason=${reason:0:200}")
+      echo "${CLR_FAIL}  ✗${CLR_RST} ${name} ${CLR_DIM}(stop-block reason missing substring)${CLR_RST}"
+      return
+    fi
+  fi
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} ${name}"
+}
+
 # Helper: section header in the test output.
 section() {
   echo

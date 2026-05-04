@@ -146,6 +146,9 @@ const HOOK_MANIFEST = [
   // SubagentStop — enforcement (must run synchronously) + cleanup (async)
   { file: 'subagent-spillover-rewrite-gate.sh',   event: 'SubagentStop', matcher: null,        timeout: 10 },
   { file: 'playwright-cli-cleanup-on-stop.sh',    event: 'SubagentStop', matcher: null,        timeout: 30, async: true },
+
+  // Stop — main-agent stop guards
+  { file: 'onboarding-pipeline-incomplete-stop-deny.sh', event: 'Stop',  matcher: null,        timeout: 10 },
 ];
 
 function copyHookFile(hookSrc, hookDest) {
