@@ -7,6 +7,7 @@ assert_allow "$H" "$(payload tool_name=Agent description='composer-j-checkout: c
 assert_allow "$H" "$(payload tool_name=Agent description='reviewer-j-checkout: cycle 1' prompt='review j-checkout coverage')" "reviewer-j- → ALLOW"
 assert_allow "$H" "$(payload tool_name=Agent description='probe-j-checkout: pass 4' prompt='probe j-checkout for adversarial')" "probe-j- → ALLOW"
 assert_allow "$H" "$(payload tool_name=Agent description='process-validator-stage-a-wave: validate' prompt='validate planned dispatch wave')" "process-validator- → ALLOW"
+assert_allow "$H" "$(payload tool_name=Agent description='phase-validator-5: cycle 1' prompt='verify phase 5 completion contract')" "phase-validator-<N>: → ALLOW"
 assert_allow "$H" "$(payload tool_name=Agent description='phase1-root: discovery' prompt='discover entry root')" "phase1- → ALLOW"
 assert_allow "$H" "$(payload tool_name=Agent description='phase2-marketplace: discovery' prompt='discover marketplace area')" "phase2- → ALLOW"
 assert_allow "$H" "$(payload tool_name=Agent description='stage2-cart-form: inspect' prompt='inspect cart form selectors')" "stage2- → ALLOW"

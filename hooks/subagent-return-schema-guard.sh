@@ -27,6 +27,12 @@
 #                                `findings:` count or list
 #   process-validator-<scope>:   Sub-orchestrator — reviewer-shape applied
 #                                to a manifest (`status:`, `findings:`, `summary:`)
+#   phase-validator-<N>:         Phase-exit checkpoint (§2.5) — `status:` +
+#                                `phase:` + `exit-criteria-checked:` array +
+#                                `summary:` (REQUIRED on both statuses) +
+#                                `findings: []` literal on greenlight |
+#                                ≥1 `pv-<phase>-<nn>` must-fix on
+#                                improvements-needed
 #   phase1- / stage2- / cleanup- / bare j- / bare sj- → silent allow
 #   (phase1/stage2 returns are free-form site-map / page-repository entries;
 #    cleanup is unstructured; bare j-/sj- are blocked upstream by
@@ -86,6 +92,7 @@ case "$DESCRIPTION" in
   reviewer-*)         ROLE="reviewer" ;;
   probe-*)            ROLE="probe" ;;
   process-validator-*) ROLE="process-validator" ;;
+  phase-validator-*)  ROLE="phase-validator" ;;
   *)                  exit 0 ;;  # silent allow — no schema for this role
 esac
 
@@ -220,6 +227,47 @@ if [ "$ROLE" = "process-validator" ]; then
   fi
   check_marker '(^|\n)[[:space:]]*findings:' 'findings: <array, may be empty>'
   check_marker '(^|\n)[[:space:]]*summary:'  'summary: <one sentence>'
+fi
+
+# === Phase-validator schema (Onboarding phase exit checkpoint, §2.5) =====
+if [ "$ROLE" = "phase-validator" ]; then
+  if ! echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*(greenlight|improvements-needed)'; then
+    MISSING+=('status: <greenlight|improvements-needed>')
+  fi
+  # phase: <single digit 1-7> — anchored on end-of-line / non-digit so
+  # phase: 12, phase: 71, phase: 8a all FAIL (without the anchor [1-7]
+  # would match the leading 1 of "12" and accept multi-digit phases that
+  # don't exist).
+  check_marker '(^|\n)[[:space:]]*phase:[[:space:]]*[1-7][[:space:]]*$'    'phase: <1-7>'
+  check_marker '(^|\n)[[:space:]]*exit-criteria-checked:'                  'exit-criteria-checked: <array, ≥1 row>'
+  # exit-criteria-checked must have at least one `- criterion:` row.
+  # The field-marker check above only verifies the header line; the row
+  # check verifies the array isn't empty (§2.5 mandates ≥1 row).
+  if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*exit-criteria-checked:'; then
+    check_marker '(^|\n)[[:space:]]*-[[:space:]]+criterion:'                'exit-criteria-checked: ≥1 `- criterion:` row (the array cannot be empty)'
+  fi
+  check_marker '(^|\n)[[:space:]]*summary:'                                'summary: <one sentence>  (REQUIRED on both statuses)'
+
+  # On greenlight, findings: [] is required (explicit empty array).
+  if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*greenlight'; then
+    if ! echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*findings:[[:space:]]*\[\]'; then
+      MISSING+=('findings: []  (REQUIRED on greenlight — explicit empty array)')
+    fi
+  fi
+  # On improvements-needed, ≥1 must-fix finding with pv-<phase>-<nn> ID.
+  if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*improvements-needed'; then
+    # pv-<phase>-<nn> finding-ID: <nn> is two-digit zero-padded per §2.5
+    # (matches §1's <nn> rule across the schema). [0-9]{2,} accepts 2+
+    # digits, rejects single-digit forms like pv-5-1.
+    if ! echo "$RESPONSE" | grep -qE '\*\*pv-[1-7]-[0-9]{2,}\*\*[[:space:]]*\[must-fix\]'; then
+      MISSING+=('at least one must-fix finding with pv-<phase>-<nn> ID — <nn> must be ≥2 digits zero-padded (required when status=improvements-needed)')
+    fi
+  fi
+
+  # Banned tokens (inherited from reviewer + finding-ID legacy prefixes).
+  check_banned '(^|[^a-z-])nice-to-have([^a-z-]|$)'             'nice-to-have (banned — phase-validator findings carry [must-fix] only)'
+  check_banned '(^|[^a-z-])greenlight-with-notes([^a-z-]|$)'    'greenlight-with-notes (banned — there is no third return state)'
+  check_banned '(^|\n)[[:space:]]*notes:'                       'notes: sub-list (banned — observations are either must-fix or unrecorded)'
 fi
 
 # Nothing missing or banned — silent allow.

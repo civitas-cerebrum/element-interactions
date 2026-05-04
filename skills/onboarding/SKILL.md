@@ -27,6 +27,7 @@ The onboarding skill brings a fresh project from zero to a comprehensive test su
 | Reference file | What's in it |
 |---|---|
 | [`references/phases-walkthrough.md`](references/phases-walkthrough.md) | Phases 1–7 detail: per-phase task list, hard gates, progress-output discipline. |
+| [`references/phase-validator-workflow.md`](references/phase-validator-workflow.md) | Phase-validator subagent dispatched at every phase end: when to invoke, manifest shape, per-phase verification table, response shape, cycle cap (10), parent's response handling. |
 
 ---
 
@@ -120,8 +121,11 @@ Wait for the user's reply. On `y` / `yes` / `proceed` / equivalent affirmative, 
   - the top-level nav/link count on the app's homepage (one `playwright-cli snapshot` before the gate, counted as discovery preamble), and
   - a fallback band of 15–40 if neither signal is reliable.
 - `<M_low>–<M_high>` = `journeys_low × 0.5` to `journeys_high × 0.5` (bug hunts target ~half the journey set).
-- `<P>` = min(4, credential-count-per-role from Phase-0 pre-flight) unless the shared-resource audit (below) reports a parallelism cap.
-- `<H1>–<H2>` = wall-clock band derived from `<N_high>` and `<N_low>` at `<P>`-way parallel.
+- **Two parallelism caps — `<P_dispatch>` (subagent count) and `<P_workers>` (Playwright workers).** They are governed by different constraints:
+  - `<P_dispatch>` = min(4, credential-count-per-role from Phase-0 pre-flight) — bounded by host CPU/memory + per-role credential availability + dispatch-time API rate limits. Affects how many composer / reviewer / probe subagents the orchestrator fans out per wave.
+  - `<P_workers>` = bounded by **DB-state isolation**, NOT credentials. Default = `<P_dispatch>` when the audit reports no global-state contention. Capped at **1** when the audit reports `global-reset:cross-test-race` (every test races on a global reset/teardown). Capped at **per-user-isolation cap** when the audit reports `single-tenant-global-state` (assertions on global collections race across workers).
+  - These are **independent**: a single-tenant app with `/api/reset` may legitimately have `P_dispatch=4` (4 composers writing 4 specs in parallel) and `P_workers=1` (those specs run serially at test time). Conflating them produces either over-paralleled runtime (flake) or under-paralleled dispatch (slow).
+- `<H1>–<H2>` = wall-clock band derived from `<N_high>` and `<N_low>` at `<P_dispatch>`-way parallel composition + `<P_workers>`-way parallel test-runtime.
 
 After Phase-1 discovery completes, the orchestrator emits a progress line of the form `[onboarding] scope update: <N_actual> journeys discovered — projection was <N_low>–<N_high>, proceeding with full coverage`. It does NOT re-prompt the user — the single-gate contract is preserved. If the actual lands outside the projected band, the progress line makes that visible; the run continues regardless.
 
@@ -133,28 +137,40 @@ Before the user confirms the gate, the orchestrator runs a shared-resource audit
 
 Run the checklist below and, for each row with a positive detection, emit a one-line constraint into the gate's "Shared-resource audit" block.
 
-| Constraint | Detection | Mitigation the user should consider |
-|---|---|---|
-| Single credential per role (OAuth or form) | Phase-0 credential count ≤ 1 per role | Pre-seed 3+ throwaway accounts per parallel-eligible role |
-| Global rate limits (per-IP or per-tenant) | Probe login endpoint for 429 behaviour | Confirm rate-limit ceiling vs. planned parallel-dispatch peak |
-| CSRF tokens tied to session (concurrent POSTs fail) | Static scan of form handlers for `csrf` / `antiforgery` patterns | File-level serial on mutating specs + throwaway accounts per worker |
-| Shared tenant/workspace state | Single-tenant app with no per-user partition | Throwaway tenant for the run, or mandatory teardown hooks |
-| No UI delete for created entities | Static scan for `Delete`/`Verwijder` action absence on add-* pages | API-backdoor cleanup helper |
+| Constraint | Detection | Mitigation the user should consider | Tag |
+|---|---|---|---|
+| Single credential per role (OAuth or form) | Phase-0 credential count ≤ 1 per role | Pre-seed 3+ throwaway accounts per parallel-eligible role | `single-credential:<role>` |
+| Global rate limits (per-IP or per-tenant) | Probe login endpoint for 429 behaviour | Confirm rate-limit ceiling vs. planned parallel-dispatch peak | `rate-limit:<scope>` |
+| CSRF tokens tied to session (concurrent POSTs fail) | Static scan of form handlers for `csrf` / `antiforgery` patterns | File-level serial on mutating specs + throwaway accounts per worker | `csrf-session-bound` |
+| Shared tenant/workspace state | Single-tenant app with no per-user partition | Throwaway tenant for the run, or mandatory teardown hooks | `single-tenant:shared-state` |
+| No UI delete for created entities | Static scan for `Delete`/`Verwijder` action absence on add-* pages | API-backdoor cleanup helper | `missing-ui-delete:<entities>` |
+| **Global mutating reset/teardown endpoint** | Phase-1 probe finds reset endpoint AND mutation endpoints touch global (non-tenanted) collections (catalog-wide, marketplace-wide, etc.) | **Forbid `beforeEach(reset)` — it races across workers.** Use per-test throwaway users + `globalSetup` once-per-suite seed. Stage 4a §1 inverts under this tag (see `element-interactions/references/test-optimization.md` §1). | `global-reset:cross-test-race` |
+| **Per-tenant vs per-user data scoping** | Probe whether the app exposes any tenant/workspace partition (e.g., URL prefix `/t/<id>/...`, JWT `tenant_id` claim, dropdown switch) | Single-tenant apps make global-state assertions (e.g., "marketplace is empty") parallel-hostile across workers. Rewrite assertions to per-user-scoped views (e.g., "MY profile has no listings"). | `single-tenant-global-state` |
 
 Rendered example of the audit block inside the gate (positive detections):
 
 ```
 Shared-resource audit:
-  • Single Care Manager credential → manager-portal parallelism capped at 1 until seeding resolved.
-  • CSRF tokens session-bound → mandatory `test.describe.configure({ mode: 'serial' })` on mutating specs.
-  • No UI delete for caregivers/locations → tenant pollution expected; API-backdoor cleanup required.
+  • Single Care Manager credential [single-credential:care-manager] → P_dispatch capped at 1 for manager-portal journeys until seeding resolved.
+  • CSRF tokens session-bound [csrf-session-bound] → mandatory `test.describe.configure({ mode: 'serial' })` on mutating specs.
+  • Global /api/reset endpoint touches catalog-wide collections [global-reset:cross-test-race] → forbid beforeEach(reset); P_workers capped at 1 unless per-test-user pattern + globalSetup-once is adopted.
+  • Single-tenant marketplace [single-tenant-global-state] → rewrite "marketplace is empty" assertions to "MY profile has no listings".
+  • No UI delete for caregivers/locations [missing-ui-delete:caregiver,location] → tenant pollution expected; API-backdoor cleanup required.
+
+Parallelism caps:
+  P_dispatch = 4 (composer / reviewer / probe subagents in parallel — bounded by host CPU/memory + credentials)
+  P_workers  = 1 (Playwright workers — capped by global-reset:cross-test-race; raise to 4 after per-test-user pattern is adopted)
 ```
 
 **If the audit finds zero constraints**, the block still renders — silently skipping it would let a user assume the audit was not attempted. Render:
 
 ```
 Shared-resource audit:
-  • No shared-resource constraints detected. Parallelism cap: P = <P>.
+  • No shared-resource constraints detected.
+
+Parallelism caps:
+  P_dispatch = <P_dispatch>
+  P_workers  = <P_workers>
 ```
 
 The audit block is never omitted from the gate. Empty-findings runs still emit the block with the no-constraints line so the audit's execution is always visible to the user.
@@ -207,10 +223,52 @@ The seven-phase pipeline (Phase 1 Scaffold → Phase 2 Groundwork discovery → 
 
 ### Hard rules — kernel-resident
 
-- **All seven phases run in order, no skipping.** Phase 5 (coverage-expansion) and Phase 6 (bug-discovery) are the lengthy phases — the front-load gate authorises both up-front. Skipping either is a contract violation; surface to the user instead.
-- **Phase 5 invokes `coverage-expansion` with `mode: depth`** — the full 5-pass + cleanup pipeline. Onboarding never invokes coverage-expansion in `mode: breadth`.
-- **Hard gates between phases.** A phase that surfaces a malformed prerequisite (missing journey-map sentinel, missing tenant credentials, missing happy-path sentence, etc.) stops onboarding with a clear `blocked-on-prerequisite` message — never silently proceeds.
-- **Front-load gate is the only user prompt.** Once the user authorises the run, onboarding runs autonomously through Phase 7 — no further confirmation prompts. Mid-run scope-reduction without explicit user authorisation is forbidden (mirrors coverage-expansion §"Two valid exits").
+#### One rule, applied to every phase
+
+**Onboarding is complete only when every phase has run to completion — every internal stage, every internal pass, every sub-skill's own contract honoured.** Pass 1 alone is not Phase 5. Stage 3 alone is not Phase 3. Phase 1 of journey-mapping alone is not Phase 4. "Most of the work done", "deferred the rest for budget", "honest stopping point" — all of these are honest mid-run *states* but NONE of them are *phase-complete*. Onboarding does not advance from any of those states; it commits what it has, writes resume state, and returns to the user with a "resume needed" message.
+
+#### Per-phase completion contract — every internal stage / pass must finish
+
+| Phase | Sub-skill / inline | What "phase complete" requires |
+|---|---|---|
+| 1 — Scaffold | onboarding (inline) | `package.json` deps installed + scaffolded files present + Chromium installed |
+| 2 — Groundwork | onboarding (inline) | `app-context.md` written + ground-truth probe complete |
+| 3 — Happy path | element-interactions Stages 1, 2, 3, 4a, 4b | All five stages — scenario discovery, element inspection, write automation, optimization review, API compliance review. Stage 3 alone is not Phase 3 |
+| 4 — Journey mapping | journey-mapping Phases 1, 2, 3, 3.5, 4, 5 | All six phases — page discovery, flow identification, prioritization, redundancy revision, journey-map document, coverage checkpoint. Phase 1 alone is not Phase 4 |
+| 5 — Coverage expansion | coverage-expansion `mode: depth` | All 5 passes (3 compositional + 2 adversarial) + cleanup ledger dedup. Pass 1 alone is one-fifth of the pipeline. Every journey gets terminal `review_status` (greenlight / blocked-cycle-stalled / blocked-cycle-exhausted / blocked-dispatch-failure) on every pass — Stage-A-only is incomplete |
+| 6 — Bug hunts | bug-discovery (element + flow probing passes) | Both probing passes — element-level probing AND flow-level probing. One pass alone is not Phase 6 |
+| 7 — Final summary | onboarding (inline) | onboarding-report.md committed + work-summary deck generated |
+
+Reporting a phase complete when its sub-skill returned a partial state is a contract violation regardless of how the partial state is framed. The progressive forms — "Pass 1 done, 2–5 deferred for budget" / "compositional passes complete, adversarial deferred" / "Stage 3 done, 4a/4b skipped because tests passed" / "Phase 1 of journey-mapping done, full mapping deferred" — are honest mid-run *reports* but they ARE NOT phase completion.
+
+#### Sub-skill exit #2 does NOT advance Onboarding
+
+When ANY sub-skill takes its own exit #2 (commit-what-landed + state-file + resume-needed) — coverage-expansion at any pass, journey-mapping mid-Phase, element-interactions between stages, bug-discovery between probing passes — Onboarding pauses at that same point. It returns to the user with the sub-skill's resume-needed message. It does NOT proceed to the next phase. The next phase only fires after the previous phase's sub-skill returns `status: complete`.
+
+#### Every phase must EXECUTE before any exit
+
+Refusing to start a phase is not an exit — it's a contract violation, distinct from exit #2 (which is for budget-driven mid-pipeline stops AFTER work has begun). Specifically:
+
+- **Phase 5 must DISPATCH at least one composer wave** before exit #2 is invocable. Phase 3 (happy-path scaffolded test) is NOT a Phase 5 dispatch — different phases, different subagents, different work. Harness-enforced by `coverage-state-schema-guard.sh`.
+- The same principle generalises to every phase: an empty progress log + state file claiming "exit #2" is refusing to start, not exit #2.
+
+#### Phase-validator checkpoint — every phase ends with a dispatch
+
+Onboarding dispatches `phase-validator-<N>:` at the **end of every phase**, before advancing to phase N+1. The validator is a fresh-context subagent that reads the per-phase completion contract (this section) and verifies each criterion against the phase's actual artifacts (state files, journey-map sentinel, commits, etc.). It returns `greenlight` (advance) or `improvements-needed` (re-attempt with concrete `fix:` actions).
+
+- **Skipping the validator dispatch is a contract violation.** Same family as skipping the phase itself.
+- **Cycle cap: 10 per phase.** After cycle 10 still `improvements-needed` → terminal `blocked-phase-validator-stalled`, surface to user with unresolved findings.
+- **Onboarding advances only on `greenlight`.** Recorded in `tests/e2e/docs/onboarding-phase-ledger.json`.
+- **Phase 3 (happy path), Phase 4 (journey mapping), Phase 5 (coverage expansion), Phase 6 (bug hunts) all dispatch a validator.** Phases 1, 2, 7 also dispatch one (inline-phase verification — scaffolded files, app-context.md sections, onboarding-report.md commit).
+
+Full workflow spec — manifest shape, per-phase verification table, response handling, cycle counting across resume — in [`references/phase-validator-workflow.md`](references/phase-validator-workflow.md). Return shape canonical in `../element-interactions/references/subagent-return-schema.md` §2.5. Schema-conformance enforced by `hooks/subagent-return-schema-guard.sh` (validates phase-validator returns at PostToolUse). Mechanical dispatch-required enforcement (deny advance without prior-phase greenlight in the ledger) is the planned v0.3.7 follow-up; until then, the orchestrator self-disciplines per the kernel rules.
+
+#### Other invariants
+
+- **All seven phases run in order.** No reordering, no skipping. The front-load gate authorises Phases 1–7 up-front; the user does not get re-prompted between phases.
+- **Phase 5 invokes `coverage-expansion` with `mode: depth`.** Onboarding never invokes coverage-expansion in `mode: breadth`. Phase 6 invokes `bug-discovery` with both probing passes (element + flow). The mode arguments are fixed; the agent does not choose them.
+- **Hard gates between phases.** A phase that surfaces a malformed prerequisite (missing journey-map sentinel, missing tenant credentials, missing happy-path sentence, etc.) stops Onboarding with a clear `blocked-on-prerequisite` message — never silently proceeds.
+- **Front-load gate is the only user prompt.** Once the user authorises the run, Onboarding runs autonomously through Phase 7 — no further confirmation prompts. Mid-run scope-reduction without explicit user authorisation is forbidden (mirrors coverage-expansion §"Two valid exits"). "Honest" / "pragmatic" / "I want to surface this back upstream" framings are the same forbidden pattern with different words.
 
 ## Onboarding report (`tests/e2e/docs/onboarding-report.md`)
 

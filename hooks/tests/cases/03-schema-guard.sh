@@ -87,6 +87,122 @@ summary: 16 dispatches conform.')" "process-validator full → ALLOW"
 assert_warn "$H" "$(payload tool_name=Agent description='process-validator-stage-a-wave: validate' response_text='status: greenlight
 findings: []')" "process-validator missing summary → WARN" "summary"
 
+section "schema-guard: phase-validator (§2.5)"
+PV_GREEN_FULL='status: greenlight
+phase: 5
+sub-skill: coverage-expansion
+exit-criteria-checked:
+  - criterion: coverage-expansion-state.json status complete
+    satisfied: true
+    evidence: tests/e2e/docs/coverage-expansion-state.json
+findings: []
+summary: All 5 passes + cleanup verified.'
+assert_allow "$H" "$(payload tool_name=Agent description='phase-validator-5: cycle 1' response_text="$PV_GREEN_FULL")" "phase-validator greenlight full → ALLOW"
+
+PV_GREEN_NO_SUMMARY='status: greenlight
+phase: 5
+exit-criteria-checked:
+  - criterion: x
+    satisfied: true
+findings: []'
+assert_warn "$H" "$(payload tool_name=Agent description='phase-validator-5: cycle 1' response_text="$PV_GREEN_NO_SUMMARY")" "phase-validator greenlight missing summary → WARN" "summary"
+
+PV_GREEN_NO_EMPTY_FINDINGS='status: greenlight
+phase: 5
+exit-criteria-checked:
+  - criterion: x
+    satisfied: true
+summary: ok'
+assert_warn "$H" "$(payload tool_name=Agent description='phase-validator-5: cycle 1' response_text="$PV_GREEN_NO_EMPTY_FINDINGS")" "phase-validator greenlight missing findings: [] → WARN" "findings: []"
+
+PV_NO_PHASE='status: greenlight
+exit-criteria-checked:
+  - criterion: x
+    satisfied: true
+findings: []
+summary: ok'
+assert_warn "$H" "$(payload tool_name=Agent description='phase-validator-5: cycle 1' response_text="$PV_NO_PHASE")" "phase-validator missing phase: → WARN" "phase: <1-7>"
+
+PV_NO_CRITERIA='status: greenlight
+phase: 5
+findings: []
+summary: ok'
+assert_warn "$H" "$(payload tool_name=Agent description='phase-validator-5: cycle 1' response_text="$PV_NO_CRITERIA")" "phase-validator missing exit-criteria-checked → WARN" "exit-criteria-checked"
+
+# Negative test (review fix): empty exit-criteria-checked array. The field
+# header is present but no `- criterion:` rows follow. Earlier hook only
+# checked the header marker; now also requires ≥1 row.
+PV_EMPTY_CRITERIA='status: greenlight
+phase: 5
+exit-criteria-checked:
+findings: []
+summary: ok'
+assert_warn "$H" "$(payload tool_name=Agent description='phase-validator-5: cycle 1' response_text="$PV_EMPTY_CRITERIA")" "phase-validator empty exit-criteria-checked array → WARN" "≥1"
+
+# Negative test (review fix): phase: <multi-digit> like phase: 12.
+# Earlier regex [1-7] without trailing anchor matched the leading 1.
+# Now anchored on end-of-line so multi-digit phases fail.
+PV_BAD_PHASE='status: greenlight
+phase: 12
+exit-criteria-checked:
+  - criterion: x
+    satisfied: true
+findings: []
+summary: ok'
+assert_warn "$H" "$(payload tool_name=Agent description='phase-validator-5: cycle 1' response_text="$PV_BAD_PHASE")" "phase-validator phase: 12 (multi-digit) → WARN" "phase: <1-7>"
+
+# Negative test (review fix): pv-<phase>-<single-digit> finding-ID like
+# pv-5-1. §2.5 says <nn> is two-digit zero-padded; regex now [0-9]{2,}
+# so single-digit forms WARN as "missing must-fix finding with valid ID".
+PV_BAD_ID='status: improvements-needed
+phase: 5
+exit-criteria-checked:
+  - criterion: x
+    satisfied: false
+findings:
+  - **pv-5-1** [must-fix] — single-digit ID
+    - criterion: x
+    - issue: y
+    - fix: z
+summary: 1 finding (with malformed single-digit ID).'
+assert_warn "$H" "$(payload tool_name=Agent description='phase-validator-5: cycle 1' response_text="$PV_BAD_ID")" "phase-validator pv-5-1 single-digit ID → WARN (rejected as missing valid finding)" "pv-<phase>-<nn>"
+
+PV_IN_FULL='status: improvements-needed
+phase: 5
+sub-skill: coverage-expansion
+exit-criteria-checked:
+  - criterion: all 5 passes complete
+    satisfied: false
+    evidence: absent — passes 4 and 5 missing
+findings:
+  - **pv-5-01** [must-fix] — Pass 4 not run
+    - criterion: every journey terminal review_status on every pass
+    - issue: state file lacks 4-adversarial entry
+    - fix: re-invoke coverage-expansion with resume marker
+summary: 1 finding — Pass 4 missing.'
+assert_allow "$H" "$(payload tool_name=Agent description='phase-validator-5: cycle 1' response_text="$PV_IN_FULL")" "phase-validator improvements-needed full → ALLOW"
+
+PV_IN_NO_FINDINGS='status: improvements-needed
+phase: 5
+exit-criteria-checked:
+  - criterion: x
+    satisfied: false
+    evidence: absent
+findings:
+summary: missing pass.'
+assert_warn "$H" "$(payload tool_name=Agent description='phase-validator-5: cycle 1' response_text="$PV_IN_NO_FINDINGS")" "phase-validator improvements-needed without pv- finding → WARN" "pv-<phase>-<nn>"
+
+PV_BANNED='status: greenlight
+phase: 5
+exit-criteria-checked:
+  - criterion: x
+    satisfied: true
+findings: []
+summary: ok
+notes:
+  - extra observation'
+assert_warn "$H" "$(payload tool_name=Agent description='phase-validator-5: cycle 1' response_text="$PV_BANNED")" "phase-validator with banned notes: → WARN" "notes"
+
 section "schema-guard: roles that skip validation"
 assert_allow "$H" "$(payload tool_name=Agent description='cleanup-ledger: dedup' response_text='Consolidated 4 cross-cutting findings.')" "cleanup → silent allow"
 assert_allow "$H" "$(payload tool_name=Agent description='phase1-root: discovery' response_text='## Site map\n- /\n- /login')" "phase1 → silent allow"

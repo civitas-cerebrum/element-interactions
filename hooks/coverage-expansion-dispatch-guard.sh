@@ -97,7 +97,7 @@ PROMPT=$(echo "$INPUT" | jq -r '.tool_input.prompt // ""')
 # journey-scoped dispatch must declare its role (composer / reviewer / probe).
 # The role-prefix is the routing key for the downstream return-schema
 # validator (hooks/subagent-return-schema-guard.sh).
-ALLOWED_PREFIX_REGEX='^(phase1-[a-z0-9-]+|phase2-[a-z0-9-]+|stage2-[a-z0-9-]+|composer-[a-z0-9-]+|reviewer-[a-z0-9-]+|probe-[a-z0-9-]+|cleanup-[a-z0-9-]+|process-validator-[a-z0-9-]+)(:|[[:space:]]|$)'
+ALLOWED_PREFIX_REGEX='^(phase1-[a-z0-9-]+|phase2-[a-z0-9-]+|stage2-[a-z0-9-]+|composer-[a-z0-9-]+|reviewer-[a-z0-9-]+|probe-[a-z0-9-]+|cleanup-[a-z0-9-]+|process-validator-[a-z0-9-]+|phase-validator-[a-z0-9-]+)(:|[[:space:]]|$)'
 
 # P3 batch form: `[P3-batch] composer-j-a, composer-j-b, composer-j-c:`
 # (cap 7 enforced via comma count). Allows optional whitespace after each

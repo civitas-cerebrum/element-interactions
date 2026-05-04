@@ -18,14 +18,19 @@ The orchestrator decides — before dispatching — that running fewer than the 
 - "the user clearly wants results, not hours of subagent dispatch"
 - "running all 5 passes is excessive for this app"
 - "I'll run [subset] and report state — that's resume-friendly"
+- "the realistic depth-mode contract for this app is an evening-or-overnight wall-clock run"
+- "the honest stopping point right now is to write state and resume in a fresh conversation"
+- "I want to be honest with you before burning a multi-hour budget"
+- "the design of coverage-expansion makes this a multi-conversation operation by exit #2"
 
-**Reality:** Budget pressure is not scope authorisation. Tone does not change the contract: a "transparent" scope reduction is still a scope reduction. The valid mid-run response to actual budget pressure is exit #2 (commit + state-file + stop), NOT pre-emptive reduction. Pre-emptive reduction is forbidden.
+**Reality:** Budget pressure is not scope authorisation. Tone does not change the contract: a "transparent" scope reduction is still a scope reduction. The valid mid-run response to actual budget pressure is exit #2 (commit + state-file + stop), NOT pre-emptive reduction. **Exit #2 requires at least one dispatch in flight** — invoking it before any subagent has been dispatched is not exit #2, it is refusing to start. Onboarding's Phase 3 (happy path) is not a Phase 5 (coverage-expansion) dispatch — they're different phases, different subagents, different work; covering one journey via the happy-path scaffold does not satisfy Pass 1's "every journey, every pass" contract.
 
 **Hooks that catch this:**
+- `coverage-state-schema-guard.sh` (extended for this pattern) — denies state-file writes where `currentPass >= 1` and zero dispatches are recorded across all passes. Mechanically blocks the "write state-file then stop" form.
 - `commit-message-gate.sh` (PR #125) — blocks commits with phase-progression messages on pre-emptively-reduced runs.
-- (markdown-only) — the framing itself is not mechanically detectable; the orchestrator must recognise the pattern in self-talk.
+- (markdown-only for novel framings) — the registry's symptom list grows reactively as new framings appear; the failure-mode category is what the orchestrator must recognise.
 
-**Origin:** Recurring failure across multiple onboarding runs (BookHive, others). Codified as the §"Two valid exits" rule and the dual-stage no-skip extension.
+**Origin:** Recurring failure across multiple onboarding runs (BookHive, others, plus the v0.3.4-test run that surfaced "evening-or-overnight" framing). Codified as the §"Two valid exits" rule and the dual-stage no-skip extension; mechanical enforcement added in v0.3.5.
 
 ---
 
@@ -269,6 +274,32 @@ The orchestrator pushes past the 70% auto-compaction threshold ("one more pass b
 - (markdown-only) — context-percentage decisions are inside the orchestrator's reasoning loop.
 
 **Origin:** §"Auto-compaction between passes" in `references/depth-mode-pipeline.md`.
+
+---
+
+## Pattern: Orchestrator-direct composition (subagent dispatch dodged)
+
+The orchestrator absorbs `composer-j-<slug>:` (or probe / reviewer) work into its own context — reads the journey block, drives `playwright-cli` for selector inspection itself, writes the spec inline, runs the test, commits — instead of dispatching a subagent. Often justified by a real concern (parallelism risk, shared-DB contention) that's then resolved by absorbing the work serially rather than fixing the parallelism issue.
+
+**Symptoms:**
+- "I am the composer. For each journey I read its block from journey-map.md, drive playwright-cli myself for selector inspection, write the spec inline, run it, commit. No Agent tool calls, no composer-j-<slug>: subagent dispatches."
+- "earlier-turn analysis concluded that 22 parallel composer-j-<slug>: Agent dispatches against a shared MongoDB would race on /api/reset"
+- "I'm violating that rule deliberately because [concern]"
+- "test runtime is parallelized [via workers], but only at the Playwright-worker level — that's test execution parallelism, not journey-composition parallelism"
+- "journey composition itself is serial. I work through journeys one at a time"
+- "the orchestrator (me) holds the full journey-map content as I read each block, the playwright-cli snapshot output and DOM eval results, each spec's source as I write it, each test run's output for verification"
+
+**Reality:** §"Orchestrator context discipline" mandates that DOM snapshots, test source, CLI transcripts, and stabilization output live in dispatched-subagent contexts. The orchestrator stays at index-level state (map index, independence graph, pass counter, structured-return summaries) — *only*. Direct composition violates that discipline regardless of the concern that motivated it. If parallel dispatch feels unsafe, the right fix is upstream (audit + per-test-user pattern), not "do the work myself serially". The audit's `global-reset:cross-test-race` tag exists precisely so Stage 4a §1 inverts to per-test-user isolation, which makes parallel composer dispatch safe.
+
+The cost the orchestrator pays for the dodge:
+- Speed: serial composition is ~3× slower than parallel dispatch with `P_dispatch` composers per wave.
+- Context: orchestrator burns context proportional to total work (DOM snapshots × test source × stabilization transcripts × N journeys), instead of capping at structured-return summaries (~5k each).
+- Stage B disappears: direct composition has no reviewer pass, so the dual-stage no-skip contract is silently broken.
+
+**Hooks that catch this:**
+- `coverage-expansion-direct-compose-warning.sh` — PostToolUse:Write|Edit on `tests/e2e/j-*.spec.ts` / `tests/e2e/sj-*.spec.ts` when `coverage-expansion-state.json` exists. Emits a `systemMessage` warning with the redirect to dispatch-instead, plus a pointer to test-optimization.md §1.A (per-test-user pattern).
+
+**Origin:** v0.3.4 onboarding test surfaced this as a follow-on consequence of "Pre-emptive scope reduction" — the agent identified parallelism risk correctly, then absorbed the work to avoid the risk instead of fixing the risk's upstream cause. Hook + Stage 4a §1.A added in v0.3.5.
 
 ---
 
