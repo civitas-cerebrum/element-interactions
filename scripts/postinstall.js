@@ -131,6 +131,7 @@ const HOOK_MANIFEST = [
   { file: 'playwright-cli-isolation-guard.sh',    event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'coverage-expansion-orchestrator-cli-block.sh', event: 'PreToolUse', matcher: 'Bash', timeout: 10 },
   { file: 'commit-message-gate.sh',               event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
+  { file: 'npm-install-foreground-scripts-hint.sh', event: 'PreToolUse', matcher: 'Bash',      timeout: 10 },
   { file: 'suite-gate-ratchet.sh',                event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'journey-map-sentinel-guard.sh',        event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
   { file: 'coverage-state-schema-guard.sh',       event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
@@ -274,7 +275,11 @@ function probePlaywrightCli() {
 
 const cliProbe = probePlaywrightCli();
 if (!cliProbe.ok) {
-  console.warn('[@civitas-cerebrum/element-interactions] @playwright/cli not reachable via `npx`. The CLI is shipped as a dependency — re-run `npm install` if this is unexpected.');
+  // Fail loudly — npm 7+ swallows postinstall stdout on success, but a
+  // non-zero exit code surfaces the warning so the consumer learns
+  // chromium was NOT fetched. See issue #153 (mitigation 4).
+  console.warn('[@civitas-cerebrum/element-interactions] @playwright/cli not reachable via `npx`. The CLI is shipped as a dependency — re-run `npm install` if this is unexpected. Chromium was NOT fetched; subsequent skill activations may need to run `npx playwright-cli install-browser chromium` manually.');
+  process.exitCode = 1;
 } else if (process.env.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD === '1') {
   console.log(`[@civitas-cerebrum/element-interactions] @playwright/cli ${cliProbe.version} reachable. Browser fetch skipped (PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1).`);
 } else {
@@ -287,5 +292,6 @@ if (!cliProbe.ok) {
     console.log('[@civitas-cerebrum/element-interactions] ✔ chromium ready (cached or freshly installed).');
   } else {
     console.warn(`[@civitas-cerebrum/element-interactions] chromium install exited with status ${browserInstall.status}. You may need to run \`npx playwright-cli install-browser chromium\` manually before driving a browser.`);
+    process.exitCode = 1;
   }
 }
