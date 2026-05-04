@@ -82,19 +82,11 @@ TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // ""' 2>/dev/null || 
 
 # --- target classification --------------------------------------------------
 # Decide whether this edit belongs to the failure-diagnosis surface.
+# Single regex covers .spec.{ts,js,mjs,cjs} at any nesting depth under tests/.
 TARGET_KIND=""
 case "$FILE_PATH" in
-  *tests/*.spec.ts|*tests/*.spec.js|*tests/**/*.spec.ts|*tests/**/*.spec.js)
-    TARGET_KIND="test-source" ;;
-  */tests/data/page-repository.json)
-    TARGET_KIND="page-repository" ;;
+  */tests/data/page-repository.json) TARGET_KIND="page-repository" ;;
 esac
-
-# Bash-glob for nested .spec.* paths.
-case "$FILE_PATH" in
-  */tests/*.spec.ts|*/tests/*.spec.js) TARGET_KIND="test-source" ;;
-esac
-# Catch deeper nesting.
 if [ -z "$TARGET_KIND" ] && echo "$FILE_PATH" | grep -qE '/tests/.+\.spec\.(ts|js|mjs|cjs)$'; then
   TARGET_KIND="test-source"
 fi
@@ -122,9 +114,10 @@ fi
 FD_ACTIVE=0
 
 # Signal A — Playwright report or error-context artefacts.
+# Use `find` instead of bash `**` (which is treated as `*` without globstar)
+# so the typical test-results/<test-name>/error-context.md layout is caught.
 if [ -d "$REPO_ROOT/playwright-report" ] || \
-   ls "$REPO_ROOT"/test-results/**/error-context*.md >/dev/null 2>&1 || \
-   ls "$REPO_ROOT"/test-results/error-context*.md >/dev/null 2>&1; then
+   find "$REPO_ROOT/test-results" -name 'error-context*.md' -print -quit 2>/dev/null | grep -q .; then
   FD_ACTIVE=1
 fi
 
