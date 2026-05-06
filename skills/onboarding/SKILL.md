@@ -92,9 +92,9 @@ pre-discovery estimates; actuals land after Phase 1 and are reported via progres
     (every journey, every pass — no skips)
   • Phase 6 bug hunts: ~<M_low>–<M_high> dispatches
   • Parallel peak: <P> agents depending on credential availability
-  • Model: opus default for every Stage A and Stage B dispatch (cost-blind);
-    narrow cycle-1 Stage B sonnet-confirmation exception may apply to ~<sonnet-count>
-    previously-greenlit journeys (per the skill's Model selection §)
+  • Model: per `coverage-expansion/SKILL.md` §"Hybrid model selection" (default
+    sonnet for cycle-1 mechanical reviewers, opus for compositional Pass 1 /
+    adversarial Pass 4 / synthesis dispatches)
   • Expected wall-clock: ~<H1>–<H2> h active
 
 The scope preview is informational only. The skill's contract is full coverage; the

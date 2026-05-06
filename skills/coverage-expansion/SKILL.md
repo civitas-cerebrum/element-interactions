@@ -109,7 +109,7 @@ This file is the orchestrator-side contract kernel. The heavy spec lives in `ref
 
 | Reference file | What's in it |
 |---|---|
-| [`references/depth-mode-pipeline.md`](references/depth-mode-pipeline.md) | Per-pass pipeline (steps 1–8), pass differences, commit-message conventions, per-pass completion criteria, whole-suite re-run gate, parallelism model, model selection (cost-blind), auto-compaction between passes, re-pass mode for compositional passes 2–3, batched dispatch for P3 peripheral journeys, post-pass-5 ledger dedup. |
+| [`references/depth-mode-pipeline.md`](references/depth-mode-pipeline.md) | Per-pass pipeline (steps 1–8), pass differences, commit-message conventions, per-pass completion criteria, whole-suite re-run gate, parallelism model, model selection (hybrid; opus where it pays), auto-compaction between passes, re-pass mode for compositional passes 2–3, batched dispatch for P3 peripheral journeys, post-pass-5 ledger dedup. |
 | [`references/dual-stage-retry-loop.md`](references/dual-stage-retry-loop.md) | The 7-cycle Stage A↔B retry loop pseudocode, termination conditions, "fresh reviewer every cycle" invariant, dual-stage-specific anti-rationalizations. |
 | [`references/state-file-schema.md`](references/state-file-schema.md) | `coverage-expansion-state.json` shape, per-journey `dispatches[]` entry fields including dual-stage fields, journey-roster mutability, corrupt-state-refusal protocol. |
 | [`references/subagent-isolation.md`](references/subagent-isolation.md) | Per-role dispatch contracts (compositional, adversarial, cleanup): isolation guarantees, brief inputs, `playwright-cli` session naming, the orchestrator's never-hold-payload-content rule. |
@@ -336,7 +336,7 @@ The skill's first action on entry is to read `tests/e2e/docs/coverage-expansion-
 
 ## Depth mode — five-pass pipeline (3 compositional + 2 adversarial) + cleanup
 
-The full per-pass pipeline (steps 1–8), pass differences, commit-message conventions, per-pass completion criteria, the whole-suite re-run gate (incl. issue #131's harness-enforced windowed ratchet), the parallelism model, model selection (cost-blind), auto-compaction between passes, re-pass mode for compositional passes 2–3, batched dispatch for P3 peripheral journeys, and the post-pass-5 ledger dedup are specified in [`references/depth-mode-pipeline.md`](references/depth-mode-pipeline.md). Read it before authoring or modifying any depth-mode pass.
+The full per-pass pipeline (steps 1–8), pass differences, commit-message conventions, per-pass completion criteria, the whole-suite re-run gate (incl. issue #131's harness-enforced windowed ratchet), the parallelism model, model selection (hybrid; opus where it pays), auto-compaction between passes, re-pass mode for compositional passes 2–3, batched dispatch for P3 peripheral journeys, and the post-pass-5 ledger dedup are specified in [`references/depth-mode-pipeline.md`](references/depth-mode-pipeline.md). Read it before authoring or modifying any depth-mode pass.
 
 ### Hard rules — kernel-resident
 
@@ -374,7 +374,7 @@ The full per-pass pipeline (steps 1–8), pass differences, commit-message conve
 - **P0/P1/P2 NEVER batch.** P3-only batching, capped at 7 per brief, Stage A only — Stage B always per-journey. Sharing pages with P3 siblings is not authorisation; priority is load-bearing.
 - **P3 small-surface journeys may opt OUT of adversarial passes (Passes 4 & 5).** Per #164.4, P3 logout / role-chooser / modal-only journeys empirically produce 0–2 unique adversarial findings each — their entire adversarial surface is already covered via portal-wide pattern citations from larger journeys. The skip is **opt-in per project**, declared up-front in the state file's `adversarialSkippedJourneys: []` field with rationale per entry. Default is "include all" — the orchestrator never silently skips a P3 from adversarial work; the operator opts the journey out by name. Compositional passes (1–3) ALWAYS run on every journey including P3. **Exclusion criteria** (must hold for a journey to qualify for opt-out):
   - Priority is P3.
-  - The journey's ` Pages touched` list is a subset of pages already adversarial-probed by a larger journey AND covered by a portal-wide pattern entry (per #164.3).
+  - The journey's `Pages touched` list is a subset of pages already adversarial-probed by a larger journey AND covered by a portal-wide pattern entry (per #164.3).
   - The journey has zero unique adversarial findings in any prior pass-4 ledger entry (or has no prior entries).
   - The journey is one of: logout, role-chooser, single-modal disclosure, single-info-display, breadcrumb-nav, or equivalent low-surface shape.
 

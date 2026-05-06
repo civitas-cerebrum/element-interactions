@@ -167,20 +167,20 @@ A subagent's brief asks it to "dispatch N parallel subagents", "spawn workers", 
 
 ## Pattern: Sonnet cost-down rationalisation
 
-The orchestrator argues for sonnet over opus on dispatches the cost-blind posture says should be opus.
+The orchestrator argues for sonnet on dispatches the hybrid model table reserves for opus.
 
 **Symptoms:**
-- "the journey was attempted last pass and ended at `blocked-cycle-stalled` — that counts as previously-greenlit"
-- "Pass 4 is just probing, sonnet is good enough for cycle-1 of small journeys"
-- "I ran sonnet for Stage A and opus for Stage B — that's a hybrid we never explicitly forbade"
-- "small journey, sonnet is fine"
+- "Pass 4 adversarial probes can run sonnet — they're just probing"
+- "failure-diagnosis is small enough to run sonnet"
+- "the batch reviewer is just aggregating per-journey reviews — sonnet is fine"
+- "gap analysis between passes is mechanical enough for sonnet"
 
-**Reality:** Default model for every dispatch in every stage in every pass is opus. The narrow cycle-1 Stage B sonnet-confirmation exception applies ONLY to journeys with `greenlight` (not blocked-*) in the previous pass, no map delta, and no sibling-bug ledger update. Pass 4 + Pass 5 are ALWAYS opus, both stages, full stop. Hybrid Stage A/Stage B model splits beyond the narrow exception are not authorised.
+**Reality:** Sonnet is the new default for cycle-1 mechanical reviewers, Pass-2/3 re-pass composers, and Pass-5 targeted probes per [`coverage-expansion/SKILL.md`](../SKILL.md) §"Hybrid model selection". Anti-pattern is sonnet on dispatches the table marks opus — failure-diagnosis, Pass 4 probes, gap analysis, batch reviewer.
 
 **Hooks that catch this:**
 - (markdown-only) — model selection is not yet mechanically detectable at the dispatch boundary.
 
-**Origin:** Cost-blind posture codified in §"Model selection" of `references/depth-mode-pipeline.md`.
+**Origin:** Hybrid model policy codified in §"Hybrid model selection" of `coverage-expansion/SKILL.md` (issue #164.6).
 
 ---
 

@@ -241,6 +241,40 @@ Fix: every entry MUST have a non-empty 'journey' and a non-empty 'rationale'. Va
 See skills/coverage-expansion/SKILL.md §\"P3 small-surface journeys may opt OUT of adversarial passes\" for the four exclusion criteria the orchestrator must satisfy."
       exit 0
     fi
+
+    # Each entry's `criteria` array MUST contain ALL FOUR canonical strings
+    # (priority-p3, page-subset-covered, zero-prior-findings, low-surface-shape).
+    # Order doesn't matter; missing or extra strings → DENY. Per #164.4 the
+    # criteria array is mechanical evidence the orchestrator checked each rule;
+    # missing criteria = silent partial-evidence opt-out.
+    BAD_CRITERIA=$(echo "$TARGET" | jq -r '
+      def canonical: ["priority-p3","page-subset-covered","zero-prior-findings","low-surface-shape"];
+      [.adversarialSkippedJourneys[]
+        | select(
+            (.criteria // null) == null
+            or (.criteria | type) != "array"
+            or ((.criteria | sort) != (canonical | sort))
+          )
+        | (.journey // "<missing>")
+      ] | join(", ")
+    ' 2>/dev/null || echo "")
+    if [ -n "$BAD_CRITERIA" ]; then
+      emit_deny "[BLOCKED] adversarialSkippedJourneys[] entries with missing or malformed 'criteria' array.
+
+File: $FILE_PATH
+Offending entries (by journey or '<missing>'): ${BAD_CRITERIA}
+
+Fix: every entry's 'criteria' MUST be an array containing exactly the four canonical strings (order doesn't matter):
+  - priority-p3
+  - page-subset-covered
+  - zero-prior-findings
+  - low-surface-shape
+
+Missing criteria, extra non-canonical strings, an empty array, or an absent field all DENY — the array is the orchestrator's mechanical evidence that all four exclusion criteria hold. Silent partial evidence is silent scope narrowing; that is what this field is here to prevent.
+
+See skills/coverage-expansion/SKILL.md §\"P3 small-surface journeys may opt OUT of adversarial passes\"."
+      exit 0
+    fi
   fi
 fi
 

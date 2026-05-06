@@ -71,9 +71,11 @@ A state file missing `stage_a_cycles`, `stage_b_cycles`, or `review_status` for 
 
 - `journey` — the journey ID (`j-<slug>`).
 - `rationale` — non-empty string explaining why the journey is being excluded from Passes 4 and 5. Vague rationales (`"low value"`, `"P3 doesn't need it"`) fail the contract; specific rationales naming the covered surface and the portal-wide entry that subsumes it pass.
-- `criteria` — array of zero or more of the four kernel-resident criteria the journey satisfies (`priority-p3`, `page-subset-covered`, `zero-prior-findings`, `low-surface-shape`). All four must hold for the opt-out to be valid; the array is evidence the orchestrator checked each one.
+- `criteria` — array containing all four canonical strings naming the criteria (`priority-p3`, `page-subset-covered`, `zero-prior-findings`, `low-surface-shape`); the entry's validity requires all four to be present (the array is mechanical evidence, not a tickbox). Order doesn't matter; missing or extra strings DENY at the schema-guard hook.
 
 The field is **opt-in per project, never silent**. The orchestrator may not append entries inferentially during a pass; entries land at project setup time (or in a between-pass commit explicitly authorised by the user) and stay through all subsequent runs. Compositional Passes (1–3) ignore this field — every journey gets compositional coverage regardless. Adversarial Passes (4 and 5) read it on entry and exclude listed journeys from their journey roster for those passes only.
+
+**Implementation:** the orchestrator iterates `journeyRoster - adversarialSkippedJourneys[].journey` for Passes 4 and 5; `journeyRoster` itself is NOT rewritten and `completedJourneys` continues to track only journeys whose dispatch returned in the current pass. The skip evidence lives only in `adversarialSkippedJourneys[]`.
 
 The state file is rewritten after every per-pass commit (and whenever auto-compaction triggers — see [`depth-mode-pipeline.md` §"Auto-compaction between passes"](depth-mode-pipeline.md)).
 
