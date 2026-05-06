@@ -120,11 +120,17 @@ STATUS=$(echo "$CONTENT" | jq -r '.status // ""')
 # top level), and the nested-deferral safety net silently does nothing.
 # Duplicates are NOT deduped — every offending entry should appear
 # in the deny message.
+#
+# Authorizer must be a non-empty STRING (PR #173 review carry-over). Numbers,
+# booleans, arrays, objects, and null all fail the type-check and surface
+# the entry as a violation. The `_authorizer_type` field captures jq's
+# native type so the loop below can distinguish "no authorizer" from
+# "authorizer present but wrong type".
 ENTRIES=$(echo "$CONTENT" | jq -r '
   ([.deferredJourneys // []] | flatten)
   + [.. | objects | select(has("journey") and has("reason") and (has("stage_a_cycles") | not))]
   | .[]
-  | "\(.journey // "<unknown>")\t\(.reason // "")\t\((.authorizer // "") | tostring)"
+  | "\(.journey // "<unknown>")\t\(.reason // "")\t\(.authorizer | type)\t\((.authorizer // "") | tostring)"
 ' 2>/dev/null || echo "")
 
 [ -z "$ENTRIES" ] && exit 0
@@ -132,14 +138,17 @@ ENTRIES=$(echo "$CONTENT" | jq -r '
 ALLOWED_PREFIXES='^(blocked-on-app-bug:|test-data-prerequisite:|user-authorised:)'
 
 VIOLATIONS=()
-while IFS=$'\t' read -r JOURNEY REASON AUTHORIZER; do
+while IFS=$'\t' read -r JOURNEY REASON AUTHORIZER_TYPE AUTHORIZER; do
   # Skip blank lines defensively.
   [ -z "$JOURNEY" ] && continue
   if echo "$REASON" | grep -qE "$ALLOWED_PREFIXES"; then
     continue
   fi
-  if [ -n "$AUTHORIZER" ] && [ "$AUTHORIZER" != "null" ]; then
-    # Trim whitespace + check it's actually non-empty content.
+  # Authorizer must be a non-empty STRING. Numbers, booleans, arrays,
+  # objects, and null all fail the type-check (PR #173 review carry-over
+  # — the prior implementation passed `42` / `true` / `[]` through
+  # tostring and accepted them as authorisation).
+  if [ "$AUTHORIZER_TYPE" = "string" ] && [ -n "$AUTHORIZER" ] && [ "$AUTHORIZER" != "null" ]; then
     TRIMMED=$(echo "$AUTHORIZER" | tr -d '[:space:]')
     [ -n "$TRIMMED" ] && continue
   fi

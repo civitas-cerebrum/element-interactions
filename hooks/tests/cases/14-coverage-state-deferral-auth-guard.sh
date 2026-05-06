@@ -92,6 +92,21 @@ assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverag
 NULL_AUTH='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{},"updatedAt":"2026-05-04T00:00:00Z","deferredJourneys":[{"journey":"j-a","reason":"budget-cap","authorizer":null}]}'
 assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$NULL_AUTH")" "authorizer: null → DENY"
 
+section "coverage-state-deferral-auth-guard: non-string authorizer types → DENY (PR #173 carry-over)"
+
+# Authorizer must be a string. Numbers, booleans, arrays, objects → DENY.
+NUM_AUTH='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{},"updatedAt":"2026-05-04T00:00:00Z","deferredJourneys":[{"journey":"j-a","reason":"budget-cap","authorizer":42}]}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$NUM_AUTH")" "authorizer: 42 (number) → DENY (only string authorisations accepted)"
+
+BOOL_AUTH='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{},"updatedAt":"2026-05-04T00:00:00Z","deferredJourneys":[{"journey":"j-a","reason":"budget-cap","authorizer":true}]}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$BOOL_AUTH")" "authorizer: true (boolean) → DENY"
+
+ARR_AUTH='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{},"updatedAt":"2026-05-04T00:00:00Z","deferredJourneys":[{"journey":"j-a","reason":"budget-cap","authorizer":["user said yes"]}]}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$ARR_AUTH")" "authorizer: array → DENY"
+
+OBJ_AUTH='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{},"updatedAt":"2026-05-04T00:00:00Z","deferredJourneys":[{"journey":"j-a","reason":"budget-cap","authorizer":{"quote":"yes"}}]}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$OBJ_AUTH")" "authorizer: object → DENY"
+
 section "coverage-state-deferral-auth-guard: nested-deferral path (PR #173 #1 fix proof)"
 
 # Deferral-shaped objects nested inside passes.<N>, no top-level
