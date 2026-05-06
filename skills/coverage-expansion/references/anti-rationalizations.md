@@ -303,6 +303,26 @@ The cost the orchestrator pays for the dodge:
 
 ---
 
+## Pattern: `markdown-only` deferral — batch-reviewer mode (cycle-1 compositional)
+
+The "Batch reviewer mode" rule lives in `skills/coverage-expansion/references/reviewer-subagent-contract.md` §"Batch reviewer mode (cycle-1 compositional only)" (introduced in PR #177, closes #164.2). The structural backstop — extending `subagent-spillover-rewrite-gate.sh` and `subagent-return-schema-guard.sh` to recognise the `reviewer-batch-pass-<N>:` role-prefix and the `verdicts:` array shape — is **deferred** to land coherently with the mechanical-checks-first PR.
+
+**Tag:** `markdown-only`.
+**Deferred hook:** `subagent-spillover-rewrite-gate.sh` + `subagent-return-schema-guard.sh` extension for `reviewer-batch-pass-<N>:` / `verdicts:`.
+**Follow-up:** #164.7 / Wave 3I.3b.
+
+---
+
+## Pattern: `markdown-only` deferral — portal-wide-scan sentinel + citation contract
+
+The "Pass-4 prelude — portal-wide pattern scan" rule lives in `skills/coverage-expansion/SKILL.md` §"Hard rules — kernel-resident" + `references/portal-wide-scan.md` + `adversarial-subagent-contract.md` §"Inputs" #9 (introduced in PR #178, closes #164.3). The output file `tests/e2e/docs/portal-wide-patterns.md` carries the sentinel `<!-- portal-wide-scan:generated -->`, but no hook validates that writes preserve the sentinel or that new entries follow the per-pattern catalogue schema (`<pattern-id>` + `Cite as: coverage: portal-wide:<pattern-id>` line).
+
+**Tag:** `markdown-only`.
+**Deferred hook:** sentinel-validation hook for `tests/e2e/docs/portal-wide-patterns.md`, behaviour analogous to `journey-map-sentinel-guard.sh`.
+**Follow-up:** #180.
+
+---
+
 ## Adding a new pattern
 
 When a novel rationalisation framing appears that doesn't fit an existing pattern:
