@@ -73,6 +73,10 @@ REPO=$(make_repo_with_dep)
 assert_warn "$H" "$(payload tool_name=Bash command='npm install some-other-package' cwd="$REPO")" "npm install <pkg> without flag → WARN" "--foreground-scripts"
 rm -rf "$REPO"
 
+REPO=$(make_repo_with_dep)
+assert_warn "$H" "$(payload tool_name=Bash command='npm ci' cwd="$REPO")" "npm ci without flag → WARN" "--foreground-scripts"
+rm -rf "$REPO"
+
 section "npm-install-foreground-scripts-hint: per-CWD sentinel suppresses repeats"
 
 REPO=$(make_repo_with_dep)

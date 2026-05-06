@@ -62,9 +62,10 @@ TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 CMD=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
 [ -z "$CMD" ] && exit 0
 
-# Filter to `npm install` (or `npm i` shorthand). Match either word at a
-# command boundary so we don't fire on `npm run install-something`.
-if ! echo "$CMD" | grep -qE '\bnpm[[:space:]]+(install|i)\b'; then
+# Filter to `npm install` (or `npm i` shorthand) and `npm ci`. All three
+# run lifecycle scripts and equally benefit from --foreground-scripts.
+# Match at a command boundary so we don't fire on `npm run install-something`.
+if ! echo "$CMD" | grep -qE '\bnpm[[:space:]]+(install|i|ci)\b'; then
   exit 0
 fi
 

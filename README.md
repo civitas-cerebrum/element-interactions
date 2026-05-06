@@ -100,7 +100,9 @@ npm install --foreground-scripts @civitas-cerebrum/element-interactions
 > echo 'foreground-scripts=true' >> .npmrc
 > ```
 >
-> If chromium failed to fetch (e.g. proxy / sandbox / probe race), the postinstall script now exits non-zero and npm will surface the warning in the install output even without the flag — you'll see the line `chromium was NOT fetched; ... run \`npx playwright-cli install-browser chromium\` manually`.
+> If chromium failed to fetch (e.g. proxy / sandbox / probe race), the postinstall script now exits non-zero and npm will surface the warning in the install output even without the flag — you'll see the line `chromium was NOT fetched; ... run \`npx playwright-cli install-browser chromium\` manually`. **Note:** because postinstall sets a non-zero exit code, your `npm install` / `npm ci` invocation itself will return non-zero on chromium-fetch failure (this is what surfaces the warning in CI logs); if your cache strategy makes occasional fetch failures expected, set `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` to opt out of the auto-fetch.
+>
+> **Tip:** the hook backstop may write a `.civitas-fg-scripts-hinted` sentinel at your repo root to suppress repeat install-time hints — add it to your `.gitignore`.
 
 **Peer dependencies:** `@playwright/test` is required.
 
