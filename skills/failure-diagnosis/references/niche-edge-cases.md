@@ -58,11 +58,46 @@ Entry shape (use this for new entries):
 
 ---
 
-## Appending new entries
+## Adding an entry
 
-When you encounter a niche failure shape, resolve it, and discover it isn't covered here:
+The catalogue is meant to grow. When a diagnostic session resolves a failure whose shape isn't already documented here, append a new entry **before closing out the session**. The criteria + entry template below are the contract.
 
-1. Add a new section using the entry shape above.
-2. Number it sequentially.
-3. Cross-link from the Stage 4 / 4a row in `SKILL.md` if your new entry refines one of those rows. If it's a brand new shape with no Stage 4 row, leave the cross-link as "(none — new shape)".
-4. Keep the writeup tight: one paragraph per field is the target. The reference is meant to be skimmable during a live diagnosis, not exhaustive.
+### When to add (criteria — must hold ALL)
+
+1. **You actually misclassified at first** (or were close to). The catalogue is for shapes that *trap* the diagnoser — not for failures whose classification was obvious from the screenshot. If Stage 0 + Stage 4 got you to the right answer cleanly, no entry needed.
+2. **The disambiguating probe was non-obvious.** The thing you ended up doing — the specific tool call, DOM read, or evidence grab that flipped the classification — is what the next diagnoser most needs. If your probe was just "look at the screenshot more carefully", that's not catalogue-worthy.
+3. **The shape is reproducible across consumers**, not project-specific. A bug in *this app's checkout flow* is a project finding, not a niche-edges entry. A bug shape that any consumer of the package could plausibly hit (modal-fetch hangs, role-attribute serialisation, page-repo entry resolves but matches a hidden duplicate, etc.) is.
+
+If any criterion fails: don't add an entry. Project-specific findings go in the project's bug ledger; obvious classifications go nowhere; one-off probes that won't generalise go nowhere.
+
+### Entry template
+
+```markdown
+## (N) <one-line shape name — reads like a row title in Stage 4 of SKILL.md>
+
+**Symptom.** What the failure looks like in the screenshot / error log / DOM at the moment of failure. Concrete observables only — no diagnosis yet.
+
+**Why LLMs struggle.** The specific reasoning trap. What does the LLM *assume* from the symptom that turns out to be wrong? Name the wrong-direction conclusion explicitly so the next diagnoser recognises their own reasoning.
+
+**Disambiguating probe.** The specific tool call(s) that resolve the ambiguity. Concrete commands or DOM reads, not "investigate further". If two probes both work, list both with "either is sufficient".
+
+**Classification.** `test-issue` / `app-bug` / `ambiguous-by-design`. If it's a test-issue, name the Stage 4a heal strategy that applies. If it's an app-bug, name the heal strategy `(h)` (documented-quirk, no heal) and note evidence-capture moves.
+
+**Cross-link.** Stage 4 / 4a row(s) in `SKILL.md` this entry refines, if any. If it's a brand new shape, leave as "(none — new shape)". If it cross-references a sibling entry in this catalogue, name the entry number.
+```
+
+Number sections sequentially. If your new entry refines a Stage 4 / 4a row in `SKILL.md`, also update that row to point at the new entry.
+
+### How to ship the addition
+
+The contribution pathway depends on what you're already shipping:
+
+- **You're already mid-PR for something else** (e.g. a hook fix, a skill change). Add the catalogue entry to the same PR — one extra commit, scope-clean (purely additive to a docs file). Mention in the PR description that the entry was discovered while debugging the PR's own work.
+- **You hit the niche shape outside any PR** (e.g. during a normal coverage / authoring session). Open a small standalone PR titled `docs(failure-diagnosis): catalogue <shape-name> in niche-edge-cases`. Single-commit, single-file (this file). The contributing-skill `docs(...)` commit-message convention applies; no version bump (per the no-bump rule).
+- **You hit it inside a dispatched subagent** (e.g. failure-diagnosis sub-skill). The subagent surfaces the find in its return; the parent orchestrator either appends inline or opens the standalone PR above. Subagents do NOT push commits directly to this catalogue.
+
+The full criteria + ship path is also documented in `skills/contributing-to-element-interactions/SKILL.md` §"Contributing to the niche-edge-cases catalogue".
+
+### Keep entries tight
+
+One paragraph per field is the target. The reference is meant to be skimmable during a live diagnosis, not exhaustive. War stories, project-specific incident details, and broader debugging philosophy belong elsewhere — the catalogue is the trap and the probe and the classification, nothing more.

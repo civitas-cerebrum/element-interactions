@@ -115,7 +115,19 @@ Before finalizing your classification, run through this checklist:
 
 ### Niche edge cases
 
-Failure shapes that LLMs routinely misclassify are catalogued in [`references/niche-edge-cases.md`](references/niche-edge-cases.md). Read the relevant entry before classifying when the failure shape doesn't fit Stage 4's table cleanly. The catalogue is the place to grow this knowledge — when you encounter a niche shape and resolve it, append an entry there so the next diagnoser doesn't redo the work.
+Failure shapes that LLMs routinely misclassify are catalogued in [`references/niche-edge-cases.md`](references/niche-edge-cases.md). Read the relevant entry before classifying when the failure shape doesn't fit Stage 4's table cleanly.
+
+**The catalogue is meant to grow.** When you resolve a failure whose shape isn't already documented there, **append a new entry as part of the same diagnostic session** — before closing out / handing back to the caller. The entry costs a few minutes; future sessions (yours, other contributors', other consumers of the package) get to skip the wrong-direction work this entry catalogues.
+
+When to append (criteria — must hold ALL):
+
+1. **You actually misclassified at first** (or were close to). The catalogue is for shapes that *trap* the diagnoser — not for failures whose classification was obvious from the screenshot. If Stage 0 + Stage 4 got you to the right answer cleanly, no entry needed.
+2. **The disambiguating probe was non-obvious.** The thing you ended up doing — the specific tool call, DOM read, or evidence grab that flipped the classification — is what the next diagnoser most needs. If your probe was just "look at the screenshot more carefully", that's not catalogue-worthy.
+3. **The shape is reproducible across consumers**, not project-specific. A bug in *this app's checkout flow* is a project finding, not a niche-edges entry. A bug shape that any consumer of the package could plausibly hit (modal-fetch hangs, role-attribute serialisation, page-repo entry resolves but matches a hidden duplicate, etc.) is.
+
+When all three hold, follow the entry shape documented in `references/niche-edge-cases.md` §"Adding an entry" (Symptom / Why LLMs struggle / Disambiguating probe / Classification / Cross-link). Keep entries tight — one paragraph per field, not a war story.
+
+Contribution path for promoted entries: see `skills/contributing-to-element-interactions/SKILL.md` §"Contributing to the niche-edge-cases catalogue" — covers the criteria above, the entry template, and how to ship the change as part of either a normal PR or a standalone docs PR.
 
 ### Stage 4a — Heal strategy selection
 
