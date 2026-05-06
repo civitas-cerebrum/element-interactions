@@ -69,10 +69,7 @@ try {
   }
 
   if (installedSkills.size > 0) {
-    // Emitted on stderr so npm 7+ surfaces it without the consumer needing
-    // `--foreground-scripts`. The "restart Claude Code" notice is action-required,
-    // not routine progress, so it must not get buffered away.
-    console.error(`[@civitas-cerebrum/element-interactions] ✔ ${installedSkills.size} skill${installedSkills.size > 1 ? 's' : ''} installed to ${destinations.length} locations — restart Claude Code to pick it up.`);
+    console.log(`[@civitas-cerebrum/element-interactions] ✔ ${installedSkills.size} skill${installedSkills.size > 1 ? 's' : ''} installed to ${destinations.length} locations — restart Claude Code to pick it up.`);
   } else {
     console.warn('[@civitas-cerebrum/element-interactions] Skill files not found, skipping.');
   }
@@ -249,9 +246,7 @@ function installCivitasHooks() {
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
   }
 
-  // Stderr (not stdout) so npm 7+ surfaces it without `--foreground-scripts`.
-  // The "restart Claude Code" instruction is action-required, not routine.
-  console.error(`[civitas-cerebrum] Harness hooks: ${copiedCount} script${copiedCount === 1 ? '' : 's'} copied, ${registeredCount} registration${registeredCount === 1 ? '' : 's'} added (others already present). Restart Claude Code to pick them up.`);
+  console.log(`[civitas-cerebrum] Harness hooks: ${copiedCount} script${copiedCount === 1 ? '' : 's'} copied, ${registeredCount} registration${registeredCount === 1 ? '' : 's'} added (others already present). Restart Claude Code to pick them up.`);
 }
 
 try {
