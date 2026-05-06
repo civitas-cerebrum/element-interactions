@@ -2,6 +2,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const packageDir  = path.resolve(__dirname, '..');
 const skillsDir   = path.join(packageDir, 'skills');
@@ -245,6 +246,81 @@ function installCivitasHooks() {
   console.log(`[civitas-cerebrum] Harness hooks: ${copiedCount} script${copiedCount === 1 ? '' : 's'} copied, ${registeredCount} registration${registeredCount === 1 ? '' : 's'} added (others already present). Restart Claude Code to pick them up.`);
 }
 
+// jq is a hard runtime dependency of the harness hooks (see issue #165).
+// Most hooks parse the JSON event payload via `jq`, and `jq` missing on the
+// host means every hook crashes with `jq: command not found` — silent
+// non-blocking failures on PostToolUse, accept-all on PreToolUse. Detect
+// and install before registering the hooks so they actually work on first
+// activation.
+//
+// Opt-out: set CIVITAS_SKIP_JQ_INSTALL=1 to skip the auto-install attempt
+// (useful when the user manages jq via a system package manager that this
+// shim doesn't know about, or for offline / sandboxed environments).
+function ensureJq() {
+  if (process.env.CIVITAS_SKIP_JQ_INSTALL === '1') {
+    return;
+  }
+
+  // Already on PATH? Done.
+  const probe = spawnSync('jq', ['--version'], { stdio: 'ignore' });
+  if (probe.status === 0) {
+    return;
+  }
+
+  console.log('[@civitas-cerebrum/element-interactions] jq not found — required by harness hooks. Attempting platform-appropriate install…');
+
+  // Try platform-appropriate package manager. Stop at the first that works.
+  // Order: brew (macOS), apt-get (Debian/Ubuntu), apk (Alpine), dnf (RHEL/
+  // Fedora), pacman (Arch). Each attempt is best-effort; failures fall
+  // through to the manual-install warning.
+  const candidates = [
+    { bin: 'brew',     args: ['install', 'jq'],                 sudo: false },
+    { bin: 'apt-get',  args: ['install', '-y', 'jq'],           sudo: true  },
+    { bin: 'apk',      args: ['add', '--no-cache', 'jq'],       sudo: false },
+    { bin: 'dnf',      args: ['install', '-y', 'jq'],           sudo: true  },
+    { bin: 'pacman',   args: ['-S', '--noconfirm', 'jq'],       sudo: true  },
+  ];
+
+  for (const c of candidates) {
+    // `which <bin>` returns 0 if the binary is on PATH. Avoids the shell:true
+    // overhead and the Node deprecation warning about args + shell.
+    if (spawnSync('which', [c.bin], { stdio: 'ignore' }).status !== 0) {
+      continue;
+    }
+    const cmd = c.sudo ? 'sudo' : c.bin;
+    const args = c.sudo ? [c.bin, ...c.args] : c.args;
+    const result = spawnSync(cmd, args, { stdio: 'inherit' });
+    if (result.status === 0) {
+      // Re-probe to confirm.
+      if (spawnSync('jq', ['--version'], { stdio: 'ignore' }).status === 0) {
+        console.log(`[@civitas-cerebrum/element-interactions] ✔ jq installed via ${c.bin}.`);
+        return;
+      }
+    }
+  }
+
+  // No package manager worked — print a clear, actionable warning and exit
+  // non-zero so npm surfaces the message even under the default
+  // foreground-scripts-off behaviour (per #153 mitigation 4).
+  console.warn('[@civitas-cerebrum/element-interactions] WARNING: could not auto-install jq.');
+  console.warn('  Harness hooks require jq to parse hook payloads — without it, hooks crash silently.');
+  console.warn('  Install manually before invoking any skill that depends on the harness:');
+  console.warn('    macOS:           brew install jq');
+  console.warn('    Debian/Ubuntu:   sudo apt-get install jq');
+  console.warn('    Alpine:          apk add --no-cache jq');
+  console.warn('    RHEL/Fedora:     sudo dnf install jq');
+  console.warn('    Arch:            sudo pacman -S jq');
+  console.warn('    Other:           https://jqlang.github.io/jq/download/');
+  console.warn('  Skip this check next time: set CIVITAS_SKIP_JQ_INSTALL=1.');
+  process.exitCode = 1;
+}
+
+try {
+  ensureJq();
+} catch (err) {
+  console.warn(`[civitas-cerebrum] Could not check jq availability: ${err.message}`);
+}
+
 try {
   installCivitasHooks();
 } catch (err) {
@@ -261,8 +337,6 @@ try {
 // Opt-out: set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 (the Playwright-standard
 // env var) to skip the browser fetch — useful for offline installs and
 // container builds that mount a pre-warmed browser cache.
-const { spawnSync } = require('child_process');
-
 function probePlaywrightCli() {
   const probe = spawnSync('npx', ['--no-install', 'playwright-cli', '--version'], {
     cwd: projectRoot,
