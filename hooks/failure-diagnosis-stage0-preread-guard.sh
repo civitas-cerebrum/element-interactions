@@ -64,6 +64,41 @@ emit_deny() {
   }'
 }
 
+# build_message <headline> <do-this-instead> <what-was-wrong> <if-this-then> <references>
+# Renders the project-standard hook error layout (see contributing skill
+# §"Hook error message format — repo standard"). Mirrors the canonical
+# `build_message` in hooks/contribution-handover-gate.sh.
+build_message() {
+  local headline="$1" do_this="$2" wrong="$3" if_this="$4" refs="$5"
+  cat <<EOF
+[BLOCKED] $headline
+
+──────────────────────────
+Do this instead:
+──────────────────────────
+$do_this
+
+──────────────────────────
+What was wrong:
+──────────────────────────
+$wrong
+
+──────────────────────────
+If $if_this — read this:
+──────────────────────────
+References:
+$refs
+EOF
+}
+
+REFS=$(cat <<'EOF'
+  skills/failure-diagnosis/SKILL.md §"Stage 0 — Context Pre-Read (mandatory)"
+  skills/contributing-to-element-interactions/SKILL.md §"Hook error message format — repo standard"
+  hooks/failure-diagnosis-stage0-preread-guard.sh (this hook header)
+  Issue #156 — the incident that motivated mechanical enforcement
+EOF
+)
+
 # --- input ---
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
@@ -170,23 +205,54 @@ done
 TARGET_LABEL="$TARGET_KIND"
 case "$TARGET_KIND" in
   test-source)    TARGET_LABEL="test source ($FILE_PATH)" ;;
-  page-repository) TARGET_LABEL="page-repository.json" ;;
+  page-repository) TARGET_LABEL="page-repository.json ($FILE_PATH)" ;;
   bug-report)     TARGET_LABEL="Application Bug Report ($FILE_PATH)" ;;
 esac
 
-MISSING_LIST=$(printf '  - %s\n' "${MISSING[@]}")
+MISSING_LIST=$(printf '    - %s\n' "${MISSING[@]}")
+# Strip the trailing newline so the built message stays tight.
+MISSING_LIST="${MISSING_LIST%$'\n'}"
 
-emit_deny "[BLOCKED] failure-diagnosis Stage 0 — Context Pre-Read not satisfied.
+# Build sections via printf into variables. We avoid `$(cat <<EOF ... EOF)`
+# nested heredoc-in-command-substitution because bash 3.2 (default macOS)
+# mis-parses apostrophes inside that construct.
+DO_THIS=""
+DO_THIS+="  Option A — do the Stage 0 pre-read, then re-attempt the edit"$'\n'
+DO_THIS+="    Read each file below using the Read tool, capture the documented"$'\n'
+DO_THIS+="    expectations relevant to the failing step, then re-issue the edit:"$'\n'
+DO_THIS+="${MISSING_LIST}"$'\n'
+DO_THIS+="    The diagnostic pipeline should compare observed state (screenshot,"$'\n'
+DO_THIS+="    DOM) against documented state — not against recollection of the page."$'\n'
+DO_THIS+=""$'\n'
+DO_THIS+="  Option B — this is genuinely not failure-diagnosis work"$'\n'
+DO_THIS+="    Failure-diagnosis context activated because either playwright-report/"$'\n'
+DO_THIS+="    or test-results/error-context*.md is present in the repo. If you are"$'\n'
+DO_THIS+="    in this repo for an unrelated reason (cleanup, refactor, doc edit),"$'\n'
+DO_THIS+="    set the escape hatch for this invocation:"$'\n'
+DO_THIS+="        FD_STAGE0_GUARD=off"$'\n'
+DO_THIS+="    The hook will silent-allow. Do not use this to skip the pre-read on"$'\n'
+DO_THIS+="    an actual heal or bug-report write."
 
-About to write to: $TARGET_LABEL
-Failure-diagnosis context is active (playwright-report/ or test-results/error-context).
+WRONG=""
+WRONG+="File: $TARGET_LABEL"$'\n'
+WRONG+="Failure-diagnosis context: ACTIVE"$'\n'
+WRONG+="  signal: playwright-report/ present, or test-results/error-context*.md present"$'\n'
+WRONG+="Stage 0 documented context not satisfied — files exist but were not Read"$'\n'
+WRONG+="in this session:"$'\n'
+WRONG+="${MISSING_LIST}"$'\n'
+WRONG+=""$'\n'
+WRONG+="Stage 0 of the failure-diagnosis pipeline (skills/failure-diagnosis/SKILL.md)"$'\n'
+WRONG+="is the load-bearing step that turns triage from comparing the screenshot"$'\n'
+WRONG+="against the agent's recollection of the page into comparing the screenshot"$'\n'
+WRONG+="against what the project's documented context actually specifies. Skipping"$'\n'
+WRONG+="it is how confidently-wrong app-bug classifications get published (issue"$'\n'
+WRONG+="#156 — the incident pattern that motivated this hook). Markdown alone has"$'\n'
+WRONG+="been shown insufficient under context pressure (see also #139, #154, #155);"$'\n'
+WRONG+="a programmatic guard at the heal/report write boundary is the backstop."
 
-Stage 0 (skills/failure-diagnosis/SKILL.md) requires reading the project's documented context BEFORE applying a heal or filing a bug report. The following file(s) exist in the project but have not been Read in this session:
+HEADLINE="failure-diagnosis Stage 0 — Context Pre-Read not satisfied (target: $TARGET_KIND)."
+IF_THIS="you started healing / filing a bug from a fresh context without re-reading the project's documented expectations"
 
-$MISSING_LIST
-Why: skipping Stage 0 is how confidently-wrong 'app bug' classifications get published — you compare the screenshot against your recollection of the page instead of against what the project already specifies. See issue #156 for the incident pattern.
-
-Fix: Read the files above (use the Read tool), capture the documented expectations relevant to the failing step, then re-attempt the edit. The diagnostic pipeline should be comparing observed state against documented state, not against recollection.
-
-Escape hatch (only when truly not failure-diagnosis work): set FD_STAGE0_GUARD=off in the environment for this invocation."
+msg=$(build_message "$HEADLINE" "$DO_THIS" "$WRONG" "$IF_THIS" "$REFS")
+emit_deny "$msg"
 exit 0
