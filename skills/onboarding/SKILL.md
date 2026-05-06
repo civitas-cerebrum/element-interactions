@@ -261,7 +261,7 @@ Onboarding dispatches `phase-validator-<N>:` at the **end of every phase**, befo
 - **Onboarding advances only on `greenlight`.** Recorded in `tests/e2e/docs/onboarding-phase-ledger.json`.
 - **Phase 3 (happy path), Phase 4 (journey mapping), Phase 5 (coverage expansion), Phase 6 (bug hunts) all dispatch a validator.** Phases 1, 2, 7 also dispatch one (inline-phase verification — scaffolded files, app-context.md sections, onboarding-report.md commit).
 
-Full workflow spec — manifest shape, per-phase verification table, response handling, cycle counting across resume — in [`references/phase-validator-workflow.md`](references/phase-validator-workflow.md). Return shape canonical in `../element-interactions/references/subagent-return-schema.md` §2.5. Schema-conformance enforced by `hooks/subagent-return-schema-guard.sh` (validates phase-validator returns at PostToolUse). Mechanical dispatch-required enforcement (deny advance without prior-phase greenlight in the ledger) is the planned v0.3.7 follow-up; until then, the orchestrator self-disciplines per the kernel rules.
+Full workflow spec — manifest shape, per-phase verification table, response handling, cycle counting across resume — in [`references/phase-validator-workflow.md`](references/phase-validator-workflow.md). Return shape canonical in `../element-interactions/references/subagent-return-schema.md` §2.5. Schema-conformance and dispatch-required gating are harness-enforced (see [harness-hooks.md](../element-interactions/references/harness-hooks.md)).
 
 #### Inter-phase auto-compact
 
@@ -272,7 +272,7 @@ After each phase greenlights via its `phase-validator-<N>:` and BEFORE the orche
 **Sequence:**
 
 1. Phase N's sub-skill returns. Orchestrator dispatches `phase-validator-<N>:` per the kernel rule above.
-2. Validator returns greenlight. Onboarding records the entry in `onboarding-phase-ledger.json` (handled by `hooks/phase-validator-dispatch-required.sh`).
+2. Validator returns greenlight. Onboarding records the entry in `onboarding-phase-ledger.json` (auto-recorded by the dispatch-required gate; see [harness-hooks.md](../element-interactions/references/harness-hooks.md)).
 3. **Onboarding runs `/compact`** (or emits the safe-compact line). The orchestrator's first action on the post-compact turn is to re-read the ledger + relevant state files; it picks up from the ledger's recorded greenlight and proceeds to phase N+1.
 4. Phase N+1 begins.
 

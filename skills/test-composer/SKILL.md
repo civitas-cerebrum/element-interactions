@@ -351,7 +351,7 @@ expectations-mapped: <count>
 
 The spill file starts with the sentinel `<!-- subagent-returns:composer:<slug>:pass-<N>:cycle-<C> -->`. The full `| Expectation | Covering spec | Test name |` table (with one row per `Test expectations:` entry) goes in the spill body, NOT inline in the return.
 
-The `SubagentStop` rewrite-gate (`hooks/subagent-spillover-rewrite-gate.sh`) enforces the contract — non-compliant returns are blocked at stop, stderr feedback names the missing path / wrong shape, and the composer rewrites in-session. The orchestrator's tool result is the FINAL compliant return; the verbose mapping table never reaches the parent's transcript. Other composer statuses (`new-tests-landed`, `blocked`, `skipped`) are exempt from spillover (their bodies are already small — counts + reasons, no large block).
+A `SubagentStop` rewrite-gate enforces the contract — non-compliant returns are blocked at stop and the composer rewrites in-session, so the verbose mapping table never reaches the parent's transcript. Other composer statuses (`new-tests-landed`, `blocked`, `skipped`) are exempt from spillover (small bodies — counts + reasons, no large block). See [harness-hooks.md](../element-interactions/references/harness-hooks.md).
 
 ---
 
