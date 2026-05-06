@@ -351,6 +351,43 @@ The full per-pass pipeline (steps 1–8), pass differences, commit-message conve
 - **Auto-compaction at 70%.** State written first, then `/compact`, then resume from state. Mid-cycle Stage A returns persist to a scratch file (`tests/e2e/docs/.coverage-expansion-cycle-<slug>-cycle-<N>.json`) before compacting; mid-cycle restart from a fresh Stage A dispatch is NOT acceptable.
 - **`blocked-cycle-stalled`, `blocked-cycle-exhausted`, `blocked-dispatch-failure` are valid terminals**, not pass failures. Mark them faithfully — calling cycle-7-exhausted "greenlit" corrupts the state file and the next pass's trigger-4 input.
 
+### Trigger-gated re-pass for Passes 2 & 3 (issue #164.1)
+
+Pass 2 and Pass 3 are **conditional** on per-journey triggers checked at the orchestrator level. Empirically (issue #164's farmedvisie-t2 cycle), 22 of 30 Pass-2 dispatches and 21 of 30 Pass-3 dispatches return `covered-exhaustively` — the subagent loaded full context just to confirm "no work needed." The orchestrator can make that decision in three checks, saving ~3.5M tokens per cycle.
+
+**Per-journey triggers (orchestrator checks before dispatching):**
+
+1. **Map-delta** — has the journey's block in `tests/e2e/docs/journey-map.md` changed since Pass 1's reconciliation commit? Compute via `git diff <pass-1-commit> -- tests/e2e/docs/journey-map.md` filtered to the journey's section.
+2. **Sibling-ledger update** — does any finding added to `tests/e2e/docs/adversarial-findings.md` since Pass 1 list this journey as a regression candidate? When the finding schema supports cross-references, read those; otherwise substring-search the journey ID in ledger entries since the Pass-1 commit.
+3. **Must-fix carry-over** — does the prior pass's `dispatches[journey == this].final_must_fix` array in `coverage-expansion-state.json` carry any unresolved finding-IDs for this journey? Read directly from the state file.
+
+**If ALL THREE are false → write a gated-skip entry; do NOT dispatch:**
+
+```json
+{
+  "journey": "j-<slug>",
+  "gated_skip": true,
+  "result": "covered-exhaustively",
+  "review_status": "greenlight",
+  "triggers_checked": {
+    "map-delta": false,
+    "sibling-ledger-update": false,
+    "must-fix-carry-over": false
+  }
+}
+```
+
+**If ANY trigger fires → dispatch test-composer normally**, with the trigger evidence in the brief (the relevant journey-map diff, the sibling finding-IDs, the carry-over must-fix list). The dispatched subagent runs the full re-pass discipline per `references/depth-mode-pipeline.md` §"Re-pass mode for compositional passes 2–3".
+
+**Contract:**
+- The orchestrator MUST record `triggers_checked` with all three booleans for every gated-skip entry. A skip without that evidence is silent scope narrowing — `hooks/coverage-state-schema-guard.sh` denies it.
+- A gated-skip entry with any trigger == true is a contract violation (the orchestrator should have dispatched).
+- Gated-skip entries count as "work done" for the §"Two valid exits" pre-emptive-stop check — a Pass 2 with all 30 journeys gated-skipped is legitimately complete.
+- This rule applies to **Passes 2 and 3 only**. Pass 1 dispatches every journey unconditionally; Passes 4 and 5 remain dispatch-driven (the adversarial discipline is empirically valuable, not redundant — see #164's per-pass yield data).
+- The orchestrator never inferentially batches gated skips into one entry — one entry per journey, with that journey's three triggers explicitly checked.
+
+The §"Re-pass mode for compositional passes 2–3" reference (depth-mode-pipeline.md) describes the dispatched-path's brief contents and rejection rules. Trigger-gating sits ABOVE that — only when at least one trigger fires does the dispatched-path apply.
+
 ## Breadth mode — one horizontal sweep
 
 For the quick-pass use case, run one invocation per priority tier. No journey-by-journey iteration; no parallel dispatch per journey (the sweep itself is serial). Deep mode remains the default.

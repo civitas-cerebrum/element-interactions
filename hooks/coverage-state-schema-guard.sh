@@ -143,10 +143,12 @@ Fix: must be an integer 0-5 (0 = before pass 1, 1-3 = compositional, 4-5 = adver
   # Reference: coverage-expansion/references/anti-rationalizations.md
   #   §"Pre-emptive scope reduction" + §"Honest pre-dispatch stop"
   if [ "$CP" -ge 1 ]; then
-    # Walk the JSON looking for any object that has a `journey` key — that's
-    # a per-dispatch entry. Works whether dispatches live at top-level or
-    # nested under `passes.<N>-compositional.dispatches`.
-    DISPATCH_COUNT=$(echo "$TARGET" | jq -r '[.. | objects | select(has("journey"))] | length' 2>/dev/null || echo 0)
+    # Walk the JSON looking for evidence of work: either a dispatch entry
+    # (has `journey` plus dual-stage fields) OR a gated-skip entry (has
+    # `journey` plus `gated_skip: true` plus `triggers_checked` — issue
+    # #164.1). Both shapes count as "work happened" for the pre-emptive-
+    # stop check; the orchestrator-side trigger evaluation is real work.
+    DISPATCH_COUNT=$(echo "$TARGET" | jq -r '[.. | objects | select(has("journey") and ((has("stage_a_cycles") or has("review_status")) or (.gated_skip == true and has("triggers_checked"))))] | length' 2>/dev/null || echo 0)
     if [ "$DISPATCH_COUNT" -eq 0 ]; then
       emit_deny "[BLOCKED] State-file write claims currentPass=${CP} with zero dispatches recorded.
 
@@ -194,6 +196,59 @@ References:
   coverage-expansion/references/anti-rationalizations.md §\"Pre-emptive scope reduction\""
       exit 0
     fi
+  fi
+
+  # 6. gated-skip entry validation (issue #164.1 — trigger-gated re-pass).
+  # Every entry with `gated_skip: true` MUST also carry:
+  #   - triggers_checked: object with three boolean fields:
+  #       map-delta, sibling-ledger-update, must-fix-carry-over
+  #   - All three booleans MUST be false (any true means a trigger fired
+  #     and the orchestrator should have dispatched, not skipped).
+  # An invalid gated_skip is silent scope narrowing — the orchestrator
+  # claiming work is done without recording the evidence the triggers
+  # were checked.
+  INVALID_SKIP=$(echo "$TARGET" | jq -r '
+    [.. | objects
+      | select(.gated_skip == true)
+      | (.journey // "<missing>") as $j
+      | (.triggers_checked // {}) as $tc
+      | if ($tc | type) != "object"
+            or ($tc."map-delta" | type) != "boolean"
+            or ($tc."sibling-ledger-update" | type) != "boolean"
+            or ($tc."must-fix-carry-over" | type) != "boolean"
+            or $tc."map-delta" == true
+            or $tc."sibling-ledger-update" == true
+            or $tc."must-fix-carry-over" == true
+        then $j
+        else empty
+        end
+    ] | join(", ")
+  ' 2>/dev/null || echo "")
+  if [ -n "$INVALID_SKIP" ]; then
+    emit_deny "[BLOCKED] gated_skip entries malformed or missing trigger evidence.
+
+File: $FILE_PATH
+Offending journeys: ${INVALID_SKIP}
+
+Fix: every \`gated_skip: true\` entry MUST carry \`triggers_checked\` with all three booleans (map-delta, sibling-ledger-update, must-fix-carry-over), and ALL THREE MUST be \`false\`. A trigger evaluating to \`true\` means the orchestrator should have dispatched, not skipped. The shape:
+
+  {
+    \"journey\": \"j-<slug>\",
+    \"gated_skip\": true,
+    \"result\": \"covered-exhaustively\",
+    \"review_status\": \"greenlight\",
+    \"triggers_checked\": {
+      \"map-delta\": false,
+      \"sibling-ledger-update\": false,
+      \"must-fix-carry-over\": false
+    }
+  }
+
+Why: the gated-skip is a contract claim that the orchestrator checked all three triggers and found nothing. Without the field, the skip is silent scope narrowing dressed as efficiency. With any trigger == true, the skip is a contract violation — that journey needed re-pass work and the orchestrator skipped it.
+
+Reference: skills/coverage-expansion/SKILL.md §\"Trigger-gated re-pass for Passes 2 & 3\"
+           skills/coverage-expansion/references/state-file-schema.md §\"Gated-skip entries\""
+    exit 0
   fi
 fi
 

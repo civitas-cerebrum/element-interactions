@@ -60,6 +60,34 @@ State file shape (minimum fields):
 
 A state file missing `stage_a_cycles`, `stage_b_cycles`, or `review_status` for any journey that has run this pass is incomplete — resume logic treats it as corrupt per `coverage-expansion/SKILL.md` §"Authoritative state file" (kernel-resident invariants).
 
+**Gated-skip entries (Passes 2 & 3 only, issue #164.1).** When the orchestrator's three triggers all evaluate to false, a journey is recorded as a gated-skip instead of a dispatch:
+
+```json
+{
+  "journey": "j-<slug>",
+  "gated_skip": true,
+  "result": "covered-exhaustively",
+  "review_status": "greenlight",
+  "triggers_checked": {
+    "map-delta": false,
+    "sibling-ledger-update": false,
+    "must-fix-carry-over": false
+  }
+}
+```
+
+Required fields:
+
+- `journey` — the journey ID.
+- `gated_skip: true` — distinguishes the entry from a dispatch.
+- `result: "covered-exhaustively"` — the Pass-2/3 contract is "the journey is covered to exhaustion" by Pass 1's tests; the gated-skip records that the orchestrator confirmed no new work was needed.
+- `review_status: "greenlight"` — gated skips are by definition greenlit; no Stage B review applies.
+- `triggers_checked` — object with three boolean fields naming each trigger explicitly. **All three MUST be `false`** for the entry to be valid; any `true` value means a trigger fired and the orchestrator should have dispatched. Missing fields are silent scope narrowing and are denied by `coverage-state-schema-guard.sh`.
+
+Gated-skip entries count as "work done" for the §"Authoritative state file" pre-emptive-stop check — a Pass 2 with 30 gated skips and zero dispatches is legitimately complete. The hook recognises both shapes (dispatch with `stage_a_cycles`/`review_status`, or gated-skip with `triggers_checked`) as evidence of work.
+
+Gated-skip entries are valid **only** for Passes 2 and 3. Pass 1 has no prior pass to gate against; Passes 4 and 5 (adversarial) keep dispatch-driven discipline because the per-journey adversarial yield is empirically uncorrelated with Pass-1 confidence.
+
 The state file is rewritten after every per-pass commit (and whenever auto-compaction triggers — see [`depth-mode-pipeline.md` §"Auto-compaction between passes"](depth-mode-pipeline.md)).
 
 **Journey-roster mutability.** The roster for a given pass is frozen at the start of that pass — it is a snapshot of the journey IDs the orchestrator intends to dispatch *this pass*. If a compositional pass discovers and promotes a new journey or sub-journey mid-pass, the new entry is appended to the **next** pass's roster, not retroactively to the current pass's. This prevents the "did I cover everything?" ambiguity where `journeyRoster` and `completedJourneys` diverge because the roster keeps growing. Reconciliation commits (Pass 2/3) write the new roster to the state file at the same commit that appends the new map blocks, so the post-compact resume reads a consistent roster-to-map alignment.

@@ -42,6 +42,27 @@ assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverag
 assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content='{\"status\":\"in-progress\"}')" "missing required keys → DENY"
 assert_allow "$H" "$(payload tool_name=Write file_path='/x/some-other-file.json' content='{}')" "non-state file → silent allow"
 
+# gated_skip entries (issue #164.1 — trigger-gated re-pass).
+# A pass with only gated-skip entries (no dispatches) is legitimate work — Pass 2/3
+# trigger-gating skips dispatches that aren't needed.
+GATED_OK='{"status":"in-progress","mode":"depth","currentPass":2,"journeyRoster":["j-a"],"passes":{"2-compositional":{"dispatches":[{"journey":"j-a","gated_skip":true,"result":"covered-exhaustively","review_status":"greenlight","triggers_checked":{"map-delta":false,"sibling-ledger-update":false,"must-fix-carry-over":false}}]}},"updatedAt":"2026-05-06T00:00:00Z"}'
+assert_allow "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$GATED_OK")" "Pass 2 with valid gated_skip → ALLOW (counts as work done)"
+# Mixed dispatches and gated_skips
+MIXED_OK='{"status":"in-progress","mode":"depth","currentPass":2,"journeyRoster":["j-a","j-b"],"passes":{"2-compositional":{"dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"},{"journey":"j-b","gated_skip":true,"result":"covered-exhaustively","review_status":"greenlight","triggers_checked":{"map-delta":false,"sibling-ledger-update":false,"must-fix-carry-over":false}}]}},"updatedAt":"2026-05-06T00:00:00Z"}'
+assert_allow "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$MIXED_OK")" "mixed dispatches + gated_skips → ALLOW"
+# gated_skip without triggers_checked → DENY
+GATED_NO_TC='{"status":"in-progress","mode":"depth","currentPass":2,"journeyRoster":["j-a"],"passes":{"2-compositional":{"dispatches":[{"journey":"j-a","gated_skip":true,"result":"covered-exhaustively","review_status":"greenlight"}]}},"updatedAt":"2026-05-06T00:00:00Z"}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$GATED_NO_TC")" "gated_skip without triggers_checked → DENY" "missing trigger evidence"
+# gated_skip with one trigger == true → DENY (orchestrator should have dispatched)
+GATED_TRUE='{"status":"in-progress","mode":"depth","currentPass":2,"journeyRoster":["j-a"],"passes":{"2-compositional":{"dispatches":[{"journey":"j-a","gated_skip":true,"result":"covered-exhaustively","review_status":"greenlight","triggers_checked":{"map-delta":true,"sibling-ledger-update":false,"must-fix-carry-over":false}}]}},"updatedAt":"2026-05-06T00:00:00Z"}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$GATED_TRUE")" "gated_skip with map-delta:true → DENY (should have dispatched)" "missing trigger evidence"
+# gated_skip with non-boolean trigger value → DENY
+GATED_BAD_TYPE='{"status":"in-progress","mode":"depth","currentPass":2,"journeyRoster":["j-a"],"passes":{"2-compositional":{"dispatches":[{"journey":"j-a","gated_skip":true,"result":"covered-exhaustively","review_status":"greenlight","triggers_checked":{"map-delta":"no","sibling-ledger-update":false,"must-fix-carry-over":false}}]}},"updatedAt":"2026-05-06T00:00:00Z"}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$GATED_BAD_TYPE")" "gated_skip with non-boolean trigger value → DENY"
+# gated_skip with missing trigger field → DENY
+GATED_MISSING_FIELD='{"status":"in-progress","mode":"depth","currentPass":2,"journeyRoster":["j-a"],"passes":{"2-compositional":{"dispatches":[{"journey":"j-a","gated_skip":true,"result":"covered-exhaustively","review_status":"greenlight","triggers_checked":{"map-delta":false,"sibling-ledger-update":false}}]}},"updatedAt":"2026-05-06T00:00:00Z"}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$GATED_MISSING_FIELD")" "gated_skip with missing must-fix-carry-over → DENY" "missing trigger evidence"
+
 section "coverage-expansion-direct-compose-block (in-flight gated)"
 H="$HOOK_DIR/coverage-expansion-direct-compose-block.sh"
 
