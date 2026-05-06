@@ -33,11 +33,18 @@
 #
 #   - `tests/e2e/docs/journey-map.md` exists with the sentinel
 #     `<!-- journey-mapping:generated -->`
-#   - `tests/e2e/docs/coverage-expansion-state.json` exists
-#   - `tests/e2e/docs/onboarding-report.md` exists without a "Phase 7
-#     complete" marker
+#   - `tests/e2e/docs/coverage-expansion-state.json` exists with
+#     `.status != "complete"` (the file persists with `status: complete`
+#     after coverage-expansion finishes successfully — Phase 6/7 stops
+#     must not be blocked by stale presence)
 #   - `tests/e2e/docs/onboarding-phase-ledger.json` exists with phase 7
 #     status != "greenlight"
+#
+# (Note: there is intentionally no signal that searches `onboarding-
+# report.md` for a "Phase 7 complete" string — that marker doesn't
+# exist in the report template, and the surrounding doctrine actively
+# discourages "Phase N complete" framing. The phase ledger is the
+# canonical source of truth for phase completion.)
 #
 # When mid-Phase-5 specifically, the deny message tailors the redirect:
 #
@@ -67,8 +74,9 @@
 # Failure → action
 # ----------------
 # - Mid-pipeline + no authorisation sentinel + cap not reached  → BLOCK
-# - All phases greenlit / Phase 7 complete marker present       → silent allow
+# - All phases greenlit                                         → silent allow
 # - Authorisation sentinel present                              → silent allow
+# - stop_hook_active payload field == true                      → silent allow
 # - Cap reached                                                 → silent allow (counter cleared)
 # - No mid-pipeline signals                                     → silent allow
 # - Anything else                                               → silent allow
@@ -89,6 +97,7 @@ emit_block() {
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
 CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+STOP_HOOK_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false' 2>/dev/null || echo "false")
 REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || echo "$CWD")
 
 DOCS_DIR="$REPO_ROOT/tests/e2e/docs"
@@ -98,6 +107,15 @@ if [ -f "$REPO_ROOT/.claude/onboarding-stop-authorized" ] || \
    [ -f "$DOCS_DIR/.onboarding-stop-authorized" ]; then
   # Clear the consecutive-block counter so the next session starts fresh.
   [ -n "$SESSION_ID" ] && rm -f "/tmp/civitas-onboarding-stop-deny-${SESSION_ID}" 2>/dev/null || true
+  exit 0
+fi
+
+# --- stop_hook_active: agent is already running because of a prior block ----
+# Per the Claude Code Stop-hook contract, when the agent is already running
+# because a previous Stop-hook returned `decision: block`, the harness sets
+# `stop_hook_active: true` on subsequent Stop payloads. Honour that field —
+# blocking again would create an unrecoverable loop independent of CAP.
+if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
   exit 0
 fi
 
@@ -113,18 +131,12 @@ if [ -f "$DOCS_DIR/journey-map.md" ] && \
 fi
 
 if [ -f "$DOCS_DIR/coverage-expansion-state.json" ]; then
-  MID_PIPELINE=1
-  SIGNALS="${SIGNALS}
-  - tests/e2e/docs/coverage-expansion-state.json"
-fi
-
-REPORT_INCOMPLETE=0
-if [ -f "$DOCS_DIR/onboarding-report.md" ] && \
-   ! grep -q 'Phase 7 complete' "$DOCS_DIR/onboarding-report.md" 2>/dev/null; then
-  MID_PIPELINE=1
-  REPORT_INCOMPLETE=1
-  SIGNALS="${SIGNALS}
-  - tests/e2e/docs/onboarding-report.md (no 'Phase 7 complete' marker)"
+  CE_STATUS=$(jq -r '.status // ""' "$DOCS_DIR/coverage-expansion-state.json" 2>/dev/null || echo "")
+  if [ "$CE_STATUS" != "complete" ]; then
+    MID_PIPELINE=1
+    SIGNALS="${SIGNALS}
+  - tests/e2e/docs/coverage-expansion-state.json (status: ${CE_STATUS})"
+  fi
 fi
 
 LEDGER_INCOMPLETE=0
@@ -180,8 +192,23 @@ PHASE5_REDIRECT=""
 if [ -f "$DOCS_DIR/coverage-expansion-state.json" ]; then
   CURRENT_PASS=$(jq -r '.currentPass // 0' "$DOCS_DIR/coverage-expansion-state.json" 2>/dev/null || echo 0)
   case "$CURRENT_PASS" in ''|*[!0-9]*) CURRENT_PASS=0 ;; esac
-  DISPATCH_COUNT=$(jq -r '[.. | objects | select(has("journey"))] | length' "$DOCS_DIR/coverage-expansion-state.json" 2>/dev/null || echo 0)
+
+  # Count dispatches[] entries specifically under .passes[].dispatches.
+  # The previous recursive walk (`.. | objects | select(has("journey"))`)
+  # over-counted: `deferredJourneys[]` entries also have a `journey` key
+  # (PR #173), and any future schema field with a `journey` member would
+  # inflate the count.
+  DISPATCH_COUNT=$(jq -r '[.passes // {} | to_entries[] | .value.dispatches // [] | .[]] | length' "$DOCS_DIR/coverage-expansion-state.json" 2>/dev/null || echo 0)
   case "$DISPATCH_COUNT" in ''|*[!0-9]*) DISPATCH_COUNT=0 ;; esac
+
+  # Count dispatches that lack a terminal review_status — i.e. genuinely
+  # in-flight. Per `references/depth-mode-pipeline.md`, the per-pass
+  # scratch files are deleted after each commit, so "no scratch files"
+  # alone can't distinguish "auto-compact never attempted" from "all
+  # dispatches landed cleanly". The auto-compact redirect should fire
+  # only when at least one dispatch has no terminal-stamp.
+  IN_FLIGHT=$(jq -r '[.passes // {} | to_entries[] | .value.dispatches // [] | .[] | select(.review_status == null or .review_status == "")] | length' "$DOCS_DIR/coverage-expansion-state.json" 2>/dev/null || echo 0)
+  case "$IN_FLIGHT" in ''|*[!0-9]*) IN_FLIGHT=0 ;; esac
 
   COMPACT_FILES=0
   if ls "$DOCS_DIR"/.coverage-expansion-cycle-*.json >/dev/null 2>&1; then
@@ -192,8 +219,8 @@ if [ -f "$DOCS_DIR/coverage-expansion-state.json" ]; then
     PHASE5_REDIRECT="Phase 5 is in-progress (currentPass=${CURRENT_PASS}) but ZERO dispatches recorded.
 
   Dispatch the first wave: one Agent call per journey under \`composer-j-<slug>:\` / \`probe-j-<slug>:\` description prefixes (parallel where the independence graph permits). Exit #2 (write state + stop) requires AT LEAST ONE dispatch in flight before it is invocable — the schema-guard hook also denies state-file writes that claim mid-pass with empty dispatches[]."
-  elif [ "$DISPATCH_COUNT" -gt 0 ] && [ "$COMPACT_FILES" -eq 0 ]; then
-    PHASE5_REDIRECT="Phase 5 has ${DISPATCH_COUNT} dispatch(es) recorded but NO auto-compact attempted.
+  elif [ "$DISPATCH_COUNT" -gt 0 ] && [ "$IN_FLIGHT" -gt 0 ] && [ "$COMPACT_FILES" -eq 0 ]; then
+    PHASE5_REDIRECT="Phase 5 has ${IN_FLIGHT} in-flight dispatch(es) (review_status not yet stamped) and NO auto-compact attempted.
 
   Budget exhaustion is not a reason to stop — it's a reason to auto-compact (per coverage-expansion §\"Auto-compaction between passes\"). Persist in-flight Stage A returns to \`tests/e2e/docs/.coverage-expansion-cycle-<slug>-cycle-<N>.json\` scratch files, write the state file with all current dispatches[] populated, emit the line \`[coverage-expansion] context approaching budget — auto-compacting and resuming from state file\`, then invoke \`/compact\`. The post-compact turn resumes by reading the state file."
   fi
@@ -236,5 +263,5 @@ References:
   skills/coverage-expansion/SKILL.md §\"Auto-compaction between passes\"
   Issues #139, #155
 
-Escape hatch (silent for the rest of this session, e.g. when the project's old onboarding docs are present but the current session isn't running onboarding): set ONBOARDING_STOP_DENY=off in the environment."
+Escape hatch: set ONBOARDING_STOP_DENY=off in the parent process that launched Claude Code (env vars don't persist across hook invocations — each Stop fires a fresh process, so setting it inside the agent session won't take effect on the next Stop). Or use the sentinel-file path documented above for session-persistent stops."
 exit 0

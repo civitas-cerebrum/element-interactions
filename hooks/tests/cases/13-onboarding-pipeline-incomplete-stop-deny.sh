@@ -52,14 +52,75 @@ assert_allow "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")" "jou
 cleanup_counter "$SID"
 rm -rf "$REPO"
 
-section "onboarding-pipeline-incomplete-stop-deny: coverage-expansion-state.json present → BLOCK"
+section "onboarding-pipeline-incomplete-stop-deny: in-progress coverage-expansion-state.json → BLOCK"
 
 REPO=$(make_repo)
 SID=$(sid)
 cat > "$REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
 {"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a","j-b"],"passes":{},"updatedAt":"2026-05-04T00:00:00Z"}
 EOF
-assert_stop_block "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")" "state file present → BLOCK" "Phase 5"
+assert_stop_block "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")" "in-progress state file → BLOCK" "Phase 5"
+cleanup_counter "$SID"
+rm -rf "$REPO"
+
+section "onboarding-pipeline-incomplete-stop-deny: status=complete state file alone → ALLOW (Phase 6/7 case)"
+
+# Reviewer Critical #1: file persists with status=complete after coverage-
+# expansion finishes. Phase 6/7 stops must not be blocked by stale presence.
+REPO=$(make_repo)
+SID=$(sid)
+cat > "$REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{"status":"complete","mode":"depth","currentPass":5,"journeyRoster":["j-a"],"passes":{},"updatedAt":"2026-05-04T00:00:00Z"}
+EOF
+assert_allow "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")" "status=complete state file, no other signals → silent allow"
+cleanup_counter "$SID"
+rm -rf "$REPO"
+
+section "onboarding-pipeline-incomplete-stop-deny: status=complete state + ledger Phase 6 in-progress → ALLOW"
+
+# Reviewer Critical #1 happy-path: post-Phase-5 stops with the state file
+# present must allow when phases 1-5 are greenlight (Phase 6 is in-progress
+# in onboarding terms but coverage-expansion has finished).
+REPO=$(make_repo)
+SID=$(sid)
+cat > "$REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{"status":"complete","mode":"depth","currentPass":5,"journeyRoster":["j-a"],"passes":{},"updatedAt":"2026-05-04T00:00:00Z"}
+EOF
+cat > "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" <<'EOF'
+{"phases":{"1":{"status":"greenlight"},"2":{"status":"greenlight"},"3":{"status":"greenlight"},"4":{"status":"greenlight"},"5":{"status":"greenlight"},"6":{"status":"in-progress"}}}
+EOF
+# Phase 7 is not greenlight → ledger signal still engages → BLOCK is correct.
+# But the status=complete state file must not contribute a redundant signal.
+# We assert BLOCK here (ledger drives it), and verify the SIGNALS string
+# doesn't mention the state file.
+run_hook "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")"
+TESTS_RUN=$((TESTS_RUN + 1))
+DECISION=$(echo "$HOOK_OUT" | jq -r '.decision // empty' 2>/dev/null)
+REASON=$(echo "$HOOK_OUT" | jq -r '.reason // empty' 2>/dev/null)
+if [ "$DECISION" = "block" ] && \
+   echo "$REASON" | grep -qF "phase 7 status: missing" && \
+   ! echo "$REASON" | grep -qF "coverage-expansion-state.json"; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} status=complete state + Phase 6 in-progress → BLOCK from ledger only (state file NOT in SIGNALS)"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("status=complete + Phase 6 in-progress: expected BLOCK driven by ledger only. decision=${DECISION} reason=${REASON:0:300}")
+  echo "${CLR_FAIL}  ✗${CLR_RST} status=complete state + Phase 6 in-progress (expected BLOCK from ledger, state file NOT in SIGNALS)"
+fi
+cleanup_counter "$SID"
+rm -rf "$REPO"
+
+section "onboarding-pipeline-incomplete-stop-deny: status=complete state + all phases greenlit → ALLOW"
+
+REPO=$(make_repo)
+SID=$(sid)
+cat > "$REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{"status":"complete","mode":"depth","currentPass":5,"journeyRoster":["j-a"],"passes":{},"updatedAt":"2026-05-04T00:00:00Z"}
+EOF
+cat > "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" <<'EOF'
+{"phases":{"1":{"status":"greenlight"},"2":{"status":"greenlight"},"3":{"status":"greenlight"},"4":{"status":"greenlight"},"5":{"status":"greenlight"},"6":{"status":"greenlight"},"7":{"status":"greenlight"}}}
+EOF
+assert_allow "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")" "status=complete + all phases greenlit → silent allow"
 cleanup_counter "$SID"
 rm -rf "$REPO"
 
@@ -74,19 +135,54 @@ assert_stop_block "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")"
 cleanup_counter "$SID"
 rm -rf "$REPO"
 
-section "onboarding-pipeline-incomplete-stop-deny: Phase 5 with dispatches but no auto-compact → tailored redirect"
+section "onboarding-pipeline-incomplete-stop-deny: in-flight dispatch (review_status null) + no scratch → auto-compact redirect"
 
+# Reviewer Critical #2 happy-path: at least one dispatches[] entry has
+# review_status null/missing AND no scratch files → auto-compact redirect
+# fires.
+REPO=$(make_repo)
+SID=$(sid)
+cat > "$REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a","j-b"],"passes":{"1-compositional":{"dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"},{"journey":"j-b","stage_a_cycles":1,"stage_b_cycles":1,"review_status":null}]}},"updatedAt":"2026-05-04T00:00:00Z"}
+EOF
+assert_stop_block "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")" "Phase 5 with one in-flight dispatch + no scratch → BLOCK with auto-compact redirect" "auto-compact"
+cleanup_counter "$SID"
+rm -rf "$REPO"
+
+section "onboarding-pipeline-incomplete-stop-deny: all dispatches review_status set + no scratch → default redirect (NOT auto-compact)"
+
+# Reviewer Critical #2: scratch files are deleted after each per-pass commit
+# (depth-mode-pipeline.md). The auto-compact redirect must NOT fire when all
+# dispatches have a terminal review_status, because the absence of scratch
+# files is then the normal post-commit state, not a "never auto-compacted"
+# signal.
 REPO=$(make_repo)
 SID=$(sid)
 cat > "$REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
 {"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{"1-compositional":{"dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]}},"updatedAt":"2026-05-04T00:00:00Z"}
 EOF
-assert_stop_block "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")" "Phase 5 with dispatches + no auto-compact → BLOCK with auto-compact redirect" "auto-compact"
+run_hook "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")"
+TESTS_RUN=$((TESTS_RUN + 1))
+DECISION=$(echo "$HOOK_OUT" | jq -r '.decision // empty' 2>/dev/null)
+REASON=$(echo "$HOOK_OUT" | jq -r '.reason // empty' 2>/dev/null)
+if [ "$DECISION" = "block" ] && \
+   ! echo "$REASON" | grep -qF "auto-compact" && \
+   echo "$REASON" | grep -qF "Continue dispatching the next pipeline phase"; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} all dispatches stamped + no scratch → default redirect (NOT auto-compact)"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("all dispatches stamped + no scratch: expected BLOCK with default redirect (no auto-compact mention). decision=${DECISION} reason=${REASON:0:300}")
+  echo "${CLR_FAIL}  ✗${CLR_RST} all dispatches stamped + no scratch (expected default redirect, not auto-compact)"
+fi
 cleanup_counter "$SID"
 rm -rf "$REPO"
 
-section "onboarding-pipeline-incomplete-stop-deny: onboarding-report.md without Phase 7 marker → BLOCK"
+section "onboarding-pipeline-incomplete-stop-deny: onboarding-report.md alone → ALLOW (no marker check)"
 
+# Reviewer Critical #3: the "Phase 7 complete" string doesn't exist in any
+# template; the marker check has been removed entirely. A bare report.md
+# with no other mid-pipeline signals must allow.
 REPO=$(make_repo)
 SID=$(sid)
 cat > "$REPO/tests/e2e/docs/onboarding-report.md" <<'EOF'
@@ -94,20 +190,36 @@ cat > "$REPO/tests/e2e/docs/onboarding-report.md" <<'EOF'
 Phase 1 done.
 Phase 2 done.
 EOF
-assert_stop_block "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")" "report without Phase 7 complete → BLOCK" "Onboarding pipeline mid-flight"
+assert_allow "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")" "report.md alone (no markers) → silent allow"
 cleanup_counter "$SID"
 rm -rf "$REPO"
 
-section "onboarding-pipeline-incomplete-stop-deny: onboarding-report.md WITH Phase 7 marker → ALLOW"
+section "onboarding-pipeline-incomplete-stop-deny: report.md + Phase 7 ledger missing → BLOCK from ledger only"
 
+# Verify the report.md presence does not contribute a redundant signal.
 REPO=$(make_repo)
 SID=$(sid)
 cat > "$REPO/tests/e2e/docs/onboarding-report.md" <<'EOF'
 # Onboarding report
 Phase 1 done.
-Phase 7 complete.
 EOF
-assert_allow "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")" "report with Phase 7 complete → silent allow"
+cat > "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" <<'EOF'
+{"phases":{"4":{"status":"greenlight"},"5":{"status":"in-progress"}}}
+EOF
+run_hook "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")"
+TESTS_RUN=$((TESTS_RUN + 1))
+DECISION=$(echo "$HOOK_OUT" | jq -r '.decision // empty' 2>/dev/null)
+REASON=$(echo "$HOOK_OUT" | jq -r '.reason // empty' 2>/dev/null)
+if [ "$DECISION" = "block" ] && \
+   echo "$REASON" | grep -qF "phase 7 status: missing" && \
+   ! echo "$REASON" | grep -qF "onboarding-report.md"; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} report.md + ledger Phase 7 missing → BLOCK from ledger only (report not in SIGNALS)"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("report.md + ledger missing: expected BLOCK from ledger only, report not mentioned. decision=${DECISION} reason=${REASON:0:300}")
+  echo "${CLR_FAIL}  ✗${CLR_RST} report.md + ledger Phase 7 missing (expected BLOCK from ledger, report NOT in SIGNALS)"
+fi
 cleanup_counter "$SID"
 rm -rf "$REPO"
 
@@ -156,6 +268,42 @@ cat > "$REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
 EOF
 touch "$REPO/tests/e2e/docs/.onboarding-stop-authorized"
 assert_allow "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")" "tests/e2e/docs/.onboarding-stop-authorized → silent allow"
+cleanup_counter "$SID"
+rm -rf "$REPO"
+
+section "onboarding-pipeline-incomplete-stop-deny: stop_hook_active=true → ALLOW silently"
+
+# Reviewer Critical #5: Claude Code sets stop_hook_active=true when the
+# agent is already running because of a previous Stop block. The hook must
+# silent-allow so we don't create an unrecoverable loop.
+# (The shared payload() helper doesn't yet support boolean fields, so we
+#  splice stop_hook_active into the payload via jq inline.)
+REPO=$(make_repo)
+SID=$(sid)
+cat > "$REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{},"updatedAt":"2026-05-04T00:00:00Z"}
+EOF
+PAYLOAD_BASE=$(payload tool_name=Stop session_id="$SID" cwd="$REPO")
+PAYLOAD_WITH_FLAG=$(printf '%s' "$PAYLOAD_BASE" | jq -c '. + {stop_hook_active: true}')
+assert_allow "$H" "$PAYLOAD_WITH_FLAG" "stop_hook_active=true mid-pipeline → silent allow"
+cleanup_counter "$SID"
+rm -rf "$REPO"
+
+section "onboarding-pipeline-incomplete-stop-deny: deferredJourneys[] without dispatches[] → BLOCK (DISPATCH_COUNT excludes them)"
+
+# Reviewer Critical #7: PR #173 adds deferredJourneys[] entries that have a
+# `journey` key. The previous recursive jq walk over-counted these as
+# dispatches, masking the "currentPass>=1 AND zero dispatches" first-wave
+# redirect. The tightened query under .passes[].dispatches must exclude them.
+REPO=$(make_repo)
+SID=$(sid)
+cat > "$REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a","j-b"],"deferredJourneys":[{"journey":"j-c","reason":"auth-locked"}],"passes":{},"updatedAt":"2026-05-04T00:00:00Z"}
+EOF
+# DISPATCH_COUNT must be 0 (the deferredJourneys[].journey doesn't count) so
+# the first-wave redirect must still fire — proves we didn't fall through to
+# the auto-compact branch by accident.
+assert_stop_block "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")" "deferredJourneys[] only → BLOCK with first-wave redirect (DISPATCH_COUNT excludes them)" "ZERO dispatches recorded"
 cleanup_counter "$SID"
 rm -rf "$REPO"
 
