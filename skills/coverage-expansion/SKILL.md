@@ -86,7 +86,8 @@ Every Agent dispatch description starts with a role-explicit prefix. The prefix 
 |---|---|---|---|
 | Stage A composer (per journey) | `composer-j-<slug>:` | `composer-j-<slug>-<pass>-c<N>` | `subagent-return-schema.md` §1 + §2 (Stage A) |
 | Stage A composer (sub-journey) | `composer-sj-<slug>:` | `composer-sj-<slug>-<pass>-c<N>` | as above |
-| Stage B reviewer | `reviewer-j-<slug>:` | `reviewer-j-<slug>-<pass>-c<N>` | `subagent-return-schema.md` §2.4 (Stage B) |
+| Stage B reviewer (per journey) | `reviewer-j-<slug>:` | `reviewer-j-<slug>-<pass>-c<N>` | `subagent-return-schema.md` §2.4 (Stage B) |
+| Stage B reviewer (batch — compositional cycle-1 only) | `reviewer-batch-pass-<N>:` | (no CLI session — static reader) | `subagent-return-schema.md` §2.4-batch (`verdicts:` array wrapping per-journey §2.4 returns) |
 | Adversarial probe (passes 4-5) | `probe-j-<slug>:` | `probe-j-<slug>-<pass>` | Stage A finding shape + ledger |
 | Sub-orchestrator (process-validator) | `process-validator-<scope>:` | (no CLI session) | Reviewer-shape (§2.4) applied to a manifest |
 | Phase 1 discovery | `phase1-<entry>:` | `phase1-<entry>` | site-map / page entries |
@@ -349,7 +350,7 @@ The full per-pass pipeline (steps 1–8), pass differences, commit-message conve
 - **Stage A and B are parallel by default.** A journey's Stage B fires as soon as that journey's Stage A returns and the cap has a slot — not after every Stage A in the pass completes. Finishing all Stage A first then starting all Stage B is contract-violating.
 - **Parallel cap counts A and B jointly.** One pool of in-flight slots; A, B, and A-retry compete. A journey's own A and B never overlap (sequential within a journey); across journeys any A/B interleaving is possible. Queue order is FIFO.
 - **Cost-blind, opus-default model selection.** Default is opus for every dispatch in every stage in every pass. Two narrow exceptions: (a) cycle-1 Stage B sonnet-confirmation for previously-greenlit journeys with no map delta and no sibling-bug ledger update — sonnet's `improvements-needed` always re-runs on opus. **Pass 4 and Pass 5 are always opus, both stages, full stop** — the sonnet exception does NOT apply to adversarial passes. (b) Cleanup subagent (single post-pass-5 dispatch) may use haiku — text-only editing.
-- **P0/P1/P2 NEVER batch.** P3-only batching, capped at 7 per brief, Stage A only — Stage B always per-journey. Sharing pages with P3 siblings is not authorisation; priority is load-bearing.
+- **Stage A always per-journey except the documented P3-batch ≤7 exception. Stage B per-journey except the documented compositional-cycle-1 batch-reviewer exception (one reviewer per pass; never adversarial; never cycle-2+).** P0/P1/P2 NEVER use the P3-batch Stage A exception. Adversarial Passes 4-5 NEVER use the batch-reviewer Stage B exception. Cycle-2+ ALWAYS uses per-journey reviewers regardless of pass. Sharing pages with P3 siblings is not authorisation for batching at the Stage-A side; priority is load-bearing.
 - **Auto-compaction at 70%.** State written first, then `/compact`, then resume from state. Mid-cycle Stage A returns persist to a scratch file (`tests/e2e/docs/.coverage-expansion-cycle-<slug>-cycle-<N>.json`) before compacting; mid-cycle restart from a fresh Stage A dispatch is NOT acceptable.
 - **`blocked-cycle-stalled`, `blocked-cycle-exhausted`, `blocked-dispatch-failure` are valid terminals**, not pass failures. Mark them faithfully — calling cycle-7-exhausted "greenlit" corrupts the state file and the next pass's trigger-4 input.
 

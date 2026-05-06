@@ -127,8 +127,12 @@ Empirical data from a 30-journey onboarding cycle (#164):
 1. **Map slice**: the relevant `### j-<slug>` blocks for every in-flight journey, in `journey-map.md` order.
 2. **Page-repo slices**: one consolidated page-repo entry list covering every page touched by any in-flight journey.
 3. **Pass + cycle**: explicit (always cycle 1; pass ∈ {1, 2, 3}).
-4. **Stage A spill files**: one per in-flight journey at `tests/e2e/docs/.subagent-returns/composer-j-<slug>-<pass>-c1.md` (the §2.6 spillover path; `mode: per-journey` cycle-2 retries write the same path under c2/c3/...).
-5. **Per-journey gated-skip evidence** (from issue #164.1): for journeys flagged `gated_skip: true` in the orchestrator's state file, the brief carries the `triggers_checked` block and the journey is excluded from the batch reviewer's roster (no review needed). Only journeys that the orchestrator dispatched on Stage A appear in the batch.
+4. **Stage A returns**, per journey, in one of two forms (the orchestrator's brief picks per-journey based on Stage A's status):
+   - **`status: new-tests-landed`** (the dominant case at compositional cycle-1) → the orchestrator passes the composer's full structured return body in the brief. Composer spillover does NOT trigger for `new-tests-landed` (per `subagent-return-schema.md` §2.6 — only `covered-exhaustively` triggers composer spillover, since `new-tests-landed` returns are already index-only). The brief includes: committed test paths, discovery report, expectations-mapped count, and any other index-level fields the composer emitted.
+   - **`status: covered-exhaustively`** → the brief points at the §2.6 spill file at `tests/e2e/docs/.subagent-returns/composer-<JOURNEY>-<pass>-c1.md`. The reviewer reads the spill for the full per-expectation mapping table.
+
+   The reviewer reads whichever form is provided; the brief construction is the orchestrator's responsibility.
+5. **Per-journey gated-skip evidence** (forward reference — issue #164.1 / PR #176): when PR #176's `gated_skip` field is merged, journeys flagged `gated_skip: true` in the orchestrator's state file carry their `triggers_checked` block in the brief and are excluded from the batch reviewer's roster (no review needed). Until #176 lands, the orchestrator includes all journeys whose Stage A actually dispatched.
 6. **App-context slice**: the consolidated `app-context.md` sections for every page touched.
 7. **No live app** — see §"Behavior" item 2 below for why the batch reviewer is a static reader.
 
@@ -155,7 +159,7 @@ Empirical data from a 30-journey onboarding cycle (#164):
        - journey: j-zb-view-orders
          status: improvements-needed
          spill: tests/e2e/docs/.subagent-returns/reviewer-batch-pass-<N>-c1.md
-         findings: [j-zb-view-orders-1-01, j-zb-view-orders-1-02]
+         findings: [j-zb-view-orders-1-1-R-01, j-zb-view-orders-1-1-R-02]
        - journey: j-tt-permission-form-modal
          status: greenlight
          summary: <one-line>
@@ -175,15 +179,15 @@ Empirical data from a 30-journey onboarding cycle (#164):
    ## j-zb-view-orders
 
    ### missing-scenarios
-   - **j-zb-view-orders-1-01** [must-fix] — mobile variant absent
+   - **j-zb-view-orders-1-1-R-01** [must-fix] — mobile variant absent
 
    ### craft-issues
-   - **j-zb-view-orders-1-02** [must-fix] — inline selector in spec
+   - **j-zb-view-orders-1-1-R-02** [must-fix] — inline selector in spec
 
    ## j-other-journey-flagged
 
    ### verification-misses
-   - **j-other-journey-flagged-1-01** [must-fix] — assertion targets a different element than tested
+   - **j-other-journey-flagged-1-1-R-01** [must-fix] — assertion targets a different element than tested
    ```
 
    Every flagged journey's section starts with `## j-<slug>`. The §2.6 sentinel goes at the top of the file (line 1).
@@ -192,11 +196,13 @@ Empirical data from a 30-journey onboarding cycle (#164):
 
 ### Hard constraints (batch-specific)
 
-- **Cycle 1 only.** A batch reviewer dispatched at cycle ≥ 2 is a contract violation — cycle-2+ retries are per-journey by design.
+- **The cycle-1 wave of pass N only.** A batch reviewer dispatched at cycle ≥ 2 within any pass, or at any cycle in adversarial Pass 4 / Pass 5, is a contract violation. Multiple separate batch reviewers exist across a depth-mode run (one per compositional pass) — the constraint applies independently per pass.
 - **Compositional passes only.** Pass 4 and 5 dispatch one reviewer per journey, never a batch.
 - **No live app.** The batch reviewer is a static reader; for any flagged journey that needs live-app verification, the orchestrator follows up with a `mode: per-journey` cycle-2 reviewer that opens its own session.
 - **One return per pass.** The batch reviewer's return is a single object with a `verdicts:` array; the orchestrator parses verdicts and dispatches per-journey cycle-2 reviewers for any `improvements-needed` entry.
-- **The return shape is harness-validated.** `hooks/subagent-spillover-rewrite-gate.sh` and `hooks/subagent-return-schema-guard.sh` extend their per-role detection to include the new `reviewer-batch-pass-<N>` role-prefix and the `verdicts:` array shape; non-compliant batches are denied at SubagentStop and rewritten in-session per the existing pattern.
+- **Hook backstop deferred to issue #164.7 / Wave 3I.3b.** Until that PR lands, this rule is markdown-only — `subagent-spillover-rewrite-gate.sh` and `subagent-return-schema-guard.sh` will be extended there to recognise the new `reviewer-batch-pass-<N>` role-prefix and validate the `verdicts:` array shape. Per `feedback_methodology_as_hooks.md`, markdown-only enforcement is a temporary state, not a sustainable one — a non-compliant batch return will land in the orchestrator's transcript without harness intervention until the backstop ships.
+
+- **Known dispatch-guard gap.** The current `hooks/coverage-expansion-dispatch-guard.sh` denies dispatches whose description matches the `reviewer-` family AND whose prompt body contains compositional / multi-pass meta-content (`pipeline`, `pass [2-5]`, `5-pass`, etc.). The batch-reviewer brief by construction references compositional pass scope, so the leak gate currently blocks legitimate batch dispatches. Wave 3I.3b will carve out an exception for `reviewer-batch-pass-<N>:` prefixes. Until that lands, the orchestrator can either (a) use `POO_DISPATCH_BLOCK=off` for the batch dispatch (workaround), or (b) restate the brief without leak-gate trigger phrases — neither is preferred; both are temporary.
 
 ### Mode selection — when the orchestrator dispatches batch vs per-journey
 
