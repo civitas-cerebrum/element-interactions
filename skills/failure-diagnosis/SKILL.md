@@ -111,7 +111,11 @@ Before finalizing your classification, run through this checklist:
 | **Stale browser state** | Cookies, localStorage, or cached data from a previous test contaminating the current one | Test isolation issue — test issue. Ensure tests don't depend on shared state |
 | **Navigation race** | URL shows an intermediate state; page is mid-redirect when the test tries to interact | Test issue — add `verifyUrlContains` or `waitForState` after navigation |
 | **Third-party dependency** | CDN asset failed, external widget didn't load, embedded iframe timed out | Neither test nor app bug — report as infrastructure/external dependency issue |
-| **Modal opens but content hangs** | Modal element added to DOM (e.g. `role="dialog"`) but the content area shows only a loading placeholder web component (e.g. `<apple-spinner>`); none of the expected `data-qa` keys ever resolve; URL hash never advances to the documented post-open state | **App bug** — backend feed for the modal options is failing or timing out. The skip / failure is correct; the test should not work around it. Capture `outerHTML` of the stuck modal as evidence. |
+| **Modal opens but content hangs** | Frame mounts but content stays on a spinner sentinel — see [`references/niche-edge-cases.md`](references/niche-edge-cases.md) entry (1) for the disambiguating probe and full prose | **App bug** — apply Stage 4a heal `(h)` (documented-quirk, no heal) |
+
+### Niche edge cases
+
+Failure shapes that LLMs routinely misclassify are catalogued in [`references/niche-edge-cases.md`](references/niche-edge-cases.md). Read the relevant entry before classifying when the failure shape doesn't fit Stage 4's table cleanly. The catalogue is the place to grow this knowledge — when you encounter a niche shape and resolve it, append an entry there so the next diagnoser doesn't redo the work.
 
 ### Stage 4a — Heal strategy selection
 
