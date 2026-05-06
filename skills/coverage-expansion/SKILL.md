@@ -346,18 +346,19 @@ The full per-pass pipeline (steps 1–8), pass differences, commit-message conve
 - **Stage B never commits.** Reviewer judgements live in the state file's `review_status` and `final_must_fix` fields, never as commits. `review(j-…)` and any review-tagged commit form is forbidden.
 - **Stage A and B are parallel by default.** A journey's Stage B fires as soon as that journey's Stage A returns and the cap has a slot — not after every Stage A in the pass completes. Finishing all Stage A first then starting all Stage B is contract-violating.
 - **Parallel cap counts A and B jointly.** One pool of in-flight slots; A, B, and A-retry compete. A journey's own A and B never overlap (sequential within a journey); across journeys any A/B interleaving is possible. Queue order is FIFO.
-- **Hybrid model selection — Sonnet by default, Opus where it pays.** Empirical data from a 30-journey onboarding cycle (issue #164) shows Sonnet finds critical IDORs and CSRF-DELETE bypasses just as well as Opus on adversarial probes, while costing ~50% per dispatch. The new policy reserves Opus for dispatches whose value scales with reasoning depth (test architecture, cross-journey synthesis, root-cause analysis). Default by dispatch type:
+- **Hybrid model selection — Pass 1 on Opus, subsequent passes Sonnet for execution and Opus for review.** Empirical data from a 30-journey onboarding cycle (issue #164) shows Sonnet finds critical IDORs and CSRF-DELETE bypasses just as well as Opus on adversarial probes, while costing ~50% per dispatch. Pass 1 establishes the test foundation and runs Opus throughout (composer + reviewer); subsequent passes (2-5) use Sonnet for journey-level execution (composers and probes) and Opus for review. Batched review (per #164.2) keeps Opus reviewers affordable: one Opus reviewer cross-synthesises N journeys' worth of evidence, replacing N per-journey reviewers. Per-journey Stage B in passes 2-5 also stays on Opus while batching ramps — review judgement is the quality boundary the rest of the pipeline relies on. Default by dispatch type:
 
   | Dispatch type | Model | Rationale |
   |---|---|---|
-  | Pass 1 Stage A composer | **opus** | Test architecture quality; Opus pays for itself via fewer cycle-2 retries |
+  | Pass 1 Stage A composer | **opus** | Test architecture quality; Pass 1 sets the foundation for the suite |
+  | Pass 1 Stage B reviewer | **opus** | Foundation review; quality bar set here propagates downstream |
   | Pass 2 Stage A composer (re-pass) | **sonnet** | 22 of 30 return `covered-exhaustively`; mechanical |
   | Pass 3 Stage A composer (re-pass) | **sonnet** | Same; final compositional sweep |
-  | Pass 4 Stage A probe (adversarial) | **opus** | Adversarial discovery yield benefits from reasoning depth on compound probes |
-  | Pass 5 gap analysis | **opus** | Cross-journey synthesis |
+  | Pass 4 Stage A probe (adversarial) | **sonnet** | Empirical Sonnet/Opus parity on adversarial probes per issue #164 |
+  | Pass 5 gap analysis | **opus** | Cross-journey synthesis (orchestrator-level, not per-journey) |
   | Pass 5 targeted probes | **sonnet** | Mechanical re-probe of identified gaps |
   | Pass 5 regression-test authoring | **sonnet** | Mechanical test-write |
-  | Stage B reviewer (per-journey) | **sonnet** | Schema / coverage / format checks are deterministic territory |
+  | Stage B reviewer — per-journey (passes 2-5) | **opus** | Review judgement boundary; per-journey while batching ramps |
   | Stage B batch reviewer (when used; #164.2) | **opus** | Cross-journey synthesis is where Opus shines |
   | Cleanup ledger dedup | **opus** | Semantic clustering quality matters |
   | Phase 7 deck / report | **opus** | Client-facing narrative quality |
@@ -367,10 +368,9 @@ The full per-pass pipeline (steps 1–8), pass differences, commit-message conve
 
   **Override paths:**
   - The user may request Opus for everything (e.g. `mode: depth, model: opus-all`) for a high-stakes audit; document the override in the front-load gate.
-  - Stage B sonnet `improvements-needed` always re-runs on Opus (preserved from the prior policy — Sonnet's "needs more work" judgements have higher false-positive rates; Opus is the tiebreaker).
   - A pass with `final_must_fix` carry-overs from the prior pass forces that journey's next Stage A onto Opus regardless of the table (the must-fix is hard; mechanical re-pass won't resolve it).
 
-  This section supersedes the prior "cost-blind, opus-default" rule. The change is empirically grounded; see issue #164 for the per-dispatch cost analysis (~16-17M tokens saved per onboarding cycle).
+  This section supersedes the prior "cost-blind, opus-default" rule. The change is empirically grounded for execution-side dispatches (Sonnet on Pass 4 probes per issue #164); review judgement stays on Opus to preserve quality at the per-journey boundary while batching ramps. See issue #164 for the per-dispatch cost analysis.
 - **P0/P1/P2 NEVER batch.** P3-only batching, capped at 7 per brief, Stage A only — Stage B always per-journey. Sharing pages with P3 siblings is not authorisation; priority is load-bearing.
 - **P3 small-surface journeys may opt OUT of adversarial passes (Passes 4 & 5).** Per #164.4, P3 logout / role-chooser / modal-only journeys empirically produce 0–2 unique adversarial findings each — their entire adversarial surface is already covered via portal-wide pattern citations from larger journeys. The skip is **opt-in per project**, declared up-front in the state file's `adversarialSkippedJourneys: []` field with rationale per entry. Default is "include all" — the orchestrator never silently skips a P3 from adversarial work; the operator opts the journey out by name. Compositional passes (1–3) ALWAYS run on every journey including P3. **Exclusion criteria** (must hold for a journey to qualify for opt-out):
   - Priority is P3.

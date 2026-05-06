@@ -170,12 +170,13 @@ A subagent's brief asks it to "dispatch N parallel subagents", "spawn workers", 
 The orchestrator argues for sonnet on dispatches the hybrid model table reserves for opus.
 
 **Symptoms:**
-- "Pass 4 adversarial probes can run sonnet — they're just probing"
+- "Stage B reviewer can run sonnet — schema/coverage checks are mechanical"
 - "failure-diagnosis is small enough to run sonnet"
 - "the batch reviewer is just aggregating per-journey reviews — sonnet is fine"
 - "gap analysis between passes is mechanical enough for sonnet"
+- "Pass 1 composer can run sonnet — the foundation will be re-reviewed anyway"
 
-**Reality:** Sonnet is the new default for cycle-1 mechanical reviewers, Pass-2/3 re-pass composers, and Pass-5 targeted probes per [`coverage-expansion/SKILL.md`](../SKILL.md) §"Hybrid model selection". Anti-pattern is sonnet on dispatches the table marks opus — failure-diagnosis, Pass 4 probes, gap analysis, batch reviewer.
+**Reality:** Sonnet is the default for execution-side dispatches in passes 2-5 (composers, Pass 4 probes, Pass 5 targeted probes / regression-test authoring) per [`coverage-expansion/SKILL.md`](../SKILL.md) §"Hybrid model selection". Anti-pattern is sonnet on dispatches the table marks opus — Pass 1 composer, all Stage B reviewers (per-journey AND batch), Pass 5 gap analysis, cleanup ledger dedup, failure-diagnosis. Review judgement and Pass-1 foundation are the two boundaries Opus stays at.
 
 **Hooks that catch this:**
 - (markdown-only) — model selection is not yet mechanically detectable at the dispatch boundary.
