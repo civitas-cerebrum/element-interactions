@@ -165,18 +165,23 @@ A subagent's brief asks it to "dispatch N parallel subagents", "spawn workers", 
 
 ---
 
-## Pattern: Sonnet cost-down rationalisation
+## Pattern: Sonnet-everywhere drift
 
-The orchestrator argues for sonnet on dispatches the hybrid model table reserves for opus.
+The orchestrator argues for sonnet on dispatches the hybrid model table reserves for opus — generalising the empirical Sonnet/Opus parity from Pass 4 adversarial probes to dispatches that table doesn't cover.
 
 **Symptoms:**
-- "Stage B reviewer can run sonnet — schema/coverage checks are mechanical"
-- "failure-diagnosis is small enough to run sonnet"
+- "Stage B reviewer per-journey can run sonnet — schema/coverage checks are mechanical" (the table says Opus for per-journey reviewers per the post-revision policy)
 - "the batch reviewer is just aggregating per-journey reviews — sonnet is fine"
 - "gap analysis between passes is mechanical enough for sonnet"
+- "failure-diagnosis is small enough to run sonnet"
 - "Pass 1 composer can run sonnet — the foundation will be re-reviewed anyway"
+- "issue #164 showed Sonnet/Opus parity, so Sonnet should be fine everywhere"
 
-**Reality:** Sonnet is the default for execution-side dispatches in passes 2-5 (composers, Pass 4 probes, Pass 5 targeted probes / regression-test authoring) per [`coverage-expansion/SKILL.md`](../SKILL.md) §"Hybrid model selection". Anti-pattern is sonnet on dispatches the table marks opus — Pass 1 composer, all Stage B reviewers (per-journey AND batch), Pass 5 gap analysis, cleanup ledger dedup, failure-diagnosis. Review judgement and Pass-1 foundation are the two boundaries Opus stays at.
+**Reality:** The hybrid table draws the line carefully:
+- **Sonnet remains the default** for Pass 2/3 re-pass composers, Pass 4 Stage A adversarial probes (NEW per this revision — issue #164's empirical evidence covers exactly this dispatch), and Pass 5 targeted probes / regression-test authoring.
+- **Opus remains** for Pass 1 Stage A composer, Pass 5 gap analysis, the Stage B reviewer per-journey (NEW per this revision — moved from sonnet to opus to keep review judgement at the quality boundary while batching ramps), the Stage B batch reviewer, cleanup ledger dedup, Phase 7 deck/report, and failure-diagnosis.
+
+Anti-pattern is now: sonnet on dispatches the table marks Opus — specifically the Stage B reviewer per-journey, the Stage B batch reviewer, Pass 5 gap analysis, and failure-diagnosis. Issue #164's empirical parity is for adversarial probes only; do not generalise it across the table.
 
 **Hooks that catch this:**
 - (markdown-only) — model selection is not yet mechanically detectable at the dispatch boundary.
