@@ -609,9 +609,31 @@ Every public method on `Steps` logs at one of: `tester:navigate`, `tester:intera
 
 ### 15. Patch-version one-PR-one-bump rule
 
-Run `npm version patch` **once** per PR (at the first commit). Do not bump on every follow-up commit on the same branch. The `publish.yml` workflow publishes whatever version is in `package.json` at merge time, so multi-bumps inflate the version number for nothing.
+Bump the branch **once** per PR — and bump it to **`(npm-latest + 1 patch)`**, not `(current package.json + 1 patch)`. Look up the published latest first, then bump to that ceiling plus one. Do not bump on every follow-up commit on the same branch. The `publish.yml` workflow publishes whatever version is in `package.json` at merge time, so multi-bumps inflate the version number for nothing.
 
-For minor/major bumps, same rule: bump once, at the start.
+**Recipe:**
+
+```bash
+LATEST=$(npm view @civitas-cerebrum/element-interactions version)
+# parse + bump patch
+IFS=. read -r MAJOR MINOR PATCH <<< "$LATEST"
+NEW="${MAJOR}.${MINOR}.$((PATCH + 1))"
+npm version "$NEW" --no-git-tag-version
+```
+
+Equivalent one-liner:
+
+```bash
+npm version "$(npm view @civitas-cerebrum/element-interactions version | awk -F. '{print $1"."$2"."$3+1}')" --no-git-tag-version
+```
+
+**Why bump against npm-latest, not `package.json`:**
+
+When multiple PRs are open in parallel, every branch bumping `current+1` from its own diverged base produces version collisions on merge — two branches off `0.3.6` both bump to `0.3.7`, the second to merge clobbers or duplicates the first's published version. Bumping against npm-latest collapses every open branch to a known monotonic ceiling: the first PR to merge sets the new published version, and subsequent PRs rebase + re-bump against the new ceiling. No collisions, no manual reconciliation in CI.
+
+**Edge case — `npm view` fails (no network, package not yet published).** Fall back to bumping against the current `package.json` value (the old recipe) and call out the deviation in the PR description so the reviewer can spot-check for collision against any other open PR. The `hooks/version-bump-against-npm-guard.sh` hook also silently allows when the lookup fails (offline mode), so the bump itself isn't blocked.
+
+For minor/major bumps, same rule: bump once, at the start, against `(npm-latest + 1 minor/major)`.
 
 ### 16. Tests hit the real Vue test app
 
@@ -770,8 +792,8 @@ npm run build
 npx playwright test tests/live-element-location.spec.ts
 npx test-coverage --format=github-plain     # must show 100%
 
-# 6. Bump version
-npm version patch --no-git-tag-version
+# 6. Bump version against npm-latest (Rule 15 — collision-safe across parallel PRs)
+npm version "$(npm view @civitas-cerebrum/element-repository version | awk -F. '{print $1"."$2"."$3+1}')" --no-git-tag-version
 
 # 7. Commit + push + open PR
 git add -A
@@ -806,8 +828,8 @@ npx test-coverage --format=github-plain     # must show 100%
 #    - README.md (the user-facing reference under "🛠️ API Reference: Steps")
 #    - skills/element-interactions/SKILL.md (only if the change affects workflow stages)
 
-# 5. Bump version once
-npm version patch --no-git-tag-version
+# 5. Bump version once, against npm-latest (Rule 15 — collision-safe across parallel PRs)
+npm version "$(npm view @civitas-cerebrum/element-interactions version | awk -F. '{print $1"."$2"."$3+1}')" --no-git-tag-version
 
 # 6. Populate the contribution handover
 cp .contribution-handover.template.json .contribution-handover.json
@@ -1069,7 +1091,7 @@ Before opening a PR on element-interactions:
 - [ ] Tests pass: `npm run test` shows all tests passing
 - [ ] Coverage 100%: `npx test-coverage --format=github-plain` shows ✅
 - [ ] No raw Playwright leak: `grep -rn "locator\.\(click\|fill\|...\)" src/ --include="*.ts"` returns zero matches in non-`Element`-impl code
-- [ ] Version bumped exactly once (`npm version patch` at first commit, not at every commit)
+- [ ] Version bumped exactly once, to `(npm-latest + 1 patch)` — verified against `npm view @civitas-cerebrum/element-interactions version` (Rule 15 — collision-safe across parallel PRs)
 - [ ] API reference updated (`skills/element-interactions/references/api-reference.md`) — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] README updated under `🛠️ API Reference: Steps` — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] If adding a new method, it has a JSDoc block on the public-facing class
