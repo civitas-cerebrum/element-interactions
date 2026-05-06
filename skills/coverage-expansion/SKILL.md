@@ -44,14 +44,16 @@ If you are about to dispatch fewer passes than the mode requires, or fewer journ
 
 **Onboarding-pipeline contract**: when invoked from `onboarding` Phase 5 (autonomous mode), the front-load gate has already authorised the full pipeline ("tens of minutes to several hours"). The orchestrator may not stop pre-emptively in autonomous mode — the only valid mid-run stop is exit #2 *after at least one wave has returned*. "Mostly done with Phase 3 happy-path, surfacing back to user" is not a valid Phase 5 exit.
 
-### Reviewer parallelism is non-negotiable
+### Reviewer parallelism is non-negotiable (and one optional batch step)
 
 Stage B reviewers run **at host max parallelism**, not one at a time. A pass with 16 journeys dispatches up to 16 reviewers in one parallel wave (subject to the shared-resource audit's credential caps — see §"Parallel cap — lifted and jointly applied"). Reviewer dispatch is NOT a serialised cost.
 
 The contract:
-- **Per-journey**: each reviewer reads ONE journey's spec + journey block + live app (Stage B is never batched).
+- **Per-journey**: each reviewer reads ONE journey's spec + journey block + live app (Stage B is per-journey by default).
 - **Across journeys**: dispatched in parallel up to the host-max cap, sharing the same in-flight pool with Stage A retries.
 - **Within a journey**: Stage A and Stage B are sequential (a journey's own A and B never overlap), but its B can run while a sibling journey's A is in flight.
+
+**Batch reviewer mode (issue #164.2 — Pass 1/2/3 cycle-1 only):** for the **cycle-1** Stage B of compositional Passes 1, 2, and 3, the orchestrator dispatches **one** Opus reviewer that reads all in-flight journeys' Stage A spill files together and emits per-journey verdicts in a single return. ~85% of compositional cycle-1 reviews return greenlight; per-journey isolation over-pays for that majority. The batch reviewer's role-prefix is `reviewer-batch-pass-<N>:` and its return shape is documented in [`references/reviewer-subagent-contract.md`](references/reviewer-subagent-contract.md) §"Batch reviewer mode (cycle-1 compositional only)". For any flagged journey in the batch return, the orchestrator dispatches a follow-up cycle-2 `mode: per-journey` reviewer per the legacy contract. **Adversarial Passes 4 and 5 never use batch mode** — the per-journey live-app probe + matrix coverage check is load-bearing for adversarial discipline. **Cycle-2+ is always per-journey**, regardless of pass.
 
 If you are about to stop after Stage A claiming "running 16 reviewers is too much for this session" — re-read this section. 16 reviewers in parallel is one wave. The wave is the contract.
 
