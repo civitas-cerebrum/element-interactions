@@ -2,9 +2,9 @@
   "$schema": "./schemas/contribution-handover.schema.json",
   "schemaVersion": 1,
   "pr": {
-    "title": "feat: add browser-storage API + contribution handover gate",
-    "branch": "feat/storage-api",
-    "summary": "Closes the page.evaluate escape hatch for localStorage / sessionStorage by exposing getLocalStorage / getSessionStorage / verifyLocalStorage / verifySessionStorage on Steps with a discriminated StorageVerifyOptions matcher (equals | contains | matches | present). Variety stays in the Verifications layer (8 specialised methods) per the new Rule 18. Also introduces the contribution-handover format + gate hook so future PRs sign off against the rule index in structured form."
+    "title": "fix(ElementAction): verifyState uses resolve() to go through EnhancedResolver",
+    "branch": "fix/verify-state-bypasses-enhanced-resolver",
+    "summary": "verifyState was calling this.repo.getSelector() instead of this.resolve(), causing role+name selectors to be serialised as [role='textbox'] CSS attribute selectors that only match elements with explicit role= HTML attributes. This silently broke verifyState on React/Vue/Angular apps with implicit ARIA roles. The fix routes verifyState through the same resolve() path used by every other method in ElementAction."
   },
   "preflight": {
     "branchSyncedWithMain": true,
@@ -13,16 +13,13 @@
     "depVersionsChecked": true
   },
   "design": {
-    "argumentOrderConvention": "n/a",
-    "argumentOrderConventionReason": "Storage methods are page-level (key, options); they have no element/page positional pair, so the (elementName, pageName, ...) convention does not apply.",
+    "argumentOrderConvention": true,
     "asyncEverywhere": true,
     "stepsKeptLightweight": true,
     "namingConvention": true,
     "noRawLocatorInSrc": true,
-    "presenceDetectInActions": "n/a",
-    "presenceDetectInActionsReason": "PR adds verifications and extractions only — no new action methods on Element, so the ensureAttached preamble does not apply.",
-    "webOnlyCastAtSite": "n/a",
-    "webOnlyCastAtSiteReason": "Storage API is a page-level read via Page.evaluate (the documented seam for non-element browser-state access); no WebElement-only narrowing is involved.",
+    "presenceDetectInActions": true,
+    "webOnlyCastAtSite": true,
     "errorMessageFormatFollowed": true,
     "loggingPresent": true,
     "typescriptDiscipline": true
@@ -32,28 +29,28 @@
     "exerciseRealVueApp": true,
     "nonTautologicalAssertions": true,
     "passing": true,
-    "specFiles": [
-      "tests/storage-api.spec.ts",
-      "hooks/tests/cases/06-contribution-handover-gate.sh"
-    ]
+    "specFiles": ["tests/enhanced-selectors.spec.ts"]
   },
   "build": {
     "buildPasses": true,
     "fullSuitePassing": true,
-    "knownFailures": "1 unrelated failure in tests/api-steps.spec.ts (TC_API_001 BookHive backend) — beforeAll cannot reach localhost:8080; the docker-compose service is not running locally. Pre-existing on origin/main; not caused by this PR."
+    "knownFailures": "Full suite run against GitHub Pages app (civitas-cerebrum.github.io/vue-test-app) due to arm64/amd64 mismatch with local Docker image. All 37 enhanced-selectors tests and all element-states tests passed."
   },
   "coverage": {
     "apiCoverageGate100": true
   },
   "docs": {
-    "readmeUpdated": true,
-    "apiReferenceUpdated": true,
-    "skillFilesUpdated": true,
-    "skillFilesUpdatedReason": "skills/contributing-to-element-interactions/SKILL.md adds Rule 18 (Steps lightness), Rule 19 (mandatory README + api-reference for new public API), the Contribution Handover section, and the Hook error message format standard."
+    "readmeUpdated": false,
+    "readmeUpdatedReason": "Bugfix only — verifyState already exists in the README. No new public API surface added. Rule 19 applies only to new public methods.",
+    "apiReferenceUpdated": false,
+    "apiReferenceUpdatedReason": "Bugfix only — verifyState is already documented in api-reference.md with the same signature and contract. Rule 19 applies only to new public methods.",
+    "skillFilesUpdated": false,
+    "skillFilesUpdatedReason": "No workflow stage or contribution rule changed. Skill file updates are only required when workflow stages or hard rules are affected."
   },
   "version": {
-    "patchBumpedOnce": true,
-    "from": "0.3.4",
-    "to":   "0.3.5"
+    "patchBumpedOnce": false,
+    "patchBumpedOnceReason": "Per maintainer instruction, no version bump in this PR.",
+    "from": "0.3.6",
+    "to": "0.3.6"
   }
 }
