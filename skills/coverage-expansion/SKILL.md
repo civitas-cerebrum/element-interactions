@@ -346,8 +346,39 @@ The full per-pass pipeline (steps 1–8), pass differences, commit-message conve
 - **Stage B never commits.** Reviewer judgements live in the state file's `review_status` and `final_must_fix` fields, never as commits. `review(j-…)` and any review-tagged commit form is forbidden.
 - **Stage A and B are parallel by default.** A journey's Stage B fires as soon as that journey's Stage A returns and the cap has a slot — not after every Stage A in the pass completes. Finishing all Stage A first then starting all Stage B is contract-violating.
 - **Parallel cap counts A and B jointly.** One pool of in-flight slots; A, B, and A-retry compete. A journey's own A and B never overlap (sequential within a journey); across journeys any A/B interleaving is possible. Queue order is FIFO.
-- **Cost-blind, opus-default model selection.** Default is opus for every dispatch in every stage in every pass. Two narrow exceptions: (a) cycle-1 Stage B sonnet-confirmation for previously-greenlit journeys with no map delta and no sibling-bug ledger update — sonnet's `improvements-needed` always re-runs on opus. **Pass 4 and Pass 5 are always opus, both stages, full stop** — the sonnet exception does NOT apply to adversarial passes. (b) Cleanup subagent (single post-pass-5 dispatch) may use haiku — text-only editing.
+- **Hybrid model selection — Sonnet by default, Opus where it pays.** Empirical data from a 30-journey onboarding cycle (issue #164) shows Sonnet finds critical IDORs and CSRF-DELETE bypasses just as well as Opus on adversarial probes, while costing ~50% per dispatch. The new policy reserves Opus for dispatches whose value scales with reasoning depth (test architecture, cross-journey synthesis, root-cause analysis). Default by dispatch type:
+
+  | Dispatch type | Model | Rationale |
+  |---|---|---|
+  | Pass 1 Stage A composer | **opus** | Test architecture quality; Opus pays for itself via fewer cycle-2 retries |
+  | Pass 2 Stage A composer (re-pass) | **sonnet** | 22 of 30 return `covered-exhaustively`; mechanical |
+  | Pass 3 Stage A composer (re-pass) | **sonnet** | Same; final compositional sweep |
+  | Pass 4 Stage A probe (adversarial) | **opus** | Adversarial discovery yield benefits from reasoning depth on compound probes |
+  | Pass 5 gap analysis | **opus** | Cross-journey synthesis |
+  | Pass 5 targeted probes | **sonnet** | Mechanical re-probe of identified gaps |
+  | Pass 5 regression-test authoring | **sonnet** | Mechanical test-write |
+  | Stage B reviewer (per-journey) | **sonnet** | Schema / coverage / format checks are deterministic territory |
+  | Stage B batch reviewer (when used; #164.2) | **opus** | Cross-journey synthesis is where Opus shines |
+  | Cleanup ledger dedup | **opus** | Semantic clustering quality matters |
+  | Phase 7 deck / report | **opus** | Client-facing narrative quality |
+  | Failure-diagnosis | **opus** | Root-cause reasoning depth |
+
+  The orchestrator passes the model hint via `model: <opus|sonnet|haiku>` in the dispatch brief. Subagents honour the hint when constructing their `subagent_type` — `general-purpose-sonnet` / `general-purpose-opus` etc., or whatever the harness exposes.
+
+  **Override paths:**
+  - The user may request Opus for everything (e.g. `mode: depth, model: opus-all`) for a high-stakes audit; document the override in the front-load gate.
+  - Stage B sonnet `improvements-needed` always re-runs on Opus (preserved from the prior policy — Sonnet's "needs more work" judgements have higher false-positive rates; Opus is the tiebreaker).
+  - A pass with `final_must_fix` carry-overs from the prior pass forces that journey's next Stage A onto Opus regardless of the table (the must-fix is hard; mechanical re-pass won't resolve it).
+
+  This section supersedes the prior "cost-blind, opus-default" rule. The change is empirically grounded; see issue #164 for the per-dispatch cost analysis (~16-17M tokens saved per onboarding cycle).
 - **P0/P1/P2 NEVER batch.** P3-only batching, capped at 7 per brief, Stage A only — Stage B always per-journey. Sharing pages with P3 siblings is not authorisation; priority is load-bearing.
+- **P3 small-surface journeys may opt OUT of adversarial passes (Passes 4 & 5).** Per #164.4, P3 logout / role-chooser / modal-only journeys empirically produce 0–2 unique adversarial findings each — their entire adversarial surface is already covered via portal-wide pattern citations from larger journeys. The skip is **opt-in per project**, declared up-front in the state file's `adversarialSkippedJourneys: []` field with rationale per entry. Default is "include all" — the orchestrator never silently skips a P3 from adversarial work; the operator opts the journey out by name. Compositional passes (1–3) ALWAYS run on every journey including P3. **Exclusion criteria** (must hold for a journey to qualify for opt-out):
+  - Priority is P3.
+  - The journey's ` Pages touched` list is a subset of pages already adversarial-probed by a larger journey AND covered by a portal-wide pattern entry (per #164.3).
+  - The journey has zero unique adversarial findings in any prior pass-4 ledger entry (or has no prior entries).
+  - The journey is one of: logout, role-chooser, single-modal disclosure, single-info-display, breadcrumb-nav, or equivalent low-surface shape.
+
+  Any opt-out that doesn't meet ALL four criteria is silent scope narrowing. The state-file schema validates the field shape (per `references/state-file-schema.md`).
 - **Auto-compaction at 70%.** State written first, then `/compact`, then resume from state. Mid-cycle Stage A returns persist to a scratch file (`tests/e2e/docs/.coverage-expansion-cycle-<slug>-cycle-<N>.json`) before compacting; mid-cycle restart from a fresh Stage A dispatch is NOT acceptable.
 - **`blocked-cycle-stalled`, `blocked-cycle-exhausted`, `blocked-dispatch-failure` are valid terminals**, not pass failures. Mark them faithfully — calling cycle-7-exhausted "greenlit" corrupts the state file and the next pass's trigger-4 input.
 

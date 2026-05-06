@@ -43,6 +43,13 @@ State file shape (minimum fields):
     }
   ],
   "adversarialTotals": { ... },
+  "adversarialSkippedJourneys": [
+    {
+      "journey": "j-zb-logout",
+      "rationale": "P3 logout, single-page surface already probed by j-zb-create-location pass-4 portal-wide CSRF entry; zero unique findings in prior passes",
+      "criteria": ["priority-p3", "page-subset-covered", "zero-prior-findings", "low-surface-shape"]
+    }
+  ],
   "updatedAt": "2026-04-24T..."
 }
 ```
@@ -59,6 +66,14 @@ State file shape (minimum fields):
 - `batch_id` — nullable string. Non-null when this journey was part of a batched Stage A dispatch (per [`depth-mode-pipeline.md` §"Batched dispatch for P3 peripheral journeys"](depth-mode-pipeline.md)); the `batch_id` value is shared across every journey in the same batch so resume logic can reconstruct the batch grouping. Null for individually-dispatched journeys. When a journey breaks out of a batch mid-cycle (any cycle ≥ 2 after its Stage B returned `improvements-needed`), `batch_id` becomes null from cycle 2 onward — the cycle-1 batched entry retains the original `batch_id`, the cycle-2+ individual entry does not. `stage_a_cycles` is recorded per-journey in both cases.
 
 A state file missing `stage_a_cycles`, `stage_b_cycles`, or `review_status` for any journey that has run this pass is incomplete — resume logic treats it as corrupt per `coverage-expansion/SKILL.md` §"Authoritative state file" (kernel-resident invariants).
+
+**`adversarialSkippedJourneys[]` field (issue #164.4, opt-in P3 adversarial skip):** array of objects, each with:
+
+- `journey` — the journey ID (`j-<slug>`).
+- `rationale` — non-empty string explaining why the journey is being excluded from Passes 4 and 5. Vague rationales (`"low value"`, `"P3 doesn't need it"`) fail the contract; specific rationales naming the covered surface and the portal-wide entry that subsumes it pass.
+- `criteria` — array of zero or more of the four kernel-resident criteria the journey satisfies (`priority-p3`, `page-subset-covered`, `zero-prior-findings`, `low-surface-shape`). All four must hold for the opt-out to be valid; the array is evidence the orchestrator checked each one.
+
+The field is **opt-in per project, never silent**. The orchestrator may not append entries inferentially during a pass; entries land at project setup time (or in a between-pass commit explicitly authorised by the user) and stay through all subsequent runs. Compositional Passes (1–3) ignore this field — every journey gets compositional coverage regardless. Adversarial Passes (4 and 5) read it on entry and exclude listed journeys from their journey roster for those passes only.
 
 The state file is rewritten after every per-pass commit (and whenever auto-compaction triggers — see [`depth-mode-pipeline.md` §"Auto-compaction between passes"](depth-mode-pipeline.md)).
 

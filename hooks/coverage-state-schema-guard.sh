@@ -143,10 +143,12 @@ Fix: must be an integer 0-5 (0 = before pass 1, 1-3 = compositional, 4-5 = adver
   # Reference: coverage-expansion/references/anti-rationalizations.md
   #   §"Pre-emptive scope reduction" + §"Honest pre-dispatch stop"
   if [ "$CP" -ge 1 ]; then
-    # Walk the JSON looking for any object that has a `journey` key — that's
-    # a per-dispatch entry. Works whether dispatches live at top-level or
-    # nested under `passes.<N>-compositional.dispatches`.
-    DISPATCH_COUNT=$(echo "$TARGET" | jq -r '[.. | objects | select(has("journey"))] | length' 2>/dev/null || echo 0)
+    # Walk the JSON looking for per-dispatch entries. A dispatch entry has
+    # `journey` and one of the dual-stage fields (stage_a_cycles or
+    # review_status). The new `adversarialSkippedJourneys[]` (issue #164.4)
+    # also has a `journey` key but is NOT a dispatch — exclude it from the
+    # dispatch count.
+    DISPATCH_COUNT=$(echo "$TARGET" | jq -r '[.. | objects | select(has("journey") and (has("stage_a_cycles") or has("review_status")))] | length' 2>/dev/null || echo 0)
     if [ "$DISPATCH_COUNT" -eq 0 ]; then
       emit_deny "[BLOCKED] State-file write claims currentPass=${CP} with zero dispatches recorded.
 
@@ -192,6 +194,51 @@ Estimated session length is not authorisation.
 References:
   coverage-expansion/SKILL.md §\"Two valid exits\"
   coverage-expansion/references/anti-rationalizations.md §\"Pre-emptive scope reduction\""
+      exit 0
+    fi
+  fi
+
+  # 6. adversarialSkippedJourneys[] shape validation (issue #164.4 — opt-in
+  # P3 adversarial-skip). The field is optional; when present it MUST be an
+  # array, and every entry MUST have a non-empty `journey` and a non-empty
+  # `rationale`. Missing rationale = silent scope narrowing in disguise.
+  HAS_SKIP_FIELD=$(echo "$TARGET" | jq -e 'has("adversarialSkippedJourneys")' >/dev/null 2>&1 && echo yes || echo no)
+  if [ "$HAS_SKIP_FIELD" = "yes" ]; then
+    SKIP_TYPE=$(echo "$TARGET" | jq -r '.adversarialSkippedJourneys | type' 2>/dev/null || echo "null")
+    if [ "$SKIP_TYPE" != "array" ]; then
+      emit_deny "[BLOCKED] adversarialSkippedJourneys must be an array.
+
+File: $FILE_PATH
+Got: ${SKIP_TYPE}
+
+Fix: shape per skills/coverage-expansion/references/state-file-schema.md §\"adversarialSkippedJourneys[] field\":
+
+  \"adversarialSkippedJourneys\": [
+    {
+      \"journey\": \"j-<slug>\",
+      \"rationale\": \"<non-empty explanation>\",
+      \"criteria\": [\"priority-p3\", \"page-subset-covered\", \"zero-prior-findings\", \"low-surface-shape\"]
+    }
+  ]"
+      exit 0
+    fi
+
+    # Each entry: journey + rationale required.
+    INVALID=$(echo "$TARGET" | jq -r '
+      [.adversarialSkippedJourneys[]
+        | select((.journey // "") == "" or (.rationale // "") == "")
+        | (.journey // "<missing>")
+      ] | join(", ")
+    ' 2>/dev/null || echo "")
+    if [ -n "$INVALID" ]; then
+      emit_deny "[BLOCKED] adversarialSkippedJourneys[] entries missing required fields.
+
+File: $FILE_PATH
+Offending entries (by journey or '<missing>'): ${INVALID}
+
+Fix: every entry MUST have a non-empty 'journey' and a non-empty 'rationale'. Vague rationales (\"low value\", \"P3 doesn't need it\") fail the contract; specific rationales naming the covered surface and the portal-wide entry that subsumes it pass. The opt-out is meaningful only if the project-time author explained WHY this journey is excluded — silent skip is what the field is here to prevent.
+
+See skills/coverage-expansion/SKILL.md §\"P3 small-surface journeys may opt OUT of adversarial passes\" for the four exclusion criteria the orchestrator must satisfy."
       exit 0
     fi
   fi
