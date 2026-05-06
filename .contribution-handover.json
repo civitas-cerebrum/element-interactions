@@ -61,8 +61,8 @@
   },
   "version": {
     "patchBumpedOnce": "n/a",
+    "patchBumpedOnceReason": "Per the user-directive 'no version bumps unless the user explicitly says so' (2026-05-06): this PR resets package.json + package-lock.json to main's 0.3.6 and does not bump. The original PR commit `945a8f1` had bumped 0.3.6 → 0.3.10 under the prior 'one bump per PR' rule (Rule 15); the review-fix commit reverts that bump. Versioning is now release-time, not per-PR. A follow-up PR will rewrite Rule 15 in contributing-to-element-interactions/SKILL.md and add a `version-bump-authorisation-guard.sh` hook that denies `npm version <X>` invocations without explicit user authorisation.",
     "from": "0.3.6",
-    "to":   "0.3.6",
-    "skipReason": "Per the user-directive 'no version bumps unless the user explicitly says so' (2026-05-06): this PR resets package.json + package-lock.json to main's 0.3.6 and does not bump. The original PR commit `945a8f1` had bumped 0.3.6 → 0.3.10 under the prior 'one bump per PR' rule (Rule 15); the review-fix commit reverts that bump. Versioning is now release-time, not per-PR. A follow-up PR will rewrite Rule 15 in contributing-to-element-interactions/SKILL.md and add a `version-bump-authorisation-guard.sh` hook that denies `npm version <X>` invocations without explicit user authorisation."
+    "to": "0.3.6"
   }
 }
