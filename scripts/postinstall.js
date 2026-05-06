@@ -249,13 +249,20 @@ function installCivitasHooks() {
 // jq is a hard runtime dependency of the harness hooks (see issue #165).
 // Most hooks parse the JSON event payload via `jq`, and `jq` missing on the
 // host means every hook crashes with `jq: command not found` — silent
-// non-blocking failures on PostToolUse, accept-all on PreToolUse. Detect
-// and install before registering the hooks so they actually work on first
-// activation.
+// non-blocking failures on PostToolUse, accept-all on PreToolUse.
 //
-// Opt-out: set CIVITAS_SKIP_JQ_INSTALL=1 to skip the auto-install attempt
-// (useful when the user manages jq via a system package manager that this
-// shim doesn't know about, or for offline / sandboxed environments).
+// Detect-only posture (per PR #174 review): the postinstall does NOT attempt
+// to install jq on the consumer's behalf. Auto-installing brings a tangle of
+// risks — sudo prompts in non-TTY contexts, CI/Docker breakage, partial-state
+// failures across package managers, and no clean Windows story — none of
+// which are appropriate for an `npm install` side-effect. Instead, when jq
+// is missing we print a clear, actionable warning naming every install path
+// and set process.exitCode = 1 so npm surfaces the message even under the
+// default foreground-scripts-off behaviour (per #153 mitigation 4).
+//
+// Opt-out: set CIVITAS_SKIP_JQ_INSTALL=1 to silence the check entirely
+// (useful for offline / sandboxed / pre-provisioned environments where jq
+// is known to be present or intentionally absent).
 function ensureJq() {
   if (process.env.CIVITAS_SKIP_JQ_INSTALL === '1') {
     return;
@@ -267,49 +274,22 @@ function ensureJq() {
     return;
   }
 
-  console.log('[@civitas-cerebrum/element-interactions] jq not found — required by harness hooks. Attempting platform-appropriate install…');
-
-  // Try platform-appropriate package manager. Stop at the first that works.
-  // Order: brew (macOS), apt-get (Debian/Ubuntu), apk (Alpine), dnf (RHEL/
-  // Fedora), pacman (Arch). Each attempt is best-effort; failures fall
-  // through to the manual-install warning.
-  const candidates = [
-    { bin: 'brew',     args: ['install', 'jq'],                 sudo: false },
-    { bin: 'apt-get',  args: ['install', '-y', 'jq'],           sudo: true  },
-    { bin: 'apk',      args: ['add', '--no-cache', 'jq'],       sudo: false },
-    { bin: 'dnf',      args: ['install', '-y', 'jq'],           sudo: true  },
-    { bin: 'pacman',   args: ['-S', '--noconfirm', 'jq'],       sudo: true  },
-  ];
-
-  for (const c of candidates) {
-    // `which <bin>` returns 0 if the binary is on PATH. Avoids the shell:true
-    // overhead and the Node deprecation warning about args + shell.
-    if (spawnSync('which', [c.bin], { stdio: 'ignore' }).status !== 0) {
-      continue;
-    }
-    const cmd = c.sudo ? 'sudo' : c.bin;
-    const args = c.sudo ? [c.bin, ...c.args] : c.args;
-    const result = spawnSync(cmd, args, { stdio: 'inherit' });
-    if (result.status === 0) {
-      // Re-probe to confirm.
-      if (spawnSync('jq', ['--version'], { stdio: 'ignore' }).status === 0) {
-        console.log(`[@civitas-cerebrum/element-interactions] ✔ jq installed via ${c.bin}.`);
-        return;
-      }
-    }
-  }
-
-  // No package manager worked — print a clear, actionable warning and exit
-  // non-zero so npm surfaces the message even under the default
-  // foreground-scripts-off behaviour (per #153 mitigation 4).
-  console.warn('[@civitas-cerebrum/element-interactions] WARNING: could not auto-install jq.');
+  // Not present — emit a clear, platform-aware warning and exit non-zero.
+  console.warn('[@civitas-cerebrum/element-interactions] WARNING: jq not found on PATH.');
   console.warn('  Harness hooks require jq to parse hook payloads — without it, hooks crash silently.');
-  console.warn('  Install manually before invoking any skill that depends on the harness:');
-  console.warn('    macOS:           brew install jq');
-  console.warn('    Debian/Ubuntu:   sudo apt-get install jq');
-  console.warn('    Alpine:          apk add --no-cache jq');
-  console.warn('    RHEL/Fedora:     sudo dnf install jq');
-  console.warn('    Arch:            sudo pacman -S jq');
+  console.warn('  Install jq manually before invoking any skill that depends on the harness:');
+  if (process.platform === 'win32') {
+    console.warn('    Windows (winget): winget install jqlang.jq');
+    console.warn('    Windows (choco):  choco install jq');
+    console.warn('    Windows (scoop):  scoop install jq');
+    console.warn('  Note: this package targets POSIX shells (Linux/macOS); on Windows use WSL2.');
+  } else {
+    console.warn('    macOS:           brew install jq');
+    console.warn('    Debian/Ubuntu:   sudo apt-get install jq');
+    console.warn('    Alpine:          apk add --no-cache jq');
+    console.warn('    RHEL/Fedora:     sudo dnf install jq');
+    console.warn('    Arch:            sudo pacman -S jq');
+  }
   console.warn('    Other:           https://jqlang.github.io/jq/download/');
   console.warn('  Skip this check next time: set CIVITAS_SKIP_JQ_INSTALL=1.');
   process.exitCode = 1;
@@ -319,6 +299,7 @@ try {
   ensureJq();
 } catch (err) {
   console.warn(`[civitas-cerebrum] Could not check jq availability: ${err.message}`);
+  process.exitCode = 1;
 }
 
 try {

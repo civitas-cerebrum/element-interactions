@@ -54,6 +54,10 @@
   },
   "author": "Umut Ay Bora",
   "license": "MIT",
+  "os": [
+    "darwin",
+    "linux"
+  ],
   "dependencies": {
     "@civitas-cerebrum/context-store": "^0.0.2",
     "@civitas-cerebrum/element-repository": "^0.1.9",

@@ -102,6 +102,8 @@ npm i @civitas-cerebrum/element-interactions
 
 > **Tip:** Set `reporter: 'html'` in `playwright.config.ts` so failure screenshots are captured and viewable in the HTML report — both the framework's `baseFixture` and the harness's failure-diagnosis flow rely on it.
 
+> **Platform support:** This package targets POSIX environments (Linux, macOS); the harness hooks rely on POSIX shell tooling (e.g. `jq`). Windows users should run via WSL2 or an equivalent POSIX layer.
+
 ---
 
 ## ✨ Features
