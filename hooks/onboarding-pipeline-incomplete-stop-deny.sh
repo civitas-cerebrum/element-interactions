@@ -124,7 +124,7 @@ MID_PIPELINE=0
 SIGNALS=""
 
 if [ -f "$DOCS_DIR/journey-map.md" ] && \
-   head -10 "$DOCS_DIR/journey-map.md" 2>/dev/null | grep -q '<!-- journey-mapping:generated -->'; then
+   head -1 "$DOCS_DIR/journey-map.md" 2>/dev/null | grep -q '<!-- journey-mapping:generated -->'; then
   MID_PIPELINE=1
   SIGNALS="${SIGNALS}
   - tests/e2e/docs/journey-map.md (sentinel present)"
