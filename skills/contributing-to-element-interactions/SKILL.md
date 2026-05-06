@@ -267,26 +267,6 @@ for n in 156 157; do gh issue view $n --json author -q '.number, .author.login' 
 
 **Harness-enforced by `hooks/commit-attribution-gate.sh`** (PreToolUse:Bash, filters to `git commit`). When the commit references an issue without a `Reported-by:` / `Issue-reported-by:` line, the hook emits a `systemMessage` with the gh-CLI snippet to fetch the author. Escape hatch for genuine edge cases: `COMMIT_ATTRIBUTION_GATE=off`.
 
-### Commit messages don't carry AI co-author trailers
-
-**Every commit's authorship is the human contributor's. AI assistants (Claude, Anthropic, borealis.local, anything similar) MUST NOT appear as a `Co-Authored-By:` trailer in the commit body.**
-
-The contract:
-
-- The commit body MUST NOT contain a `Co-Authored-By:` trailer naming `Claude`, `Anthropic`, `borealis.local`, `borealis-local`, the `198563339+borealis-local@users.noreply.github.com` address, or any other AI-assistant sentinel. Real-human co-author lines (`Co-Authored-By: Jane Doe <jane@example.com>`) are fine.
-- Lowercase / mixed-case variants (`co-authored-by: claude`) are detected the same way as the canonical form.
-- The rule applies regardless of how the message is passed to `git commit` — `-m "<msg>"`, `-m "$(cat <<'EOF' ... EOF)"`, or `-F <file>`.
-
-**Why:**
-
-- AI co-author lines pollute `git log --format=%aN | sort -u | uniq -c` (the contributor census). Any maintainer auditing "who has shipped to this repo" gets a non-human entity in the count.
-- Two branches that each carry their own AI co-author trailer three-way-merge into a duplicated, conflicting trailer block — a class of merge conflict that's purely noise.
-- The trailer creates the false impression of joint ownership when the human contributor is the one accountable for the change. Tooling-assisted authorship is fine; tooling-as-co-author is a misrepresentation of who can answer for the code.
-
-**The harness default puts the trailer there.** Anthropic's CLAUDE.md template appends `Co-Authored-By: borealis.local <198563339+borealis-local@users.noreply.github.com>` to every commit Claude generates. The upstream fix is to delete that instruction from your project's `CLAUDE.md` or `~/.claude/CLAUDE.md`. The hook below is the safety net for the cases where the template was forgotten.
-
-**Harness-enforced by `hooks/commit-author-signature-guard.sh`** (PreToolUse:Bash, filters to `git commit`). When the commit body contains a `Co-Authored-By:` trailer matching any AI-assistant sentinel, the hook emits a DENY whose deny-message includes a copy-paste-ready replacement command (the same `git commit` minus the offending trailer line(s)). The sentinel regex is intentionally extensible — extend the `AI_SENTINEL_PATTERNS` constant when a new AI assistant enters the tooling stack. Escape hatch for genuine edge cases (e.g. embedding a prior commit body in a test fixture): `COMMIT_AUTHOR_SIGNATURE_GUARD=off`.
-
 ### No raw `locator.*()` in element-interactions src/
 
 Every `locator.click()`, `locator.fill()`, `locator.evaluate()`, etc. that creeps into `src/` is a regression. If you need a primitive Playwright doesn't expose through `Element`, **add it to the Element interface in element-repository first**.
@@ -791,9 +771,6 @@ npx test-coverage --format=github-plain     # must show 100%
 npm version patch --no-git-tag-version
 
 # 7. Commit + push + open PR
-#    Commit body shows YOUR author line only — no AI Co-Authored-By: trailer
-#    (Hard rule §"Commit messages don't carry AI co-author trailers";
-#    enforced by hooks/commit-author-signature-guard.sh).
 git add -A
 git commit -m "feat: add Element.<method> for <use case>"
 git push -u origin feat/your-feature
@@ -836,9 +813,6 @@ cp .contribution-handover.template.json .contribution-handover.json
 # 7. Commit + push + open PR
 #    The contribution-handover-gate.sh hook (PreToolUse:Bash) will refuse
 #    `git push origin` and `gh pr create` until the handover is valid.
-#    Commit body shows YOUR author line only — no AI Co-Authored-By: trailer
-#    (Hard rule §"Commit messages don't carry AI co-author trailers";
-#    enforced by hooks/commit-author-signature-guard.sh).
 git add -A
 git commit -m "feat: add steps.<method> for <use case>"
 git push -u origin feat/your-feature
@@ -1095,7 +1069,6 @@ Before opening a PR on element-interactions:
 - [ ] If adding a new method, it has a JSDoc block on the public-facing class
 - [ ] `.contribution-handover.json` populated against `schemas/contribution-handover.schema.json` — every boolean set; every `false` / `"n/a"` paired with a specific `*Reason` field (verified by `hooks/contribution-handover-gate.sh`)
 - [ ] If this PR closes a GitHub issue, the commit body and the PR description both include `Reported-by: @<github-handle>` crediting the issue author (Hard rule §"Attribute issue reporters", verified by `hooks/commit-attribution-gate.sh`)
-- [ ] No commit on this branch carries a `Co-Authored-By:` trailer naming Claude / Anthropic / borealis.local — authorship is the human contributor's alone (Hard rule §"Commit messages don't carry AI co-author trailers", verified by `hooks/commit-author-signature-guard.sh`)
 
 If you're adding to element-repository first:
 
