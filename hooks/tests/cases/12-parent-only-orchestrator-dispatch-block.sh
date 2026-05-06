@@ -36,6 +36,14 @@ assert_deny "$H" "$(payload tool_name=Agent description='cov-exp run' prompt='Re
 # Five passes language
 assert_deny "$H" "$(payload tool_name=Agent description='full pipeline' prompt='Run the coverage-expansion skill: 5 passes per journey, three compositional, two adversarial, fan out test-composer per journey')" "five-passes language → DENY" "coverage-expansion"
 
+# PR #162 review #2 regression: orchestrator-role language without literal
+# "skill"/"SKILL.md" word. The prior AND-gate let this through; the new
+# detection (orchestrator-role-only) catches it.
+assert_deny "$H" "$(payload tool_name=Agent description='Phase 5' prompt='You are the coverage-expansion orchestrator. Run mode: depth across all journeys.')" "no skill word + orchestrator role → DENY (PR #162 #2 regression)" "coverage-expansion"
+assert_deny "$H" "$(payload tool_name=Agent description='depth pipeline' prompt='Run coverage-expansion in mode: depth and fan out test-composer per journey across the map')" "no skill word + mode: depth + fan out per journey → DENY" "coverage-expansion"
+# Onboarding equivalent — no skill word, just orchestrator-role language
+assert_deny "$H" "$(payload tool_name=Agent description='full pipeline' prompt='You are the onboarding orchestrator running the seven-phase pipeline')" "no skill word + onboarding orchestrator role → DENY" "onboarding"
+
 section "parent-only-orchestrator-dispatch-block: coverage-expansion non-orchestrator mention → ALLOW"
 
 # Mention without orchestrator role: e.g. an unrelated dispatch where the prompt

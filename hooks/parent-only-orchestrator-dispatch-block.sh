@@ -93,7 +93,7 @@ PROMPT=$(echo "$INPUT" | jq -r '.tool_input.prompt // ""')
 case "$DESCRIPTION" in
   composer-*|reviewer-*|probe-*|process-validator-*|phase-validator-*) exit 0 ;;
   phase1-*|phase2-*|stage2-*|cleanup-*) exit 0 ;;
-  '[P3-batch]'*|\[P3-batch\]*) exit 0 ;;
+  \[P3-batch\]*) exit 0 ;;
 esac
 
 # --- detection: which orchestrator? -----------------------------------------
@@ -105,24 +105,27 @@ ORCHESTRATOR=""
 TRIGGER=""
 
 # coverage-expansion ---------------------------------------------------------
-# Trigger A: prompt mentions the skill name AND orchestrator-role language.
-# Trigger B: prompt mentions `mode: depth` or `mode: breadth` (cov-exp's
-# canonical mode flag — bug-discovery has its own different mode keys).
-if echo "$PROMPT" | grep -qE 'coverage-expansion[/[:space:]]*(skill|SKILL\.md)'; then
-  if echo "$PROMPT" | grep -qiE 'coverage-expansion orchestrator|you are .{0,50}coverage-expansion|coverage-expansion .{0,30}(orchestrator|owner)|fan out .{0,40}(test-composer|composer|reviewer|probe)|dispatch .{0,40}(per journey|per-journey)|mode:[[:space:]]*(depth|breadth)|five[[:space:]]*passes|5[[:space:]]*passes|Pass 1.{0,10}Pass 2|3 compositional .{0,40}2 adversarial'; then
-    ORCHESTRATOR="coverage-expansion"
-    TRIGGER="prompt mentions \`coverage-expansion\` skill + orchestrator-role language (mode: depth/breadth, 'fan out per journey', 'you are the orchestrator', etc.)"
-  fi
+# Detection: orchestrator-role language alone (per PR #162 review #2). The
+# prior AND-gate that required a literal "skill"/"SKILL.md" word produced a
+# false negative on the canonical wasted-subagent shape (`description: "Phase 5"`,
+# `prompt: "You are the coverage-expansion orchestrator. Run mode: depth..."`)
+# — no "skill" token, no DENY, wasted dispatch fires. The orchestrator-role
+# regex below is specific enough; legitimate leaf briefs are caught by the
+# leaf-prefix bypass above (cost asymmetry favours false positives over the
+# wasted-subagent failure mode the hook exists to prevent).
+if echo "$PROMPT" | grep -qiE '\bcoverage-expansion\b.{0,80}(orchestrator|owner)|you are .{0,50}coverage-expansion|fan out .{0,40}(test-composer|composer|reviewer|probe).{0,40}per[ -]?journey|dispatch .{0,40}(per journey|per-journey).{0,80}\bcoverage-expansion\b|\bcoverage-expansion\b.{0,40}mode:[[:space:]]*(depth|breadth)|mode:[[:space:]]*(depth|breadth).{0,40}\bcoverage-expansion\b|five[[:space:]]*passes.{0,80}\bcoverage-expansion\b|\bcoverage-expansion\b.{0,80}five[[:space:]]*passes|3 compositional .{0,40}2 adversarial'; then
+  ORCHESTRATOR="coverage-expansion"
+  TRIGGER="prompt mentions \`coverage-expansion\` + orchestrator-role language (mode: depth/breadth, 'fan out per journey', 'you are the orchestrator', 'five passes', etc.) — the literal word 'skill'/'SKILL.md' is no longer required"
 fi
 
 # onboarding (Phase 5/6 inline orchestration) --------------------------------
-# Onboarding's docs are explicit that a sub-dispatch claiming to "execute
-# the onboarding skill" hits the same recursive wall.
-if [ -z "$ORCHESTRATOR" ] && echo "$PROMPT" | grep -qE 'onboarding[/[:space:]]*(skill|SKILL\.md)'; then
-  if echo "$PROMPT" | grep -qiE 'onboarding orchestrator|you are .{0,50}onboarding|run the .{0,40}onboarding pipeline|Phase 5 .{0,40}coverage-expansion|onboarding .{0,40}(seven|7) phase|Phase 6 .{0,40}bug-discovery'; then
-    ORCHESTRATOR="onboarding"
-    TRIGGER="prompt mentions \`onboarding\` skill + pipeline-orchestration language ('seven-phase pipeline', 'Phase 5 coverage-expansion', 'you are the onboarding orchestrator')"
-  fi
+# Same shape as cov-exp — drop the literal "skill"/"SKILL.md" requirement
+# and rely on orchestrator-role language (PR #162 review #2). Onboarding's
+# docs are explicit that a sub-dispatch claiming to "execute the onboarding
+# skill" hits the same recursive wall.
+if [ -z "$ORCHESTRATOR" ] && echo "$PROMPT" | grep -qiE '\bonboarding\b.{0,80}orchestrator|you are .{0,50}onboarding.{0,40}(orchestrator|pipeline)|run the .{0,40}onboarding pipeline|onboarding .{0,40}(seven|7)[[:space:]-]?phase|\bonboarding\b.{0,80}Phase 5 .{0,40}coverage-expansion|\bonboarding\b.{0,80}Phase 6 .{0,40}bug-discovery'; then
+  ORCHESTRATOR="onboarding"
+  TRIGGER="prompt mentions \`onboarding\` + pipeline-orchestration language ('seven-phase pipeline', 'you are the onboarding orchestrator', 'Phase 5 coverage-expansion', 'Phase 6 bug-discovery')"
 fi
 
 # bug-discovery (app-wide scope) --------------------------------------------
