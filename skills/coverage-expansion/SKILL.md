@@ -158,7 +158,7 @@ The orchestrator runs three grep-based validation checks. All three live here fo
 
 - **Stage A return shape** — grep per `subagent-return-schema.md` §4.1's "Finding blocks" / "covered-exhaustively returns" / "Banned tokens" / "Ledger append" bullets.
 - **Stage B return shape** — grep per `subagent-return-schema.md` §4.1's "Reviewer returns (§2.4)" bullet (status enum, finding-block regex, summary-line requirement on greenlights).
-- **Re-pass 4-trigger format** — grep per §"Re-pass mode for compositional passes 2–3" below for the literal strings "trigger 1" through "trigger 4" plus mapping-table header and per-expectation entries.
+- **Re-pass subagent 4-trigger format** — grep per §"Re-pass mode for compositional passes 2–3" below for the literal strings "trigger 1" through "trigger 4" plus mapping-table header and per-expectation entries. (Note: this is the dispatched-subagent's in-dispatch audit; the orchestrator-side three-trigger gating in §"Trigger-gated re-pass for Passes 2 & 3" is the pre-dispatch check, see `references/depth-mode-pipeline.md` §"Re-pass mode for compositional passes 2-3" for the explicit mapping.)
 
 If any check fails, the orchestrator re-dispatches with a brief explicitly quoting the rejected parts. Failures consume one cycle of the 7-cycle budget. Persistent malformed returns terminate as `blocked-dispatch-failure`.
 
@@ -224,6 +224,7 @@ This contract closes the "scope-to-gap-journeys" loophole — an orchestrator di
 3. **Every dispatch returns a structured result.** Options are `new-tests-landed`, `no-new-tests (exhaustively covered)`, `blocked (reason)`, or `skipped (reason + who-authorized)`. `blocked` is **subagent-returned** and does not need orchestrator or user approval — it is the subagent saying "I dispatched but cannot complete because of tenant data / environment / credential gaps" (e.g., admin seed user missing in demo tenant). `skipped` is **orchestrator-proposed** and is only valid when the orchestrator has the user's explicit in-conversation authorisation to skip that specific journey; an LLM orchestrator may not authorise itself, and the budget-pressure clause in §"Non-negotiables for depth mode" is NOT such authorisation. If the orchestrator cannot tell whether a journey should be blocked or skipped, it dispatches and lets the subagent decide — that is always the correct default.
 4. **Scope compression is a caller-facing decision.** If the orchestrator determines before dispatching that a journey's Pass-N work is likely no-op, it still dispatches; if it wants to formally skip, it RETURNS TO THE CALLER with a scope-compression proposal and waits for the caller to approve. Silent scope compression is a contract violation.
 5. **No-op dispatches are cheap by design.** A well-behaved test-composer subagent, given an already-exhaustive journey, returns `no-new-tests` in seconds with no test-run — there is no budget justification for scope-compression on that basis.
+6. **Pass 2 and Pass 3** may record `gated_skip: true` entries in lieu of dispatch when all three orchestrator triggers are false — see §"Trigger-gated re-pass for Passes 2 & 3". Gated-skips count as `result: covered-exhaustively` for the no-skip contract; the harness validates the trigger evidence.
 
 ### Structured-return recording
 
@@ -370,9 +371,9 @@ Pass 2 and Pass 3 are **conditional** on per-journey triggers checked at the orc
   "result": "covered-exhaustively",
   "review_status": "greenlight",
   "triggers_checked": {
-    "map-delta": false,
-    "sibling-ledger-update": false,
-    "must-fix-carry-over": false
+    "map_delta": false,
+    "sibling_ledger_update": false,
+    "must_fix_carry_over": false
   }
 }
 ```
@@ -424,9 +425,10 @@ Emit one line per significant event, prefixed `[coverage-expansion]`:
 [coverage-expansion] Pass 1/5, journey j-book-demo: cycle 1/7, review greenlight (6 tests added)
 [coverage-expansion] Pass 1/5, journey j-reset-password: cycle 2/7, review greenlight (1 retry — mobile variant added per Stage B)
 [coverage-expansion] Pass 1/5, journey j-browse-catalog: cycle 1/7, review greenlight
-[coverage-expansion] Pass 1/5, journey j-view-pricing: cycle 7/7, review blocked-cycle-exhausted (2 must-fix unresolved — carries to Pass 2 trigger 4)
+[coverage-expansion] Pass 1/5, journey j-view-pricing: cycle 7/7, review blocked-cycle-exhausted (2 must-fix unresolved — fires Pass 2 must_fix_carry_over trigger / subagent trigger 4)
 [coverage-expansion] Pass 1/5 complete — 27 tests added, 3 branches discovered, 1 journey blocked-cycle-exhausted, committed
 [coverage-expansion] Pass 2/5 starting — 15 journeys (1 sub-journey promoted), dual-stage A↔B
+[coverage-expansion] Pass 2/5, journey j-create-user: gated-skip (no triggers fired — map_delta:false, sibling_ledger_update:false, must_fix_carry_over:false)
 ...
 [coverage-expansion] Pass 3/5 complete — total 68 tests added across three compositional passes, all journeys greenlit
 [coverage-expansion] Pass 4/5 starting — adversarial probing for 15 journeys, dual-stage A↔B

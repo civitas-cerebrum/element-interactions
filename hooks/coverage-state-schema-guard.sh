@@ -201,7 +201,7 @@ References:
   # 6. gated-skip entry validation (issue #164.1 — trigger-gated re-pass).
   # Every entry with `gated_skip: true` MUST also carry:
   #   - triggers_checked: object with three boolean fields:
-  #       map-delta, sibling-ledger-update, must-fix-carry-over
+  #       map_delta, sibling_ledger_update, must_fix_carry_over
   #   - All three booleans MUST be false (any true means a trigger fired
   #     and the orchestrator should have dispatched, not skipped).
   # An invalid gated_skip is silent scope narrowing — the orchestrator
@@ -213,12 +213,12 @@ References:
       | (.journey // "<missing>") as $j
       | (.triggers_checked // {}) as $tc
       | if ($tc | type) != "object"
-            or ($tc."map-delta" | type) != "boolean"
-            or ($tc."sibling-ledger-update" | type) != "boolean"
-            or ($tc."must-fix-carry-over" | type) != "boolean"
-            or $tc."map-delta" == true
-            or $tc."sibling-ledger-update" == true
-            or $tc."must-fix-carry-over" == true
+            or ($tc.map_delta | type) != "boolean"
+            or ($tc.sibling_ledger_update | type) != "boolean"
+            or ($tc.must_fix_carry_over | type) != "boolean"
+            or $tc.map_delta == true
+            or $tc.sibling_ledger_update == true
+            or $tc.must_fix_carry_over == true
         then $j
         else empty
         end
@@ -230,7 +230,7 @@ References:
 File: $FILE_PATH
 Offending journeys: ${INVALID_SKIP}
 
-Fix: every \`gated_skip: true\` entry MUST carry \`triggers_checked\` with all three booleans (map-delta, sibling-ledger-update, must-fix-carry-over), and ALL THREE MUST be \`false\`. A trigger evaluating to \`true\` means the orchestrator should have dispatched, not skipped. The shape:
+Fix: every \`gated_skip: true\` entry MUST carry \`triggers_checked\` with all three booleans (map_delta, sibling_ledger_update, must_fix_carry_over), and ALL THREE MUST be \`false\`. A trigger evaluating to \`true\` means the orchestrator should have dispatched, not skipped. The shape:
 
   {
     \"journey\": \"j-<slug>\",
@@ -238,9 +238,9 @@ Fix: every \`gated_skip: true\` entry MUST carry \`triggers_checked\` with all t
     \"result\": \"covered-exhaustively\",
     \"review_status\": \"greenlight\",
     \"triggers_checked\": {
-      \"map-delta\": false,
-      \"sibling-ledger-update\": false,
-      \"must-fix-carry-over\": false
+      \"map_delta\": false,
+      \"sibling_ledger_update\": false,
+      \"must_fix_carry_over\": false
     }
   }
 

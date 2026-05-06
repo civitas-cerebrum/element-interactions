@@ -205,6 +205,14 @@ Passes 2 and 3 dispatch `test-composer` with an explicit `mode: re-pass` argumen
 
 The §"Trigger-gated re-pass" content below describes the **dispatched path** — what the subagent does once a trigger has fired and the orchestrator has decided to invoke it.
 
+**Orchestrator-side triggers vs subagent-preamble triggers** — when the orchestrator's gating fires, the dispatched subagent runs the legacy four-trigger discipline (full-inspection-and-confirm). The mapping:
+
+- Orchestrator `map_delta` → subagent triggers 1+2 (delta markers + Pass-1 coverage-gaps).
+- Orchestrator `sibling_ledger_update` → subagent trigger 3 (sibling-bug regression candidates).
+- Orchestrator `must_fix_carry_over` → subagent trigger 4 (unresolved review findings).
+
+The orchestrator's three triggers are pre-dispatch evidence; the subagent's four triggers are the in-dispatch audit. They are the same shape of evidence at two different times.
+
 **Preamble embedded in every pass-2 / pass-3 test-composer brief:**
 
 > You are a re-pass subagent. Pass 1 already composed this journey. Pass 2/3 work is valuable only when:

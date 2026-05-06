@@ -58,7 +58,7 @@ State file shape (minimum fields):
 - `authorizer` — only non-null for `skipped` (requires user authorisation).
 - `batch_id` — nullable string. Non-null when this journey was part of a batched Stage A dispatch (per [`depth-mode-pipeline.md` §"Batched dispatch for P3 peripheral journeys"](depth-mode-pipeline.md)); the `batch_id` value is shared across every journey in the same batch so resume logic can reconstruct the batch grouping. Null for individually-dispatched journeys. When a journey breaks out of a batch mid-cycle (any cycle ≥ 2 after its Stage B returned `improvements-needed`), `batch_id` becomes null from cycle 2 onward — the cycle-1 batched entry retains the original `batch_id`, the cycle-2+ individual entry does not. `stage_a_cycles` is recorded per-journey in both cases.
 
-A state file missing `stage_a_cycles`, `stage_b_cycles`, or `review_status` for any journey that has run this pass is incomplete — resume logic treats it as corrupt per `coverage-expansion/SKILL.md` §"Authoritative state file" (kernel-resident invariants).
+A state file missing `stage_a_cycles`, `stage_b_cycles`, or `review_status` for any **dispatched** journey (i.e. excluding gated-skip entries — see §"Gated-skip entries" below) that has run this pass is incomplete — resume logic treats it as corrupt per `coverage-expansion/SKILL.md` §"Authoritative state file" (kernel-resident invariants).
 
 **Gated-skip entries (Passes 2 & 3 only, issue #164.1).** When the orchestrator's three triggers all evaluate to false, a journey is recorded as a gated-skip instead of a dispatch:
 
@@ -69,9 +69,9 @@ A state file missing `stage_a_cycles`, `stage_b_cycles`, or `review_status` for 
   "result": "covered-exhaustively",
   "review_status": "greenlight",
   "triggers_checked": {
-    "map-delta": false,
-    "sibling-ledger-update": false,
-    "must-fix-carry-over": false
+    "map_delta": false,
+    "sibling_ledger_update": false,
+    "must_fix_carry_over": false
   }
 }
 ```
