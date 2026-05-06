@@ -87,22 +87,8 @@ await steps.click('CheckoutPage', 'submitButton');
 ## 📦 Installation
 
 ```bash
-npm install --foreground-scripts @civitas-cerebrum/element-interactions
+npm i @civitas-cerebrum/element-interactions
 ```
-
-> **Why `--foreground-scripts`?** This package's `postinstall` script emits MUST-READ notices: skills installed (and a `restart Claude Code` instruction so they load), harness hooks copied + registered in `~/.claude/settings.json`, and chromium fetched on your behalf. **npm 7+ buffers and discards postinstall stdout on success by default**, so without the flag the install reads as if nothing about Claude Code integration happened. The flag streams the postinstall output to your terminal so you see those notices.
->
-> Set it once globally if you'd rather not pass it every time:
->
-> ```bash
-> npm config set foreground-scripts true        # global
-> # or in your project's .npmrc:
-> echo 'foreground-scripts=true' >> .npmrc
-> ```
->
-> If chromium failed to fetch (e.g. proxy / sandbox / probe race), the postinstall script now exits non-zero and npm will surface the warning in the install output even without the flag — you'll see the line `chromium was NOT fetched; ... run \`npx playwright-cli install-browser chromium\` manually`. **Note:** because postinstall sets a non-zero exit code, your `npm install` / `npm ci` invocation itself will return non-zero on chromium-fetch failure (this is what surfaces the warning in CI logs); if your cache strategy makes occasional fetch failures expected, set `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` to opt out of the auto-fetch.
->
-> **Tip:** the hook backstop may write a `.civitas-fg-scripts-hinted` sentinel at your repo root to suppress repeat install-time hints — add it to your `.gitignore`.
 
 **Peer dependencies:** `@playwright/test` is required.
 
@@ -111,7 +97,7 @@ If you don't have a Playwright project yet:
 ```bash
 npm init playwright@latest playwright-project
 cd playwright-project
-npm install --foreground-scripts @civitas-cerebrum/element-interactions
+npm i @civitas-cerebrum/element-interactions
 ```
 
 > **Tip:** Set `reporter: 'html'` in `playwright.config.ts` so failure screenshots are captured and viewable in the HTML report — both the framework's `baseFixture` and the harness's failure-diagnosis flow rely on it.
