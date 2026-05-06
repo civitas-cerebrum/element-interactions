@@ -5,16 +5,15 @@ description: >
   Triggers on general testing intent: "test the app", "test this", "lets test", "write tests", "add tests", "run tests",
   "e2e tests", "end-to-end tests", "browser testing", "UI testing", "functional testing", "test automation",
   "automate tests", "test scenario", "test case", "happy path", "smoke test", "regression test", "test coverage",
-  "QA", "quality assurance".
-  Also triggers on framework-specific keywords: Playwright tests, @civitas-cerebrum/element-interactions,
-  @civitas-cerebrum/element-repository, Steps API, ElementRepository, ElementInteractions, baseFixture,
-  ContextStore, page-repository.json, or any request to write, fix, or add to a Playwright test in this project.
-  Also use when asked to add entries to a page-repository JSON file, use fixtures, select dropdowns, verify elements,
-  wait for states, or perform any browser interaction through this framework. Always consult this skill before
-  generating test code or locator JSON — do not guess API shapes or invent method signatures.
-  Stage 5 (Test Composer): Also triggers when asked to "increase test coverage", "cover the whole app",
-  "add more scenarios", "think like a QA", "expand the test suite", or any request for iterative,
-  comprehensive E2E test development.
+  "QA", "quality assurance". Also triggers on framework-specific keywords: Playwright tests,
+  @civitas-cerebrum/element-interactions, @civitas-cerebrum/element-repository, Steps API, ElementRepository,
+  ElementInteractions, baseFixture, ContextStore, page-repository.json, or any request to write, fix, or add to a
+  Playwright test in this project. Also use when asked to add entries to a page-repository JSON file, use fixtures,
+  select dropdowns, verify elements, wait for states, or perform any browser interaction through this framework.
+  Always consult this skill before generating test code or locator JSON — do not guess API shapes or invent method
+  signatures. This skill is the orchestrator (Stages 1-4 inline; Stages 5-7 dispatched). Coverage-expansion intent
+  ("increase test coverage", "cover the whole app", "expand the suite") routes to coverage-expansion via this
+  skill's routing block — those triggers are owned there, not here.
 ---
 
 # @civitas-cerebrum/element-interactions — Agent Skill

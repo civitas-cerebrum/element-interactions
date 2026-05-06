@@ -8,6 +8,13 @@
 /.playwright-cli
 /.claude
 
+# Companion-mode local workspace — runtime artefacts from companion-mode runs
+# (run-<N>/ subdirs, trigger-eval drafts, evidence bundles). Never tracked,
+# never shipped via npm publish (the `discoverSkills` function in
+# scripts/postinstall.js excludes it because it has no SKILL.md). Lives
+# under skills/ for adjacency to the companion-mode skill itself.
+skills/companion-mode-workspace/
+
 # Hook runtime state — recreated by harness hooks on each run, never source.
 tests/e2e/docs/.in-flight-composers.json
 tests/e2e/docs/.coverage-expansion-cycle-*.json
