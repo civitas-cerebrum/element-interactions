@@ -119,11 +119,11 @@ The orchestrator updates this checklist as new patterns surface in the wild — 
 Required structure:
 
 - Sentinel comment `<!-- portal-wide-scan:generated -->` at line 1 (allows hooks to recognise the file as scan output).
-- One `### <pattern-id>` per pattern in the catalogue, in catalogue order.
+- One `### <pattern-id>` per pattern in the catalogue, in catalogue order. **All 16 sections must be present** — one per pattern in §"Pattern catalogue checklist" above. Missing a section means the scan didn't probe that pattern; emit it with `Status observed: not probed` + `Severity: info` + the canonical `Cite as:` line rather than omitting the section.
 - Every section has at minimum: `Status observed:` + `Severity:` + `Cite as:`.
-- The `Cite as:` line is the canonical citation form per-journey probes use.
+- The `Cite as:` line MUST be exactly `**Cite as:** \`coverage: portal-wide:<pattern-id>\`` — single-line, backticked, no surrounding prose. This shape is machine-parseable (a future structural-validation hook greps each `### <pattern-id>` block for a `Cite as: \`coverage: portal-wide:<id>\`` whose `<id>` matches the section header). Don't paraphrase the citation text or split it across lines.
 
-Hooks may extend this with additional structural validation in a follow-up issue (the file is currently markdown-only, with the sentinel comment as the load-bearing machine-readable signal).
+Hooks may extend this with additional structural validation in a follow-up issue (the file is currently markdown-only, with the sentinel comment as the load-bearing machine-readable signal). The `Cite as:` shape rule above is the contract such a hook will enforce.
 
 ---
 
