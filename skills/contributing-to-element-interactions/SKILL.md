@@ -237,6 +237,24 @@ Local vs. origin/main: in sync (or: rebased onto <sha> and re-verified).
 Dependency version: element-repository pinned at 1.4.2; latest is 1.4.2.
 ```
 
+### Commit messages don't carry AI co-author trailers (optional / opt-in DENY)
+
+**Recommendation, not a hard rule.** Every commit's authorship is the human contributor's. AI assistants (Claude, Anthropic, borealis.local, anything similar) **should not** appear as a `Co-Authored-By:` trailer in the commit body. Real-human co-author lines (`Co-Authored-By: Jane Doe <jane@example.com>`) are fine.
+
+**Why it matters:**
+
+- AI co-author lines pollute `git log --format=%aN | sort -u | uniq -c` (the contributor census). Any maintainer auditing "who has shipped to this repo" gets a non-human entity in the count.
+- Two branches that each carry their own AI co-author trailer three-way-merge into a duplicated, conflicting trailer block — a class of merge conflict that's purely noise.
+- The trailer creates the false impression of joint ownership when the human contributor is the one accountable for the change. Tooling-assisted authorship is fine; tooling-as-co-author is a misrepresentation of who can answer for the code.
+
+**The harness default puts the trailer there.** Anthropic's CLAUDE.md template appends `Co-Authored-By: borealis.local <198563339+borealis-local@users.noreply.github.com>` to every commit Claude generates. The upstream fix is to delete that instruction from your project's `CLAUDE.md` or `~/.claude/CLAUDE.md`.
+
+**Soft enforcement by `hooks/commit-author-signature-guard.sh`** (PreToolUse:Bash, filters to `git commit`). Default mode is **WARN-only** — when the commit body contains an AI-attribution `Co-Authored-By:` trailer, the hook emits a `systemMessage` nudge and the commit proceeds. The hook intentionally does NOT block by default because it is shipped via npm postinstall to a user-global `~/.claude/settings.json` location; a transitive dependency should not make every consumer's `git commit` mandatory-block on a stylistic rule.
+
+False-positive avoidance: a backticked `` `Co-Authored-By: ...` `` literal, a `<!-- Co-Authored-By: ... -->` HTML comment, or a quote-prefixed `> Co-Authored-By: ...` line are treated as documentation and silent-allow.
+
+**Opt-in DENY for strict enforcement.** Set `COMMIT_AUTHOR_SIGNATURE_GUARD=deny` (env var, per-shell or in your project's `.envrc`) to upgrade WARN to DENY for your own development setup. Escape hatch for the rare genuine edge case (e.g. embedding a prior commit body in a test fixture): `COMMIT_AUTHOR_SIGNATURE_GUARD=off`.
+
 ### No raw `locator.*()` in element-interactions src/
 
 Every `locator.click()`, `locator.fill()`, `locator.evaluate()`, etc. that creeps into `src/` is a regression. If you need a primitive Playwright doesn't expose through `Element`, **add it to the Element interface in element-repository first**.
