@@ -113,7 +113,7 @@ The orchestrator updates this checklist as new patterns surface in the wild — 
 - **Severity:** medium (stack-trace disclosure in error body)
 - **Cite as:** `coverage: portal-wide:sort-unknown-field-status`
 
-[... one section per pattern in the catalogue ...]
+(continues — 16 sections total, one per pattern in §"Pattern catalogue checklist" above)
 ```
 
 Required structure:
@@ -127,18 +127,25 @@ Hooks may extend this with additional structural validation in a follow-up issue
 
 ---
 
+## What if a per-journey probe finds a portal-wide pattern not in the catalogue?
+
+Emit the finding normally with `coverage: none` (the canonical "no covering pattern" form per `subagent-return-schema.md` §1). The orchestrator records the finding-ID for the next cycle's catalogue update PR; the catalogue itself never updates mid-cycle — additions ride in via PR per the Hard constraint above. Treating the finding as `coverage: none` keeps the citation discipline honest while flagging the catalogue gap for human review. Stage B reviewer does NOT flag `re-derived-portal-wide-pattern` for these findings (the pattern wasn't in the catalogue at scan time, so the per-journey probe couldn't have cited it).
+
+---
+
 ## How per-journey probes cite the catalogue
 
-Per-journey probes (Pass 4 and 5) include the portal-wide patterns file in their `coverage:` references. When a per-journey probe finds a pattern that the catalogue already documents, it cites:
+Per-journey probes (Pass 4 and 5) include the portal-wide patterns file in their `coverage:` references. When a per-journey probe finds a pattern that the catalogue already documents, it cites in the canonical finding-block shape from `subagent-return-schema.md` §1:
 
-```yaml
-- finding-id: j-checkout-4-07
-  scope: CSRF tamper on POST /api/checkout/submit
-  severity: info
-  expected: 403
-  observed: 404
-  coverage: portal-wide:csrf-tamper-status
+```markdown
+- **<JOURNEY-A>-4-07** [info] — CSRF tamper returns 404 not 403
+  - **scope**: POST /api/checkout/submit
+  - **expected**: 403
+  - **observed**: 404
+  - **coverage**: portal-wide:csrf-tamper-status
 ```
+
+The `coverage:` field's third valid form `portal-wide:<pattern-id>` is documented in `subagent-return-schema.md` §1 (alongside the existing `none` and spec-file-path forms). The §4.1 grep validator accepts it.
 
 The `coverage:` field IS the citation. The per-journey probe does NOT re-document the pattern in its own ledger entries — the citation is the documentation. Stage B reviewer (per the reviewer-subagent-contract) checks that per-journey probes cite portal-wide patterns rather than re-finding them, and flags `craft-issues` finding `re-derived-portal-wide-pattern` when a probe's finding could have been a citation.
 
@@ -146,10 +153,11 @@ The `coverage:` field IS the citation. The per-journey probe does NOT re-documen
 
 ## Hard constraints
 
-- **One scan per `mode: depth` run.** Re-runs only when the orchestrator starts a fresh `mode: depth` invocation.
+- **One scan per `mode: depth` run.** Re-runs only when the orchestrator starts a fresh `mode: depth` invocation. **Resume signal:** the orchestrator treats the **presence** of `tests/e2e/docs/portal-wide-patterns.md` (with the `<!-- portal-wide-scan:generated -->` sentinel) as the sole resume signal — if the file exists, the prelude has already run for this `mode: depth` invocation; if not, dispatch it. This avoids polluting the state-file schema with a Pass-4-specific flag.
 - **Runs first.** The portal-wide scan finishes (output file written + committed) before any Pass-4 per-journey probe is dispatched.
-- **Single subagent, no fan-out.** The scan is a leaf probe; it does NOT dispatch its own children. The pattern catalogue is short enough (~15 patterns) that one subagent covers it.
-- **Output file is committed**. Commit message: `docs(portal-wide): pattern catalogue established (pre-pass-4)`.
+- **Single subagent, no fan-out.** The scan is a leaf probe; it does NOT dispatch its own children. The pattern catalogue (16 patterns at the time of writing — see §"Pattern catalogue checklist") is short enough that one subagent covers it.
+- **Exempt from dual-stage Stage A/B contract.** The portal-wide-scan prelude is a leaf reconnaissance dispatch, not a journey-iteration cycle. It has no Stage B reviewer. The Stage A output (the catalogue file) is the entire deliverable; subsequent per-journey Pass-4 probes use it as input, but those per-journey probes carry their own dual-stage A/B per the journey contract. The prelude does NOT count toward Pass-4 dispatch totals.
+- **Output file is committed**. Commit message: `docs(portal-wide): pattern catalogue established (pre-pass-4)` (per `depth-mode-pipeline.md` §"Commit-message conventions" — added to the table in this PR).
 - **Severity defaults are conservative.** Most patterns map to `info` severity (informational, not necessarily a bug); the scan's role is documentation, not classification. Per-journey probes may upgrade severity when the pattern manifests as a real boundary.
 
 ---
