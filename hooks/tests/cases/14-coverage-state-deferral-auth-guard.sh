@@ -84,6 +84,34 @@ assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverag
 WS_AUTH='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{},"updatedAt":"2026-05-04T00:00:00Z","deferredJourneys":[{"journey":"j-a","reason":"budget-cap","authorizer":"   "}]}'
 assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$WS_AUTH")" "whitespace-only authorizer → DENY"
 
+# JSON null authorizer is the canonical no-authorizer value per the
+# existing schema; bash's `// ""` substitution renders it as the literal
+# string "null", which `tr -d '[:space:]'` doesn't strip — so this test
+# both verifies null-handling AND prevents future regressions where the
+# guard accidentally treats "null" as a real quote.
+NULL_AUTH='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{},"updatedAt":"2026-05-04T00:00:00Z","deferredJourneys":[{"journey":"j-a","reason":"budget-cap","authorizer":null}]}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$NULL_AUTH")" "authorizer: null → DENY"
+
+section "coverage-state-deferral-auth-guard: nested-deferral path (PR #173 #1 fix proof)"
+
+# Deferral-shaped objects nested inside passes.<N>, no top-level
+# deferredJourneys field. The parenthesised LHS lets the recursion run
+# against the original document; without it (the PR #173 review bug),
+# this state file would silent-allow.
+NESTED_BAD='{"status":"in-progress","mode":"depth","currentPass":3,"journeyRoster":["j-a"],"passes":{"3-compositional":{"dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}],"deferredJourneys":[{"journey":"j-b","reason":"budget-cap"}]}},"updatedAt":"2026-05-06T00:00:00Z"}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$NESTED_BAD")" "nested deferral (passes.<N>) without authorizer → DENY (proves the parenthesised jq walks nested entries)" "j-b"
+
+# Same nested path but with allowed structural prefix → ALLOW.
+NESTED_OK='{"status":"in-progress","mode":"depth","currentPass":3,"journeyRoster":["j-a"],"passes":{"3-compositional":{"dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}],"deferredJourneys":[{"journey":"j-b","reason":"blocked-on-app-bug:CHK-99"}]}},"updatedAt":"2026-05-06T00:00:00Z"}'
+assert_allow "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$NESTED_OK")" "nested deferral with allowed-prefix reason → ALLOW"
+
+# Duplicate-journey violations in deferredJourneys must BOTH be reported
+# (PR #173 #3 fix — unique_by removed). One entry has structural prefix
+# (allowed), other has self-imposed without authorizer (denied). The deny
+# message names the offender.
+DUP_MIXED='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{},"updatedAt":"2026-05-04T00:00:00Z","deferredJourneys":[{"journey":"j-a","reason":"blocked-on-app-bug:OK"},{"journey":"j-a","reason":"budget-cap"}]}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$DUP_MIXED")" "duplicate-journey deferrals (one allowed, one offender) → DENY (offender named)" "j-a"
+
 section "coverage-state-deferral-auth-guard: escape hatch via env var"
 
 HOOK_OUT=$(DEFERRAL_AUTH_GUARD=off bash "$H" <<<"$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$DENY_BUDGET")" 2>/dev/null) || true

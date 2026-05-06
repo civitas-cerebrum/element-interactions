@@ -113,10 +113,16 @@ STATUS=$(echo "$CONTENT" | jq -r '.status // ""')
 # the top level OR nested somewhere — walk every object that has both
 # `journey` and `reason` keys to be safe; that's the deferral shape.
 # Output one line per entry: journey<TAB>reason<TAB>has_authorizer.
+#
+# IMPORTANT (PR #173 review fix): the LHS is parenthesised. `|` binds
+# tighter than `+` in jq; without parens the recursion runs against
+# the post-flatten value (`[]` when deferredJourneys is absent at the
+# top level), and the nested-deferral safety net silently does nothing.
+# Duplicates are NOT deduped — every offending entry should appear
+# in the deny message.
 ENTRIES=$(echo "$CONTENT" | jq -r '
-  [.deferredJourneys // []] | flatten
+  ([.deferredJourneys // []] | flatten)
   + [.. | objects | select(has("journey") and has("reason") and (has("stage_a_cycles") | not))]
-  | unique_by(.journey)
   | .[]
   | "\(.journey // "<unknown>")\t\(.reason // "")\t\((.authorizer // "") | tostring)"
 ' 2>/dev/null || echo "")
