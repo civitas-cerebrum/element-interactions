@@ -651,15 +651,15 @@ Any PR that adds a new public method to `Steps`, `ElementAction`, the matcher tr
 
 ## 📝 Contribution Handover
 
-Every PR against this repo must ship a populated `.contribution-handover.json` at the repo root. The handover captures one boolean per guardrail in this skill, plus a small set of free-form fields (PR title, summary, version delta).
+Every PR against this repo must produce a populated `.contribution-handover.json` at the repo root before push. The handover captures one boolean per guardrail in this skill, plus a small set of free-form fields (PR title, summary, version delta).
 
-The schema lives at `schemas/contribution-handover.schema.json`. A blank template lives at `.contribution-handover.template.json`. Copy the template, fill it in, and commit the result as `.contribution-handover.json` on your branch.
+The schema lives at `schemas/contribution-handover.schema.json`. A blank template lives at `.contribution-handover.template.json`. **Copy the template, fill it in, and run the gate at push time. The file is gitignored — DO NOT commit it.** Carrying a previous PR's handover into a new branch is the failure mode the gate exists to catch (each PR's claims must reflect that PR's actual contents, not whatever the prior handover said).
 
 The companion gate is `hooks/contribution-handover-gate.sh` — a `PreToolUse:Bash` hook that intercepts `git push origin` and `gh pr create` and refuses to let either run while the handover is missing, malformed, or has unset booleans. Install it by adding a `PreToolUse:Bash` entry pointing at the script in your `~/.claude/settings.json` (see the script's header for an exact wiring snippet).
 
 **Why a handover, not just a checklist:**
 - Structured booleans are machine-checkable. The gate spot-verifies a subset of claims against the actual repo state (e.g. `readmeUpdated: true` is cross-checked against the README diff vs. `origin/main`).
-- The handover travels with the branch, so reviewers see what the contributor signed off on, with reasons attached to any `false` field. A markdown checklist can be ticked without verification; a structured handover with mismatched claims fails CI.
+- The local handover is the contributor's pre-push sign-off. The gate validates the contributor's working-tree claims against the working-tree diff at push time — no chance of a stale handover travelling with the branch and being mistaken for a fresh one.
 - The shape evolves with the rules. When a new hard rule lands in this skill, it gets a new field in the schema. Old handovers fail validation and contributors can't push until they review the new rule. The schema is the rule index.
 
 **Field families:**
@@ -673,7 +673,7 @@ The companion gate is `hooks/contribution-handover-gate.sh` — a `PreToolUse:Ba
 
 For any boolean set to `false` or `"n/a"`, the corresponding `*Reason` field must be populated. Vague reasons ("not applicable", "didn't need it") fail the gate; specific reasons ("change is internal-only on Verifications, no public Steps surface added — Rule 19 doesn't apply") pass.
 
-**Worked example.** This PR ships its own `.contribution-handover.json` — read it for the populated shape.
+**Worked example.** Copy `.contribution-handover.template.json` and run the gate; it prints the per-field validation map. The template is the canonical populated shape.
 
 ### Hook error message format — repo standard
 
