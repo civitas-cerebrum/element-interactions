@@ -383,8 +383,8 @@ export class ElementAction {
 
     /** Assert element state. */
     async verifyState(state: 'enabled' | 'disabled' | 'editable' | 'checked' | 'focused' | 'visible' | 'hidden' | 'attached' | 'inViewport'): Promise<void> {
-        const selector = this.repo.getSelector(this.elementName, this.pageName);
-        await this.interactions.verify.state(selector, state);
+        const element = await this.resolve();
+        await this.interactions.verify.state(element, state);
     }
 
     /** Assert CSS property value. Delegates to the matcher tree's `.css(property).toBe(value)`. */
