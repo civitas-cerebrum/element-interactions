@@ -221,6 +221,8 @@ Examples:
 
 The seven-phase pipeline (Phase 1 Scaffold → Phase 2 Groundwork discovery → Phase 3 Happy path → Phase 4 Full journey mapping → Phase 5 Coverage expansion → Phase 6 Bug hunts → Phase 7 Final summary) is specified in [`references/phases-walkthrough.md`](references/phases-walkthrough.md). Read it before authoring or modifying any phase logic.
 
+**Onboarding is a parent-only orchestrator.** Dispatching the onboarding skill as a subagent (e.g. `Agent(prompt: "You are the onboarding orchestrator running the seven-phase pipeline …")`) hits the recursive-dispatch wall — subagents cannot fan out their own children, so the dispatched orchestrator returns `blocked-dispatch-failure: structural` after burning a full subagent budget. The parent must read this skill INTO its own context and dispatch the per-phase leaf subagents directly. **Harness-enforced by `hooks/parent-only-orchestrator-dispatch-block.sh`** (PreToolUse:Agent — denies dispatches whose prompt asks the subagent to act as the onboarding orchestrator, regardless of whether the literal "skill"/"SKILL.md" word appears).
+
 ### Hard rules — kernel-resident
 
 #### One rule, applied to every phase

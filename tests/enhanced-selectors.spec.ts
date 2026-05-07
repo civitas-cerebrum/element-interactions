@@ -405,4 +405,27 @@ test.describe('Enhanced Selectors — Issue Fixes #61-#65', () => {
       await steps.verifyInputValue('expiryInput', 'CardIframe', '12/28');
     });
   });
+
+  // ============================================================
+  // #169 — verifyState must route through EnhancedResolver
+  // ============================================================
+
+  test('#169: verifyState with role+name selector resolves via EnhancedResolver', async ({ steps }) => {
+    await test.step('verifyState visible — role+name button', async () => {
+      await steps.verifyState('loginButton', 'EnhancedSelectorsPage', 'visible');
+    });
+
+    await test.step('verifyState enabled — role+name button', async () => {
+      await steps.verifyState('loginButton', 'EnhancedSelectorsPage', 'enabled');
+    });
+
+    await test.step('verifyState visible — role+name textbox', async () => {
+      await steps.verifyState('emailTextbox', 'EnhancedSelectorsPage', 'visible');
+    });
+
+    await test.step('Prove the resolved loginButton is the correct element (non-tautological)', async () => {
+      await steps.click('loginButton', 'EnhancedSelectorsPage');
+      await steps.verifyText('roleResult', 'EnhancedSelectorsPage', 'Clicked: login');
+    });
+  });
 });
