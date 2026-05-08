@@ -30,7 +30,7 @@ The orchestrator decides — before dispatching — that running fewer than the 
 - `commit-message-gate.sh` (PR #125) — blocks commits with phase-progression messages on pre-emptively-reduced runs.
 - (markdown-only for novel framings) — the registry's symptom list grows reactively as new framings appear; the failure-mode category is what the orchestrator must recognise.
 
-**Origin:** Recurring failure across multiple onboarding runs (BookHive, others, plus the v0.3.4-test run that surfaced "evening-or-overnight" framing). Codified as the §"Two valid exits" rule and the dual-stage no-skip extension; mechanical enforcement added in v0.3.5.
+**Origin:** Recurring failure across multiple onboarding runs — most often surfaced as "evening-or-overnight" framing that dressed scope reduction up as candour. Codified as the §"Two valid exits" rule and the dual-stage no-skip extension; mechanical enforcement followed.
 
 ---
 
@@ -320,12 +320,12 @@ The "Batch reviewer mode" rule lives in `skills/coverage-expansion/references/re
 
 ---
 
-## Pattern: `markdown-only` deferral — portal-wide-scan sentinel + citation contract
+## Pattern: `markdown-only` deferral — app-wide-scan sentinel + citation contract
 
-The "Pass-4 prelude — portal-wide pattern scan" rule lives in `skills/coverage-expansion/SKILL.md` §"Hard rules — kernel-resident" + `references/portal-wide-scan.md` + `adversarial-subagent-contract.md` §"Inputs" #9 (introduced in PR #178, closes #164.3). The output file `tests/e2e/docs/portal-wide-patterns.md` carries the sentinel `<!-- portal-wide-scan:generated -->`, but no hook validates that writes preserve the sentinel or that new entries follow the per-pattern catalogue schema (`<pattern-id>` + `Cite as: coverage: portal-wide:<pattern-id>` line).
+The "Pass-4 prelude — app-wide pattern scan" rule lives in `skills/coverage-expansion/SKILL.md` §"Hard rules — kernel-resident" + `references/app-wide-scan.md` + `adversarial-subagent-contract.md` §"Inputs" #9 (introduced in PR #178, closes #164.3). The output file `tests/e2e/docs/app-wide-patterns.md` carries the sentinel `<!-- app-wide-scan:generated -->`, but no hook validates that writes preserve the sentinel or that new entries follow the per-pattern catalogue schema (`<pattern-id>` + `Cite as: coverage: app-wide:<pattern-id>` line).
 
 **Tag:** `markdown-only`.
-**Deferred hook:** sentinel-validation hook for `tests/e2e/docs/portal-wide-patterns.md`, behaviour analogous to `journey-map-sentinel-guard.sh`.
+**Deferred hook:** sentinel-validation hook for `tests/e2e/docs/app-wide-patterns.md`, behaviour analogous to `journey-map-sentinel-guard.sh`.
 **Follow-up:** #180.
 
 ---

@@ -1,13 +1,29 @@
 ---
 name: failure-diagnosis
 description: >
+  **Subagent-only.** Do not load in the orchestrator's transcript — the
+  diagnostic methodology + niche-edge-cases catalogue is heavy enough that
+  inlining it contaminates orchestrator context. The orchestrator detects
+  a failure and dispatches a subagent; the subagent loads this skill. The
+  `skill-subagent-only-guard.sh` hook denies orchestrator-context invocations.
+
   Diagnose failing Playwright tests through structured evidence-based triage.
-  Triggers when a test fails during any mode (authoring, maintenance, test-composer, bug-discovery),
-  when the user says "test is failing", "debug this", "why is this failing", "fix this test",
+  Activates inside subagent context (composer-/probe-/process-validator-/
+  cleanup- prefixes) when a test fails during any mode (authoring,
+  maintenance, test-composer, bug-discovery), or when the dispatching brief
+  says "test is failing", "debug this", "why is this failing", "fix this test",
   or when another companion skill encounters a test failure.
-  Guides the agent through screenshot analysis, DOM inspection, root cause hypothesis,
-  then fixes test issues autonomously or reports app bugs with evidence.
-trigger: always
+  Guides the agent through screenshot analysis, DOM inspection, root cause
+  hypothesis, then fixes test issues autonomously or reports app bugs with
+  evidence.
+
+  Auto-invoked via Skill tool from element-interactions Rule 7 (after
+  the orchestrator dispatches the subagent), test-composer's stabilization
+  loop, bug-discovery's adversarial probes, test-repair's per-cluster
+  diagnosis, and any subagent that runs tests and observes a failure —
+  those callers explicitly route to this skill rather than relying on
+  always-load.
+subagent-only: true
 ---
 
 # Singularity — Failure Diagnosis

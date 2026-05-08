@@ -5,16 +5,15 @@ description: >
   Triggers on general testing intent: "test the app", "test this", "lets test", "write tests", "add tests", "run tests",
   "e2e tests", "end-to-end tests", "browser testing", "UI testing", "functional testing", "test automation",
   "automate tests", "test scenario", "test case", "happy path", "smoke test", "regression test", "test coverage",
-  "QA", "quality assurance".
-  Also triggers on framework-specific keywords: Playwright tests, @civitas-cerebrum/element-interactions,
-  @civitas-cerebrum/element-repository, Steps API, ElementRepository, ElementInteractions, baseFixture,
-  ContextStore, page-repository.json, or any request to write, fix, or add to a Playwright test in this project.
-  Also use when asked to add entries to a page-repository JSON file, use fixtures, select dropdowns, verify elements,
-  wait for states, or perform any browser interaction through this framework. Always consult this skill before
-  generating test code or locator JSON — do not guess API shapes or invent method signatures.
-  Stage 5 (Test Composer): Also triggers when asked to "increase test coverage", "cover the whole app",
-  "add more scenarios", "think like a QA", "expand the test suite", or any request for iterative,
-  comprehensive E2E test development.
+  "QA", "quality assurance". Also triggers on framework-specific keywords: Playwright tests,
+  @civitas-cerebrum/element-interactions, @civitas-cerebrum/element-repository, Steps API, ElementRepository,
+  ElementInteractions, baseFixture, ContextStore, page-repository.json, or any request to write, fix, or add to a
+  Playwright test in this project. Also use when asked to add entries to a page-repository JSON file, use fixtures,
+  select dropdowns, verify elements, wait for states, or perform any browser interaction through this framework.
+  Always consult this skill before generating test code or locator JSON — do not guess API shapes or invent method
+  signatures. This skill is the orchestrator (Stages 1-4 inline; Stages 5-7 dispatched). Coverage-expansion intent
+  ("increase test coverage", "cover the whole app", "expand the suite") routes to coverage-expansion via this
+  skill's routing block — those triggers are owned there, not here.
 ---
 
 # @civitas-cerebrum/element-interactions — Agent Skill
@@ -64,7 +63,7 @@ This skill is the orchestrator for a group of testing skills. It handles Stages 
 | `test-repair` | User reports a broken/rotted/flaky suite, OR auto-escalated from `failure-diagnosis` / `test-composer` / `bug-discovery` when a run produces many failures at once | Batch repair pipeline: baseline 3× → pattern cluster → adaptive verification → delegate per cluster to `failure-diagnosis` → post-heal verification → summary |
 | `agents-vs-agents` | App has AI features, or user mentions AI guardrails/red-teaming/bias testing | Adversarial AI testing with LLM-powered attacker + judge |
 | `contract-testing` | User mentions contract tests, API contract, schema test, pact, breaking-change detection, or spec conformance — OR before writing any pure-API test that asserts response shape/status | Structured contract-style verification against real endpoints (status / headers / schema / error shape) using `steps.apiGet/Post/Put/Delete/Patch` |
-| `test-catalogue` | User asks for a "test catalogue", "scenario report", "client-ready catalogue", or an inventory of what the suite runs — opt-in only, never mandatory | Parses spec files + journey map, groups scenarios by portal and priority, renders a stakeholder-facing A4-landscape PDF catalogue (plus source HTML) with dedicated regression and skipped-with-reason sections |
+| `test-catalogue` | User asks for a "test catalogue", "scenario report", "client-ready catalogue", or an inventory of what the suite runs — opt-in only, never mandatory | Parses spec files + journey map, groups scenarios by app section and priority, renders a stakeholder-facing A4-landscape PDF catalogue (plus source HTML) with dedicated regression and skipped-with-reason sections |
 | `companion-mode` | User asks for ad-hoc functional verification with evidence (screenshots, video, trace) — opt-in only, never mandatory | Single-task evidence-first verification: produces an immutable bundle at `tests/e2e/evidence/<slug>-<ts>/`, then on a passed run proactively offers durable-automation graduation back into this orchestrator (Stage 3) or into `onboarding` per the project's cascade-detector level. Full behaviour: `skills/companion-mode/SKILL.md`. |
 
 When any of these conditions are met, invoke the Skill tool with the companion skill name. Do not try to handle their workflows inline — they have their own staged processes.
