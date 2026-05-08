@@ -57,22 +57,22 @@ When the caller is `onboarding` Phase 3 (and ONLY then — `coverage-expansion` 
       "interactive-elements": ["<element>", ...],
       "links-out": [
         { "to": "/signup", "label-or-action": "Sign Up nav button" },
-        { "to": "/books/{id}", "label-or-action": "book card click" }
+        { "to": "/items/{id}", "label-or-action": "card click into item detail" }
       ]
     }
   ],
 
   "unvisited-but-linked": [
-    { "url": "/marketplace", "seen-from": "/", "section-guess": "marketplace" }
+    { "url": "/<gated-route>", "seen-from": "/", "section-guess": "<canonical section-id>" }
   ],
 
   "sections-inferred": [
     {
       "id": "<canonical section-id>",
-      "routes-visited": ["/", "/books/{id}"],
-      "routes-suggested": ["/?genre=*"],
+      "routes-visited": ["/", "/items/{id}"],
+      "routes-suggested": ["/?category=*"],
       "role-required": "unauthed-visitor | authed-user | authed-<role>",
-      "seed-data-needed": "yes (50 books) | no | conditional"
+      "seed-data-needed": "yes (N seeded items) | no | conditional"
     }
   ],
 

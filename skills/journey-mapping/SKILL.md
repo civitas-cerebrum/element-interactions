@@ -212,8 +212,8 @@ Cycle agents pick from this list when classifying routes. Novel categories are a
 | ID | Typical routes | Notes |
 |---|---|---|
 | `auth` | /login, /signup, /logout, /forgot-password, /reset, /verify-email, /mfa | Public auth surface plus identity-recovery flows. |
-| `catalog` | /, /products, /books, /categories, /search, /?genre=*, /?query=* | Read-only browse + search of the primary content. |
-| `detail` | /products/:id, /books/:id, /articles/:slug | Single-item view; usually links into `cart`, `marketplace`, or content-consumption flows. |
+| `catalog` | /, /products, /categories, /search, /?category=*, /?query=* | Read-only browse + search of the primary content. |
+| `detail` | /products/:id, /articles/:slug, /items/:slug | Single-item view; usually links into `cart`, `marketplace`, or content-consumption flows. |
 | `cart` | /cart, /checkout | Pre-purchase state management. |
 | `order` | /orders, /orders/:id, /orders/:id/return, /receipts | Post-purchase state including returns/refunds. |
 | `marketplace` | /marketplace, /listings, /sell, /listings/:id | User-to-user supply side. |
