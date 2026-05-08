@@ -154,7 +154,14 @@ fi
 # Composer / reviewer / probe / cleanup subagents should NOT receive pipeline
 # meta-content (depth mode, 5-pass, Pass 4/5, etc.) — that belongs to the
 # parent orchestrator's context only.
-if [ "$DESCRIPTION_HAS_ROLE_PREFIX" = true ] && echo "$DESCRIPTION" | grep -qE '^(composer-|reviewer-|probe-|cleanup-|phase1-|phase2-|stage2-)'; then
+#
+# Carve-out: `reviewer-batch-pass-<N>:` (issue #164.2) reviews all in-flight
+# journeys for a single compositional pass; its brief by construction names
+# the pass and the compositional scope. Those references are part of the
+# rule, not a leak — skip the meta-content check for this prefix.
+if [ "$DESCRIPTION_HAS_ROLE_PREFIX" = true ] \
+   && echo "$DESCRIPTION" | grep -qE '^(composer-|reviewer-|probe-|cleanup-|phase1-|phase2-|stage2-)' \
+   && ! echo "$DESCRIPTION" | grep -qE '^reviewer-batch-pass-[0-9]+:'; then
   # `|| true` guards against set -e + pipefail: when no leak phrase matches,
   # grep -o returns 1 and the substitution would otherwise abort the script.
   LEAK=$(echo "$PROMPT" | grep -oiE 'depth mode|breadth mode|5-pass pipeline|5-pass|3 compositional|2 adversarial|pass(es)? [2-5]([[:space:]]|$|/|,|\.)|pipeline (orchestrator|stage|coordinator)|adversarial pass(es)?' | sort -u | head -5 | tr '\n' '|' | sed 's/|$//' || true)

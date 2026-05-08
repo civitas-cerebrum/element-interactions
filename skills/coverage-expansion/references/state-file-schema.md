@@ -43,6 +43,13 @@ State file shape (minimum fields):
     }
   ],
   "adversarialTotals": { ... },
+  "adversarialSkippedJourneys": [
+    {
+      "journey": "j-zb-logout",
+      "rationale": "P3 logout, single-page surface already probed by j-zb-create-location pass-4 portal-wide CSRF entry; zero unique findings in prior passes",
+      "criteria": ["priority-p3", "page-subset-covered", "zero-prior-findings", "low-surface-shape"]
+    }
+  ],
   "updatedAt": "2026-04-24T..."
 }
 ```
@@ -58,7 +65,45 @@ State file shape (minimum fields):
 - `authorizer` — only non-null for `skipped` (requires user authorisation).
 - `batch_id` — nullable string. Non-null when this journey was part of a batched Stage A dispatch (per [`depth-mode-pipeline.md` §"Batched dispatch for P3 peripheral journeys"](depth-mode-pipeline.md)); the `batch_id` value is shared across every journey in the same batch so resume logic can reconstruct the batch grouping. Null for individually-dispatched journeys. When a journey breaks out of a batch mid-cycle (any cycle ≥ 2 after its Stage B returned `improvements-needed`), `batch_id` becomes null from cycle 2 onward — the cycle-1 batched entry retains the original `batch_id`, the cycle-2+ individual entry does not. `stage_a_cycles` is recorded per-journey in both cases.
 
-A state file missing `stage_a_cycles`, `stage_b_cycles`, or `review_status` for any journey that has run this pass is incomplete — resume logic treats it as corrupt per `coverage-expansion/SKILL.md` §"Authoritative state file" (kernel-resident invariants).
+A state file missing `stage_a_cycles`, `stage_b_cycles`, or `review_status` for any **dispatched** journey (i.e. excluding gated-skip entries — see §"Gated-skip entries" below) that has run this pass is incomplete — resume logic treats it as corrupt per `coverage-expansion/SKILL.md` §"Authoritative state file" (kernel-resident invariants).
+
+**Gated-skip entries (Passes 2 & 3 only, issue #164.1).** When the orchestrator's three triggers all evaluate to false, a journey is recorded as a gated-skip instead of a dispatch:
+
+```json
+{
+  "journey": "j-<slug>",
+  "gated_skip": true,
+  "result": "covered-exhaustively",
+  "review_status": "greenlight",
+  "triggers_checked": {
+    "map_delta": false,
+    "sibling_ledger_update": false,
+    "must_fix_carry_over": false
+  }
+}
+```
+
+Required fields:
+
+- `journey` — the journey ID.
+- `gated_skip: true` — distinguishes the entry from a dispatch.
+- `result: "covered-exhaustively"` — the Pass-2/3 contract is "the journey is covered to exhaustion" by Pass 1's tests; the gated-skip records that the orchestrator confirmed no new work was needed.
+- `review_status: "greenlight"` — gated skips are by definition greenlit; no Stage B review applies.
+- `triggers_checked` — object with three boolean fields naming each trigger explicitly. **All three MUST be `false`** for the entry to be valid; any `true` value means a trigger fired and the orchestrator should have dispatched. Missing fields are silent scope narrowing and are denied by `coverage-state-schema-guard.sh`.
+
+Gated-skip entries count as "work done" for the §"Authoritative state file" pre-emptive-stop check — a Pass 2 with 30 gated skips and zero dispatches is legitimately complete. The hook recognises both shapes (dispatch with `stage_a_cycles`/`review_status`, or gated-skip with `triggers_checked`) as evidence of work.
+
+Gated-skip entries are valid **only** for Passes 2 and 3. Pass 1 has no prior pass to gate against; Passes 4 and 5 (adversarial) keep dispatch-driven discipline because the per-journey adversarial yield is empirically uncorrelated with Pass-1 confidence.
+
+**`adversarialSkippedJourneys[]` field (issue #164.4, opt-in P3 adversarial skip):** array of objects, each with:
+
+- `journey` — the journey ID (`j-<slug>`).
+- `rationale` — non-empty string explaining why the journey is being excluded from Passes 4 and 5. Vague rationales (`"low value"`, `"P3 doesn't need it"`) fail the contract; specific rationales naming the covered surface and the portal-wide entry that subsumes it pass.
+- `criteria` — array containing all four canonical strings naming the criteria (`priority-p3`, `page-subset-covered`, `zero-prior-findings`, `low-surface-shape`); the entry's validity requires all four to be present (the array is mechanical evidence, not a tickbox). Order doesn't matter; missing or extra strings DENY at the schema-guard hook.
+
+The field is **opt-in per project, never silent**. The orchestrator may not append entries inferentially during a pass; entries land at project setup time (or in a between-pass commit explicitly authorised by the user) and stay through all subsequent runs. Compositional Passes (1–3) ignore this field — every journey gets compositional coverage regardless. Adversarial Passes (4 and 5) read it on entry and exclude listed journeys from their journey roster for those passes only.
+
+**Implementation:** the orchestrator iterates `journeyRoster - adversarialSkippedJourneys[].journey` for Passes 4 and 5; `journeyRoster` itself is NOT rewritten and `completedJourneys` continues to track only journeys whose dispatch returned in the current pass. The skip evidence lives only in `adversarialSkippedJourneys[]`.
 
 The state file is rewritten after every per-pass commit (and whenever auto-compaction triggers — see [`depth-mode-pipeline.md` §"Auto-compaction between passes"](depth-mode-pipeline.md)).
 
