@@ -40,6 +40,13 @@ There is no third exit. Any framing that implies "partial run, but reasonable" �
 
 **Exit #2 is for budget-driven mid-pipeline stops, not for refusing to start.** Exit #2 requires AT LEAST ONE DISPATCH IN FLIGHT before it is invocable. A `coverage-expansion-state.json` written with `currentPass: 1` and zero recorded dispatches is not exit #2 — it is the pre-emptive-stop anti-pattern. The state file is a post-action ledger reflecting work that actually happened, not a pre-action plan. **Harness-enforced**: `hooks/coverage-state-schema-guard.sh` denies state-file writes where `currentPass >= 1` and `dispatches[]` is empty across all passes.
 
+**Deferral authorisation is harness-enforced too.** When `status: in-progress` is paired with `deferredJourneys[]` entries, every entry must justify itself in one of two ways:
+
+- `reason` starts with one of the allowed structural prefixes — `blocked-on-app-bug:<id>`, `test-data-prerequisite:<thing>`, `user-authorised:<verbatim quote>`. These are subagent-returned or environment-attested reasons that need no further authorisation.
+- The entry carries an `authorizer` field whose value is a non-empty string interpreted as a verbatim quote of in-conversation authorisation by the user.
+
+`hooks/coverage-state-deferral-auth-guard.sh` denies writes where any deferral satisfies neither — catching the silent-narrowing pattern observed in #155 (25 deferred entries with `reason: budget-cap`). Self-imposed reasons like `budget-cap`, `session-length`, `mode-deviation`, `inferred-pref`, `auto-mode-stop` are all DENY without an `authorizer:` field. Escape hatch: `DEFERRAL_AUTH_GUARD=off` (not recommended; defeats the contract).
+
 If you are about to dispatch fewer passes than the mode requires, or fewer journeys than the map contains, you must EITHER (a) have explicit user authorisation in this conversation naming the reduction, OR (b) take exit #2 above (which requires at least one dispatch already in flight). Self-authorisation is not authorisation. Auto-mode is not authorisation. Inferred user preference is not authorisation. Estimated session length is not authorisation.
 
 **Onboarding-pipeline contract**: when invoked from `onboarding` Phase 5 (autonomous mode), the front-load gate has already authorised the full pipeline ("tens of minutes to several hours"). The orchestrator may not stop pre-emptively in autonomous mode — the only valid mid-run stop is exit #2 *after at least one wave has returned*. "Mostly done with Phase 3 happy-path, surfacing back to user" is not a valid Phase 5 exit.
@@ -206,6 +213,8 @@ Subagents in this environment **cannot** dispatch their own sub-subagents. The A
 2. **Sub-orchestrator returns a manifest.** When the parent's context shouldn't hold the full skill content, dispatch a sub-orchestrator subagent (`description: "process-validator-<scope>:"` or similar) with the relevant skill loaded. The sub-orchestrator **plans** the wave and **returns a structured manifest** of N briefs. The parent reads the manifest and dispatches the wave. The sub-orchestrator never tries to fire its own children.
 
 **Anti-pattern:** a brief that asks a subagent to "dispatch N parallel subagents", "spawn workers", "fan out", or "use the Agent tool to coordinate". The hook `coverage-expansion-dispatch-guard.sh` blocks these explicitly because the subagent cannot satisfy them.
+
+**Harness-enforced by `hooks/parent-only-orchestrator-dispatch-block.sh`** (PreToolUse:Agent). Any dispatch whose prompt asks the subagent to *be* the `coverage-expansion` orchestrator (mode: depth/breadth, "fan out per journey", "you are the coverage-expansion orchestrator", "five passes") — without a leaf role-prefix on the description — is denied at the dispatch boundary so the wasted-subagent failure mode never fires. Same applies to `onboarding` (pipeline orchestration) and `bug-discovery` at app-wide scope. Escape hatch: `POO_DISPATCH_BLOCK=off`.
 
 **Process-validator role** (proactive Stage B for the orchestrator's plan): before fanning out a wave of N composer / reviewer / probe subagents, the parent dispatches a `process-validator-<scope>:` subagent with the relevant skill loaded. The validator reviews the planned dispatch manifest against the skill's contract — slug convention, role-prefix consistency, journey coverage, brief minimalism — and returns `greenlight` or `improvements-needed`. Only on `greenlight` does the parent fan out the wave. Same shape as Stage B reviewer, applied one level up.
 

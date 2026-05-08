@@ -79,6 +79,25 @@ The field is **opt-in per project, never silent**. The orchestrator may not appe
 
 The state file is rewritten after every per-pass commit (and whenever auto-compaction triggers — see [`depth-mode-pipeline.md` §"Auto-compaction between passes"](depth-mode-pipeline.md)).
 
+**`deferredJourneys[]` field (issue #155 Gap 2 — semantic authorisation).** Top-level array of objects, one entry per deferred journey. Each entry MUST satisfy one of:
+
+- **(A)** `reason` starts with one of the allowed structural prefixes — `blocked-on-app-bug:<id>`, `test-data-prerequisite:<thing>`, `user-authorised:<verbatim quote>`. These are subagent-returned or environment-attested reasons that need no further authorisation.
+- **(B)** The entry carries an `authorizer` field whose value is a non-empty string interpreted as a verbatim quote of in-conversation user authorisation.
+
+Entry shape:
+
+```json
+{
+  "journey": "<JOURNEY-ID>",
+  "reason": "<allowed prefix or self-imposed reason>",
+  "authorizer": "<verbatim quote, OR null/absent if reason has allowed prefix>"
+}
+```
+
+**Namespace note.** This `authorizer` field is distinct from the per-`dispatches[]`-entry `authorizer` field documented above. The dispatch-entry `authorizer` is non-null only when `result == "skipped"` (per-journey skip authorised by user). The `deferredJourneys[]` `authorizer` is the verbatim quote authorising a self-imposed deferral. Two distinct contracts share the field name; the hook distinguishes by entry shape (presence of `stage_a_cycles` / `review_status` marks a dispatch entry; their absence + `journey` + `reason` marks a deferral entry).
+
+Harness-enforced by `hooks/coverage-state-deferral-auth-guard.sh` (PreToolUse:Write|Edit). Self-imposed reasons (`budget-cap`, `session-length`, `mode-deviation`, `inferred-pref`, `auto-mode-stop`) are DENY without an `authorizer:` field. Empty / whitespace-only / `null` authorizer also denies.
+
 **Journey-roster mutability.** The roster for a given pass is frozen at the start of that pass — it is a snapshot of the journey IDs the orchestrator intends to dispatch *this pass*. If a compositional pass discovers and promotes a new journey or sub-journey mid-pass, the new entry is appended to the **next** pass's roster, not retroactively to the current pass's. This prevents the "did I cover everything?" ambiguity where `journeyRoster` and `completedJourneys` diverge because the roster keeps growing. Reconciliation commits (Pass 2/3) write the new roster to the state file at the same commit that appends the new map blocks, so the post-compact resume reads a consistent roster-to-map alignment.
 
 **Corrupted or stale state file.** If the state file is present but references journeys that no longer appear in `journey-map.md`, or if `currentPass` is set but `completedJourneys` is a superset of `journeyRoster`, the orchestrator stops and reports the mismatch to the caller rather than guessing. Self-repair is out of scope — a corrupted state file is a manual-triage signal, not a silent reset.
