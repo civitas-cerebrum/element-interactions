@@ -29,7 +29,7 @@ Every subagent dispatched by `coverage-expansion`, `test-composer`, or `bug-disc
 | `scope` | One sentence naming the probe surface — page, endpoint, element, flow step. |
 | `expected` | One sentence describing correct behaviour. |
 | `observed` | One sentence describing the actual behaviour. |
-| `coverage` | One of three forms: (a) `none` — no covering test/pattern; (b) a spec-file path plus test name that locks the finding (e.g. `tests/e2e/j-checkout-regression.spec.ts › rejects negative quantity`); (c) **(issue #164.3)** `portal-wide:<pattern-id>` where `<pattern-id>` is a stable kebab-case identifier from `tests/e2e/docs/portal-wide-patterns.md` (per `coverage-expansion/references/portal-wide-scan.md`). Form (c) cites a portal-wide pattern documented by the one-shot Pass-4 prelude scan; per-journey probes use it to avoid re-deriving recurring patterns. |
+| `coverage` | One of three forms: (a) `none` — no covering test/pattern; (b) a spec-file path plus test name that locks the finding (e.g. `tests/e2e/j-checkout-regression.spec.ts › rejects negative quantity`); (c) `portal-wide:<pattern-id>` where `<pattern-id>` is a stable kebab-case identifier from `tests/e2e/docs/portal-wide-patterns.md` (per `coverage-expansion/references/portal-wide-scan.md`). Form (c) cites a portal-wide pattern documented by the one-shot Pass-4 prelude scan; per-journey probes use it to avoid re-deriving recurring patterns. |
 
 ### Severity rubric
 
@@ -165,6 +165,8 @@ Only valid when the subagent **inspected** the journey. Required evidence:
 ```
 
 If the table has one or more rows with `coverage: none`, the subagent has NOT covered exhaustively and MUST compose tests or escalate.
+
+**Orchestrator-written `gated_skip: true` state-file entries.** `covered-exhaustively` is also valid as a `result:` value in orchestrator-written `gated_skip: true` state-file entries (per `coverage-expansion/SKILL.md` §"Trigger-gated re-pass for Passes 2 & 3"). In that context, the per-expectation mapping table is replaced by the `triggers_checked` evidence object — the orchestrator's three checks ARE the audit trail. The mapping-table requirement above applies only to subagent-return bodies; orchestrator-written gated-skip entries instead carry `triggers_checked: { map_delta, sibling_ledger_update, must_fix_carry_over }` (all three booleans, all three `false`), validated by `hooks/coverage-state-schema-guard.sh`.
 
 ### 2.2 `status: no-new-tests-by-rationalisation` — **not a valid return**
 
@@ -651,7 +653,7 @@ Every Pass block MUST open with a `**Pass <N> — <kind> (YYYY-MM-DD)**` line, i
 | `#### <FINDING-ID> [<severity>] — <title>` | `<FINDING-ID>` follows §1's rules. `<severity>` is one of the five values. |
 | `expected:` / `observed:` | One sentence each, on their own line, as list items. |
 | `ledger-only:` | `true` when the finding is a suspected bug with no committed regression test; `false` when a passing regression test was added. |
-| `coverage:` | Spec-file path + test name, OR `none`, OR `portal-wide:<pattern-id>` (issue #164.3 — third form added in §1). Matches §1 exactly. |
+| `coverage:` | Spec-file path + test name, OR `none`, OR `portal-wide:<pattern-id>`. Matches §1 exactly. |
 | `**Pass <N> summary:**` | One line. `probes=N, boundaries=M, suspected-bugs=K (crit=x, high=y, med=z, low=w)`. Integers only. |
 
 ### 3.4 Worked example

@@ -4,19 +4,12 @@
 **Scope:** what the scan does, how it's dispatched, the pattern catalogue it establishes, the output file format, and how per-journey probes cite the catalogue rather than re-finding each pattern.
 
 For the per-journey adversarial subagent contract that runs after the scan, see `adversarial-subagent-contract.md`.
-For the empirical motivation (~80% of `info`-severity findings repeat the same patterns across journeys), see issue #164.3.
 
 ---
 
 ## What the portal-wide scan does
 
-A **single** adversarial dispatch fired before Pass 4's per-journey probes. Its job is to find and document the patterns that recur across every journey — security headers, CSRF behaviour, error envelopes for nonsense parameters, asset-disclosure footprints, CORS posture — so the per-journey probes don't each re-derive them.
-
-**Empirical justification (from #164's farmedvisie-t2 cycle):**
-
-- ~80% of `info`-severity findings in Pass 4 ledgers across 30 journeys are duplicates of: CSRF tamper → 404 (not 403), missing autocomplete attrs on credential inputs, sort-by-unknown-field → 500, nginx version disclosure, CORS `*` on session-protected endpoints, missing `Cache-Control` on CSRF-bearing pages.
-- Each per-journey probe spent ~3-5 minutes and ~30-50k tokens re-deriving these.
-- Documenting once → all 30 journey probes cite via `coverage: portal-wide:<pattern-id>` instead of re-finding. ~3-5 minutes × 30 journeys = ~2 hours of subagent compute saved per cycle.
+A **single** adversarial dispatch fired before Pass 4's per-journey probes. Its job is to find and document the patterns that recur across every journey — security headers, CSRF behaviour, error envelopes for nonsense parameters, asset-disclosure footprints, CORS posture — so the per-journey probes don't each re-derive them. ~80% of `info`-severity Pass-4 findings are duplicates of patterns in the catalogue below; documenting once and citing via `coverage: portal-wide:<pattern-id>` replaces ~30 per-journey re-derivations of each.
 
 ---
 
@@ -48,7 +41,7 @@ Brief inputs:
 
 Brief explicitly says: do NOT iterate the journey map; this is a portal-wide reconnaissance pass, not a per-journey probe. The map will be probed per-journey in subsequent dispatches.
 
-Model: opus (per `coverage-expansion/SKILL.md` §"Hybrid model selection — Sonnet by default, Opus where it pays" — adversarial discovery yield benefits from Opus reasoning depth on compound probes, and the portal-wide scan synthesises across many endpoints).
+Model: opus, per the Pass 4 row of `coverage-expansion/SKILL.md` §"Hybrid model selection".
 
 ---
 
