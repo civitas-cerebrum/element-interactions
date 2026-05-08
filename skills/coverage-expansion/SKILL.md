@@ -116,7 +116,7 @@ This file is the orchestrator-side contract kernel. The heavy spec lives in `ref
 
 | Reference file | What's in it |
 |---|---|
-| [`references/depth-mode-pipeline.md`](references/depth-mode-pipeline.md) | Per-pass pipeline (steps 1–8), pass differences, commit-message conventions, per-pass completion criteria, whole-suite re-run gate, parallelism model, model selection (cost-blind), auto-compaction between passes, re-pass mode for compositional passes 2–3, batched dispatch for P3 peripheral journeys, post-pass-5 ledger dedup. |
+| [`references/depth-mode-pipeline.md`](references/depth-mode-pipeline.md) | Per-pass pipeline (steps 1–8), pass differences, commit-message conventions, per-pass completion criteria, whole-suite re-run gate, parallelism model, model selection (hybrid; opus where it pays), auto-compaction between passes, re-pass mode for compositional passes 2–3, batched dispatch for P3 peripheral journeys, post-pass-5 ledger dedup. |
 | [`references/dual-stage-retry-loop.md`](references/dual-stage-retry-loop.md) | The 7-cycle Stage A↔B retry loop pseudocode, termination conditions, "fresh reviewer every cycle" invariant, dual-stage-specific anti-rationalizations. |
 | [`references/state-file-schema.md`](references/state-file-schema.md) | `coverage-expansion-state.json` shape, per-journey `dispatches[]` entry fields including dual-stage fields, journey-roster mutability, corrupt-state-refusal protocol. |
 | [`references/subagent-isolation.md`](references/subagent-isolation.md) | Per-role dispatch contracts (compositional, adversarial, cleanup): isolation guarantees, brief inputs, `playwright-cli` session naming, the orchestrator's never-hold-payload-content rule. |
@@ -345,7 +345,7 @@ The skill's first action on entry is to read `tests/e2e/docs/coverage-expansion-
 
 ## Depth mode — five-pass pipeline (3 compositional + 2 adversarial) + cleanup
 
-The full per-pass pipeline (steps 1–8), pass differences, commit-message conventions, per-pass completion criteria, the whole-suite re-run gate (incl. issue #131's harness-enforced windowed ratchet), the parallelism model, model selection (cost-blind), auto-compaction between passes, re-pass mode for compositional passes 2–3, batched dispatch for P3 peripheral journeys, and the post-pass-5 ledger dedup are specified in [`references/depth-mode-pipeline.md`](references/depth-mode-pipeline.md). Read it before authoring or modifying any depth-mode pass.
+The full per-pass pipeline (steps 1–8), pass differences, commit-message conventions, per-pass completion criteria, the whole-suite re-run gate (incl. issue #131's harness-enforced windowed ratchet), the parallelism model, model selection (hybrid; opus where it pays), auto-compaction between passes, re-pass mode for compositional passes 2–3, batched dispatch for P3 peripheral journeys, and the post-pass-5 ledger dedup are specified in [`references/depth-mode-pipeline.md`](references/depth-mode-pipeline.md). Read it before authoring or modifying any depth-mode pass.
 
 ### Hard rules — kernel-resident
 
@@ -355,8 +355,39 @@ The full per-pass pipeline (steps 1–8), pass differences, commit-message conve
 - **Stage B never commits.** Reviewer judgements live in the state file's `review_status` and `final_must_fix` fields, never as commits. `review(j-…)` and any review-tagged commit form is forbidden.
 - **Stage A and B are parallel by default.** A journey's Stage B fires as soon as that journey's Stage A returns and the cap has a slot — not after every Stage A in the pass completes. Finishing all Stage A first then starting all Stage B is contract-violating.
 - **Parallel cap counts A and B jointly.** One pool of in-flight slots; A, B, and A-retry compete. A journey's own A and B never overlap (sequential within a journey); across journeys any A/B interleaving is possible. Queue order is FIFO.
-- **Cost-blind, opus-default model selection.** Default is opus for every dispatch in every stage in every pass. Two narrow exceptions: (a) cycle-1 Stage B sonnet-confirmation for previously-greenlit journeys with no map delta and no sibling-bug ledger update — sonnet's `improvements-needed` always re-runs on opus. **Pass 4 and Pass 5 are always opus, both stages, full stop** — the sonnet exception does NOT apply to adversarial passes. (b) Cleanup subagent (single post-pass-5 dispatch) may use haiku — text-only editing.
+- **Hybrid model selection — Pass 1, Pass 4, Pass 5 on Opus, Pass 2/3 execution on Sonnet, all review on Opus.** Empirical data from a 30-journey onboarding cycle (issue #164) showed Sonnet/Opus parity on adversarial probes for the categories observed in that cycle. The hybrid policy nonetheless keeps Pass 4 on Opus: Pass 4's findings feed Pass 5's regression layer, and probe-depth quality at the Pass 4 boundary determines what gets locked in downstream — the cost delta does not justify trading away regression-input quality. Pass 1 establishes the test foundation and runs Opus throughout (composer + reviewer); Pass 5 produces the regression layer that locks in verified boundaries — the durable artifact that catches future regressions — and runs Opus throughout (gap analysis, targeted probes, regression-test authoring). Sonnet is reserved for the mechanical re-pass composers in Passes 2 and 3, where the bulk of journeys return `covered-exhaustively` and the work is by definition incremental. Batched review (per #164.2) keeps Opus reviewers affordable: one Opus reviewer cross-synthesises N journeys' worth of evidence, replacing N per-journey reviewers. Per-journey Stage B in passes 2-5 also stays on Opus while batching ramps — review judgement is the quality boundary the rest of the pipeline relies on. Default by dispatch type:
+
+  | Dispatch type | Model | Rationale |
+  |---|---|---|
+  | Pass 1 Stage A composer | **opus** | Test architecture quality; Pass 1 sets the foundation for the suite |
+  | Pass 1 Stage B reviewer | **opus** | Foundation review; quality bar set here propagates downstream |
+  | Pass 2 Stage A composer (re-pass) | **sonnet** | 22 of 30 return `covered-exhaustively`; mechanical |
+  | Pass 3 Stage A composer (re-pass) | **sonnet** | Same; final compositional sweep |
+  | Pass 4 Stage A probe (adversarial) | **opus** | Findings feed Pass 5's regression layer; probe-depth quality at the boundary determines what gets locked in downstream |
+  | Pass 5 gap analysis | **opus** | Cross-journey synthesis (orchestrator-level, not per-journey) |
+  | Pass 5 targeted probes | **opus** | Regression layer is the durable artifact; quality at probe time determines what gets locked in |
+  | Pass 5 regression-test authoring | **opus** | Same — assertion shape + edge nuance in regression tests propagates forward indefinitely |
+  | Stage B reviewer — per-journey (passes 2-5) | **opus** | Review judgement boundary; per-journey while batching ramps |
+  | Stage B batch reviewer (when used; #164.2) | **opus** | Cross-journey synthesis is where Opus shines |
+  | Cleanup ledger dedup | **opus** | Semantic clustering quality matters |
+  | Phase 7 deck / report | **opus** | Client-facing narrative quality |
+  | Failure-diagnosis | **opus** | Root-cause reasoning depth |
+
+  The orchestrator passes the model hint via `model: <opus|sonnet|haiku>` in the dispatch brief. Subagents honour the hint when constructing their `subagent_type` — `general-purpose-sonnet` / `general-purpose-opus` etc., or whatever the harness exposes.
+
+  **Override paths:**
+  - The user may request Opus for everything (e.g. `mode: depth, model: opus-all`) for a high-stakes audit; document the override in the front-load gate.
+  - A pass with `final_must_fix` carry-overs from the prior pass forces that journey's next Stage A composer onto Opus regardless of the table (the must-fix is hard; a mechanical Sonnet re-pass won't resolve it). Note this override is now scoped to Pass 2/3 Stage A composers — Stage B reviewers (per-journey and batch) are Opus by default, so no review-side override is required.
+
+  This section supersedes the prior "cost-blind, opus-default" rule. The change is empirically grounded for execution-side dispatches: the Pass 2 and Pass 3 re-pass composers drop to Sonnet because the work is mechanical (the majority of journeys return `covered-exhaustively`). Pass 4 stays on Opus despite issue #164's observed Sonnet/Opus parity on adversarial probes — the parity covered the probe categories surfaced in that one cycle, and Pass 4's findings are the input to Pass 5's regression layer; probe-depth quality at that boundary determines what gets locked in. Review judgement stays on Opus across all passes — per-journey while batching ramps, and at the batch reviewer once #164.2 is in steady state. See issue #164 for the per-dispatch cost analysis.
 - **P0/P1/P2 NEVER batch.** P3-only batching, capped at 7 per brief, Stage A only — Stage B always per-journey. Sharing pages with P3 siblings is not authorisation; priority is load-bearing.
+- **P3 small-surface journeys may opt OUT of adversarial passes (Passes 4 & 5).** Per #164.4, P3 logout / role-chooser / modal-only journeys empirically produce 0–2 unique adversarial findings each — their entire adversarial surface is already covered via portal-wide pattern citations from larger journeys. The skip is **opt-in per project**, declared up-front in the state file's `adversarialSkippedJourneys: []` field with rationale per entry. Default is "include all" — the orchestrator never silently skips a P3 from adversarial work; the operator opts the journey out by name. Compositional passes (1–3) ALWAYS run on every journey including P3. **Exclusion criteria** (must hold for a journey to qualify for opt-out):
+  - Priority is P3.
+  - The journey's `Pages touched` list is a subset of pages already adversarial-probed by a larger journey AND covered by a portal-wide pattern entry (per #164.3).
+  - The journey has zero unique adversarial findings in any prior pass-4 ledger entry (or has no prior entries).
+  - The journey is one of: logout, role-chooser, single-modal disclosure, single-info-display, breadcrumb-nav, or equivalent low-surface shape.
+
+  Any opt-out that doesn't meet ALL four criteria is silent scope narrowing. The state-file schema validates the field shape (per `references/state-file-schema.md`).
 - **Auto-compaction at 70%.** State written first, then `/compact`, then resume from state. Mid-cycle Stage A returns persist to a scratch file (`tests/e2e/docs/.coverage-expansion-cycle-<slug>-cycle-<N>.json`) before compacting; mid-cycle restart from a fresh Stage A dispatch is NOT acceptable.
 - **`blocked-cycle-stalled`, `blocked-cycle-exhausted`, `blocked-dispatch-failure` are valid terminals**, not pass failures. Mark them faithfully — calling cycle-7-exhausted "greenlit" corrupts the state file and the next pass's trigger-4 input.
 
