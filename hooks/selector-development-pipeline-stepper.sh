@@ -203,7 +203,7 @@ STEPS_JSON=$(jq '.steps // []' "$RECEIPT" 2>/dev/null || echo "[]")
 # === PostToolUse branch: record result =====================================
 # ---------------------------------------------------------------------------
 if [ "$EVENT_NAME" = "PostToolUse" ]; then
-  TOOL_RESPONSE=$(echo "$INPUT" | jq -r '.tool_response // {}')
+  TOOL_RESPONSE=$(echo "$INPUT" | jq -c '.tool_response // {}')
   EXIT_CODE=$(echo "$TOOL_RESPONSE" | jq -r '.exitCode // .exit_code // .returncode // "unknown"')
 
   STATUS="pass"
@@ -213,27 +213,102 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
 
   TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-  # Append the new step entry
-  NEW_STEPS=$(jq -n \
-    --argjson steps "$STEPS_JSON" \
-    --arg name "$STEP" \
-    --arg status "$STATUS" \
-    --arg ts "$TS" \
-    '$steps + [{name: $name, status: $status, ts: $ts}]')
+  # Build the step entry and update receipt fields based on step type
+  case "$STEP" in
+    patch_applied)
+      # Append step entry with files field
+      FILE_PATH="$CMD_OR_PATH"
+      NEW_STEPS=$(jq -n \
+        --argjson steps "$STEPS_JSON" \
+        --arg name "$STEP" \
+        --arg status "$STATUS" \
+        --arg ts "$TS" \
+        --arg file "$FILE_PATH" \
+        '$steps + [{name: $name, status: $status, ts: $ts, files: [$file]}]')
 
-  # Write updated receipt atomically
-  jq --argjson steps "$NEW_STEPS" '.steps = $steps' "$RECEIPT" > "${RECEIPT}.tmp" \
-    && mv "${RECEIPT}.tmp" "$RECEIPT" \
-    || rm -f "${RECEIPT}.tmp"
+      # Compute git_diff_hash for the staged changes to this file
+      if [ -n "${FAKE_STAGED_HASH:-}" ]; then
+        DIFF_HASH="$FAKE_STAGED_HASH"
+      else
+        DIFF_HASH=$(git -C "$WS" diff --cached -- "$FILE_PATH" 2>/dev/null | sha256sum | awk '{print $1}' || echo "")
+      fi
 
-  # On successful commit: archive receipt and clear .current-scope
-  if [ "$STEP" = "commit" ] && [ "$STATUS" = "pass" ]; then
-    ARCHIVE_DIR="$SELDEV_DIR/archive"
-    mkdir -p "$ARCHIVE_DIR"
-    TS_SAFE=$(echo "$TS" | tr ':' '-')
-    cp "$RECEIPT" "${ARCHIVE_DIR}/${SCOPE}.${TS_SAFE}.receipt.json" 2>/dev/null || true
-    rm -f "$SCOPE_FILE"
-  fi
+      # Write updated receipt: steps + git_diff_hash + append to top-level files
+      jq \
+        --argjson steps "$NEW_STEPS" \
+        --arg hash "$DIFF_HASH" \
+        --arg file "$FILE_PATH" \
+        '.steps = $steps | .git_diff_hash = $hash | .files = ((.files // []) + [$file] | unique)' \
+        "$RECEIPT" > "${RECEIPT}.tmp" \
+        && mv "${RECEIPT}.tmp" "$RECEIPT" \
+        || rm -f "${RECEIPT}.tmp"
+      ;;
+
+    visual_diff)
+      # Parse diff_pixels from tool_response.stdout JSON
+      STDOUT_RAW=$(echo "$TOOL_RESPONSE" | jq -r '.stdout // ""')
+      DIFF_PIXELS=$(echo "$STDOUT_RAW" | jq -r '.diffPixels // 0' 2>/dev/null || echo "0")
+      # Ensure it's a number (default 0 if not parseable)
+      if ! echo "$DIFF_PIXELS" | grep -qE '^[0-9]+$'; then
+        DIFF_PIXELS=0
+      fi
+
+      NEW_STEPS=$(jq -n \
+        --argjson steps "$STEPS_JSON" \
+        --arg name "$STEP" \
+        --arg status "$STATUS" \
+        --arg ts "$TS" \
+        --argjson diff_pixels "$DIFF_PIXELS" \
+        '$steps + [{name: $name, status: $status, ts: $ts, diff_pixels: $diff_pixels}]')
+
+      jq --argjson steps "$NEW_STEPS" '.steps = $steps' "$RECEIPT" > "${RECEIPT}.tmp" \
+        && mv "${RECEIPT}.tmp" "$RECEIPT" \
+        || rm -f "${RECEIPT}.tmp"
+      ;;
+
+    commit)
+      # Idempotency: if .current-scope is already gone, don't double-archive
+      if [ ! -f "$SCOPE_FILE" ]; then
+        exit 0
+      fi
+
+      # Append the step entry to the journal
+      NEW_STEPS=$(jq -n \
+        --argjson steps "$STEPS_JSON" \
+        --arg name "$STEP" \
+        --arg status "$STATUS" \
+        --arg ts "$TS" \
+        '$steps + [{name: $name, status: $status, ts: $ts}]')
+
+      jq --argjson steps "$NEW_STEPS" '.steps = $steps' "$RECEIPT" > "${RECEIPT}.tmp" \
+        && mv "${RECEIPT}.tmp" "$RECEIPT" \
+        || rm -f "${RECEIPT}.tmp"
+
+      # On success: archive receipt and clear .current-scope
+      if [ "$STATUS" = "pass" ]; then
+        ARCHIVE_DIR="$SELDEV_DIR/archive"
+        mkdir -p "$ARCHIVE_DIR"
+        TS_SAFE=$(echo "$TS" | tr ':' '-')
+        cp "$RECEIPT" "${ARCHIVE_DIR}/${SCOPE}.${TS_SAFE}.receipt.json" 2>/dev/null || true
+        rm -f "$SCOPE_FILE"
+      fi
+      ;;
+
+    *)
+      # Default: before_snapshot, typecheck, unit_tests, e2e, after_snapshot
+      # Shape: {name, status, ts} — no extras needed
+      NEW_STEPS=$(jq -n \
+        --argjson steps "$STEPS_JSON" \
+        --arg name "$STEP" \
+        --arg status "$STATUS" \
+        --arg ts "$TS" \
+        '$steps + [{name: $name, status: $status, ts: $ts}]')
+
+      jq --argjson steps "$NEW_STEPS" '.steps = $steps' "$RECEIPT" > "${RECEIPT}.tmp" \
+        && mv "${RECEIPT}.tmp" "$RECEIPT" \
+        || rm -f "${RECEIPT}.tmp"
+      ;;
+  esac
 
   exit 0
 fi

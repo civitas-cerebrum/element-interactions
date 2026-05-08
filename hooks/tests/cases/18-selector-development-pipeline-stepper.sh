@@ -489,3 +489,147 @@ fi
 
 unset FAKE_STAGED_HASH
 unset WORKSPACE_ROOT
+
+# ---------------------------------------------------------------------------
+# Section 11 — PostToolUse patch_applied: per-step extras
+#   - step entry includes files: [<file_path>]
+#   - top-level receipt.files is appended
+#   - top-level receipt.git_diff_hash is set (via FAKE_STAGED_HASH)
+# ---------------------------------------------------------------------------
+section "pipeline-stepper: PostToolUse patch_applied extras (files + git_diff_hash)"
+
+STEPS=$(_steps_json "before_snapshot:pass")
+WS=$(_boot_state "submit-button" "jit" "$STEPS")
+export WORKSPACE_ROOT="$WS"
+export FAKE_STAGED_HASH="aabbccdd"
+
+FILE="$WS/src/Button.tsx"
+
+assert_allow "$H" \
+  "$(payload tool_name=Edit file_path="$FILE" hook_event_name=PostToolUse exit_code=0 cwd="$WS")" \
+  "PostToolUse patch_applied extras → silent ALLOW"
+
+RECEIPT="$WS/tests/e2e/.selector-development/submit-button.receipt.json"
+
+# 11a: step entry has files field with the edited file
+STEP_FILES=$(jq -r '.steps[-1].files[0] // ""' "$RECEIPT" 2>/dev/null || echo "")
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ "$STEP_FILES" = "$FILE" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} patch_applied step entry has files:[<file_path>]"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("patch_applied step files: expected '$FILE', got '$STEP_FILES'")
+  echo "${CLR_FAIL}  ✗${CLR_RST} patch_applied step entry missing files (got '$STEP_FILES')"
+fi
+
+# 11b: top-level receipt.git_diff_hash is set to FAKE_STAGED_HASH
+RECEIPT_HASH=$(jq -r '.git_diff_hash // ""' "$RECEIPT" 2>/dev/null || echo "")
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ "$RECEIPT_HASH" = "aabbccdd" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} patch_applied set top-level git_diff_hash"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("patch_applied git_diff_hash: expected 'aabbccdd', got '$RECEIPT_HASH'")
+  echo "${CLR_FAIL}  ✗${CLR_RST} patch_applied did not set git_diff_hash (got '$RECEIPT_HASH')"
+fi
+
+# 11c: top-level receipt.files contains the edited file
+TOP_FILE=$(jq -r '.files[0] // ""' "$RECEIPT" 2>/dev/null || echo "")
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ "$TOP_FILE" = "$FILE" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} patch_applied appended to top-level receipt.files"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("patch_applied top-level files: expected '$FILE', got '$TOP_FILE'")
+  echo "${CLR_FAIL}  ✗${CLR_RST} patch_applied did not append to top-level files (got '$TOP_FILE')"
+fi
+
+unset FAKE_STAGED_HASH
+unset WORKSPACE_ROOT
+
+# ---------------------------------------------------------------------------
+# Section 12 — PostToolUse visual_diff: per-step extras (diff_pixels)
+# ---------------------------------------------------------------------------
+section "pipeline-stepper: PostToolUse visual_diff extras (diff_pixels)"
+
+STEPS=$(_steps_json \
+  "before_snapshot:pass" \
+  "patch_applied:pass" \
+  "typecheck:pass" \
+  "unit_tests:pass" \
+  "e2e:pass" \
+  "after_snapshot:pass")
+WS=$(_boot_state "submit-button" "jit" "$STEPS")
+export WORKSPACE_ROOT="$WS"
+
+# Simulate visual-diff.js stdout with diffPixels=42
+VD_STDOUT='{"pass":true,"diffPixels":42,"threshold":0.1}'
+
+assert_allow "$H" \
+  "$(payload tool_name=Bash command="node /tmp/visual-diff.js" hook_event_name=PostToolUse exit_code=0 stdout="$VD_STDOUT" cwd="$WS")" \
+  "PostToolUse visual_diff with diffPixels=42 → silent ALLOW"
+
+RECEIPT="$WS/tests/e2e/.selector-development/submit-button.receipt.json"
+
+# 12a: step entry has diff_pixels = 42
+DIFF_PIXELS=$(jq -r '.steps[-1].diff_pixels // "MISSING"' "$RECEIPT" 2>/dev/null || echo "MISSING")
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ "$DIFF_PIXELS" = "42" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} visual_diff step entry has diff_pixels=42"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("visual_diff diff_pixels: expected 42, got '$DIFF_PIXELS'")
+  echo "${CLR_FAIL}  ✗${CLR_RST} visual_diff step entry missing diff_pixels (got '$DIFF_PIXELS')"
+fi
+
+# 12b: visual_diff with no stdout → diff_pixels defaults to 0
+WS=$(_boot_state "submit-button" "jit" "$STEPS")
+export WORKSPACE_ROOT="$WS"
+
+assert_allow "$H" \
+  "$(payload tool_name=Bash command="node /tmp/visual-diff.js" hook_event_name=PostToolUse exit_code=0 cwd="$WS")" \
+  "PostToolUse visual_diff with no stdout → silent ALLOW"
+
+RECEIPT="$WS/tests/e2e/.selector-development/submit-button.receipt.json"
+DIFF_PIXELS_DEFAULT=$(jq -r '.steps[-1].diff_pixels // "MISSING"' "$RECEIPT" 2>/dev/null || echo "MISSING")
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ "$DIFF_PIXELS_DEFAULT" = "0" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} visual_diff with no stdout defaults diff_pixels to 0"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("visual_diff default diff_pixels: expected 0, got '$DIFF_PIXELS_DEFAULT'")
+  echo "${CLR_FAIL}  ✗${CLR_RST} visual_diff no-stdout did not default diff_pixels to 0 (got '$DIFF_PIXELS_DEFAULT')"
+fi
+
+unset WORKSPACE_ROOT
+
+# ---------------------------------------------------------------------------
+# Section 13 — PostToolUse commit idempotency (already cleared .current-scope)
+# ---------------------------------------------------------------------------
+section "pipeline-stepper: PostToolUse commit idempotency"
+
+ALL_7=$(_steps_json \
+  "before_snapshot:pass" \
+  "patch_applied:pass" \
+  "typecheck:pass" \
+  "unit_tests:pass" \
+  "e2e:pass" \
+  "after_snapshot:pass" \
+  "visual_diff:pass")
+
+WS=$(_boot_state_with_hash "submit-button" "deadbeef" "$ALL_7")
+export WORKSPACE_ROOT="$WS"
+
+# Remove .current-scope to simulate already-archived state
+rm -f "$WS/tests/e2e/.selector-development/.current-scope"
+
+assert_allow "$H" \
+  "$(payload tool_name=Bash command="git commit -m 'feat: add testid'" hook_event_name=PostToolUse exit_code=0 cwd="$WS")" \
+  "PostToolUse commit when scope already cleared → idempotent ALLOW"
+
+unset WORKSPACE_ROOT
