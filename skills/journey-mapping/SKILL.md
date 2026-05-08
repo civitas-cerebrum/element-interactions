@@ -209,19 +209,31 @@ For each gated route a cycle agent encounters:
 
 ### Author step (`phase4-prioritise-author:`)
 
-Single dispatch after cycles converge OR hit the 5-cycle hard cap. Inputs:
+Single dispatch after cycles converge OR hit the hard cap. Inputs:
 
 - All section blocks from cycle returns (read from spill files).
 - The discovery draft (for `credentials-discovered`).
-- The state-file (for `convergence-status` and the cycle ledger).
+- The state-file (for `convergence-status`, `unvalidated-sections-flagged`, and the cycle ledger).
 
 Outputs:
 
 - `tests/e2e/docs/journey-map.md` — overwritten in place, sentinel preserved.
 - A revision log appended under `## Phase 3.5 Revision Log` documenting every sub-journey extraction, variant collapse, and decomposition.
-- Frontmatter line `**Mapping completeness:**` with one of: `converged at cycle <N>`, `hard-cap-reached at cycle 5`, `single-cycle-floor` (the 3-cycle minimum was hit with no growth — author proceeded after deepening passes).
+- Frontmatter line `**Mapping completeness:**` with one of: `converged at cycle <N>`, `hard-cap-reached at cycle <N>`, `single-cycle-floor` (the 3-cycle minimum was hit with no growth — author proceeded after deepening passes).
+- A mandatory `## Section → Journey Map` table mapping every canonical section ID from the cycle returns to the journey IDs that cover it. Sections from `unvalidated-sections-flagged` are either normalised against the canonical vocabulary (preferred) OR carry an explicit `(novel)` annotation in the table with a one-sentence rationale.
 
 The author does NOT drive `playwright-cli` itself — all live observation happened in cycle agents. The author's job is synthesis: prioritisation, dedup, document authoring.
+
+**Retry semantics.** If the author returns `status: blocked` (corrupt cycle state, malformed spill files, unresolvable input), the orchestrator may re-dispatch `phase4-prioritise-author:` up to 3 times. The harness `journey-mapping-cycle-gate.sh` hook tracks `author-attempts` in the state file and denies the 4th attempt. After 3 failures, surface to the user with the most recent author return — manual review of the cycle data is needed before proceeding.
+
+**Internal-consistency check (author-side).** Before writing the file, the author MUST verify:
+
+- Every `Sub-journey refs: [sj-A, sj-B]` line on a journey block has matching `Used by: [..., j-X, ...]` entries on each referenced sub-journey.
+- Every `Used by: [j-X]` entry on a sub-journey has a matching `Sub-journey refs:` line on each named journey.
+- No orphan sub-journeys (`Used by: []`).
+- No journey-blocks reference an undefined `sj-<slug>`.
+
+The phase-validator-4 hook re-runs this cross-reference check post-write; mismatches cause `improvements-needed`.
 
 ### Harness enforcement
 
@@ -255,6 +267,7 @@ Each journey is a self-contained block so a downstream subagent can be handed **
 **Pages discovered:** X
 **Flows identified:** X
 **Priority breakdown:** X P0, X P1, X P2, X P3
+**Mapping completeness:** converged at cycle <N> | hard-cap-reached at cycle <N> | single-cycle-floor
 
 ## Site Map
 [flat URL list from Phase 1]
@@ -290,6 +303,20 @@ Each journey is a self-contained block so a downstream subagent can be handed **
 
 ### j-<slug>: <next journey>
 ...
+
+## Section → Journey Map
+
+| Section ID (canonical) | Journeys covering it | Notes |
+|---|---|---|
+| auth | j-signup-checkout, j-login-checkout, j-bad-login, j-signup-conflict, j-logout | sj-signup-auth, sj-login-auth |
+| catalog | j-signup-checkout, j-search, j-genre-filter | |
+| ... | ... | ... |
+
+This table is mandatory in `phases-2-4` output. Phase-validator-4 reads it
+to verify every section in the cycle-state's `returned-sections` union
+either appears in this table OR under `## Gated Areas (Not Mapped)`.
+Sections without a row are uncovered — coverage-expansion will probe them
+or they need user-supplied credentials.
 
 ## Gated Areas (Not Mapped)
 [pages behind auth, paywalls, etc. with notes on what's needed to access]

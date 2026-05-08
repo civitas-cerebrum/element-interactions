@@ -664,6 +664,8 @@ new-sections-discovered:
     rationale: <one sentence — why this is its own section, not an extension>
     routes-suggested: ["<url>", ...]
 
+<!-- new-sections: ["<id-1>", "<id-2>", ...] -->
+
 gated-deferred-to-coverage-expansion:
   - url: <url>
     reason: <admin-role | paid-plan | mfa-required | sso-bypass-required | other>
@@ -672,6 +674,21 @@ gated-deferred-to-coverage-expansion:
 spill: tests/e2e/docs/.subagent-returns/phase4-cycle-<N>-section-<id>.md
 summary: <one sentence — what was driven, how many flows, key oddities>
 ```
+
+**Two extraction paths for `new-sections-discovered`.** The hook
+(`journey-mapping-cycle-gate.sh` PostToolUse) parses both:
+
+1. **JSON sub-block** (preferred — robust against indentation/comment drift):
+   `<!-- new-sections: ["a","b"] --> ` on its own line. The hook reads the
+   JSON array directly. Empty array `[]` is valid (no new sections).
+2. **YAML-flavoured fallback**: the `new-sections-discovered:` block with
+   `- id: <kebab-case>` entries. Brittle on indentation, comments, multi-
+   line values — kept for human readability and as a fallback parser.
+
+Subagents SHOULD emit both. The hook unions them and dedups. Emitting only
+the YAML is acceptable for human-readability, but emit the JSON sub-block
+when the section list is mechanically generated — it's the parse-clean
+form and won't drift if a future agent introduces formatting variants.
 
 Spill file body (full content): per-route record (URL, role-as, snapshot summary, interactive elements, state variations, links-out), per-flow description (steps, branches, exit), and any oddities surfaced for the author's awareness (banner / modal observations, console errors, response-shape surprises).
 

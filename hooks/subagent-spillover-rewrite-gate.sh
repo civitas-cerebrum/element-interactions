@@ -117,6 +117,11 @@ case "$HANDOVER_ROLE" in
   phase-validator-*)
     [ "$HANDOVER_STATUS" = "improvements-needed" ] && ROLE_KIND="phase-validator"
     ;;
+  phase4-cycle-*-section-*)
+    case "$HANDOVER_STATUS" in
+      section-complete|section-deferred) ROLE_KIND="phase4-cycle-section" ;;
+    esac
+    ;;
 esac
 
 # Not in scope (other role / non-triggering status) → silent allow.
@@ -173,6 +178,16 @@ case "$ROLE_KIND" in
     fi
     SPILL_REL="tests/e2e/docs/.subagent-returns/process-validator-${SCOPE}-c${CYCLE}.md"
     SPILL_SENTINEL="<!-- subagent-returns:process-validator:${SCOPE}:cycle-${CYCLE} -->"
+    ;;
+  phase4-cycle-section)
+    # Role: phase4-cycle-<N>-section-<id>
+    CYCLE_N=$(echo "$HANDOVER_ROLE" | sed -nE 's/^phase4-cycle-([0-9]+)-section-.*/\1/p')
+    SECTION_ID=$(echo "$HANDOVER_ROLE" | sed -nE 's/^phase4-cycle-[0-9]+-section-(.+)$/\1/p')
+    if [ -z "$CYCLE_N" ] || [ -z "$SECTION_ID" ]; then
+      exit 0
+    fi
+    SPILL_REL="tests/e2e/docs/.subagent-returns/phase4-cycle-${CYCLE_N}-section-${SECTION_ID}.md"
+    SPILL_SENTINEL="<!-- subagent-returns:phase4-cycle:${CYCLE_N}:section:${SECTION_ID} -->"
     ;;
 esac
 
