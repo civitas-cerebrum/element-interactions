@@ -2,10 +2,10 @@
 
 Every Stage B subagent dispatched by `coverage-expansion` — across all 5 passes, compositional and adversarial — follows this contract. It is analogous to the compositional `test-composer` and adversarial probe contracts, but covers the reviewer role specifically.
 
-**Two invocation modes** (issue #164.2):
+**Two invocation modes:**
 
-- **`mode: per-journey`** (the legacy contract this document originally described) — one Stage B reviewer per journey per cycle. Used for cycle-2+ retries, all adversarial Pass-4/5 reviews, and any cycle the operator has flagged as needing human-grade attention. Full per-journey contract: §"Role" through §"Dispatch brief template" below.
-- **`mode: batch`** (new) — one Stage B reviewer per **pass** that reads all in-flight journeys' spill files together and emits per-journey verdicts. Used for **Pass 1 / 2 / 3 cycle-1 only** — empirical data (issue #164's farmedvisie-t2 cycle) shows ~85% of compositional cycle-1 reviewers return `greenlight` and per-journey isolation is over-paying for that majority. Batch contract: §"Batch reviewer mode (cycle-1 compositional only)" at the end of this file.
+- **`mode: per-journey`** — one Stage B reviewer per journey per cycle. Used for cycle-2+ retries, all adversarial Pass-4/5 reviews, and any cycle the operator has flagged as needing human-grade attention. Full per-journey contract: §"Role" through §"Dispatch brief template" below.
+- **`mode: batch`** — one Stage B reviewer per **pass** that reads all in-flight journeys' spill files together and emits per-journey verdicts. Used for **Pass 1 / 2 / 3 cycle-1 only** — ~85% of compositional cycle-1 reviewers return `greenlight`, so per-journey isolation over-pays for that majority. Batch contract: §"Batch reviewer mode (cycle-1 compositional only)" at the end of this file.
 
 **Mode selection** (the orchestrator decides at dispatch time):
 
@@ -111,16 +111,9 @@ Procedure:
 
 ## Batch reviewer mode (cycle-1 compositional only)
 
-Issue #164.2 introduces a **batch** invocation mode for compositional Pass-1/2/3 cycle-1 reviews. One Opus reviewer reads all in-flight journeys' spill files plus the journey-map slice plus the page-repository, and emits per-journey verdicts in a single return. Adversarial passes (4–5) and cycle-2+ retries always remain `mode: per-journey`.
+The batch reviewer is one Opus reviewer per pass that reads all in-flight journeys' spill files plus the journey-map slice plus the page-repository, and emits per-journey verdicts in a single return. Used for compositional Pass-1/2/3 cycle-1 reviews only; adversarial passes (4–5) and cycle-2+ retries always remain `mode: per-journey`.
 
-### Why
-
-Empirical data from a 30-journey onboarding cycle (#164):
-
-- ~85% of compositional cycle-1 Stage B returns are `greenlight` — the per-journey isolation buys nothing for those.
-- The remaining ~15% are `improvements-needed` and DO benefit from per-journey isolation on cycle-2 retry — but cycle-2 is dispatched per-journey regardless. Batching cycle-1 doesn't compromise the cycle-2 leg.
-- Cross-journey consistency check is *better* — a single reviewer reading 30 returns at once flags "journey X surfaced pattern Y but journey Z missed it"; today's per-journey reviewer is structurally blind to siblings.
-- Token cost: 30 per-journey reviewers × ~50k tokens ≈ 1.5M per pass × 3 compositional passes = 4.5M. One batch reviewer × ~250k tokens ≈ 250k per pass × 3 = 750k. **~3.75M tokens saved per cycle**, on top of any per-cycle wins from the non-batch optimisations.
+The cross-journey synthesis is a real upgrade, not just a cost optimisation: a single reviewer reading 30 returns at once can flag "journey X surfaced pattern Y but journey Z missed it"; the per-journey reviewer is structurally blind to siblings.
 
 ### Inputs (given at dispatch time)
 
@@ -132,7 +125,7 @@ Empirical data from a 30-journey onboarding cycle (#164):
    - **`status: covered-exhaustively`** → the brief points at the §2.6 spill file at `tests/e2e/docs/.subagent-returns/composer-<JOURNEY>-<pass>-c1.md`. The reviewer reads the spill for the full per-expectation mapping table.
 
    The reviewer reads whichever form is provided; the brief construction is the orchestrator's responsibility.
-5. **Per-journey gated-skip evidence** (forward reference — issue #164.1 / PR #176): when PR #176's `gated_skip` field is merged, journeys flagged `gated_skip: true` in the orchestrator's state file carry their `triggers_checked` block in the brief and are excluded from the batch reviewer's roster (no review needed). Until #176 lands, the orchestrator includes all journeys whose Stage A actually dispatched.
+5. **Per-journey gated-skip evidence**: journeys flagged `gated_skip: true` in the state file (per `coverage-expansion/SKILL.md` §"Trigger-gated re-pass") are excluded from the batch reviewer's roster — no review needed. The roster is the journeys whose Stage A actually dispatched this cycle.
 6. **App-context slice**: the consolidated `app-context.md` sections for every page touched.
 7. **No live app** — see §"Behavior" item 2 below for why the batch reviewer is a static reader.
 
@@ -192,24 +185,17 @@ Empirical data from a 30-journey onboarding cycle (#164):
 
    Every flagged journey's section starts with `## j-<slug>`. The §2.6 sentinel goes at the top of the file (line 1).
 
-5. **Stalled-loop detection does NOT apply** — batch mode is cycle-1 only. Stall detection is a cycle-3 mechanic; if a journey reaches cycle 3 without resolving, the per-journey reviewer flags it (per the legacy contract).
+5. **Stalled-loop detection does NOT apply** — batch mode is cycle-1 only. Stall detection is a cycle-3 mechanic; if a journey reaches cycle 3 without resolving, the per-journey reviewer flags it.
 
 ### Hard constraints (batch-specific)
 
-- **The cycle-1 wave of pass N only.** A batch reviewer dispatched at cycle ≥ 2 within any pass, or at any cycle in adversarial Pass 4 / Pass 5, is a contract violation. Multiple separate batch reviewers exist across a depth-mode run (one per compositional pass) — the constraint applies independently per pass.
+- **The cycle-1 wave of pass N only.** A batch reviewer dispatched at cycle ≥ 2 within any pass, or at any cycle in adversarial Pass 4 / Pass 5, is a contract violation. One batch reviewer per compositional pass; the constraint applies independently per pass.
 - **Compositional passes only.** Pass 4 and 5 dispatch one reviewer per journey, never a batch.
 - **No live app.** The batch reviewer is a static reader; for any flagged journey that needs live-app verification, the orchestrator follows up with a `mode: per-journey` cycle-2 reviewer that opens its own session.
 - **One return per pass.** The batch reviewer's return is a single object with a `verdicts:` array; the orchestrator parses verdicts and dispatches per-journey cycle-2 reviewers for any `improvements-needed` entry.
-- **Hook backstop deferred to issue #164.7 / Wave 3I.3b.** Until that PR lands, this rule is markdown-only — `subagent-spillover-rewrite-gate.sh` and `subagent-return-schema-guard.sh` will be extended there to recognise the new `reviewer-batch-pass-<N>` role-prefix and validate the `verdicts:` array shape. Per `feedback_methodology_as_hooks.md`, markdown-only enforcement is a temporary state, not a sustainable one — a non-compliant batch return will land in the orchestrator's transcript without harness intervention until the backstop ships.
+- **Markdown-only enforcement (for now).** `subagent-spillover-rewrite-gate.sh` and `subagent-return-schema-guard.sh` do not yet recognise the `reviewer-batch-pass-<N>` role-prefix or the `verdicts:` array shape; a non-compliant batch return will land in the orchestrator's transcript without harness intervention. Hook backstop is a follow-up.
+- **Known dispatch-guard gap.** `hooks/coverage-expansion-dispatch-guard.sh` denies `reviewer-` dispatches whose prompt body contains multi-pass meta-content (`pipeline`, `pass [2-5]`, `5-pass`, etc.). The batch-reviewer brief by construction references compositional pass scope, so the gate currently blocks legitimate batch dispatches. Until the carve-out for `reviewer-batch-pass-<N>:` ships, the orchestrator either runs the batch dispatch with `POO_DISPATCH_BLOCK=off` or restates the brief without leak-gate trigger phrases — both are temporary.
 
-- **Known dispatch-guard gap.** The current `hooks/coverage-expansion-dispatch-guard.sh` denies dispatches whose description matches the `reviewer-` family AND whose prompt body contains compositional / multi-pass meta-content (`pipeline`, `pass [2-5]`, `5-pass`, etc.). The batch-reviewer brief by construction references compositional pass scope, so the leak gate currently blocks legitimate batch dispatches. Wave 3I.3b will carve out an exception for `reviewer-batch-pass-<N>:` prefixes. Until that lands, the orchestrator can either (a) use `POO_DISPATCH_BLOCK=off` for the batch dispatch (workaround), or (b) restate the brief without leak-gate trigger phrases — neither is preferred; both are temporary.
+### Dispatch prefix
 
-### Mode selection — when the orchestrator dispatches batch vs per-journey
-
-The mode-selection table at the top of this file is the canonical decision matrix. Summarised: cycle-1 of compositional Passes 1, 2, 3 → batch; everything else → per-journey. The orchestrator passes `mode: batch` explicitly in the dispatch description prefix:
-
-```
-description: "reviewer-batch-pass-<N>: cycle 1"
-```
-
-This prefix is recognised by the existing `hooks/coverage-expansion-dispatch-guard.sh` registry (the `reviewer-` family); the `-batch-` infix triggers the batch return-shape validation in the schema-guard.
+The orchestrator dispatches batch with `description: "reviewer-batch-pass-<N>: cycle 1"`. The `reviewer-` family prefix is already recognised by `coverage-expansion-dispatch-guard.sh`; the `-batch-` infix triggers the batch return-shape validation in the schema-guard.
