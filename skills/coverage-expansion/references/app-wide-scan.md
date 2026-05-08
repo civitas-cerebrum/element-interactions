@@ -9,7 +9,7 @@ For the per-journey adversarial subagent contract that runs after the scan, see 
 
 ## What the app-wide scan does
 
-A **single** adversarial dispatch fired before Pass 4's per-journey probes. Its job is to find and document the patterns that recur across every journey — security headers, CSRF behaviour, error envelopes for nonsense parameters, asset-disclosure footprints, CORS posture — so the per-journey probes don't each re-derive them. ~80% of `info`-severity Pass-4 findings are duplicates of patterns in the catalogue below; documenting once and citing via `coverage: app-wide:<pattern-id>` replaces ~30 per-journey re-derivations of each.
+A **single** adversarial dispatch fired before Pass 4's per-journey probes. Its job is to find and document the patterns that recur across every journey — security headers, CSRF behaviour, error envelopes for nonsense parameters, asset-disclosure footprints, CORS posture — so the per-journey probes don't each re-derive them. Most `info`-severity Pass-4 findings are duplicates of patterns in the catalogue below; documenting once and citing via `coverage: app-wide:<pattern-id>` replaces one re-derivation per journey for every pattern.
 
 ---
 
@@ -74,39 +74,28 @@ The orchestrator updates this checklist as new patterns surface in the wild — 
 
 ## Output file format — `tests/e2e/docs/app-wide-patterns.md`
 
+The format below shows the **structure** of each section. Values are placeholders; the scanning subagent fills them in from the live app. Do NOT carry the example values forward — they illustrate the schema, not a real observation.
+
 ```markdown
 <!-- app-wide-scan:generated -->
 
 # App-Wide Pattern Catalogue
 
-**Scanned at:** 2026-05-06T14:00:00Z
+**Scanned at:** <ISO-8601 timestamp>
 **Pass:** 4 (prelude)
 **Subagent:** probe-app-wide
 **App URL:** <baseURL>
 
 ## Patterns
 
-### csrf-tamper-status
-- **Status observed:** 404
-- **Expected per security best practices:** 403
-- **Severity:** info
-- **Note:** the app returns 404 (route-not-found semantics) rather than 403 (forbidden) when a CSRF token is tampered. This is consistent across every protected endpoint probed (POST /api/orders, PUT /api/users/me, DELETE /api/items/123).
-- **Cite as:** `coverage: app-wide:csrf-tamper-status`
+### <pattern-id>
+- **Status observed:** <what the live app returned for this probe — single value or per-endpoint breakdown>
+- **Expected per security best practices:** <industry-standard expectation, when one applies>
+- **Severity:** <info | low | medium | high | critical>
+- **Note:** <one-sentence interpretation, optional — only when the observation needs context>
+- **Cite as:** `coverage: app-wide:<pattern-id>`
 
-### autocomplete-credential-inputs
-- **Status observed:**
-  - `/login` → `autocomplete="current-password"` on password input ✓, no `autocomplete` on email input ✗
-  - `/signup` → no `autocomplete` on either input ✗
-  - `/account/change-password` → no `autocomplete` on any of the three password inputs ✗
-- **Severity:** info
-- **Cite as:** `coverage: app-wide:autocomplete-credential-inputs`
-
-### sort-unknown-field-status
-- **Status observed:** 500 (with stack trace partially exposed in the response body's `detail:` field)
-- **Severity:** medium (stack-trace disclosure in error body)
-- **Cite as:** `coverage: app-wide:sort-unknown-field-status`
-
-(continues — 16 sections total, one per pattern in §"Pattern catalogue checklist" above)
+(repeat for every pattern in §"Pattern catalogue checklist" above)
 ```
 
 Required structure:

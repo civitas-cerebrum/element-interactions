@@ -30,7 +30,7 @@ The orchestrator decides — before dispatching — that running fewer than the 
 - `commit-message-gate.sh` (PR #125) — blocks commits with phase-progression messages on pre-emptively-reduced runs.
 - (markdown-only for novel framings) — the registry's symptom list grows reactively as new framings appear; the failure-mode category is what the orchestrator must recognise.
 
-**Origin:** Recurring failure across multiple onboarding runs (BookHive, others, plus the v0.3.4-test run that surfaced "evening-or-overnight" framing). Codified as the §"Two valid exits" rule and the dual-stage no-skip extension; mechanical enforcement added in v0.3.5.
+**Origin:** Recurring failure across multiple onboarding runs — most often surfaced as "evening-or-overnight" framing that dressed scope reduction up as candour. Codified as the §"Two valid exits" rule and the dual-stage no-skip extension; mechanical enforcement followed.
 
 ---
 

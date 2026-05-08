@@ -151,11 +151,11 @@ Rendered example of the audit block inside the gate (positive detections):
 
 ```
 Shared-resource audit:
-  • Single Care Manager credential [single-credential:care-manager] → P_dispatch capped at 1 for manager-portal journeys until seeding resolved.
+  • Single credential per privileged role [single-credential:<role-slug>] → P_dispatch capped at 1 for journeys gated by that role until seeding resolved.
   • CSRF tokens session-bound [csrf-session-bound] → mandatory `test.describe.configure({ mode: 'serial' })` on mutating specs.
-  • Global /api/reset endpoint touches catalog-wide collections [global-reset:cross-test-race] → forbid beforeEach(reset); P_workers capped at 1 unless per-test-user pattern + globalSetup-once is adopted.
-  • Single-tenant marketplace [single-tenant-global-state] → rewrite "marketplace is empty" assertions to "MY profile has no listings".
-  • No UI delete for caregivers/locations [missing-ui-delete:caregiver,location] → tenant pollution expected; API-backdoor cleanup required.
+  • Global /api/reset endpoint touches collection-wide state [global-reset:cross-test-race] → forbid beforeEach(reset); P_workers capped at 1 unless per-test-user pattern + globalSetup-once is adopted.
+  • Single-tenant global state [single-tenant-global-state] → rewrite "<global view> is empty" assertions to "MY <scoped view> has no <records>".
+  • No UI delete for one or more resource types [missing-ui-delete:<type-1>,<type-2>] → tenant pollution expected; API-backdoor cleanup required.
 
 Parallelism caps:
   P_dispatch = 4 (composer / reviewer / probe subagents in parallel — bounded by host CPU/memory + credentials)
@@ -178,7 +178,7 @@ The audit block is never omitted from the gate. Empty-findings runs still emit t
 The audit output has two downstream effects, both informational-to-the-user but load-bearing for the pipeline:
 
 1. **Onboarding report.** The audit block is copied verbatim into `tests/e2e/docs/onboarding-report.md` under a "Shared-resource audit" heading at Phase 7.
-2. **Constraint tag for later phases.** Each positive detection becomes a constraint tag attached to the run (e.g. `parallelism-capped:manager-portal=1`, `mandatory-serial:mutating-specs`, `missing-ui-delete:caregiver,location`). Phase 5's `coverage-expansion` invocation reads these tags when selecting per-pass model/dispatch caps and when deciding whether to force `mode: 'serial'` on mutating spec files. The tags do not change the full-coverage contract — they change *how* it is executed.
+2. **Constraint tag for later phases.** Each positive detection becomes a constraint tag attached to the run (e.g. `parallelism-capped:<role-slug>=1`, `mandatory-serial:mutating-specs`, `missing-ui-delete:<resource-type>`). Phase 5's `coverage-expansion` invocation reads these tags when selecting per-pass model/dispatch caps and when deciding whether to force `mode: 'serial'` on mutating spec files. The tags do not change the full-coverage contract — they change *how* it is executed.
 
 The audit does not introduce a new prompt. The user still only sees `y / cancel`.
 
