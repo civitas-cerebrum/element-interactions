@@ -131,6 +131,9 @@ These rules are non-negotiable. They override helpfulness, initiative, and assum
 - A fix is not confirmed until the test passes **3-5 consecutive runs** without failure.
 
 ### 8. Before modifying `playwright.config.ts`, read the existing file first
+- The package ships documented defaults: `retries`, `use.video: 'on-first-retry'`, `use.trace: 'on-first-retry'`, HTML reporter, headless. See `references/playwright-config-defaults.md` for the canonical config and rationale.
+- Don't strip the video / trace / retries defaults without an explicit reason in the PR description — the rerun-documents-failure guarantee `failure-diagnosis` Stage 1 relies on those artefacts.
+- The `playwright-config-defaults-guard.sh` hook emits a `systemMessage` warning on writes that drop those defaults, so a deviation is visible to reviewers rather than silent.
 
 ### 9. Do NOT work around application bugs — report them
 - When a test fails, **classify the problem** before acting:
