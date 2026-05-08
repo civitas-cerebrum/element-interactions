@@ -1,45 +1,30 @@
 #!/bin/bash
-# commit-author-signature-guard.sh — flag AI-assistant Co-Authored-By: trailers
+# commit-author-signature-guard.sh — block AI-assistant Co-Authored-By: trailers
 #
 # Hook    : PreToolUse:Bash  (filters to `git commit` invocations only)
-# Mode    : WARN-only by default (systemMessage, never DENY) — opt-in DENY
-#           via env var. The default ships globally via npm postinstall;
-#           a global, mandatory commit block introduced via a transitive
-#           dependency would be hostile, so the default surfaces a
-#           visibility nudge instead. Consumers who want strict
-#           enforcement set COMMIT_AUTHOR_SIGNATURE_GUARD=deny.
+# Mode    : DENY by default. The hook only fires when the commit body
+#           actually contains an AI-attribution `Co-Authored-By:` trailer
+#           — a pattern only an AI agent emits, never a real human — so
+#           blocking by default does not interfere with human commits.
 # State   : none
 # Env     : COMMIT_AUTHOR_SIGNATURE_GUARD
-#             unset / "warn" / "on" → WARN (default)
-#             "deny"                → DENY (opt-in, strict enforcement)
-#             "off"                 → silent allow (escape hatch for the rare
-#                                     case where an AI line legitimately
-#                                     belongs in a commit body — e.g. a
-#                                     copy-paste of a prior commit's
-#                                     message into a `git log` test fixture)
+#             unset / "deny" / "on"  → DENY (default, strict enforcement)
+#             "warn"                 → systemMessage nudge, commit proceeds
+#                                       (opt-down for environments where the
+#                                       global block is still being rolled out)
+#             "off"                  → silent allow (escape hatch for the rare
+#                                       case where the trailer legitimately
+#                                       belongs in a commit body — e.g. a
+#                                       copy-paste of a prior commit's
+#                                       message into a `git log` test fixture)
 #
 # Rule
 # ----
-# A `git commit` invocation should NOT contain a `Co-Authored-By:` trailer
+# A `git commit` invocation MUST NOT contain a `Co-Authored-By:` trailer
 # crediting Claude / Anthropic / borealis.local / borealis-local / any
 # other AI-assistant sentinel (see AI_SENTINEL_PATTERNS below — the regex
 # is deliberately extensible). Real-human Co-Authored-By: trailers
 # (e.g. `Co-Authored-By: Jane Doe <jane@example.com>`) are fine.
-#
-# Why
-# ---
-# Every commit's authorship belongs to the human contributor. AI-assistant
-# co-author lines:
-#   - pollute `git log --format=%aN | sort -u | uniq -c` (the contributor
-#     census), making it impossible to read at a glance who shipped what;
-#   - confuse merge conflicts on the trailer block — two Claude lines from
-#     two branches three-way-merge into nonsense;
-#   - create the false impression of joint ownership when the human is the
-#     one accountable for the change.
-#
-# The harness's default CLAUDE.md template inserts these trailers; this
-# gate surfaces them at the commit boundary so they don't land in
-# `git log` unnoticed.
 #
 # False-positive avoidance
 # ------------------------
@@ -51,20 +36,14 @@
 #     comments are stripped on a best-effort basis)
 #   - the `Co-Authored-By:` token wrapped in backticks (a backticked
 #     literal — clearly documentation, not a real trailer)
-# These cover the typical meta-commit shapes: a commit message that
-# describes the rule itself or quotes a prior commit body.
-#
-# Canonical reference
-# -------------------
-# hooks/commit-author-signature-guard.sh (this file)
 #
 # Failure → action
 # ----------------
-# - `Co-Authored-By:` trailer naming Claude / Anthropic / borealis*       → WARN (or DENY w/ opt-in)
-# - HEREDOC commit (-m "$(cat <<'EOF' ... EOF)") with same trailer        → WARN (or DENY w/ opt-in)
-# - Backticked `Co-Authored-By:` literal                                  → silent allow (false-positive avoidance)
-# - HTML-commented `<!-- Co-Authored-By: -->`                             → silent allow (false-positive avoidance)
-# - Quote-prefixed `> Co-Authored-By:` line                               → silent allow (false-positive avoidance)
+# - `Co-Authored-By:` trailer naming Claude / Anthropic / borealis*       → DENY
+# - HEREDOC commit (-m "$(cat <<'EOF' ... EOF)") with same trailer        → DENY
+# - Backticked `Co-Authored-By:` literal                                  → silent allow
+# - HTML-commented `<!-- Co-Authored-By: -->`                             → silent allow
+# - Quote-prefixed `> Co-Authored-By:` line                               → silent allow
 # - Real-human Co-Authored-By: only                                       → silent allow
 # - No Co-Authored-By: at all                                             → silent allow
 # - Tool != Bash, command != git commit, escape hatch on                  → silent allow
@@ -72,12 +51,12 @@
 set -euo pipefail
 
 # --- mode resolution ---
-MODE=$(printf '%s' "${COMMIT_AUTHOR_SIGNATURE_GUARD:-warn}" | tr '[:upper:]' '[:lower:]')
+MODE=$(printf '%s' "${COMMIT_AUTHOR_SIGNATURE_GUARD:-deny}" | tr '[:upper:]' '[:lower:]')
 case "$MODE" in
   off)            exit 0 ;;
-  deny)           ;;  # strict
-  warn|on|"")     MODE="warn" ;;
-  *)              MODE="warn" ;;  # any other value falls back to warn (safe default)
+  warn)           ;;  # opt-down to systemMessage nudge
+  deny|on|"")     MODE="deny" ;;
+  *)              MODE="deny" ;;  # any other value falls back to deny (safe default)
 esac
 
 # --- helpers ---
@@ -227,11 +206,10 @@ done <<<"$AI_LINES"
 
 CORRECTIVE_INDENTED=$(printf '%s\n' "$CORRECTIVE" | sed 's/^/    /')
 
-# Build the message body. Used for both WARN and DENY paths — the only
-# difference is the headline and the dispatch helper.
-HEADLINE="[BLOCKED] commit message contains Claude/AI co-author signature."
+# Headline differs by mode; the rest of the body is identical.
+HEADLINE="[BLOCKED] commit body credits an AI assistant as Co-Authored-By:."
 if [ "$MODE" = "warn" ]; then
-  HEADLINE="[NUDGE] commit message contains Claude/AI co-author signature (WARN-only by default)."
+  HEADLINE="[NUDGE] commit body credits an AI assistant as Co-Authored-By: (warn-only mode)."
 fi
 
 IFS= read -r -d '' BODY_HEAD <<'HEAD' || true
@@ -239,41 +217,33 @@ IFS= read -r -d '' BODY_HEAD <<'HEAD' || true
 ──────────────────────────
 Do this instead:
 ──────────────────────────
-  Re-run the commit with the AI Co-Authored-By: trailer(s) stripped:
+  Re-run the commit with the AI Co-Authored-By: trailer(s) removed:
 
 HEAD
 
 IFS= read -r -d '' BODY_MID <<'MID' || true
 
-  The commit's authorship is yours alone. AI assistants do not get
-  Co-Authored-By: trailers; the human contributor owns the change.
-
 ──────────────────────────
 What was wrong:
 ──────────────────────────
-Detected AI-attribution co-author line(s) in the commit body:
+The commit body contains a Co-Authored-By: trailer attributing the
+change to an AI assistant. AI assistants do not co-author commits;
+the human contributor is the sole author of every commit. Detected
+trailer line(s):
 MID
 
 IFS= read -r -d '' BODY_TAIL <<'TAIL' || true
-Why this matters:
-  - Pollutes "git log --format=%aN | sort -u | uniq -c" (the contributor
-    census) — the contributor count gets inflated by a non-human entity.
-  - Confuses three-way merges on the trailer block when two branches
-    each carry their own AI co-author line.
-  - Creates the false impression of joint ownership when the human is
-    the one accountable for the change.
-
 ──────────────────────────
-If your CLAUDE.md template auto-inserted the trailer — read this:
+If your CLAUDE.md template inserted the trailer — fix the source:
 ──────────────────────────
-The harness default appends "Co-Authored-By: borealis.local …" to every
-commit. The upstream fix is to remove the trailer instruction from your
-project CLAUDE.md or ~/.claude/CLAUDE.md so it stops being suggested in
-the first place.
+The Anthropic CLAUDE.md template appends "Co-Authored-By: borealis.local …"
+to every commit Claude generates. Remove the trailer instruction from
+your project CLAUDE.md or ~/.claude/CLAUDE.md so it stops being
+suggested in the first place.
 
 Mode controls (env var COMMIT_AUTHOR_SIGNATURE_GUARD):
-  warn (default) → systemMessage nudge, commit proceeds
-  deny           → block the commit (opt-in strict enforcement)
+  deny (default) → block the commit
+  warn           → systemMessage nudge, commit proceeds
   off            → silent allow (escape hatch for genuine edge cases —
                    copying a prior commit body into a test fixture, etc.)
 
