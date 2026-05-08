@@ -73,7 +73,7 @@ The parent dispatches the validator with a **manifest** of the planned wave. The
 | `description prefix` | Begins with `composer-` / `reviewer-` / `probe-` / `process-validator-`. Bare `j-` / `sj-` are forbidden — see issue #126. |
 | `journey-id` | Slug from `journey-map.md`. The mapping description-prefix → journey-id is what the dispatch-guard checks. |
 | `slug` | The CLI session slug for this dispatch. Pattern matches the role (composer-j-… / reviewer-j-… / probe-j-…) and respects the 28-char cap. |
-| `model-hint` | `sonnet` (default) or `opus` (large journeys). Matches `coverage-expansion/SKILL.md` §"Model selection per journey". |
+| `model-hint` | Model hint per `coverage-expansion/SKILL.md` §"Hybrid model selection" — validate the manifest's model field matches the table for each dispatch's role-prefix and pass. |
 | `must-fix-list summary` | One-line summary of the Stage B feedback this Stage A retry must address, OR `(n/a)` for fresh-cycle composer dispatches. |
 
 ### What the manifest does NOT contain
@@ -101,7 +101,7 @@ The validator runs the following checks against the manifest. Each check produce
 | **Brief-minimalism (proxied via must-fix-list summary)** | The must-fix-list summary ≤ 240 chars; no orchestrator meta-content (`depth mode`, `5-pass pipeline`, `Pass 4/5`, etc.). | `brief-leak` — name the row + leaked phrase. |
 | **Parallelism cap** | Wave size ≤ host-max parallelism cap (typically `P=4` per the playwright-cli-protocol §1.1 empirical numbers; the cap is a function of the consumer's host). | `parallelism-cap-violation` — name the planned size + cap. |
 | **Hook-rule pre-checks** | All bullets in the manifest's "Pre-checks performed by parent" section are checked. | `pre-check-not-acknowledged` — name the unchecked bullet. |
-| **Model-hint sanity** | Sonnet for journeys with ≤ 8 Test-expectations bullets; Opus for journeys with > 8 OR explicitly tagged "complex" in the journey block. | `model-mismatch` — name the row + suggested model. |
+| **Model-hint sanity** | Model hint per `coverage-expansion/SKILL.md` §"Hybrid model selection" — validate the manifest's model field matches the table for each dispatch's role-prefix and pass. | `model-mismatch` — name the row + suggested model. |
 | **Pass-boundary fit** | The wave's pass + stage match the coverage-expansion-state.json's pending state. | `state-misalignment` — quote the conflict. |
 
 ### Finding-block shape
