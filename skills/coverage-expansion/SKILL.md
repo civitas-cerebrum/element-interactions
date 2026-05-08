@@ -51,14 +51,16 @@ If you are about to dispatch fewer passes than the mode requires, or fewer journ
 
 **Onboarding-pipeline contract**: when invoked from `onboarding` Phase 5 (autonomous mode), the front-load gate has already authorised the full pipeline ("tens of minutes to several hours"). The orchestrator may not stop pre-emptively in autonomous mode — the only valid mid-run stop is exit #2 *after at least one wave has returned*. "Mostly done with Phase 3 happy-path, surfacing back to user" is not a valid Phase 5 exit.
 
-### Reviewer parallelism is non-negotiable
+### Reviewer parallelism is non-negotiable (and one optional batch step)
 
 Stage B reviewers run **at host max parallelism**, not one at a time. A pass with 16 journeys dispatches up to 16 reviewers in one parallel wave (subject to the shared-resource audit's credential caps — see §"Parallel cap — lifted and jointly applied"). Reviewer dispatch is NOT a serialised cost.
 
 The contract:
-- **Per-journey**: each reviewer reads ONE journey's spec + journey block + live app (Stage B is never batched).
+- **Per-journey**: each reviewer reads ONE journey's spec + journey block + live app (Stage B is per-journey by default).
 - **Across journeys**: dispatched in parallel up to the host-max cap, sharing the same in-flight pool with Stage A retries.
 - **Within a journey**: Stage A and Stage B are sequential (a journey's own A and B never overlap), but its B can run while a sibling journey's A is in flight.
+
+**Batch reviewer mode — Pass 1/2/3 cycle-1 only.** For the cycle-1 Stage B of compositional Passes 1, 2, and 3, the orchestrator dispatches **one** Opus reviewer that reads all in-flight journeys' Stage A spill files together and emits per-journey verdicts in a single return. ~85% of compositional cycle-1 reviews return greenlight; per-journey isolation over-pays for that majority. Role-prefix `reviewer-batch-pass-<N>:`; return shape in [`references/reviewer-subagent-contract.md`](references/reviewer-subagent-contract.md) §"Batch reviewer mode (cycle-1 compositional only)". For any flagged journey in the batch return, the orchestrator dispatches a follow-up cycle-2 `mode: per-journey` reviewer. **Adversarial Passes 4 and 5 never batch** — the per-journey live-app probe + matrix coverage check is load-bearing. **Cycle-2+ is always per-journey**, regardless of pass.
 
 If you are about to stop after Stage A claiming "running 16 reviewers is too much for this session" — re-read this section. 16 reviewers in parallel is one wave. The wave is the contract.
 
@@ -91,7 +93,8 @@ Every Agent dispatch description starts with a role-explicit prefix. The prefix 
 |---|---|---|---|
 | Stage A composer (per journey) | `composer-j-<slug>:` | `composer-j-<slug>-<pass>-c<N>` | `subagent-return-schema.md` §1 + §2 (Stage A) |
 | Stage A composer (sub-journey) | `composer-sj-<slug>:` | `composer-sj-<slug>-<pass>-c<N>` | as above |
-| Stage B reviewer | `reviewer-j-<slug>:` | `reviewer-j-<slug>-<pass>-c<N>` | `subagent-return-schema.md` §2.4 (Stage B) |
+| Stage B reviewer (per journey) | `reviewer-j-<slug>:` | `reviewer-j-<slug>-<pass>-c<N>` | `subagent-return-schema.md` §2.4 (Stage B) |
+| Stage B reviewer (batch — compositional cycle-1 only) | `reviewer-batch-pass-<N>:` | (no CLI session — static reader) | `subagent-return-schema.md` §2.4-batch (`verdicts:` array wrapping per-journey §2.4 returns) |
 | Adversarial probe (passes 4-5) | `probe-j-<slug>:` | `probe-j-<slug>-<pass>` | Stage A finding shape + ledger |
 | Sub-orchestrator (process-validator) | `process-validator-<scope>:` | (no CLI session) | Reviewer-shape (§2.4) applied to a manifest |
 | Phase 1 discovery | `phase1-<entry>:` | `phase1-<entry>` | site-map / page entries |
@@ -381,7 +384,7 @@ The full per-pass pipeline (steps 1–8), pass differences, commit-message conve
   - A pass with `final_must_fix` carry-overs from the prior pass forces that journey's next Stage A composer onto Opus regardless of the table (the must-fix is hard; a mechanical Sonnet re-pass won't resolve it). Note this override is now scoped to Pass 2/3 Stage A composers — Stage B reviewers (per-journey and batch) are Opus by default, so no review-side override is required.
 
   This section supersedes the prior "cost-blind, opus-default" rule. The change is empirically grounded for execution-side dispatches: the Pass 2 and Pass 3 re-pass composers drop to Sonnet because the work is mechanical (the majority of journeys return `covered-exhaustively`). Pass 4 stays on Opus despite issue #164's observed Sonnet/Opus parity on adversarial probes — the parity covered the probe categories surfaced in that one cycle, and Pass 4's findings are the input to Pass 5's regression layer; probe-depth quality at that boundary determines what gets locked in. Review judgement stays on Opus across all passes — per-journey while batching ramps, and at the batch reviewer once #164.2 is in steady state. See issue #164 for the per-dispatch cost analysis.
-- **P0/P1/P2 NEVER batch.** P3-only batching, capped at 7 per brief, Stage A only — Stage B always per-journey. Sharing pages with P3 siblings is not authorisation; priority is load-bearing.
+- **Stage A always per-journey except the documented P3-batch ≤7 exception. Stage B per-journey except the documented compositional-cycle-1 batch-reviewer exception (one reviewer per pass; never adversarial; never cycle-2+).** P0/P1/P2 NEVER use the P3-batch Stage A exception — P3-only batching, capped at 7 per brief; sharing pages with P3 siblings is not authorisation for batching at the Stage-A side, priority is load-bearing. Adversarial Passes 4-5 NEVER use the batch-reviewer Stage B exception (per-journey live-app probe + matrix coverage check is structurally per-journey). Cycle-2+ ALWAYS uses per-journey reviewers regardless of pass — by cycle 2 the orchestrator already knows which journeys need attention.
 - **P3 small-surface journeys may opt OUT of adversarial passes (Passes 4 & 5).** Per #164.4, P3 logout / role-chooser / modal-only journeys empirically produce 0–2 unique adversarial findings each — their entire adversarial surface is already covered via portal-wide pattern citations from larger journeys. The skip is **opt-in per project**, declared up-front in the state file's `adversarialSkippedJourneys: []` field with rationale per entry. Default is "include all" — the orchestrator never silently skips a P3 from adversarial work; the operator opts the journey out by name. Compositional passes (1–3) ALWAYS run on every journey including P3. **Exclusion criteria** (must hold for a journey to qualify for opt-out):
   - Priority is P3.
   - The journey's `Pages touched` list is a subset of pages already adversarial-probed by a larger journey AND covered by a portal-wide pattern entry (per #164.3).
