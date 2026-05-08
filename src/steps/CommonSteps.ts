@@ -678,6 +678,33 @@ export class Steps {
     }
 
     /**
+     * Asserts that every element in the list is visible in the DOM, running all
+     * checks concurrently. Equivalent to calling `verifyPresence` for each entry
+     * inside a `Promise.all`, but with a single log line and no boilerplate.
+     *
+     * Use this when a test needs to assert the presence of many independent
+     * elements on the same already-loaded page — the parallel resolution
+     * removes the per-step serial overhead without changing the underlying
+     * assertion semantics.
+     *
+     * @param targets - Array of `{ elementName, pageName, options? }` descriptors.
+     * @example
+     * await steps.verifyAllPresent([
+     *   { elementName: 'productTitle', pageName: 'ProductDetailsPage' },
+     *   { elementName: 'productPrice', pageName: 'ProductDetailsPage' },
+     *   { elementName: 'addToCart',    pageName: 'ProductDetailsPage' },
+     * ]);
+     */
+    async verifyAllPresent(targets: Array<{ elementName: string; pageName: string; options?: StepOptions }>): Promise<void> {
+        log.verify('Verifying presence of %d elements in parallel', targets.length);
+        await Promise.all(
+            targets.map(({ elementName, pageName, options }) =>
+                this.actionWithStrategy(elementName, pageName, options).verifyPresence(),
+            ),
+        );
+    }
+
+    /**
      * Checks whether an element is currently present and visible in the DOM.
      * Returns a boolean instead of throwing.
      * @param elementName - The element name as defined under the given page.
@@ -786,16 +813,22 @@ export class Steps {
     /**
      * Asserts that all image elements matching the locator have loaded successfully.
      *
-     * Equivalent to `steps.on(elementName, pageName).verifyImages(scroll)`.
+     * Equivalent to `steps.on(elementName, pageName).verifyImages(scroll, imageOptions)`.
+     *
+     * By default checks visibility, `src` attribute, and non-zero `naturalWidth`.
+     * Pass `imageOptions: { verifyDecoded: true }` to also run `Image.decode()` per image —
+     * this adds a CDP round-trip per image and is most useful for thoroughness testing
+     * rather than smoke checks.
      *
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param scroll - Whether to scroll each image into view before checking. Defaults to `true`.
+     * @param imageOptions - `verifyDecoded`: run `Image.decode()` per image (default: false).
      * @param options - Optional step options for element resolution.
      */
-    async verifyImages(elementName: string, pageName: string, scroll: boolean = true, options?: StepOptions): Promise<void> {
+    async verifyImages(elementName: string, pageName: string, scroll: boolean = true, imageOptions?: { verifyDecoded?: boolean }, options?: StepOptions): Promise<void> {
         log.verify('Verifying images for "%s" in "%s" (scroll: %s)', elementName, pageName, scroll);
-        await this.actionWithStrategy(elementName, pageName, options).verifyImages(scroll);
+        await this.actionWithStrategy(elementName, pageName, options).verifyImages(scroll, imageOptions);
     }
 
     /**

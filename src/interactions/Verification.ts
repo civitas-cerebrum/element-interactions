@@ -518,15 +518,19 @@ export class Verifications {
     }
 
     /**
-     * Performs a rigorous, multi-step verification on one or more images.
-     * It checks for visibility, ensures a valid 'src' attribute exists, confirms the
-     * 'naturalWidth' is greater than 0, and evaluates the browser's native `decode()`
-     * promise to guarantee the image is fully rendered and not a broken link.
+     * Performs a multi-step verification on one or more images.
+     *
+     * By default checks visibility, a non-empty `src` attribute, and a non-zero
+     * `naturalWidth`. Pass `{ verifyDecoded: true }` to additionally run the
+     * browser-native `Image.decode()` round-trip, which confirms the image is
+     * fully rendered and not a broken link but adds a CDP round-trip per image.
+     *
      * @param imagesTarget - A Playwright Locator or Element pointing to the image element(s).
-     * @param scroll - Whether to smoothly scroll the image(s) into the viewport before verifying (default: true).
-     * @throws Will throw an error if no images are found matching the locator or if any image fails to decode.
+     * @param scroll - Whether to scroll the image(s) into the viewport before verifying (default: true).
+     * @param options - `verifyDecoded`: run `Image.decode()` per image (default: false).
+     * @throws Will throw an error if no images are found or any image fails verification.
      */
-    async images(imagesTarget: WebElement, scroll: boolean = true): Promise<void> {
+    async images(imagesTarget: WebElement, scroll: boolean = true, options?: { verifyDecoded?: boolean }): Promise<void> {
         const imagesLocator = resolveLocator(imagesTarget);
         const productImages = await imagesLocator.all();
 
@@ -545,17 +549,18 @@ export class Verifications {
             await expect(productImage).toHaveAttribute('src', /.+/, { timeout: this.ELEMENT_TIMEOUT });
             await expect(productImage).not.toHaveJSProperty('naturalWidth', 0, { timeout: this.ELEMENT_TIMEOUT });
 
-            const isDecoded = await productImage.evaluate(async (img: HTMLImageElement) => {
-                if (!img.src) return false;
-                try {
-                    await img.decode();
-                    return true;
-                } catch {
-                    return false;
-                }
-            });
-
-            expect(isDecoded, `Image ${i + 1} failed to decode for ${imagesLocator}`).toBe(true);
+            if (options?.verifyDecoded) {
+                const isDecoded = await productImage.evaluate(async (img: HTMLImageElement) => {
+                    if (!img.src) return false;
+                    try {
+                        await img.decode();
+                        return true;
+                    } catch {
+                        return false;
+                    }
+                });
+                expect(isDecoded, `Image ${i + 1} failed to decode for ${imagesLocator}`).toBe(true);
+            }
         }
     }
 
