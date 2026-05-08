@@ -372,7 +372,8 @@ Receipt: ${RECEIPT}"
     if [ -n "${FAKE_STAGED_HASH:-}" ]; then
       STAGED_HASH="$FAKE_STAGED_HASH"
     else
-      STAGED_HASH=$(git -C "$WS" diff --cached | sha256sum 2>/dev/null | awk '{print $1}' || echo "")
+      FILES_ARG=$(jq -r '.files[] // empty' "$RECEIPT" 2>/dev/null | tr '\n' ' ')
+      STAGED_HASH=$(git -C "$WS" diff --cached -- $FILES_ARG 2>/dev/null | sha256sum | awk '{print $1}' || echo "")
     fi
 
     if [ -z "$RECEIPT_HASH" ] || [ "$RECEIPT_HASH" != "$STAGED_HASH" ]; then

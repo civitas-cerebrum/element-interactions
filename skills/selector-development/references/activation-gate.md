@@ -10,7 +10,7 @@ The skill activates **only when both gates pass**. If either gate fails, the ski
 
 | Gate | Rule | Deny reason |
 |---|---|---|
-| **Workspace gate** | Frontend source present AND tests present (see §2) | "frontend source not present" OR "tests not present" |
+| **Workspace gate** | Frontend framework dep present AND tests present (see §2) | "frontend source not present" OR "tests not present" |
 | **Missing-selector gate** | Element has no stable selector by any of three criteria (see §3) | skill exits silently; Stage 2 already has a working locator |
 
 Both must hold. If workspace gate fails, the caller falls back to best-effort locators. If missing-selector gate fails, the skill skips instrumentation silently.
@@ -19,7 +19,7 @@ Both must hold. If workspace gate fails, the caller falls back to best-effort lo
 
 ## Frontend detection signals
 
-The workspace gate checks for **both** of these conditions:
+The workspace gate checks for:
 
 ### Condition 1: Frontend framework dependency
 
@@ -37,27 +37,7 @@ lit
 
 Look in both `.dependencies` and `.devDependencies`. If the framework list includes any of the above, **frontend presence** is confirmed.
 
-### Condition 2: Frontend source files
-
-The workspace must contain at least one file matching these criteria:
-
-**Always accepted:**
-```
-*.tsx
-*.jsx
-*.vue
-*.svelte
-*.html
-*.htm
-```
-
-**Conditionally accepted (only under source trees):**
-```
-*.ts    (only under /src/, /app/, /pages/, /components/)
-*.js    (only under /src/, /app/, /pages/, /components/)
-```
-
-A single file matching any of the above in the workspace tree confirms **frontend source presence**.
+> **Note:** A separate filesystem scan for frontend source files is not performed by the hook. Instead, the hook fires only when the inbound tool call targets a frontend source path — the path-extension and source-directory filter applied to the tool's `file_path` (e.g., `*.tsx`, `*.jsx`, `*.vue`, `*.svelte` under `src/`, `app/`, `pages/`, `components/`, etc.) serves as implicit evidence that frontend source exists in the workspace. Condition 1 is therefore sufficient to confirm frontend presence at activation time.
 
 ### Workspace root detection
 

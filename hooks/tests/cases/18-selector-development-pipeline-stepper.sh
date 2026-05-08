@@ -633,3 +633,94 @@ assert_allow "$H" \
   "PostToolUse commit when scope already cleared → idempotent ALLOW"
 
 unset WORKSPACE_ROOT
+
+# ---------------------------------------------------------------------------
+# Section 14 — commit gate: hash scoped to receipt files, not full staging area
+#
+# Verifies the Issue 1 fix: when the receipt lists specific files, Step 8 hashes
+# only those files — not the entire staging area.  An unrelated extra file staged
+# alongside the receipt file must not break the hash comparison.
+#
+# Strategy: build a real git fixture so the actual sha256 path is exercised
+# (FAKE_STAGED_HASH is NOT used — we want to hit the FILES_ARG code path).
+# ---------------------------------------------------------------------------
+section "pipeline-stepper: commit gate hashes only receipt files, not full staging area"
+
+ALL_7_S14=$(_steps_json \
+  "before_snapshot:pass" \
+  "patch_applied:pass" \
+  "typecheck:pass" \
+  "unit_tests:pass" \
+  "e2e:pass" \
+  "after_snapshot:pass" \
+  "visual_diff:pass")
+
+# Build a bare git repo so we can stage real files
+WS_GIT=$(mktemp -d)
+git -C "$WS_GIT" init -q
+git -C "$WS_GIT" config user.email "test@test.com"
+git -C "$WS_GIT" config user.name "Test"
+
+# Create the selector-development directories and a src directory
+mkdir -p "$WS_GIT/tests/e2e/.selector-development"
+mkdir -p "$WS_GIT/src"
+
+# Create initial commit so HEAD exists
+printf 'initial\n' > "$WS_GIT/README.md"
+git -C "$WS_GIT" add README.md
+git -C "$WS_GIT" commit -q -m "init"
+
+# Create the frontend source file that the receipt tracks
+FRONTEND_FILE="$WS_GIT/src/Button.tsx"
+printf 'export const Button = () => <button data-testid="submit-button">Click</button>;\n' > "$FRONTEND_FILE"
+
+# Create an unrelated extra file (simulates package-lock.json or another staged file)
+UNRELATED_FILE="$WS_GIT/package-lock.json"
+printf '{"lockfileVersion":3}\n' > "$UNRELATED_FILE"
+
+# Stage ONLY the frontend file first and compute its per-file hash
+git -C "$WS_GIT" add src/Button.tsx
+EXPECTED_HASH=$(git -C "$WS_GIT" diff --cached -- src/Button.tsx | sha256sum | awk '{print $1}')
+
+# Now also stage the unrelated file — the full staging area hash will differ
+git -C "$WS_GIT" add package-lock.json
+FULL_STAGING_HASH=$(git -C "$WS_GIT" diff --cached | sha256sum | awk '{print $1}')
+
+# Confirm the two hashes differ (validates the test setup is meaningful)
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ "$EXPECTED_HASH" != "$FULL_STAGING_HASH" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} test fixture: file-scoped hash differs from full-staging hash (setup valid)"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("Section 14 setup: file-scoped hash equals full-staging hash — test fixture is not meaningful")
+  echo "${CLR_FAIL}  ✗${CLR_RST} test fixture setup: hashes are equal — extra staged file had no effect"
+fi
+
+# Write receipt with git_diff_hash = per-file hash and files = [absolute path to frontend file]
+printf '%s' "submit-button" > "$WS_GIT/tests/e2e/.selector-development/.current-scope"
+jq -n \
+  --arg scope "submit-button" \
+  --arg hash "$EXPECTED_HASH" \
+  --arg file "$FRONTEND_FILE" \
+  --argjson steps "$ALL_7_S14" \
+  '{
+    schema_version: 2,
+    mode: "jit",
+    scope: $scope,
+    git_diff_hash: $hash,
+    attribute: { name: "data-testid", value: $scope },
+    files: [$file],
+    steps: $steps
+  }' > "$WS_GIT/tests/e2e/.selector-development/submit-button.receipt.json"
+
+export WORKSPACE_ROOT="$WS_GIT"
+
+# The commit gate must ALLOW — the receipt hash matches the per-file diff,
+# even though the full staging area (which includes package-lock.json) has a
+# different hash.  This would have BLOCKED under the old unscoped hash logic.
+assert_allow "$H" \
+  "$(payload tool_name=Bash command="git commit -m 'feat: add testid'" hook_event_name=PreToolUse cwd="$WS_GIT")" \
+  "commit gate: extra staged file present but hash scoped to receipt files → ALLOW"
+
+unset WORKSPACE_ROOT
