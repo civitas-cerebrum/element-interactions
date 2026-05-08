@@ -1,11 +1,12 @@
 # Example Output
 
-A live example of this skill's output is produced for the MediCheck onboarding engagement (see the farmed-visie-fresh repo, `test-catalogue.pdf` at repo root).
+This skill's output is a per-project artefact and intentionally not committed to the package — keeping consumer-specific content out of the skill package is part of the universality contract.
 
-Headline shape of that example:
+Headline shape of a typical run:
+
 - Cover page with app name, date, and four stat tiles (total / journeys / active / skipped).
-- One section per portal (Manager, Administrator, Cross-cutting) with per-priority tables.
+- One section per primary structural axis derived at runtime from the journey map (URL-prefix clusters, file-name clusters, or an explicit `**Section:**` field) — plus a pinned "Cross-cutting" section for sub-journeys and regression batches.
 - Adversarial-regression section listing every verified-boundary test.
-- Skipped-with-reason section documenting scenarios deferred (tenant data, known bugs, 2FA preconditions, etc).
+- Skipped-with-reason section documenting scenarios deferred (tenant data gaps, known bugs, environmental preconditions, etc).
 
-The example is not committed to this repo — keeping client-specific content out of the skill package is intentional. To regenerate an example, run the skill in any project that has `tests/e2e/*.spec.ts` plus a sentinel-bearing `tests/e2e/docs/journey-map.md`.
+To produce an example for any project, run the skill in a directory that has `tests/e2e/*.spec.ts` plus a sentinel-bearing `tests/e2e/docs/journey-map.md`.

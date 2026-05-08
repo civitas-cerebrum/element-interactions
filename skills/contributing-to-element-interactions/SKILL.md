@@ -637,33 +637,24 @@ Every public method on `Steps` logs at one of: `tester:navigate`, `tester:intera
 - **Use `as const`** for matcher verb strings and similar string literals when they need narrow types.
 - **Avoid `as unknown as X` double-casts.** If you need one, the type model is wrong somewhere — refactor.
 
-### 15. Patch-version one-PR-one-bump rule
+### 15. No version bumps without explicit authorisation
 
-Bump the branch **once** per PR — and bump it to **`(npm-latest + 1 patch)`**, not `(current package.json + 1 patch)`. Look up the published latest first, then bump to that ceiling plus one. Do not bump on every follow-up commit on the same branch. The `publish.yml` workflow publishes whatever version is in `package.json` at merge time, so multi-bumps inflate the version number for nothing.
+**Don't run `npm version <X>`. Don't edit `package.json`'s `version` field. Don't push a tag.** Versioning is release-time, not per-PR. The user controls when bumps happen.
 
-**Recipe:**
-
-```bash
-LATEST=$(npm view @civitas-cerebrum/element-interactions version)
-# parse + bump patch
-IFS=. read -r MAJOR MINOR PATCH <<< "$LATEST"
-NEW="${MAJOR}.${MINOR}.$((PATCH + 1))"
-npm version "$NEW" --no-git-tag-version
-```
-
-Equivalent one-liner:
+A contributor (or an agent acting for one) may bump only when **the user has explicitly authorised that specific bump in the conversation**. The authorisation is an in-band marker inlined on the bash command:
 
 ```bash
-npm version "$(npm view @civitas-cerebrum/element-interactions version | awk -F. '{print $1"."$2"."$3+1}')" --no-git-tag-version
+VERSION_BUMP_AUTHORISED=1 npm version patch --no-git-tag-version
+VERSION_BUMP_AUTHORISED=1 npm version 0.4.0
 ```
 
-**Why bump against npm-latest, not `package.json`:**
+The marker travels with the command — auditable in git log, copy-pasteable from the user's authorising message. Don't set the env var globally; inline it on the bump command only. Without the prefix, `hooks/version-bump-authorisation-guard.sh` (PreToolUse:Bash) denies the command.
 
-When multiple PRs are open in parallel, every branch bumping `current+1` from its own diverged base produces version collisions on merge — two branches off `0.3.6` both bump to `0.3.7`, the second to merge clobbers or duplicates the first's published version. Bumping against npm-latest collapses every open branch to a known monotonic ceiling: the first PR to merge sets the new published version, and subsequent PRs rebase + re-bump against the new ceiling. No collisions, no manual reconciliation in CI.
+**Why.** Per-PR bumping causes version-number collisions when PRs merge out of order, reviewer cognitive cost from a version line in every diff, and rebase churn that has nothing to do with the actual change. Release-time bumping collapses every PR diff to "the actual change" and keeps release control with the maintainer.
 
-**Edge case — `npm view` fails (no network, package not yet published).** Fall back to bumping against the current `package.json` value (the old recipe) and call out the deviation in the PR description so the reviewer can spot-check for collision against any other open PR. The `hooks/version-bump-against-npm-guard.sh` hook also silently allows when the lookup fails (offline mode), so the bump itself isn't blocked.
-
-For minor/major bumps, same rule: bump once, at the start, against `(npm-latest + 1 minor/major)`.
+**Escape hatches** (rare):
+- `BUMP_AUTHORISATION_GUARD=off` — for release-script automation that has already proven authorisation upstream. Set in the parent shell that runs the bash command; not on the command line itself.
+- The hook never fires on `npm publish` (out of scope; `feedback_never_publish` covers that), `npm view ... version` (read, not bump), `node --version` / `npm --version`, or `npm run <some-script>` even if the script is named `version-bump`.
 
 ### 16. Tests hit the real Vue test app
 
@@ -1166,7 +1157,7 @@ Before opening a PR on element-interactions:
 - [ ] Tests pass: `npm run test` shows all tests passing
 - [ ] Coverage 100%: `npx test-coverage --format=github-plain` shows ✅
 - [ ] No raw Playwright leak: `grep -rn "locator\.\(click\|fill\|...\)" src/ --include="*.ts"` returns zero matches in non-`Element`-impl code
-- [ ] Version bumped exactly once, to `(npm-latest + 1 patch)` — verified against `npm view @civitas-cerebrum/element-interactions version` (Rule 15 — collision-safe across parallel PRs)
+- [ ] **No version bump in this PR** (Rule 15 — versioning is release-time, not per-PR). If the user has explicitly authorised a bump, the bash invocation is prefixed with `VERSION_BUMP_AUTHORISED=1` and `hooks/version-bump-authorisation-guard.sh` allows it; otherwise the hook denies the command.
 - [ ] API reference updated (`skills/element-interactions/references/api-reference.md`) — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] README updated under `🛠️ API Reference: Steps` — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] If adding a new method, it has a JSDoc block on the public-facing class

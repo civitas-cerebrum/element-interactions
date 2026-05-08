@@ -45,8 +45,8 @@ State file shape (minimum fields):
   "adversarialTotals": { ... },
   "adversarialSkippedJourneys": [
     {
-      "journey": "j-zb-logout",
-      "rationale": "P3 logout, single-page surface already probed by j-zb-create-location pass-4 portal-wide CSRF entry; zero unique findings in prior passes",
+      "journey": "j-logout",
+      "rationale": "P3 logout, single-page surface already probed by a larger journey's pass-4 app-wide CSRF entry; zero unique findings in prior passes",
       "criteria": ["priority-p3", "page-subset-covered", "zero-prior-findings", "low-surface-shape"]
     }
   ],
@@ -98,7 +98,7 @@ Gated-skip entries are valid **only** for Passes 2 and 3. Pass 1 has no prior pa
 **`adversarialSkippedJourneys[]` field (issue #164.4, opt-in P3 adversarial skip):** array of objects, each with:
 
 - `journey` — the journey ID (`j-<slug>`).
-- `rationale` — non-empty string explaining why the journey is being excluded from Passes 4 and 5. Vague rationales (`"low value"`, `"P3 doesn't need it"`) fail the contract; specific rationales naming the covered surface and the portal-wide entry that subsumes it pass.
+- `rationale` — non-empty string explaining why the journey is being excluded from Passes 4 and 5. Vague rationales (`"low value"`, `"P3 doesn't need it"`) fail the contract; specific rationales naming the covered surface and the app-wide entry that subsumes it pass.
 - `criteria` — array containing all four canonical strings naming the criteria (`priority-p3`, `page-subset-covered`, `zero-prior-findings`, `low-surface-shape`); the entry's validity requires all four to be present (the array is mechanical evidence, not a tickbox). Order doesn't matter; missing or extra strings DENY at the schema-guard hook.
 
 The field is **opt-in per project, never silent**. The orchestrator may not append entries inferentially during a pass; entries land at project setup time (or in a between-pass commit explicitly authorised by the user) and stay through all subsequent runs. Compositional Passes (1–3) ignore this field — every journey gets compositional coverage regardless. Adversarial Passes (4 and 5) read it on entry and exclude listed journeys from their journey roster for those passes only.
