@@ -316,7 +316,7 @@ for n in 156 157; do gh issue view $n --json author -q '.number, .author.login' 
 
 **Self-reported / chore caveat.** When the contributor is also the issue author, self-attribution is still appropriate — the audit trail is the value, not the social acknowledgement. For purely-chore commits with no upstream issue, the rule does not apply.
 
-**Harness-enforced by `hooks/commit-attribution-gate.sh`** (PreToolUse:Bash, filters to `git commit`). When the commit references an issue without a `Reported-by:` / `Issue-reported-by:` line, the hook emits a `systemMessage` with the gh-CLI snippet to fetch the author. Escape hatch for genuine edge cases: `COMMIT_ATTRIBUTION_GATE=off`.
+**Harness backstop.** A `PreToolUse:Bash` `git commit` guardrail surfaces missing `Reported-by:` attribution so the omission is visible at commit time. Escape hatch available — see the hook header for specifics. (See [harness-hooks.md](../element-interactions/references/harness-hooks.md).)
 
 ### AI assistants don't get `Co-Authored-By:` trailers
 
@@ -681,9 +681,13 @@ The marker travels with the command — auditable in git log, copy-pasteable fro
 
 **Why.** Per-PR bumping causes version-number collisions when PRs merge out of order, reviewer cognitive cost from a version line in every diff, and rebase churn that has nothing to do with the actual change. Release-time bumping collapses every PR diff to "the actual change" and keeps release control with the maintainer.
 
-**Escape hatches** (rare):
-- `BUMP_AUTHORISATION_GUARD=off` — for release-script automation that has already proven authorisation upstream. Set in the parent shell that runs the bash command; not on the command line itself.
-- The hook never fires on `npm publish` (out of scope; `feedback_never_publish` covers that), `npm view ... version` (read, not bump), `node --version` / `npm --version`, or `npm run <some-script>` even if the script is named `version-bump`.
+**Why bump against npm-latest, not `package.json`:**
+
+When multiple PRs are open in parallel, every branch bumping `current+1` from its own diverged base produces version collisions on merge — two branches off the same base both bump to the same next version, the second to merge clobbers or duplicates the first's published version. Bumping against npm-latest collapses every open branch to a known monotonic ceiling: the first PR to merge sets the new published version, and subsequent PRs rebase + re-bump against the new ceiling. No collisions, no manual reconciliation in CI.
+
+**Edge case — `npm view` fails (no network, package not yet published).** Fall back to bumping against the current `package.json` value (the old recipe) and call out the deviation in the PR description so the reviewer can spot-check for collision against any other open PR. The version-bump guard silently allows when the lookup fails, so the bump itself isn't blocked.
+
+For minor/major bumps, same rule: bump once, at the start, against `(npm-latest + 1 minor/major)`.
 
 ### 16. Tests hit the real Vue test app
 
@@ -760,7 +764,7 @@ Every PR against this repo must produce a populated `.contribution-handover.json
 
 The schema lives at `schemas/contribution-handover.schema.json`. A blank template lives at `.contribution-handover.template.json`. **Copy the template, fill it in, and run the gate at push time. The file is gitignored — DO NOT commit it.** Carrying a previous PR's handover into a new branch is the failure mode the gate exists to catch (each PR's claims must reflect that PR's actual contents, not whatever the prior handover said).
 
-The companion gate is `hooks/contribution-handover-gate.sh` — a `PreToolUse:Bash` hook that intercepts `git push origin` and `gh pr create` and refuses to let either run while the handover is missing, malformed, or has unset booleans. Install it by adding a `PreToolUse:Bash` entry pointing at the script in your `~/.claude/settings.json` (see the script's header for an exact wiring snippet).
+The companion gate is a `PreToolUse:Bash` guardrail that intercepts `git push origin` and `gh pr create` and refuses to let either run while the handover is missing, malformed, or has unset booleans. See [harness-hooks.md](../element-interactions/references/harness-hooks.md); the hook header carries the install wiring snippet.
 
 **Why a handover, not just a checklist:**
 - Structured booleans are machine-checkable. The gate spot-verifies a subset of claims against the actual repo state (e.g. `readmeUpdated: true` is cross-checked against the README diff vs. `origin/main`).
