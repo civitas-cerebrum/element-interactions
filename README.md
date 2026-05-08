@@ -79,7 +79,7 @@ try {
 ```ts
 // Resolve from the page repository, log the action, wait, click,
 // and auto-retry past pointer interception — one line.
-await steps.click('CheckoutPage', 'submitButton');
+await steps.click('submitButton', 'CheckoutPage');
 ```
 
 ---
@@ -189,19 +189,19 @@ test('Add random product and verify image gallery', async ({ page }) => {
   const steps = new Steps(repo);
 
   await steps.navigateTo('/');
-  await steps.click('HomePage', 'category-accessories');
+  await steps.click('category-accessories', 'HomePage');
 
   // Use StepOptions to control element selection and interaction modifiers
-  await steps.click('AccessoriesPage', 'product-cards', { strategy: 'random' });
+  await steps.click('product-cards', 'AccessoriesPage', { strategy: 'random' });
   await steps.verifyUrlContains('/product/');
 
-  const selectedSize = await steps.selectDropdown('ProductDetailsPage', 'size-selector', {
+  const selectedSize = await steps.selectDropdown('size-selector', 'ProductDetailsPage', {
     type: DropdownSelectType.RANDOM,
   });
 
-  await steps.verifyCount('ProductDetailsPage', 'gallery-images', { greaterThan: 0 });
-  await steps.verifyText('ProductDetailsPage', 'product-title');  // no args = asserts not empty
-  await steps.verifyImages('ProductDetailsPage', 'gallery-images');
+  await steps.verifyCount('gallery-images', 'ProductDetailsPage', { greaterThan: 0 });
+  await steps.verifyText('product-title', 'ProductDetailsPage');  // no args = asserts not empty
+  await steps.verifyImages('gallery-images', 'ProductDetailsPage');
 });
 ```
 
@@ -273,17 +273,17 @@ All Steps methods accept an optional last parameter for element selection and in
 
 ```ts
 // Select by strategy
-await steps.click('Page', 'element', { strategy: 'random' });
-await steps.click('Page', 'element', { strategy: 'index', index: 2 });
-await steps.click('Page', 'element', { strategy: 'text', text: 'Submit' });
+await steps.click('element', 'Page', { strategy: 'random' });
+await steps.click('element', 'Page', { strategy: 'index', index: 2 });
+await steps.click('element', 'Page', { strategy: 'text', text: 'Submit' });
 
 // Interaction modifiers
-await steps.click('Page', 'element', { withoutScrolling: true });  // bypass actionability checks
-await steps.click('Page', 'element', { ifPresent: true });         // skip if not visible
-await steps.click('Page', 'element', { force: true });             // native DOM click (bypasses overlays)
+await steps.click('element', 'Page', { withoutScrolling: true });  // bypass actionability checks
+await steps.click('element', 'Page', { ifPresent: true });         // skip if not visible
+await steps.click('element', 'Page', { force: true });             // native DOM click (bypasses overlays)
 
 // Combine both
-await steps.click('Page', 'element', { strategy: 'random', withoutScrolling: true });
+await steps.click('element', 'Page', { strategy: 'random', withoutScrolling: true });
 ```
 
 ---
@@ -348,17 +348,17 @@ import { DropdownSelectType } from '@civitas-cerebrum/element-interactions';
 
 test('Complete checkout flow', async ({ steps }) => {
   await steps.navigateTo('/');
-  await steps.click('HomePage', 'category-accessories');
-  await steps.clickRandom('AccessoriesPage', 'product-cards');
+  await steps.click('category-accessories', 'HomePage');
+  await steps.clickRandom('product-cards', 'AccessoriesPage');
   await steps.verifyUrlContains('/product/');
 
-  const selectedSize = await steps.selectDropdown('ProductDetailsPage', 'size-selector', {
+  const selectedSize = await steps.selectDropdown('size-selector', 'ProductDetailsPage', {
     type: DropdownSelectType.RANDOM,
   });
 
-  await steps.verifyImages('ProductDetailsPage', 'gallery-images');
-  await steps.click('ProductDetailsPage', 'add-to-cart-button');
-  await steps.waitForState('CheckoutPage', 'confirmation-modal', 'visible');
+  await steps.verifyImages('gallery-images', 'ProductDetailsPage');
+  await steps.click('add-to-cart-button', 'ProductDetailsPage');
+  await steps.waitForState('confirmation-modal', 'CheckoutPage', 'visible');
 });
 ```
 
@@ -375,7 +375,7 @@ test('Navigate to Forms category', async ({ repo, steps }) => {
   const formsLink = await repo.getByText('categories', 'HomePage', 'Forms');
   await formsLink?.click();
 
-  await steps.verifyAbsence('HomePage', 'categories');
+  await steps.verifyAbsence('categories', 'HomePage');
 });
 
 test('Use underlying Locator for advanced assertions', async ({ repo }) => {
@@ -457,44 +457,44 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 
 ### 🖱️ Interaction
 
-* **`click(pageName, elementName, options?: StepOptions)`** — Clicks an element. Supports `{ strategy, withoutScrolling, ifPresent, force }`. Auto-retries with native DOM event on pointer interception.
-* **`clickIfPresent(pageName, elementName)`** — Clicks only if visible; skips silently. Returns `boolean`.
-* **`clickRandom(pageName, elementName, options?: StepOptions)`** — Clicks a random element from all matches. Supports `{ withoutScrolling }`.
-* **`rightClick(pageName, elementName)`** — Right-clicks an element to trigger a context menu.
-* **`doubleClick(pageName, elementName)`** — Double-clicks an element.
-* **`check(pageName, elementName)`** — Checks a checkbox or radio button. No-op if already checked.
-* **`uncheck(pageName, elementName)`** — Unchecks a checkbox. No-op if already unchecked.
-* **`hover(pageName, elementName)`** — Hovers over an element to trigger dropdowns or tooltips.
-* **`scrollIntoView(pageName, elementName)`** — Smoothly scrolls an element into the viewport.
-* **`dragAndDrop(pageName, elementName, options: DragAndDropOptions)`** — Drags an element to a target element (`{ target: Locator | Element }`), by coordinate offset (`{ xOffset, yOffset }`), or both.
-* **`dragAndDropListedElement(pageName, elementName, elementText, options: DragAndDropOptions)`** — Finds a specific element by its text from a list, then drags it to a destination.
-* **`fill(pageName, elementName, text: string)`** — Clears and fills an input field with the provided text.
-* **`uploadFile(pageName, elementName, filePath: string)`** — Uploads a file to an `<input type="file">` element.
-* **`selectDropdown(pageName, elementName, options?: DropdownSelectOptions)`** — Selects an option from a `<select>` element and returns its `value`. Defaults to `{ type: DropdownSelectType.RANDOM }`. Also supports `VALUE` (exact match) and `INDEX` (zero-based).
-* **`setSliderValue(pageName, elementName, value: number)`** — Sets a range input (`<input type="range">`) to the specified numeric value.
+* **`click(elementName, pageName, options?: StepOptions)`** — Clicks an element. Supports `{ strategy, withoutScrolling, ifPresent, force }`. Auto-retries with native DOM event on pointer interception.
+* **`clickIfPresent(elementName, pageName)`** — Clicks only if visible; skips silently. Returns `boolean`.
+* **`clickRandom(elementName, pageName, options?: StepOptions)`** — Clicks a random element from all matches. Supports `{ withoutScrolling }`.
+* **`rightClick(elementName, pageName)`** — Right-clicks an element to trigger a context menu.
+* **`doubleClick(elementName, pageName)`** — Double-clicks an element.
+* **`check(elementName, pageName)`** — Checks a checkbox or radio button. No-op if already checked.
+* **`uncheck(elementName, pageName)`** — Unchecks a checkbox. No-op if already unchecked.
+* **`hover(elementName, pageName)`** — Hovers over an element to trigger dropdowns or tooltips.
+* **`scrollIntoView(elementName, pageName)`** — Smoothly scrolls an element into the viewport.
+* **`dragAndDrop(elementName, pageName, options: DragAndDropOptions)`** — Drags an element to a target element (`{ target: Locator | Element }`), by coordinate offset (`{ xOffset, yOffset }`), or both.
+* **`dragAndDropListedElement(elementName, pageName, elementText, options: DragAndDropOptions)`** — Finds a specific element by its text from a list, then drags it to a destination.
+* **`fill(elementName, pageName, text: string)`** — Clears and fills an input field with the provided text.
+* **`uploadFile(elementName, pageName, filePath: string)`** — Uploads a file to an `<input type="file">` element.
+* **`selectDropdown(elementName, pageName, options?: DropdownSelectOptions)`** — Selects an option from a `<select>` element and returns its `value`. Defaults to `{ type: DropdownSelectType.RANDOM }`. Also supports `VALUE` (exact match) and `INDEX` (zero-based).
+* **`setSliderValue(elementName, pageName, value: number)`** — Sets a range input (`<input type="range">`) to the specified numeric value.
 * **`pressKey(key: string)`** — Presses a keyboard key at the page level (e.g. `'Enter'`, `'Escape'`, `'Tab'`).
-* **`typeSequentially(pageName, elementName, text: string, delay?: number)`** — Types text character by character with a configurable delay (default `100ms`). Ideal for OTP inputs or fields with `keyup` listeners.
+* **`typeSequentially(elementName, pageName, text: string, delay?: number)`** — Types text character by character with a configurable delay (default `100ms`). Ideal for OTP inputs or fields with `keyup` listeners.
 
 ### 📊 Data Extraction
 
-* **`getText(pageName, elementName)`** — Returns the trimmed text content of an element, or an empty string if null.
-* **`getAttribute(pageName, elementName, attributeName: string)`** — Returns the value of an HTML attribute (e.g. `href`, `aria-pressed`), or `null` if it doesn't exist.
+* **`getText(elementName, pageName)`** — Returns the trimmed text content of an element, or an empty string if null.
+* **`getAttribute(elementName, pageName, attributeName: string)`** — Returns the value of an HTML attribute (e.g. `href`, `aria-pressed`), or `null` if it doesn't exist.
 * **`getLocalStorage(key: string)`** — Reads `window.localStorage[key]`. Returns the stored string or `null` if the key is absent (matches the native `getItem` contract). Use for state the framework cannot reach through the DOM — persisted theme, dismissed-banner flag, feature toggles, auth tokens.
 * **`getSessionStorage(key: string)`** — Same shape, against `window.sessionStorage`.
 
 ### ✅ Verification
 
-* **`verifyPresence(pageName, elementName)`** — Asserts that an element is attached to the DOM and visible.
+* **`verifyPresence(elementName, pageName)`** — Asserts that an element is attached to the DOM and visible.
 * **`verifyAllPresent(targets: Array<{ elementName, pageName, options? }>)`** — Asserts presence of multiple independent elements in parallel via `Promise.all`. Equivalent to sequential `verifyPresence` calls but resolves all assertions concurrently — useful when a page has many content blocks to assert at once. Example: `await steps.verifyAllPresent([{ elementName: 'title', pageName: 'PDP' }, { elementName: 'price', pageName: 'PDP' }])`.
-* **`verifyAbsence(pageName, elementName)`** — Asserts that an element is hidden or detached from the DOM.
-* **`verifyText(pageName, elementName, expectedText?)`** — Asserts element text. Provide `expectedText` for an exact match, or call with no args to assert not empty.
-* **`verifyCount(pageName, elementName, options: CountVerifyOptions)`** — Asserts element count. Accepts `{ exactly: number }`, `{ greaterThan: number }`, or `{ lessThan: number }`.
+* **`verifyAbsence(elementName, pageName)`** — Asserts that an element is hidden or detached from the DOM.
+* **`verifyText(elementName, pageName, expectedText?)`** — Asserts element text. Provide `expectedText` for an exact match, or call with no args to assert not empty.
+* **`verifyCount(elementName, pageName, options: CountVerifyOptions)`** — Asserts element count. Accepts `{ exactly: number }`, `{ greaterThan: number }`, or `{ lessThan: number }`.
 * **`verifyImages(elementName, pageName, scroll?: boolean, options?: StepOptions, imageOptions?: { verifyDecoded?: boolean })`** — Verifies image rendering: checks visibility, valid `src`, and `naturalWidth > 0`. Pass `imageOptions: { verifyDecoded: true }` to also run the browser's native `decode()` round-trip (more thorough, adds a CDP round-trip per image; off by default). Scrolls into view by default.
-* **`verifyTextContains(pageName, elementName, expectedText: string)`** — Asserts that an element's text contains the expected substring.
-* **`verifyState(pageName, elementName, state)`** — Asserts the state of an element. Supported states: `'enabled'`, `'disabled'`, `'editable'`, `'checked'`, `'focused'`, `'visible'`, `'hidden'`, `'attached'`, `'inViewport'`.
-* **`verifyAttribute(pageName, elementName, attributeName: string, expectedValue: string)`** — Asserts that an element has a specific HTML attribute with an exact value.
+* **`verifyTextContains(elementName, pageName, expectedText: string)`** — Asserts that an element's text contains the expected substring.
+* **`verifyState(elementName, pageName, state)`** — Asserts the state of an element. Supported states: `'enabled'`, `'disabled'`, `'editable'`, `'checked'`, `'focused'`, `'visible'`, `'hidden'`, `'attached'`, `'inViewport'`.
+* **`verifyAttribute(elementName, pageName, attributeName: string, expectedValue: string)`** — Asserts that an element has a specific HTML attribute with an exact value.
 * **`verifyUrlContains(text: string)`** — Asserts that the current URL contains the expected substring.
-* **`verifyInputValue(pageName, elementName, expectedValue: string)`** — Asserts that an input, textarea, or select element has the expected value.
+* **`verifyInputValue(elementName, pageName, expectedValue: string)`** — Asserts that an input, textarea, or select element has the expected value.
 * **`verifyTabCount(expectedCount: number)`** — Asserts the number of currently open tabs/pages in the browser context.
 * **`verifyLocalStorage(key: string, options: StorageVerifyOptions)`** — Asserts a property of `localStorage[key]`. Pick exactly one matcher in the options: `{ equals: string }` (exact match), `{ contains: string }` (substring), `{ matches: RegExp }`, or `{ present: boolean }` (existence). All four forms also accept `negated`, `timeout`, and `errorMessage`. Polls until the predicate holds or the timeout expires, so it survives the race between a UI action firing and its persistence side-effect landing.
 * **`verifySessionStorage(key: string, options: StorageVerifyOptions)`** — Same shape, against `window.sessionStorage`.
@@ -511,11 +511,11 @@ await steps.verifyLocalStorage('theme', { equals: 'light', negated: true }); // 
 
 ### 🔍 Visibility — Probe + Gate
 
-* **`isVisible(pageName, elementName, options?)`** — Dual-behavior entry point. Returns a `VisibleChain` that is both:
+* **`isVisible(elementName, pageName, options?)`** — Dual-behavior entry point. Returns a `VisibleChain` that is both:
   - **awaitable as `Promise<boolean>`** — the probe, never throws. `await steps.isVisible(...)` resolves to `true` / `false`.
   - **chainable with action methods and the matcher tree** — the gate, silently skips when hidden.
   Options: `{ timeout?: number (default 2000), containsText?: string }`.
-* **`isPresent(pageName, elementName)`** — Boolean presence check with the default element timeout. Equivalent to `await element.isVisible()` on the resolved element.
+* **`isPresent(elementName, pageName)`** — Boolean presence check with the default element timeout. Equivalent to `await element.isVisible()` on the resolved element.
 
 ```ts
 // Probe — boolean
@@ -543,47 +543,47 @@ Operate on a specific element within a list (table rows, cards, list items) by m
 import { ListedElementMatch, VerifyListedOptions, GetListedDataOptions } from '@civitas-cerebrum/element-interactions';
 ```
 
-* **`clickListedElement(pageName, elementName, options: ListedElementMatch)`** — Finds and clicks a specific element from a list. Identify the target by `{ text }` or `{ attribute: { name, value } }`, and optionally drill into a child with `{ child: 'css-selector' }` or `{ child: { pageName, elementName } }`.
-* **`verifyListedElement(pageName, elementName, options: VerifyListedOptions)`** — Finds a listed element and asserts against it. Use `{ expectedText }` to verify text, `{ expected: { name, value } }` to verify an attribute, or omit both to assert visibility.
-* **`getListedElementData(pageName, elementName, options: GetListedDataOptions)`** — Extracts data from a listed element. Returns the element's text content by default, or an attribute value when `{ extractAttribute: 'attrName' }` is specified.
+* **`clickListedElement(elementName, pageName, options: ListedElementMatch)`** — Finds and clicks a specific element from a list. Identify the target by `{ text }` or `{ attribute: { name, value } }`, and optionally drill into a child with `{ child: 'css-selector' }` or `{ child: { pageName, elementName } }`.
+* **`verifyListedElement(elementName, pageName, options: VerifyListedOptions)`** — Finds a listed element and asserts against it. Use `{ expectedText }` to verify text, `{ expected: { name, value } }` to verify an attribute, or omit both to assert visibility.
+* **`getListedElementData(elementName, pageName, options: GetListedDataOptions)`** — Extracts data from a listed element. Returns the element's text content by default, or an attribute value when `{ extractAttribute: 'attrName' }` is specified.
 
 ```ts
 // Click the row containing "John"
-await steps.clickListedElement('UsersPage', 'tableRows', { text: 'John' });
+await steps.clickListedElement('tableRows', 'UsersPage', { text: 'John' });
 
 // Click a child button inside the row matching an attribute
-await steps.clickListedElement('UsersPage', 'tableRows', {
+await steps.clickListedElement('tableRows', 'UsersPage', {
   attribute: { name: 'data-id', value: '5' },
   child: 'button.edit'
 });
 
 // Verify text of a child cell in the row containing "Name"
-await steps.verifyListedElement('FormsPage', 'submissionEntries', {
+await steps.verifyListedElement('submissionEntries', 'FormsPage', {
   text: 'Name',
   child: 'td:nth-child(2)',
   expectedText: 'John Doe'
 });
 
 // Verify an attribute on a listed element
-await steps.verifyListedElement('UsersPage', 'tableRows', {
+await steps.verifyListedElement('tableRows', 'UsersPage', {
   attribute: { name: 'data-id', value: '5' },
   expected: { name: 'class', value: 'active' }
 });
 
 // Extract an href from a child link inside a listed element
-const href = await steps.getListedElementData('UsersPage', 'tableRows', {
+const href = await steps.getListedElementData('tableRows', 'UsersPage', {
   text: 'John',
   child: 'a.profile-link',
   extractAttribute: 'href'
 });
 
 // Regex text match — pick any row whose text matches the pattern
-await steps.clickListedElement('Users', 'tableRows', {
+await steps.clickListedElement('tableRows', 'Users', {
   text: { regex: 'Alice|Bob|Carol', flags: 'i' }
 });
 
 // withDescendant — match only rows that contain a specific descendant element
-await steps.clickListedElement('Users', 'tableRows', {
+await steps.clickListedElement('tableRows', 'Users', {
   text: 'John',
   withDescendant: { pageName: 'Users', elementName: 'activeBadge' }
 });
@@ -591,36 +591,36 @@ await steps.clickListedElement('Users', 'tableRows', {
 
 ### ⏳ Wait
 
-* **`waitForState(pageName, elementName, state?: 'visible' | 'attached' | 'hidden' | 'detached')`** — Waits for an element to reach a specific DOM state. Defaults to `'visible'`.
+* **`waitForState(elementName, pageName, state?: 'visible' | 'attached' | 'hidden' | 'detached')`** — Waits for an element to reach a specific DOM state. Defaults to `'visible'`.
 * **`waitForNetworkIdle()`** — Waits until there are no in-flight network requests for at least 500ms.
 * **`waitForResponse(urlPattern: string | RegExp, action: () => Promise<void>)`** — Executes an action and waits for a matching network response. Returns the `Response` object.
-* **`waitAndClick(pageName, elementName, state?: string)`** — Waits for an element to reach a state (default `'visible'`), then clicks it.
+* **`waitAndClick(elementName, pageName, state?: string)`** — Waits for an element to reach a state (default `'visible'`), then clicks it.
 
 ### 🧩 Composite / Workflow
 
 * **`fillForm(pageName, fields: Record<string, FillFormValue>)`** — Fills multiple form fields in one call. String values fill text inputs; `DropdownSelectOptions` values trigger dropdown selection.
 * **`retryUntil(action, verification, maxRetries?, delayMs?)`** — Retries an action until a verification passes, or until the max attempts (default `3`) are reached.
-* **`clearInput(pageName, elementName)`** — Clears the value of an input or textarea without filling new text.
-* **`selectMultiple(pageName, elementName, values: string[])`** — Selects multiple options from a `<select multiple>` element by their value attributes.
-* **`clickNth(pageName, elementName, index: number)`** — Clicks the element at a specific zero-based index from all matches.
+* **`clearInput(elementName, pageName)`** — Clears the value of an input or textarea without filling new text.
+* **`selectMultiple(elementName, pageName, values: string[])`** — Selects multiple options from a `<select multiple>` element by their value attributes.
+* **`clickNth(elementName, pageName, index: number)`** — Clicks the element at a specific zero-based index from all matches.
 
 ### 📊 Additional Data Extraction
 
-* **`getAll(pageName, elementName, options?: GetAllOptions)`** — Extracts text (or attributes) from all matching elements. Supports `{ child }` and `{ extractAttribute }`.
-* **`getCount(pageName, elementName)`** — Returns the number of DOM elements matching the locator.
-* **`getInputValue(pageName, elementName)`** — Returns the current `value` property of an input, textarea, or select element.
-* **`getCssProperty(pageName, elementName, property: string)`** — Returns a computed CSS property value (e.g. `'rgb(255, 0, 0)'`).
+* **`getAll(elementName, pageName, options?: GetAllOptions)`** — Extracts text (or attributes) from all matching elements. Supports `{ child }` and `{ extractAttribute }`.
+* **`getCount(elementName, pageName)`** — Returns the number of DOM elements matching the locator.
+* **`getInputValue(elementName, pageName)`** — Returns the current `value` property of an input, textarea, or select element.
+* **`getCssProperty(elementName, pageName, property: string)`** — Returns a computed CSS property value (e.g. `'rgb(255, 0, 0)'`).
 
 ### ✅ Additional Verification
 
-* **`verifyOrder(pageName, elementName, expectedTexts: string[])`** — Asserts that elements' text contents appear in the exact order specified.
-* **`verifyCssProperty(pageName, elementName, property: string, expectedValue: string)`** — Asserts that a computed CSS property matches the expected value.
-* **`verifyListOrder(pageName, elementName, direction: 'asc' | 'desc')`** — Asserts that elements' text contents are sorted in the specified direction.
+* **`verifyOrder(elementName, pageName, expectedTexts: string[])`** — Asserts that elements' text contents appear in the exact order specified.
+* **`verifyCssProperty(elementName, pageName, property: string, expectedValue: string)`** — Asserts that a computed CSS property matches the expected value.
+* **`verifyListOrder(elementName, pageName, direction: 'asc' | 'desc')`** — Asserts that elements' text contents are sorted in the specified direction.
 
 ### 📸 Screenshot
 
 * **`screenshot()`** — Captures a page screenshot. Pass `{ fullPage: true }` for scrollable capture, `{ path: 'file.png' }` to save to disk.
-* **`screenshot(pageName, elementName, options?)`** — Captures a screenshot of a specific element.
+* **`screenshot(elementName, pageName, options?)`** — Captures a screenshot of a specific element.
 
 ---
 
@@ -721,7 +721,7 @@ const email = await steps.receiveEmail({
 await steps.navigateTo('file://' + email.filePath);
 
 // Now interact with the email content like any web page
-const otpCode = await steps.getText('EmailPage', 'otpCode');
+const otpCode = await steps.getText('otpCode', 'EmailPage');
 
 // Combine multiple filters
 const email2 = await steps.receiveEmail({
