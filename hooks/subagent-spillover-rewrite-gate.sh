@@ -122,6 +122,12 @@ case "$HANDOVER_ROLE" in
       section-complete|section-deferred) ROLE_KIND="phase4-cycle-section" ;;
     esac
     ;;
+  # phase4-prioritise-author* is DELIBERATELY excluded: per
+  # subagent-return-schema.md §2.7 ("Author return") the author's body is
+  # required to be inline-only — no spill needed because the journey-map.md
+  # IS the artifact. Adding a spillover rule for it would force a spill file
+  # that the schema explicitly says shouldn't exist. Silent allow via the
+  # default fall-through (no ROLE_KIND assignment → exit 0 below).
 esac
 
 # Not in scope (other role / non-triggering status) → silent allow.
@@ -246,6 +252,27 @@ case "$ROLE_KIND" in
     if echo "$BODY" | grep -qE '^[[:space:]]+-[[:space:]]+\*\*pv-[1-7]-[0-9]{2,}\*\*[[:space:]]+\[must-fix\]'; then
       # Sub-bullet evidence — pv-finding blocks shouldn't be inlined.
       VIOLATIONS+=("body inlines pv-<phase>-<nn> finding blocks with sub-bullets — that detail belongs in the spill file, return body should carry only the finding-ID list (just the pv-<phase>-<nn> IDs)")
+    fi
+    ;;
+  phase4-cycle-section)
+    # Forbidden inline: per-route record blocks, edge-findings array with
+    # full sub-blocks, or new-sections-discovered array with rationale
+    # sub-bullets. Index-only inline is: section/cycle/routes-driven count,
+    # flows-identified <count>, state-variations-recorded <count>,
+    # gated-deferred-to-coverage-expansion (short list), spill: <path>,
+    # summary: <one sentence>. The full per-route + per-flow + per-edge-
+    # finding detail belongs in the spill file.
+    if echo "$BODY" | grep -qE '^[[:space:]]*edge-findings:[[:space:]]*$' && \
+       echo "$BODY" | grep -qE '^[[:space:]]+-[[:space:]]+flow-name:'; then
+      VIOLATIONS+=("body inlines edge-findings: array with flow-name sub-bullets — that detail belongs in the spill file, return body should carry only an edge-findings count and the spill: pointer")
+    fi
+    if echo "$BODY" | grep -qE '^[[:space:]]*routes-driven:[[:space:]]*$' && \
+       echo "$BODY" | grep -qE '^[[:space:]]+-[[:space:]]+url:'; then
+      VIOLATIONS+=("body inlines routes-driven: array with per-url sub-blocks (url/role-as/interactive-elements/etc.) — that detail belongs in the spill file, return body should carry only routes-driven as a flat list of URLs OR a count")
+    fi
+    if echo "$BODY" | grep -qE '^[[:space:]]+-[[:space:]]+id:.*\n[[:space:]]+rationale:' || \
+       echo "$BODY" | grep -A1 -E '^[[:space:]]+-[[:space:]]+id:[[:space:]]+[a-z0-9-]+' | grep -q "rationale:"; then
+      VIOLATIONS+=("body inlines new-sections-discovered: with rationale sub-bullets — that detail belongs in the spill file, return body should carry only the JSON sub-block <!-- new-sections: [...] --> + a flat YAML list of IDs")
     fi
     ;;
 esac
@@ -383,6 +410,24 @@ emit_feedback_footer_common() {
       echo ""
       echo "   The exit-criteria-checked: array AND the pv-<phase>-<nn> finding"
       echo "   blocks (criterion / issue / fix sub-bullets) go in the spill file."
+      ;;
+    phase4-cycle-section)
+      echo "     status: section-complete | section-deferred"
+      echo "     section: <id>"
+      echo "     cycle: ${CYCLE_N}"
+      echo "     routes-driven: [\"<url>\", ...]"
+      echo "     flows-identified: <count>"
+      echo "     state-variations-recorded: <count>"
+      echo "     <!-- new-sections: [\"<id>\", ...] -->"
+      echo "     gated-deferred-to-coverage-expansion: [...]"
+      echo "     spill: ${SPILL_REL}"
+      echo "     summary: <one sentence>"
+      echo ""
+      echo "   The full per-route record (url / role-as / interactive-elements"
+      echo "   / state-variations), per-flow descriptions, and edge-findings"
+      echo "   blocks (with flow-name / surface / rationale / routes sub-fields)"
+      echo "   go in the spill file. The inline body should carry only counts,"
+      echo "   the JSON sub-block for new-sections, and the spill: pointer."
       ;;
   esac
   echo ""

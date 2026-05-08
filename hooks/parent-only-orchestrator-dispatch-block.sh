@@ -97,8 +97,15 @@ PROMPT=$(echo "$INPUT" | "$JQ" -r '.tool_input.prompt // ""')
 
 # --- leaf-prefix bypass -----------------------------------------------------
 # A leaf role prefix is the canonical signal that this dispatch is a leaf.
-# Recognized prefixes mirror coverage-expansion-dispatch-guard.sh §"Recognized
-# role prefixes" — keep these two lists in sync if either changes.
+# Recognized prefixes mirror the dispatch-guard's allowlist — keep these
+# lists in sync if either changes. Currently allowed leaves:
+#   composer-* | reviewer-* | probe-* | process-validator-* | phase-validator-*
+#   phase1-* | phase2-* | stage2-* | cleanup-*
+#   phase4-cycle-<N>-section-<id> | phase4-prioritise-author*  (iterative
+#     discovery cycles — added when the iterative-cycle protocol landed;
+#     these are leaf-shape per-section / per-author-step dispatches, not
+#     orchestrator-shape)
+#   [P3-batch] composer-j-...,...   (P3 batch — the only batched-dispatch form)
 case "$DESCRIPTION" in
   composer-*|reviewer-*|probe-*|process-validator-*|phase-validator-*) exit 0 ;;
   phase1-*|phase2-*|stage2-*|cleanup-*) exit 0 ;;

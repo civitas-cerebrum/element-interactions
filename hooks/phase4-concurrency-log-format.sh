@@ -97,12 +97,21 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   # AND tee / cat-redirect equivalents.
   #
   # Exclusion: stderr-only redirects (`2>` / `2>&1`) don't count.
-  # Match stdout redirects only (not stderr `2>`, `&>`, etc.). The pattern
-  # requires the `>` to be preceded by start-of-string OR a non-digit/non-`&`
-  # character — that excludes `2>`, `1>`, `&>`, `2>&1`.
-  if echo "$CMD" | grep -qE '(^|[^0-9&])>>?[[:space:]]*[^[:space:]&]*\.phase4-concurrency-log\.jsonl' \
-     || echo "$CMD" | grep -qE '(^|[^0-9&])>>?[[:space:]]*[^[:space:]&]*\.concurrency-log/' \
-     || echo "$CMD" | grep -qE 'tee[[:space:]]+(-a[[:space:]]+)?[^[:space:]]*\.(phase4-)?concurrency-log'; then
+  # Match every form that writes content to the canonical (or known
+  # non-canonical) concurrency-log path. We need to deny:
+  #   stdout redirects:    `>`,  `>>`,  `1>`,  `1>>`
+  #   stdout+stderr merge: `&>`, `&>>`  (POSIX shorthand for `> file 2>&1`)
+  #   tee with -a / |tee:  `tee`, `tee -a`
+  # While ALLOWING stderr-only redirects:  `2>`, `2>>` (stderr never carries
+  # the JSONL payload; redirecting an error log to a side file is fine).
+  #
+  # Pattern strategy: three matchers with explicit anchors so each form is
+  # an obvious test case for future regression coverage.
+  if   echo "$CMD" | grep -qE '(^|[^0-9&])>>?[[:space:]]*[^[:space:]&]*\.phase4-concurrency-log\.jsonl' \
+    || echo "$CMD" | grep -qE '(^|[^0-9&])>>?[[:space:]]*[^[:space:]&]*\.concurrency-log/' \
+    || echo "$CMD" | grep -qE '\&>>?[[:space:]]*[^[:space:]&]*\.phase4-concurrency-log\.jsonl' \
+    || echo "$CMD" | grep -qE '\&>>?[[:space:]]*[^[:space:]&]*\.concurrency-log/' \
+    || echo "$CMD" | grep -qE 'tee[[:space:]]+(-a[[:space:]]+)?[^[:space:]]*\.(phase4-)?concurrency-log'; then
     "$JQ" -n --arg cmd "$CMD" --arg canonical "tests/e2e/docs/.phase4-concurrency-log.jsonl" '{
       "hookSpecificOutput": {
         "hookEventName": "PreToolUse",
