@@ -108,7 +108,7 @@ fi
 # skills/journey-mapping/SKILL.md §"Section vocabulary".
 # Novel IDs aren't denied (cycle agents may legitimately surface new
 # categories) — they're flagged for author review.
-CANONICAL_SECTIONS="auth catalog detail cart order marketplace profile admin billing content notifications error"
+CANONICAL_SECTIONS=(auth catalog detail cart order marketplace profile admin billing content notifications error)
 
 # --- input ---
 INPUT=$(cat)
@@ -161,7 +161,8 @@ parse_cycle_dispatch() {
 # --- canonical vocabulary check ---
 is_canonical_section() {
   local id="$1"
-  for canon in $CANONICAL_SECTIONS; do
+  local canon
+  for canon in "${CANONICAL_SECTIONS[@]}"; do
     [ "$id" = "$canon" ] && return 0
   done
   return 1
@@ -175,6 +176,28 @@ extended_cycles_authorised() {
 # --- compute convergence-status from cycles array ---
 # Inputs (via globals): STATE (path)
 # Outputs (echoed): "converged" | "hard-cap-reached" | "continuing"
+#
+# Convergence rules:
+#   - Minimum 2 cycles always: 1 discovery + 1 edge-probe (the edge-probe
+#     re-dispatches mapped sections under an edge-finding brief looking for
+#     less-obvious flows — permission boundaries, deep links, lifecycle
+#     edges — even if cycle 1 surfaced no new sections).
+#   - The edge-probe cycle is identified by `cycles.<N>.kind: "edge-probe"`
+#     in the state file. The orchestrator sets this when dispatching the
+#     first cycle whose target list is the existing section roster (not
+#     newly discovered sections).
+#   - Cycles must be CONTIGUOUS: keys 1..N with no gaps. A run with cycle
+#     keys {1, 3, 5} (gaps) cannot converge — the env-var escape hatch
+#     can't re-open this hole because compute_convergence is called from
+#     PreToolUse:Agent for the author dispatch regardless of the gate's
+#     hatch state.
+#   - Converge when:
+#       (i) all sections in highest cycle returned
+#       (ii) post-dedup new-sections-discovered is empty
+#       (iii) at least one cycle of kind "edge-probe" has run
+#       (iv) cycles are contiguous 1..N
+#   - Hard-cap when N reaches the cap (default 5, extended 10) with new
+#     sections still pending.
 compute_convergence() {
   local highest_cycle
   local extended_cap=5
@@ -191,16 +214,23 @@ compute_convergence() {
     return
   fi
 
-  local all_returned new_count
+  # Cycles must be contiguous 1..highest_cycle (no gaps).
+  local contiguous
+  contiguous=$("$JQ" -r --argjson hc "$highest_cycle" '
+    [.cycles | keys | map(tonumber)] | flatten | sort ==
+    [range(1; $hc + 1)]
+  ' "$STATE" 2>/dev/null || echo "false")
+  if [ "$contiguous" != "true" ]; then
+    echo "continuing"
+    return
+  fi
+
+  local all_returned
   all_returned=$("$JQ" -r --arg n "$highest_cycle" '
     .cycles[$n] as $c |
     (($c."dispatched-sections" // []) | sort) ==
     (($c."returned-sections"   // []) | sort)
   ' "$STATE" 2>/dev/null || echo "false")
-
-  new_count=$("$JQ" -r --arg n "$highest_cycle" '
-    .cycles[$n]."new-sections-discovered" // [] | length
-  ' "$STATE" 2>/dev/null || echo 0)
 
   # Not all returned → still continuing.
   if [ "$all_returned" != "true" ]; then
@@ -208,8 +238,7 @@ compute_convergence() {
     return
   fi
 
-  # Compute "post-dedup new sections" — ones not already dispatched in any
-  # earlier cycle.
+  # Post-dedup: candidate new sections not already dispatched in ANY cycle.
   local post_dedup_count
   post_dedup_count=$("$JQ" -r --arg n "$highest_cycle" '
     . as $root |
@@ -222,16 +251,26 @@ compute_convergence() {
     ($candidates - $already) | length
   ' "$STATE" 2>/dev/null || echo 0)
 
-  if [ "$post_dedup_count" -eq 0 ] && [ "$highest_cycle" -ge 3 ]; then
-    echo "converged"
-    return
-  fi
+  # Has at least one cycle been an edge-probe?
+  local edge_probe_ran
+  edge_probe_ran=$("$JQ" -r '
+    [.cycles[]? | select(.kind == "edge-probe")] | length > 0
+  ' "$STATE" 2>/dev/null || echo "false")
 
+  # Hard cap takes precedence (run for full budget when sections still pending).
   if [ "$highest_cycle" -ge "$extended_cap" ] && [ "$post_dedup_count" -gt 0 ]; then
     echo "hard-cap-reached"
     return
   fi
 
+  # Convergence requires: no new sections post-dedup AND edge-probe has run.
+  if [ "$post_dedup_count" -eq 0 ] && [ "$edge_probe_ran" = "true" ]; then
+    echo "converged"
+    return
+  fi
+
+  # No new sections but edge-probe hasn't run yet → keep continuing
+  # (orchestrator must dispatch the edge-probe cycle).
   echo "continuing"
 }
 
@@ -493,11 +532,14 @@ State: author-attempts: ${AUTHOR_ATTEMPTS}"
     case "$DERIVED_CONVERGENCE" in
       converged|hard-cap-reached)
         # Auto-write the derived value into the state file (under lock) so
-        # readers see the canonical convergence status.
+        # readers see the canonical convergence status. Trap-protected so
+        # the lock releases on any exit path including jq/mv failure.
         if acquire_lock; then
+          trap 'release_lock' EXIT
           UPDATED=$("$JQ" --arg cs "$DERIVED_CONVERGENCE" '."convergence-status" = $cs' "$STATE" 2>/dev/null || cat "$STATE")
           echo "$UPDATED" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE" || rm -f "$STATE.tmp"
           release_lock
+          trap - EXIT
         fi
         exit 0
         ;;
@@ -509,10 +551,18 @@ Do this instead:
 ──────────────────────────────────────────────────────────────────
 Continue the cycle loop until either:
   - convergence-status: converged          (no new sections post-dedup AND
-                                            cycle N >= 3)
+                                            edge-probe cycle has run AND
+                                            cycles are contiguous 1..N)
   - convergence-status: hard-cap-reached   (cycle 5 ran with new sections
                                             still in the queue, OR cycle 10
                                             with extended-cycles authorisation)
+
+The minimum cycle count is 2: one discovery cycle, one edge-probe cycle.
+The edge-probe re-dispatches mapped sections under an edge-finding brief
+to surface less-obvious flows (permission boundaries, deep links, lifecycle
+edges). Dispatch the edge-probe by setting \`cycles.<N>.kind: \"edge-probe\"\`
+in the state file via PostToolUse; the orchestrator's own dispatch should
+include \"edge-probe\" in the brief so the cycle agent knows what to look for.
 
 The hook computes convergence-status from the cycles array directly. If
 you believe convergence has been reached but the hook says \"continuing\",
@@ -551,6 +601,14 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
 
     CYCLE_N=$(echo "$PARSED" | awk '{print $1}')
     SECTION_ID=$(echo "$PARSED" | awk '{print $2}')
+
+    # Detect edge-probe cycle from the dispatch description suffix or the
+    # subagent's return body. Either signal stamps `kind: "edge-probe"` on
+    # the cycle's slot.
+    CYCLE_KIND="discovery"
+    if echo "$DESCRIPTION" | grep -qiE 'edge-probe|edge probe'; then
+      CYCLE_KIND="edge-probe"
+    fi
 
     # Acquire lock for the entire read-mutate-write critical section.
     acquire_lock || exit 0
@@ -627,10 +685,22 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
     )
     [ -z "$NOVEL_SECTIONS" ] && NOVEL_SECTIONS='[]'
 
+    # Also detect edge-probe from the return body — subagents that explicitly
+    # state status: edge-probe-complete or include a `kind: edge-probe` line
+    # are recorded as edge-probe cycles even if the dispatch description
+    # didn't mention it.
+    if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*kind:[[:space:]]*edge-probe' \
+       || echo "$RESPONSE" | grep -qE 'edge-probe-complete'; then
+      CYCLE_KIND="edge-probe"
+    fi
+
     # Append section ID to dispatched-sections + returned-sections; merge
-    # new-sections-discovered; flag novel section IDs.
+    # new-sections-discovered; flag novel section IDs; stamp cycle.kind
+    # (only the FIRST recorded kind sticks — discovery doesn't overwrite
+    # edge-probe and vice versa).
     UPDATED=$("$JQ" --arg n "$CYCLE_N" \
                     --arg s "$SECTION_ID" \
+                    --arg kind "$CYCLE_KIND" \
                     --argjson new "$NEW_SECTIONS" \
                     --argjson novel "$NOVEL_SECTIONS" \
                     --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
@@ -639,12 +709,14 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
           "dispatched-sections": [],
           "returned-sections": [],
           "new-sections-discovered": [],
-          "duplicates-merged": []
+          "duplicates-merged": [],
+          "kind": $kind
         })
         | .["dispatched-sections"]      = (.["dispatched-sections"]      + [$s] | unique)
         | .["returned-sections"]        = (.["returned-sections"]        + [$s] | unique)
         | .["new-sections-discovered"]  = (.["new-sections-discovered"]  + $new | unique)
         | .["completed-at"]             = $now
+        | .["kind"]                     = (.["kind"] // $kind)
       )
       | ."unvalidated-sections-flagged" = ((."unvalidated-sections-flagged" // []) + $novel | unique)
     ' "$STATE" 2>/dev/null || cat "$STATE")

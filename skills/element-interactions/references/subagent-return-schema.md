@@ -690,6 +690,53 @@ the YAML is acceptable for human-readability, but emit the JSON sub-block
 when the section list is mechanically generated — it's the parse-clean
 form and won't drift if a future agent introduces formatting variants.
 
+### Edge-probe cycle variant
+
+Edge-probe cycle dispatches use the same role-prefix (`phase4-cycle-<N>-section-<id>:`) but the dispatch description includes the literal substring `edge-probe`, and the return body adds `kind: edge-probe`:
+
+```yaml
+handover:
+  role: phase4-cycle-<N>-section-<id>
+  cycle: <N>
+  status: section-complete | section-deferred | blocked
+  next-action: orchestrator merges into .phase4-cycle-state.json
+
+section: <id>
+cycle: <N>
+kind: edge-probe                     # NEW — distinguishes from discovery cycles
+routes-driven: ["<url>", ...]        # may overlap with cycles 1..N-1's coverage of this section
+edge-findings:                       # NEW — what the edge-probe surfaced
+  - flow-name: <kebab-case>
+    surface: <permission-boundary | deep-link | lifecycle-edge | hidden-route | role-locked | error-path | other>
+    rationale: <one sentence on why this wasn't surfaced in cycles 1..N-1>
+    routes: ["<url>", ...]
+
+new-sections-discovered:
+  - id: <new-section-id>
+    rationale: ...
+
+<!-- new-sections: [...] -->
+
+spill: tests/e2e/docs/.subagent-returns/phase4-cycle-<N>-section-<id>.md
+summary: <one sentence — what edge-flows were surfaced, count of new sections>
+```
+
+Edge-probe agents are explicitly briefed to look for what cycles 1..N-1 missed — permission boundaries, deep links, lifecycle edges, hidden routes, role-locked features, error paths. Their `edge-findings` array is consumed by the author (`phase4-prioritise-author:`) to either (a) compose new journey blocks for surfaced edge flows, or (b) add `Branches:` / `State variations:` entries on existing journey blocks.
+
+A discovery cycle MAY also surface edge findings opportunistically; the distinguishing characteristic is the dispatcher's intent encoded in the cycle's `kind`.
+
+### Concurrency-log emission rules
+
+Cycle agents dispatched in parallel coordinate via a strict-format JSONL log at `tests/e2e/docs/.phase4-concurrency-log.jsonl` (full schema in `journey-mapping/SKILL.md` §"Concurrency coordination"). Subagents:
+
+- MUST emit a log entry when an action they took caused a sibling agent's observable state to change unexpectedly, OR when they observed a race they could not have caused themselves.
+- MUST NOT emit pre-emptive locks/claims/intent-broadcasts. The channel is race-reactive, not pre-emptive.
+- MUST use the canonical schema (`timestamp`, `from`, `conflict-type`, `resource`, `value`, `details`, `action-taken`, `recommendation`).
+- MUST keep each entry on a single line that fits POSIX `PIPE_BUF` (≤ 4096 bytes) — atomic append depends on this. Long-form details go to spill files.
+- SHOULD `tail` the log at the start of each high-risk action (signup, reset call, listing buy, account deletion) to check for sibling flags.
+
+The author and phase-validator-4 read the log when present and use it to populate `Branches:` / `State variations:` on relevant journey blocks (concurrency hazards belong in the journey spec).
+
 Spill file body (full content): per-route record (URL, role-as, snapshot summary, interactive elements, state variations, links-out), per-flow description (steps, branches, exit), and any oddities surfaced for the author's awareness (banner / modal observations, console errors, response-shape surprises).
 
 **Status semantics:**

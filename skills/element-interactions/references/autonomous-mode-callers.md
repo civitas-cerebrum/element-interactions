@@ -36,7 +36,7 @@ The orchestrator supports two autonomous entry points, distinguished by the `ent
 
 When the caller is `onboarding` Phase 3 (and ONLY then — `coverage-expansion` callers do not produce drafts; their per-journey work is scoped to one block of an existing map), the orchestrator MUST produce a structured discovery draft alongside the spec. The draft captures every page the happy path touched and every link it observed but did not follow — the inputs that drive `journey-mapping`'s iterative cycles in Phase 4.
 
-**File:** `tests/e2e/docs/.discovery-draft.json` (dotfile — gitignored, not a committed artifact; transient state consumed by Phase 4).
+**File:** `tests/e2e/docs/.discovery-draft.json` (dotfile, but **committed** as a durable artifact — it lets a project re-run `journey-mapping` with `phases-2-4` standalone without first re-running Phase 3. The draft is regenerated each Phase-3 run; committing the latest version is cheap (~2KB JSON) and preserves the audit trail. Earlier framework versions gitignored this file; the rule was reversed when the trade-off — re-running Phase 3 just to regenerate the draft for an unrelated re-run of Phase 4 — proved too costly.)
 
 **Sentinel:** the file's first key MUST be `"discovery-draft-version": 1`. Phase-4 hooks refuse to consume drafts without the sentinel.
 
