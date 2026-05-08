@@ -355,7 +355,7 @@ The full per-pass pipeline (steps 1–8), pass differences, commit-message conve
 - **Stage B never commits.** Reviewer judgements live in the state file's `review_status` and `final_must_fix` fields, never as commits. `review(j-…)` and any review-tagged commit form is forbidden.
 - **Stage A and B are parallel by default.** A journey's Stage B fires as soon as that journey's Stage A returns and the cap has a slot — not after every Stage A in the pass completes. Finishing all Stage A first then starting all Stage B is contract-violating.
 - **Parallel cap counts A and B jointly.** One pool of in-flight slots; A, B, and A-retry compete. A journey's own A and B never overlap (sequential within a journey); across journeys any A/B interleaving is possible. Queue order is FIFO.
-- **Hybrid model selection — Pass 1 on Opus, subsequent passes Sonnet for execution and Opus for review.** Empirical data from a 30-journey onboarding cycle (issue #164) shows Sonnet finds critical IDORs and CSRF-DELETE bypasses just as well as Opus on adversarial probes, while costing ~50% per dispatch. Pass 1 establishes the test foundation and runs Opus throughout (composer + reviewer); subsequent passes (2-5) use Sonnet for journey-level execution (composers and probes) and Opus for review. Batched review (per #164.2) keeps Opus reviewers affordable: one Opus reviewer cross-synthesises N journeys' worth of evidence, replacing N per-journey reviewers. Per-journey Stage B in passes 2-5 also stays on Opus while batching ramps — review judgement is the quality boundary the rest of the pipeline relies on. Default by dispatch type:
+- **Hybrid model selection — Pass 1 + Pass 5 on Opus, Pass 2/3/4 execution on Sonnet, all review on Opus.** Empirical data from a 30-journey onboarding cycle (issue #164) shows Sonnet finds critical IDORs and CSRF-DELETE bypasses just as well as Opus on adversarial probes, while costing ~50% per dispatch. Pass 1 establishes the test foundation and runs Opus throughout (composer + reviewer); Pass 5 produces the regression layer that locks in verified boundaries — the durable artifact that catches future regressions — and runs Opus throughout (gap analysis, targeted probes, regression-test authoring). The intermediate passes (2-4) use Sonnet for journey-level execution and Opus for review. Batched review (per #164.2) keeps Opus reviewers affordable: one Opus reviewer cross-synthesises N journeys' worth of evidence, replacing N per-journey reviewers. Per-journey Stage B in passes 2-5 also stays on Opus while batching ramps — review judgement is the quality boundary the rest of the pipeline relies on. Default by dispatch type:
 
   | Dispatch type | Model | Rationale |
   |---|---|---|
@@ -365,8 +365,8 @@ The full per-pass pipeline (steps 1–8), pass differences, commit-message conve
   | Pass 3 Stage A composer (re-pass) | **sonnet** | Same; final compositional sweep |
   | Pass 4 Stage A probe (adversarial) | **sonnet** | Empirical Sonnet/Opus parity on adversarial probes per issue #164 |
   | Pass 5 gap analysis | **opus** | Cross-journey synthesis (orchestrator-level, not per-journey) |
-  | Pass 5 targeted probes | **sonnet** | Mechanical re-probe of identified gaps |
-  | Pass 5 regression-test authoring | **sonnet** | Mechanical test-write |
+  | Pass 5 targeted probes | **opus** | Regression layer is the durable artifact; quality at probe time determines what gets locked in |
+  | Pass 5 regression-test authoring | **opus** | Same — assertion shape + edge nuance in regression tests propagates forward indefinitely |
   | Stage B reviewer — per-journey (passes 2-5) | **opus** | Review judgement boundary; per-journey while batching ramps |
   | Stage B batch reviewer (when used; #164.2) | **opus** | Cross-journey synthesis is where Opus shines |
   | Cleanup ledger dedup | **opus** | Semantic clustering quality matters |
