@@ -70,13 +70,13 @@ A pass is complete only when **every** criterion for that pass is met. "Ran some
 - **Pass 1** complete = `test-composer` has been dispatched for and has returned on **every** journey in the map. Not "enough journeys", not "the P0/P1 tier", not "the journeys that fit the budget". Every journey.
 - **Pass 2** complete = `test-composer` has been re-dispatched and returned for every journey, AND the map has been reconciled with any newly-promoted branches or sub-journeys surfaced in pass 1 or 2, AND — if the reconciliation produced map edits — the reconciliation commit has landed. If no map edits were needed, the pass still completes, but the orchestrator records `"pass 2 reconciliation — no map edits required"` in the state file / progress log rather than silently skipping the commit.
 - **Pass 3** complete = cross-journey and data-lifecycle variants have been dispatched for every journey whose `Test expectations:` calls for them, AND any journey that returned residual coverage gaps in passes 1 or 2 has been re-attempted, AND the pass commit has landed (if tests were added in this pass).
-- **Pass 4** complete = the adversarial-probe subagent has run per journey with `pass=4`, and each subagent's findings have been appended to `tests/e2e/docs/adversarial-findings.md`. If no probes landed for a given journey (e.g., the subagent found nothing to probe or was gated), the orchestrator records `"no boundaries probed — <reason>"` for that journey in the ledger — it does NOT silently skip the journey. An empty ledger section for a journey is a bug, not a pass-4 completion state.
+- **Pass 4** complete = the adversarial-probe subagent has run for every journey in `journeyRoster - adversarialSkippedJourneys[].journey`, with terminal `review_status`. Journeys in `adversarialSkippedJourneys[]` are validly excluded per [`coverage-expansion/SKILL.md`](../SKILL.md) §"P3 small-surface journeys may opt OUT of adversarial passes". For every dispatched journey, the subagent's findings are appended to `tests/e2e/docs/adversarial-findings.md`. If no probes landed for a given dispatched journey (e.g., the subagent found nothing to probe or was gated), the orchestrator records `"no boundaries probed — <reason>"` for that journey in the ledger — it does NOT silently skip the journey. An empty ledger section for a dispatched journey is a bug, not a pass-4 completion state.
 - **Pass 5** complete = every verified pass-4 finding has either a committed regression test in `j-<slug>-regression.spec.ts` OR an explicit decline-with-reason line in the ledger ("no regression written — finding classified as suspected bug / ambiguous / duplicate of cross-cutting #N"). Regression-test files are committed per journey.
 - **Cleanup** complete = one cleanup subagent has run once, cross-cutting findings are consolidated into the top-level section with backrefs in each journey's section, and the commit `docs: adversarial-findings — dedupe cross-cutting findings` has landed.
 
 Only when **all** of the above are true may the orchestrator report depth-mode coverage-expansion complete to its caller. Anything less is a partial run and must be reported as such (see the resume-state contract).
 
-**Dual-stage extension.** On top of the per-pass criteria above, a pass is complete only when **every journey has a terminal `review_status`** (`greenlight`, `blocked-cycle-stalled`, `blocked-cycle-exhausted`, or `blocked-dispatch-failure`) recorded in the state file's `dispatches[]` array. A pass where every journey's Stage A returned but some journeys have no `review_status` is **incomplete**, even if the per-pass criteria above appear satisfied. Stage B participation is part of the completion gate, not optional.
+**Dual-stage extension.** On top of the per-pass criteria above, a pass is complete only when **every dispatched journey has a terminal `review_status`** (`greenlight`, `blocked-cycle-stalled`, `blocked-cycle-exhausted`, or `blocked-dispatch-failure`) recorded in the state file's `dispatches[]` array. For Passes 4 and 5, "every dispatched journey" means every journey in `journeyRoster - adversarialSkippedJourneys[].journey`. A pass where every journey's Stage A returned but some journeys have no `review_status` is **incomplete**, even if the per-pass criteria above appear satisfied. Stage B participation is part of the completion gate, not optional.
 
 ### Whole-suite re-run gate (per-pass exit)
 
@@ -127,31 +127,13 @@ New: **`host max`** — the orchestrator uses whatever parallel width the dispat
 
 #### Shared-resource audit interaction
 
-The Phase-0 shared-resource audit (PR #106) still caps parallelism where the app genuinely can't tolerate more (single credential per role, rate limits, CSRF serialization). Those caps override the cost-blind default. The audit's constraint tags apply to Stage A AND Stage B equally — reviewers compete for the same credentials.
+The Phase-0 shared-resource audit (PR #106) still caps parallelism where the app genuinely can't tolerate more (single credential per role, rate limits, CSRF serialization). Those caps override the host-max default. The audit's constraint tags apply to Stage A AND Stage B equally — reviewers compete for the same credentials.
 
-### Model selection (cost-blind posture)
+### Model selection
 
-Default model for every dispatch in every stage in every pass: **opus**.
+Model selection per dispatch type — see [`coverage-expansion/SKILL.md`](../SKILL.md) §"Hybrid model selection — Pass 1, Pass 4, Pass 5 on Opus, Pass 2/3 execution on Sonnet, all review on Opus" for the canonical table. Pass 5 is the regression layer — its targeted probes and regression-test authoring run Opus because the artifacts they produce are durable; Pass 4's adversarial probes also run Opus because their findings are the input to that regression layer. The kernel rule supersedes any prior cost-blind / opus-default framing.
 
-The prior sonnet-for-P2/P3 heuristic is removed. The prior sonnet-for-small-journey override is removed. Model choice does not vary by priority, journey size, step count, or pass number — opus by default, everywhere.
-
-**Narrow exception — cycle-1 Stage B sonnet confirmation.** For a journey that greenlit in the previous pass AND has no map delta since that pass AND no sibling-bug ledger update pointing at it, the cycle-1 Stage B MAY run sonnet as a fast confirmation. If sonnet returns `greenlight`, accept. If sonnet returns `improvements-needed`, immediately re-run the same review on opus — the opus result is authoritative, sonnet's was indicative. This is a latency optimisation, not a cost-reduction mechanism; it exists because a confirmed-greenlit journey's cycle-1 review is often trivially "still looks good" and a sonnet confirmation is fast.
-
-**Override: promote on failure.** Any journey that returned a stabilization or coverage-verification failure in a prior pass runs on opus for every dispatch (A and B) in every subsequent pass, regardless of cycle. No sonnet exception applies once a journey has failed.
-
-**For adversarial passes (4 and 5):** always opus, both stages. The sonnet exception above does NOT apply to adversarial passes — adversarial review requires judgment that sonnet reliably under-produces.
-
-**Rationalizations to reject:**
-
-> ↗ Cross-cutting category: see [`anti-rationalizations.md` §"Sonnet cost-down rationalisation"](anti-rationalizations.md) for the failure-mode pattern this table instantiates. The registry consolidates patterns across the suite; this table's specific phrasings reinforce the pattern at point of use.
-
-| Excuse | Reality |
-|--------|---------|
-| "The journey was attempted last pass and ended at `blocked-cycle-stalled` / `blocked-cycle-exhausted` / `blocked-dispatch-failure` — that counts as 'previously-greenlit' for the sonnet exception" | A blocked journey is not greenlit. The narrow exception requires explicit `greenlight` in the previous pass, not "attempted." Any blocked-* terminal in the prior pass means opus on cycle 1 of the next pass. |
-| "Pass 4 is just probing, sonnet is good enough for cycle-1 of small journeys" | Pass 4 and Pass 5 are always opus, both stages, full stop. The model-selection cost-blind rule has no priority/size carve-outs. |
-| "I ran sonnet for Stage A and opus for Stage B — that's a hybrid we never explicitly forbade" | Stage A is opus for every dispatch in every pass. The narrow sonnet exception is for cycle-1 Stage B only on previously-greenlit journeys. Hybrid Stage A/Stage B model splits beyond that exception are not authorised. |
-
-Before every pass dispatch (step 4 of the per-pass pipeline), emit a declarative scope preview. The preview is informational only — there is no confirmation prompt, no timeout, no abort option, and no reduce-scope offer. The contract is every journey, every pass; the preview makes that contract explicit so any mid-pass rationalisation is visible against the declared scope.
+Before every pass dispatch (step 4 of the per-pass pipeline), emit a declarative scope preview. The preview is informational only — there is no confirmation prompt, no timeout, no abort option, and no reduce-scope offer. The contract is every journey in the (roster − adversarialSkippedJourneys), every pass; the preview makes that contract explicit so any mid-pass rationalisation is visible against the declared scope.
 
 Template (values filled in per pass, from the map index, independence graph, and dispatch heuristic):
 
@@ -159,12 +141,12 @@ Template (values filled in per pass, from the map index, independence graph, and
 [coverage-expansion] Pass <N>/5 — dispatching <test-composer | adversarial probe> per journey
   Journeys: <count> (<delta-note, e.g., "3 newly promoted in pass <N-1>">)
   Independence graph: <G> groups, <K>-way parallel dispatch possible (cap <C>)
-  Model mix: opus default for every Stage A and Stage B dispatch; narrow cycle-1 Stage B sonnet-confirmation exception may apply to ~<sonnet-count> previously-greenlit journeys (see §"Model selection").
+  Model mix: per dispatch-type table in `coverage-expansion/SKILL.md` §"Hybrid model selection".
   Expected wall-clock: ~<H>h at <K>-parallel
-  Contract: every journey, this pass. No skips. No batching beyond the explicit P3-batching allowance.
+  Contract: every journey in the (roster − adversarialSkippedJourneys), this pass.
 ```
 
-The model-mix figures derive from §"Model selection" — opus is the default across A and B, so the `<sonnet-count>` reports only the narrow cycle-1 Stage B confirmation exception (previously-greenlit journeys with no map delta). The wall-clock estimate is a ballpark from the per-subagent run times observed so far this run (or a default of ~20 min per opus dispatch if no prior data exists — sonnet-confirmation cycles don't get their own ballpark because they're a fast-path variant of the normal Stage B dispatch).
+The model-mix figures derive from the canonical table; consult that section for the per-dispatch-type defaults and override paths. The wall-clock estimate is a ballpark from the per-subagent run times observed so far this run (or a default of ~20 min per opus dispatch if no prior data exists).
 
 Completion check: if a pass starts with N journeys and ends with returns from fewer than N, the orchestrator must re-dispatch the missing journeys before claiming the pass is complete. The preview's journey count is the ground truth for the end-of-pass reconciliation.
 
@@ -201,7 +183,17 @@ Framing: this is a platform-aware seam for long runs. It is not a cost-reduction
 
 ### Re-pass mode for compositional passes 2–3
 
-Passes 2 and 3 dispatch `test-composer` with an explicit `mode: re-pass` argument. Pass 1 already composed the journey's full variant set; re-pass work is valuable only as a disciplined audit against three specific triggers.
+Passes 2 and 3 dispatch `test-composer` with an explicit `mode: re-pass` argument **when at least one of the orchestrator's three per-journey triggers fires** (per `coverage-expansion/SKILL.md` §"Trigger-gated re-pass for Passes 2 & 3"). When all three triggers are false, the orchestrator writes a gated-skip entry to the state file and never dispatches — Pass 1 already composed the journey's full variant set, and the orchestrator-side three-trigger check is sufficient evidence that no re-pass work is needed.
+
+The §"Trigger-gated re-pass" content below describes the **dispatched path** — what the subagent does once a trigger has fired and the orchestrator has decided to invoke it.
+
+**Orchestrator-side triggers vs subagent-preamble triggers** — when the orchestrator's gating fires, the dispatched subagent runs the legacy four-trigger discipline (full-inspection-and-confirm). The mapping:
+
+- Orchestrator `map_delta` → subagent triggers 1+2 (delta markers + Pass-1 coverage-gaps).
+- Orchestrator `sibling_ledger_update` → subagent trigger 3 (sibling-bug regression candidates).
+- Orchestrator `must_fix_carry_over` → subagent trigger 4 (unresolved review findings).
+
+The orchestrator's three triggers are pre-dispatch evidence; the subagent's four triggers are the in-dispatch audit. They are the same shape of evidence at two different times.
 
 **Preamble embedded in every pass-2 / pass-3 test-composer brief:**
 
@@ -241,9 +233,7 @@ The re-pass mode's contribution is **disciplined justification**, not speed. Eve
 Dual-stage narrows this:
 
 - **Stage A may still be batched** for eligible P3 journeys (shared project, no pending gap flags, same priority tier, cap 7 per brief — criteria from PR #108).
-- **Stage B is never batched.**
-  Each journey in a batched Stage A still gets its own dedicated Stage B reviewer — never one reviewer judging 7 journeys at once.
-  The reviewer reads only its assigned journey's slice of the batched Stage A return; the reviewer itself is never responsible for multiple journeys.
+- **Stage B per-journey by default; one documented batch exception for compositional cycle-1.** In the P3-batch-A path, every journey in a batched Stage A still gets its own dedicated cycle-1 Stage B reviewer (the per-journey contract). The compositional-cycle-1 batch-reviewer exception (issue #164.2, documented in `reviewer-subagent-contract.md` §"Batch reviewer mode (cycle-1 compositional only)") is a separate, narrower path — one reviewer per pass for the first cycle of compositional Passes 1, 2, 3 only — and **does NOT compose with P3-batch-A**: a P3 journey's batched Stage A still produces a per-journey cycle-1 Stage B (not folded into the cross-pass batch reviewer). Cycle-2+ is per-journey regardless. Adversarial passes (4 and 5) are always per-journey.
 - Batching is accepted ONLY when every journey in the batch's cycle-1 Stage B returns `greenlight`.
 - If any journey's cycle-1 Stage B returns `improvements-needed`: split the batch. From cycle 2 onward, the affected journey breaks out and runs its own per-journey Stage A plus its own Stage B. The batched cycle-1 Stage A return is retained as history input to the broken-out cycle-2 Stage A brief. The remaining greenlit journeys in the batch stay accepted at cycle 1 and proceed.
 
@@ -258,7 +248,8 @@ Dual-stage narrows this:
 | "The journeys share most pages, same project, roughly P3 — skip the 'shared Playwright project' check" | Different Playwright projects require different `playwright-cli` sessions; batching across projects introduces session-swap complexity that defeats the dispatch optimisation. |
 | "Batching is faster so I'll batch everything that isn't explicitly forbidden" | Batching is allowed, not preferred. P0/P1 individual dispatch is the default; batching is specifically for P3 peripheral sweeps. Defaulting to batch on P2 quietly compresses scope. |
 | "One journey in the batch has a coverage-gap flag from Pass 1, but the gap is trivial" | Any flag in the three re-pass triggers kicks the journey out of the batch into individual dispatch. "Trivial" is the subagent's judgement after reading Pass-1 returns — which cannot happen inside a batched brief. |
-| "All P3 same project, I'll batch Stage B too to save a dispatch" | Stage B per-journey isolation is load-bearing for fresh-eyes review. One reviewer judging 7 journeys is not fresh-eyes; it's batched rubber-stamping. |
+| "All P3 same project, I'll batch Stage B too to save a dispatch" | The P3-batch path's Stage B is per-journey — that's the rule the rationalization is trying to evade. The compositional-cycle-1 batch-reviewer exception (issue #164.2, `reviewer-subagent-contract.md` §"Batch reviewer mode") does NOT extend to P3-batch-A; mixing the two is rubber-stamping. |
+| "I'll batch Stage B for cycle-2+ to save a dispatch" | Cycle-2+ Stage B is per-journey by hard rule (`reviewer-subagent-contract.md` §"Mode selection"). Cycle-2 already knows which specific journeys need attention; batching it would defeat the purpose. The compositional-cycle-1 batch-reviewer exception is empirically defensible — ~85% of cycle-1 reviews are greenlight, so the cross-journey synthesis is genuinely the better shape — but cycle-2+ has a different signal-to-noise profile. |
 | "Cycle-1 Stage B greenlit 6 of 7 journeys, I'll greenlight the 7th too since it's similar" | The 7th journey's reviewer returned `improvements-needed` for a reason. Split out cycle-2 for that journey; the reason does not carry to the greenlit 6. |
 | "Any flag on any journey kills the whole batch — too expensive, I'll keep batching" | Only the flagged journey breaks out. The greenlit journeys stay batched-and-accepted; no rework for them. |
 | "I'll batch Stage A across P1+P3 journeys if they share a project" | P0/P1 never batch, period. Priority is load-bearing; shared-project is necessary but not sufficient. |

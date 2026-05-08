@@ -40,6 +40,21 @@ A structured diagnostic protocol for failing Playwright tests. Every failure get
 
 ## Diagnostic Pipeline
 
+### Stage 0 — Context Pre-Read (mandatory)
+
+Before collecting evidence on the failing test, read what the project already documents. Skipping this stage is how confidently-wrong "app bug" classifications get published — you compare the screenshot against your recollection of the page instead of against what the project already specifies.
+
+**Harness-enforced by `hooks/failure-diagnosis-stage0-preread-guard.sh`** (PreToolUse:Edit|Write). When `playwright-report/` or a `test-results/error-context*.md` is present, edits to test source files, `tests/data/page-repository.json`, or any new "Application Bug Report" markdown are denied unless the agent has Read the project's documented context files (`tests/e2e/docs/app-context.md`, `test-scenarios.md`, `journey-map.md`) earlier in the session. The deny message points back here. Escape hatch for confirmed non-failure-diagnosis edits: set `FD_STAGE0_GUARD=off` in the environment for that invocation.
+
+1. **`tests/e2e/docs/app-context.md`** — page structures, intended modal lifecycles, `data-qa` selectors, known UI quirks (configuration-dependent option subsets, redirect-vs-popup auth patterns, vendor-aliased payment / shipping methods, async-loaded modal placeholders, documented degradation banners, etc.). Read the section for the page the test was on at the moment of failure. This is where the failing element's intended behaviour is documented.
+2. **`tests/e2e/docs/test-scenarios.md`** — the regression / scenario matrix. Confirms whether the failing scenario is even supposed to run on this configuration in the first place.
+3. **`tests/e2e/docs/journey-map.md`** (when present) — the user journey map produced by the `journey-mapping` skill. Tells you whether the app's flow has changed since the test was written.
+4. **`tests/data/page-repository.json`** — the locator entries for the page in question. A stale or missing entry is one of the most common true root causes.
+
+Capture, in plain text, the documented expectations relevant to the failing step. The rest of the diagnostic pipeline is then comparing **observed** state against **documented** state — not against your recollection of what the page should do.
+
+If any of these files are missing for the project, **note that** in the evidence package and consider whether the right escalation is to re-run `journey-mapping` on the relevant page rather than diagnose blind.
+
 ### Stage 1 — Collect Evidence
 
 Do NOT guess from the error message alone. Collect visual and structural evidence first.
@@ -69,7 +84,7 @@ Determine whether each failure group is a **test issue**, **app bug**, or **ambi
 #### Test Issue — fix autonomously
 
 **All** of the following must be true:
-- Screenshot shows the page loaded correctly and the expected UI is present
+- Screenshot shows the page loaded correctly **and the expected UI matches what `app-context.md` describes for this page** (Stage 0 read this), and the expected element is visible in the DOM at the documented selector
 - Error is traceable to test code: wrong selector, wrong param order, missing wait, stale repo entry, API misuse, incorrect assertion
 - DOM inspection confirms the element exists but the test targeted it incorrectly
 
@@ -112,6 +127,23 @@ Before finalizing your classification, run through this checklist:
 | **Stale browser state** | Cookies, localStorage, or cached data from a previous test contaminating the current one | Test isolation issue — test issue. Ensure tests don't depend on shared state |
 | **Navigation race** | URL shows an intermediate state; page is mid-redirect when the test tries to interact | Test issue — add `verifyUrlContains` or `waitForState` after navigation |
 | **Third-party dependency** | CDN asset failed, external widget didn't load, embedded iframe timed out | Neither test nor app bug — report as infrastructure/external dependency issue |
+| **Modal opens but content hangs** | Frame mounts but content stays on a spinner sentinel — see [`references/niche-edge-cases.md`](references/niche-edge-cases.md) entry (1) for the disambiguating probe and full prose | **App bug** — apply Stage 4a heal `(h)` (documented-quirk, no heal) |
+
+### Niche edge cases
+
+Failure shapes that LLMs routinely misclassify are catalogued in [`references/niche-edge-cases.md`](references/niche-edge-cases.md). Read the relevant entry before classifying when the failure shape doesn't fit Stage 4's table cleanly.
+
+**The catalogue is meant to grow.** When you resolve a failure whose shape isn't already documented there, **append a new entry as part of the same diagnostic session** — before closing out / handing back to the caller. The entry costs a few minutes; future sessions (yours, other contributors', other consumers of the package) get to skip the wrong-direction work this entry catalogues.
+
+When to append (criteria — must hold ALL):
+
+1. **You actually misclassified at first** (or were close to). The catalogue is for shapes that *trap* the diagnoser — not for failures whose classification was obvious from the screenshot. If Stage 0 + Stage 4 got you to the right answer cleanly, no entry needed.
+2. **The disambiguating probe was non-obvious.** The thing you ended up doing — the specific tool call, DOM read, or evidence grab that flipped the classification — is what the next diagnoser most needs. If your probe was just "look at the screenshot more carefully", that's not catalogue-worthy.
+3. **The shape is reproducible across consumers**, not project-specific. A bug in *this app's checkout flow* is a project finding, not a niche-edges entry. A bug shape that any consumer of the package could plausibly hit (modal-fetch hangs, role-attribute serialisation, page-repo entry resolves but matches a hidden duplicate, etc.) is.
+
+When all three hold, follow the entry shape documented in `references/niche-edge-cases.md` §"Adding an entry" (Symptom / Why LLMs struggle / Disambiguating probe / Classification / Cross-link). Keep entries tight — one paragraph per field, not a war story.
+
+Contribution path for promoted entries: see `skills/contributing-to-element-interactions/SKILL.md` §"Contributing to the niche-edge-cases catalogue" — covers the criteria above, the entry template, and how to ship the change as part of either a normal PR or a standalone docs PR.
 
 ### Stage 4a — Heal strategy selection
 
@@ -126,17 +158,19 @@ Once you've classified the failure as a test issue and checked edge cases, pick 
 | **e. State isolation** | **Auto** | Test passes when run alone, fails when run after specific predecessors (verified empirically) | Add fresh context / storage reset / cleanup hook; re-run in suite order |
 | **f. Flake quarantine** | **Report** | Flake persisted after two heal attempts of different strategies; root cause unclear | Tag test `@flaky`, add to repair summary with diagnostic notes; do NOT silently skip |
 | **g. Whole-test rewrite** | **Operator-aligned** | Flow changed so fundamentally that the scenario no longer maps to the app as-is; no incremental heal applies | Present to operator; on approval, invoke `test-composer` with journey context. Never regenerate without alignment. |
+| **h. Documented-quirk match — no heal** | **Report** | The observed failure shape exactly matches a documented quirk in `app-context.md` (configuration-dependent option subsets, redirect-vs-popup auth patterns, vendor-aliased options, etc.) **OR** matches a documented app-degradation signal (a degradation-banner copy string from `app-context.md`'s documented-banners list, the documented hanging spinner-sentinel custom element, 5xx in network capture) | Report observed-vs-documented diff; do NOT modify the test. The skip / failure is correct; the regression is in the app or in the documentation. Cross-link the relevant `app-context.md` section in the report. |
 
 **Selection rules** (apply in order, stop at first match):
 
-1. If screenshot shows wrong UI (500, error page, broken layout, missing-that-should-be-present component) → **app bug**, go to Stage 6. Do not heal.
-2. If page-repo lookup failed → (a) selector re-learn → proceed to Stage 4b
-3. If timeout on a known-good element with correct surrounding state → (b) timing hardening
-4. If pattern hypothesis (from `test-repair` if present) or empirical check says "state leak" → (e) state isolation
-5. If live DOM shows step order does not match test sequence → (c) flow drift → propose
-6. If assertion failure on a specific literal with otherwise-correct surrounding state → (d) re-baseline → propose
-7. If two heal strategies have been attempted and the test still flakes → (f) quarantine
-8. If the test scenario no longer maps to the app flow → (g) rewrite → operator-align
+1. If the observed failure shape exactly matches a documented quirk or app-degradation signal recorded in Stage 0's `app-context.md` read → (h) documented-quirk match → report; do NOT heal.
+2. If screenshot shows wrong UI (500, error page, broken layout, missing-that-should-be-present component) → **app bug**, go to Stage 6. Do not heal.
+3. If page-repo lookup failed → (a) selector re-learn → proceed to Stage 4b
+4. If timeout on a known-good element with correct surrounding state → (b) timing hardening
+5. If pattern hypothesis (from `test-repair` if present) or empirical check says "state leak" → (e) state isolation
+6. If live DOM shows step order does not match test sequence → (c) flow drift → propose
+7. If assertion failure on a specific literal with otherwise-correct surrounding state → (d) re-baseline → propose
+8. If two heal strategies have been attempted and the test still flakes → (f) quarantine
+9. If the test scenario no longer maps to the app flow → (g) rewrite → operator-align
 
 The precondition columns exist to keep you honest: any heal applied without meeting its precondition is a guess, and guesses mask bugs.
 
