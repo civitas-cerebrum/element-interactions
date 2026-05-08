@@ -48,8 +48,18 @@ set -euo pipefail
 # phase4 completion; the parent or the next phase's invocation can call
 # close-all itself if it needs a clean slate.
 
+# Resolve jq the same way every other hook in this directory does:
+# bundled binary first, system jq second. Consistency matters because the
+# bundled jq has a known version + behaviour; relying on system jq when the
+# bundled one is available risks behaviour drift across operator machines.
+JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
+[ -x "$JQ" ] || JQ="$(command -v jq || true)"
+
 INPUT=$(cat 2>/dev/null || echo "{}")
-CWD=$(echo "$INPUT" | (command -v jq >/dev/null 2>&1 && jq -r '.cwd // ""' 2>/dev/null) || echo "")
+CWD=""
+if [ -n "$JQ" ]; then
+  CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // ""' 2>/dev/null || echo "")
+fi
 [ -z "$CWD" ] && CWD="$PWD"
 REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || echo "$CWD")
 

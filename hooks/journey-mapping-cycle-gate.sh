@@ -104,11 +104,35 @@ if [ "${JOURNEY_MAPPING_CYCLE_GATE:-}" = "off" ]; then
   exit 0
 fi
 
-# Canonical section vocabulary — kept in sync with
-# skills/journey-mapping/SKILL.md §"Section vocabulary".
+# Canonical section vocabulary — single source of truth at
+# hooks/data/canonical-sections.txt (committed alongside this hook;
+# also rendered into skills/journey-mapping/SKILL.md §"Section vocabulary"
+# for human readers). The hook reads from the data file at startup so
+# adding/removing/renaming an ID needs touching only one place.
+#
 # Novel IDs aren't denied (cycle agents may legitimately surface new
-# categories) — they're flagged for author review.
-CANONICAL_SECTIONS=(auth catalog detail cart order marketplace profile admin billing content notifications error)
+# categories) — they're flagged for author review via the
+# unvalidated-sections-flagged state-file array + a systemMessage warn.
+#
+# Fallback: if the data file is missing for any reason (hook installed
+# without the data dir; partial postinstall), we fall back to a hardcoded
+# minimum-viable list so the gate still functions defensively.
+CANONICAL_SECTIONS_FILE="$(dirname "${BASH_SOURCE[0]}")/data/canonical-sections.txt"
+CANONICAL_SECTIONS=()
+if [ -r "$CANONICAL_SECTIONS_FILE" ]; then
+  while IFS= read -r line; do
+    # Strip comments + leading/trailing whitespace; skip blanks.
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [ -z "$line" ] && continue
+    CANONICAL_SECTIONS+=("$line")
+  done < "$CANONICAL_SECTIONS_FILE"
+fi
+if [ "${#CANONICAL_SECTIONS[@]}" -eq 0 ]; then
+  # Defensive fallback for malformed / missing data file.
+  CANONICAL_SECTIONS=(auth catalog detail cart order marketplace profile admin billing content notifications error)
+fi
 
 # --- input ---
 INPUT=$(cat)
@@ -131,6 +155,9 @@ EXT_CYCLES_SENTINEL_B="$REPO_ROOT/tests/e2e/docs/.phase4-extended-cycles-authori
 mkdir -p "$REPO_ROOT/tests/e2e/docs" 2>/dev/null || true
 
 # --- mkdir-based file lock with retry/backoff ---
+# Returns 0 on lock acquired, 1 on starvation (caller decides whether
+# to retry or proceed lock-free). Starvation emits a systemMessage warn
+# so the operator sees the lock contention rather than only stderr.
 acquire_lock() {
   local attempts=0
   local max_attempts=60       # 60 × 0.1s = 6s ceiling
@@ -140,7 +167,12 @@ acquire_lock() {
       # Stale lock probably — force release and grab.
       rmdir "$LOCKDIR" 2>/dev/null || rm -rf "$LOCKDIR" 2>/dev/null || true
       mkdir "$LOCKDIR" 2>/dev/null && return 0
+      # Genuine contention starvation: another peer reacquired between
+      # our rmdir and mkdir. Emit a systemMessage so the operator sees
+      # the dropped state-update rather than only the stderr line, then
+      # return 1 to the caller.
       echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: could not acquire lock at $LOCKDIR after ${max_attempts} attempts" >&2
+      "$JQ" -n --arg msg "[WARN][journey-mapping-cycle-gate] Lock starvation: could not acquire $LOCKDIR after ${max_attempts} attempts. This turn's state-file mutation was dropped. If this recurs, sibling cycle agents are racing on the lockdir more than the 6s ceiling allows — investigate parallel-dispatch parallelism cap." '{"systemMessage":$msg}' 2>/dev/null || true
       return 1
     fi
     sleep 0.1
@@ -523,9 +555,23 @@ means no cycles have run yet. Dispatch cycle 1 first."
     # Read both the recorded convergence-status AND compute the
     # data-derived value. Use the data-derived computation as the gate —
     # the orchestrator-written field is informational only.
+    #
+    # Acquire the lock for the entire read window. compute_convergence
+    # makes 4 separate jq calls against $STATE; without the lock, a
+    # parallel PostToolUse cycle-section mutation could land between any
+    # two of those calls and produce a torn read (e.g. the highest-cycle
+    # check sees N, but the cycle-N body check sees a half-written N+1
+    # because of last-writer wins on `mv $STATE.tmp $STATE`). Lock-
+    # protected reads guarantee the convergence math sees a consistent
+    # snapshot. Trap-protected so the lock releases on any exit path.
+    if acquire_lock; then
+      trap 'release_lock' EXIT
+    fi
     DERIVED_CONVERGENCE=$(compute_convergence)
     AUTHOR_DISPATCHED=$("$JQ" -r '."author-dispatched" // false' "$STATE" 2>/dev/null || echo "false")
     AUTHOR_ATTEMPTS=$("$JQ" -r '."author-attempts" // 0' "$STATE" 2>/dev/null || echo 0)
+    release_lock 2>/dev/null || true
+    trap - EXIT 2>/dev/null || true
 
     if [ "$AUTHOR_DISPATCHED" = "true" ]; then
       emit_deny "[BLOCKED] phase4-prioritise-author already completed (single-success contract).
@@ -617,7 +663,17 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
   # ---- Cycle-N section return --------------------------------------------
   if [[ "$DESCRIPTION" == phase4-cycle-* ]]; then
     PARSED=$(parse_cycle_dispatch "$DESCRIPTION")
-    [ -z "$PARSED" ] && exit 0
+    if [ -z "$PARSED" ]; then
+      # Description matched the phase4-cycle- prefix but the regex
+      # couldn't extract <N> + <id>. Today nothing produces this state
+      # (PreToolUse already denies malformed dispatches), but if a
+      # future hook reorders or weakens PreToolUse, returns from
+      # malformed dispatches would silently fail to record. Emit a
+      # warn so the operator sees the parse failure instead of a
+      # mysteriously-empty cycle entry in the state file.
+      "$JQ" -n --arg desc "$DESCRIPTION" --arg msg "[WARN][journey-mapping-cycle-gate] PostToolUse: phase4-cycle-* description \"$DESCRIPTION\" did not match the canonical \"phase4-cycle-<N>-section-<id>\" pattern. State-file update skipped. This is normally caught at PreToolUse — if you see this, check whether the dispatch-guard is properly registered." '{"systemMessage":$msg}' 2>/dev/null || true
+      exit 0
+    fi
 
     CYCLE_N=$(echo "$PARSED" | awk '{print $1}')
     SECTION_ID=$(echo "$PARSED" | awk '{print $2}')

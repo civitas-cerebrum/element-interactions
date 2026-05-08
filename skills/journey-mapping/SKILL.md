@@ -207,26 +207,68 @@ Each cycle agent receives a focused brief and returns a structured section block
 
 ### Section vocabulary (canonical IDs)
 
-Cycle agents pick from this list when classifying routes. Novel categories are allowed but must justify themselves with a `rationale:` field — `phase4-prioritise-author:` flags them for review before authoring.
+Cycle agents pick from this list when classifying routes. The list is intentionally a UNION across e-commerce / SaaS / documentation / banking / content / tooling shapes — most apps will match a subset; that is fine. Novel categories are allowed but must justify themselves with a `rationale:` field, and `phase4-prioritise-author:` flags them for review before authoring.
+
+The hook reads its canonical list from `hooks/data/canonical-sections.txt` (single source of truth). This table mirrors that file. When adding/removing/renaming an entry, update the data file FIRST, then mirror the change here.
+
+**Authentication + identity**
 
 | ID | Typical routes | Notes |
 |---|---|---|
 | `auth` | /login, /signup, /logout, /forgot-password, /reset, /verify-email, /mfa | Public auth surface plus identity-recovery flows. |
+| `profile` | /profile, /account, /me | Authenticated user's own data + own-resource management entry points. |
+| `admin` | /admin, /admin/* | Privileged role. Often gated by credentials cycle agents cannot self-discover. |
+
+**Commerce**
+
+| ID | Typical routes | Notes |
+|---|---|---|
 | `catalog` | /, /products, /categories, /search, /?category=*, /?query=* | Read-only browse + search of the primary content. |
 | `detail` | /products/:id, /articles/:slug, /items/:slug | Single-item view; usually links into `cart`, `marketplace`, or content-consumption flows. |
 | `cart` | /cart, /checkout | Pre-purchase state management. |
 | `order` | /orders, /orders/:id, /orders/:id/return, /receipts | Post-purchase state including returns/refunds. |
+| `billing` | /billing, /invoices, /subscriptions, /plans, /payment-methods | Payment / subscription / pricing-plan management. |
 | `marketplace` | /marketplace, /listings, /sell, /listings/:id | User-to-user supply side. |
-| `profile` | /profile, /account, /settings, /me | Authenticated user's own data + own-resource management entry points. |
-| `admin` | /admin, /admin/* | Privileged role. Often gated by credentials cycle agents cannot self-discover. |
-| `billing` | /billing, /invoices, /subscriptions, /plans | Payment / subscription management. |
-| `content` | /blog, /docs, /help, /faq, /terms, /privacy | Static / informational. |
-| `notifications` | /notifications, /inbox, /messages | In-app messaging. |
+
+**Content + documentation**
+
+| ID | Typical routes | Notes |
+|---|---|---|
+| `content` | /blog, /articles, /press, /about, /faq, /terms, /privacy | Static / informational pages. |
+| `documentation` | /docs, /docs/*, /api, /reference, /changelog | Developer / product documentation surfaces, often with their own navigation. |
+
+**SaaS-style application surfaces**
+
+| ID | Typical routes | Notes |
+|---|---|---|
+| `dashboard` | /, /dashboard, /home, /overview | Authed-user landing surface; aggregates state from other sections. |
+| `settings` | /settings, /settings/*, /preferences | App-level + per-user configuration. (Distinct from `profile`, which is identity data.) |
+| `integrations` | /integrations, /connections, /apps, /webhooks, /api-keys | Third-party connections, OAuth flows, API tokens. |
+
+**Communication + support**
+
+| ID | Typical routes | Notes |
+|---|---|---|
+| `notifications` | /notifications, /alerts | Push/email/in-app alert preferences and history. |
+| `inbox` | /inbox, /messages, /chat, /threads | Conversation / messaging surface. |
+| `support` | /help, /support, /contact, /tickets | Customer-support entry points and ticket flows. |
+
+**Reporting + analytics**
+
+| ID | Typical routes | Notes |
+|---|---|---|
+| `reports` | /reports, /reports/:id, /exports | Generated reports, exports, scheduled deliveries. |
+| `analytics` | /analytics, /insights, /metrics, /audit-log | Live dashboards, charts, audit trails. |
+
+**Errors + fallbacks**
+
+| ID | Typical routes | Notes |
+|---|---|---|
 | `error` | /404, /500, /maintenance | Error / fallback routes. |
 
-When in doubt between two IDs, prefer the more specific one (e.g. `marketplace` over `catalog` for a P2P listings page). Sub-divisions of a section (e.g., `catalog/search` vs `catalog/browse`) live as flows within one section's block, not as separate sections.
+When in doubt between two IDs, prefer the more specific one (e.g. `marketplace` over `catalog` for a P2P listings page; `documentation` over `content` for a versioned docs surface; `analytics` over `reports` for a live dashboard). Sub-divisions of a section (e.g., `catalog/search` vs `catalog/browse`) live as flows within one section's block, not as separate sections.
 
-**Multi-word IDs are allowed.** Future canonical IDs may be hyphenated (e.g. `payment-methods`). The harness vocabulary check (`is_canonical_section`) iterates the canonical list as a Bash array, not as a whitespace-split string, so hyphenated IDs match correctly. Whitespace inside an ID is forbidden.
+**Multi-word IDs are allowed.** Canonical IDs may be hyphenated (e.g. `payment-methods` if it earns its own section). The harness vocabulary check (`is_canonical_section`) iterates the canonical list as a Bash array, not as a whitespace-split string, so hyphenated IDs match correctly. Whitespace inside an ID is forbidden.
 
 ### Gated-areas policy
 

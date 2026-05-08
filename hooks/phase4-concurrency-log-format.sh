@@ -297,8 +297,12 @@ while IFS= read -r line; do
     esac
   fi
 
-  # 6. PIPE_BUF check — atomic-append guarantee requires line ≤ 4096 bytes.
-  byte_len=${#line}
+  # 6. PIPE_BUF check — atomic-append guarantee requires line ≤ 4096 BYTES.
+  # `${#line}` counts characters under bash, which undercounts UTF-8
+  # multi-byte sequences (CJK, emoji, accented Latin). We need the byte
+  # count, so route through `wc -c` with LC_ALL=C to force byte-mode
+  # counting regardless of the operator's locale.
+  byte_len=$(LC_ALL=C printf %s "$line" | wc -c | tr -d '[:space:]')
   if [ "$byte_len" -gt 4096 ]; then
     ERRORS="${ERRORS}\n  Line ${LINE_NUM}: ${byte_len} bytes exceeds PIPE_BUF (4096) — atomic append no longer guaranteed; emit a stub entry and write long-form details to a spill file"
   fi

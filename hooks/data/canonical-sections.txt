@@ -1,0 +1,49 @@
+# Canonical section vocabulary for journey-mapping iterative-cycle protocol.
+# Single source of truth — both the journey-mapping-cycle-gate.sh hook
+# and the journey-mapping/SKILL.md §"Section vocabulary" table read from
+# (or mirror) this file. When adding/removing/renaming an entry, update
+# THIS file first and run scripts/check-canonical-sections-sync.sh in
+# CI to verify the SKILL.md table matches.
+#
+# One ID per line. Lowercase kebab-case. Hyphens permitted (e.g. payment-
+# methods). Comments start with `#`; blank lines ignored.
+#
+# Audience: this list is intentionally a UNION across e-commerce / SaaS /
+# documentation / banking / content / tooling shapes. Most apps will
+# match a subset; novel categories are warned (not denied) by the hook
+# — agents can propose new IDs with `rationale:` and `phase4-prioritise-
+# author` flags them for the operator's review.
+
+# Authentication + identity
+auth
+profile
+admin
+
+# Commerce
+catalog
+detail
+cart
+order
+billing
+marketplace
+
+# Content + documentation
+content
+documentation
+
+# SaaS-style application surfaces
+dashboard
+settings
+integrations
+
+# Communication + support
+notifications
+inbox
+support
+
+# Reporting + analytics
+reports
+analytics
+
+# Errors + fallbacks
+error
