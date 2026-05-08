@@ -173,6 +173,20 @@ When the heal strategy is (a) selector re-learn, do NOT guess a replacement sele
 - **Multiple competing candidates** → escalate to the operator with the candidate list; do not guess between them.
 - **No candidate found** → the element likely genuinely disappeared. Re-classify as either (c) flow drift (something replaced it) or app bug (component missing that should be present) using the screenshot evidence as the tiebreaker.
 
+### Root cause: fragile selector
+
+If triage attributes the failure to a fragile selector (text drift, position-dependent CSS, role/name collision), check workspace shape before selecting a heal strategy:
+
+**Frontend source in workspace** — `package.json` lists the UI framework as a dependency **and** a `src/`-style tree of `.tsx`/`.jsx`/`.vue`/`.svelte`/`.html` files is present:
+
+→ Dispatch `selector-development` (`mode: "jit"`, `scope` = the element-key whose locator failed). After it returns, replace the test's locator with the new test-attribute selector and re-run. Then continue from Stage 5 (stability validation) as normal.
+
+**Frontend source NOT in workspace:**
+
+→ Report the fragile selector to the user as an actionable test-debt item. Do NOT attempt to harden the locator with compound selectors, nth-child chains, or XPath depth — that adds brittleness without adding stability. The report should name the element-key, the fragile signal (text drift / CSS position / role collision), and that `selector-development` cannot help because the source files are not available in this workspace.
+
+---
+
 ### Stage 5 — Fix and stability (test issues only)
 
 1. **Apply the fix** per the heal strategy selected in Stage 4a. Use the Steps API correctly — refer to the API Reference in the main `singularity` skill for all method signatures.
