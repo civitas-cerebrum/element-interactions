@@ -120,7 +120,7 @@ The companion runs Stages 1–4 inline with gates suspended, using the descripti
 
 - `tests/e2e/<scenario>.spec.ts` — the spec.
 - `page-repository.json` entries for elements touched.
-- **`tests/e2e/docs/.discovery-draft.json`** — structured discovery output that captures every page Stage 2/3 visited, every link observed (visited + unvisited-but-linked), section inferences, and credentials policy. Schema and sentinel rules in `../element-interactions/references/autonomous-mode-callers.md` §"Mandatory output for `onboarding` Phase 3 — discovery draft". The file is gitignored — it's transient state consumed by Phase 4. An empty draft is a contract violation, not a degenerate case; the orchestrator returns `{ status: 'failed', error: 'discovery-draft-empty' }` rather than writing one.
+- **`tests/e2e/docs/.discovery-draft.json`** — structured discovery output that captures every page Stage 2/3 visited, every link observed (visited + unvisited-but-linked), section inferences, and credentials policy. Schema and sentinel rules in `../element-interactions/references/autonomous-mode-callers.md` §"Mandatory output for `onboarding` Phase 3 — discovery draft". The file is **committed** (durable artifact, ~2KB JSON) — it lets a project re-run `journey-mapping` standalone with `phases-2-4` mode without first re-running the happy-path step. An empty draft is a contract violation, not a degenerate case; the orchestrator returns `{ status: 'failed', error: 'discovery-draft-empty' }` rather than writing one.
 
 **Commit:** `test: happy path — <scenario name>`. The orchestrator returns the scenario name in its summary; use that.
 

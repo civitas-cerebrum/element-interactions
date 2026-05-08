@@ -257,8 +257,13 @@ compute_convergence() {
     [.cycles[]? | select(.kind == "edge-probe")] | length > 0
   ' "$STATE" 2>/dev/null || echo "false")
 
-  # Hard cap takes precedence (run for full budget when sections still pending).
-  if [ "$highest_cycle" -ge "$extended_cap" ] && [ "$post_dedup_count" -gt 0 ]; then
+  # Hard cap takes precedence — at the cap, the run terminates regardless
+  # of post-dedup or edge-probe status. The validator (criterion f) catches
+  # any missing edge-probe and forces improvements-needed; the author's
+  # mapping-completeness frontmatter records the partial state. This avoids
+  # the deadlock case where post-dedup=0 + no-edge-probe + at-cap stalls
+  # the run with no recovery path.
+  if [ "$highest_cycle" -ge "$extended_cap" ]; then
     echo "hard-cap-reached"
     return
   fi
@@ -426,6 +431,17 @@ References:
       fi
     fi
 
+    # Detect edge-probe intent from description suffix. Edge-probe cycles
+    # legitimately RE-DISPATCH sections that ran in earlier cycles (under a
+    # different brief — looking for permission boundaries, deep links,
+    # lifecycle edges). The duplicate-section deny check below MUST exempt
+    # edge-probe dispatches; otherwise the protocol's mandated edge-probe
+    # cycle cannot run.
+    PRE_IS_EDGE_PROBE="false"
+    if echo "$DESCRIPTION" | grep -qiE 'edge-probe|edge probe'; then
+      PRE_IS_EDGE_PROBE="true"
+    fi
+
     # Check: Cycle N >= 2 — prior cycle has at least one return.
     if [ "$CYCLE_N" -ge 2 ]; then
       if [ ! -f "$STATE" ]; then
@@ -461,6 +477,10 @@ References:
       fi
 
       # Section <id> not already dispatched in cycles 1..N-1.
+      # EXEMPTION: edge-probe cycles re-dispatch sections by design.
+      # The hook recognises edge-probe via the literal "edge-probe"
+      # substring in the dispatch description; the orchestrator includes
+      # it per the cycle protocol when kind == "edge-probe".
       DUPLICATE_CYCLE=$("$JQ" -r --arg s "$SECTION_ID" --arg n "$((CYCLE_N - 1))" '
         [.cycles | to_entries[]
           | select((.key | tonumber) <= ($n | tonumber))
@@ -468,7 +488,7 @@ References:
           | .key] | first // empty
       ' "$STATE" 2>/dev/null || echo "")
 
-      if [ -n "$DUPLICATE_CYCLE" ]; then
+      if [ -n "$DUPLICATE_CYCLE" ] && [ "$PRE_IS_EDGE_PROBE" != "true" ]; then
         emit_deny "[BLOCKED] Section \"${SECTION_ID}\" already dispatched in cycle ${DUPLICATE_CYCLE}.
 
 The cycle-N+1 roster is the SET DIFFERENCE between cycle-N's
@@ -694,6 +714,16 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
       CYCLE_KIND="edge-probe"
     fi
 
+    # Detect kind mismatch: cycle's kind already set but new dispatch's
+    # detected kind disagrees. Indicates inconsistent dispatching by the
+    # orchestrator (some agents in the cycle got the edge-probe marker,
+    # others didn't). Emit a warning but preserve first-writer's stamp.
+    EXISTING_KIND=$("$JQ" -r --arg n "$CYCLE_N" '.cycles[$n].kind // empty' "$STATE" 2>/dev/null || echo "")
+    KIND_MISMATCH="false"
+    if [ -n "$EXISTING_KIND" ] && [ "$EXISTING_KIND" != "$CYCLE_KIND" ]; then
+      KIND_MISMATCH="true"
+    fi
+
     # Append section ID to dispatched-sections + returned-sections; merge
     # new-sections-discovered; flag novel section IDs; stamp cycle.kind
     # (only the FIRST recorded kind sticks — discovery doesn't overwrite
@@ -735,7 +765,16 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
     NOVEL_COUNT=$("$JQ" -r 'length' <<< "$NOVEL_SECTIONS" 2>/dev/null || echo 0)
     if [ "$NOVEL_COUNT" -gt 0 ]; then
       NOVEL_LIST=$("$JQ" -r 'join(", ")' <<< "$NOVEL_SECTIONS")
-      emit_warn "[WARN][journey-mapping-cycle-gate] Cycle ${CYCLE_N} section ${SECTION_ID} returned non-canonical section IDs: ${NOVEL_LIST}. The author (phase4-prioritise-author) is responsible for either normalising these against the canonical vocabulary OR justifying them with a rationale block. Canonical IDs: ${CANONICAL_SECTIONS}. See journey-mapping/SKILL.md §\"Section vocabulary\"."
+      CANONICAL_LIST=$(IFS=" "; echo "${CANONICAL_SECTIONS[*]}")
+      emit_warn "[WARN][journey-mapping-cycle-gate] Cycle ${CYCLE_N} section ${SECTION_ID} returned non-canonical section IDs: ${NOVEL_LIST}. The author (phase4-prioritise-author) is responsible for either normalising these against the canonical vocabulary OR justifying them with a rationale block. Canonical IDs: ${CANONICAL_LIST}. See journey-mapping/SKILL.md §\"Section vocabulary\"."
+    fi
+
+    # Emit a warning if the cycle's kind disagrees across section returns.
+    # First-writer's stamp is preserved (the dispatcher's intent recorded
+    # earliest); inconsistent later returns are flagged so the orchestrator
+    # can audit its dispatching.
+    if [ "$KIND_MISMATCH" = "true" ]; then
+      emit_warn "[WARN][journey-mapping-cycle-gate] Cycle ${CYCLE_N} kind mismatch: existing=${EXISTING_KIND}, observed=${CYCLE_KIND} from section ${SECTION_ID}. Orchestrator should dispatch all sections in a cycle with consistent edge-probe markers in the description (e.g., 'phase4-cycle-${CYCLE_N}-section-X: edge-probe — re-look for edge journeys'). The first-writer's kind (${EXISTING_KIND}) is preserved; this dispatch's marker is ignored. See journey-mapping/SKILL.md §\"Cycle protocol\"."
     fi
 
     exit 0
