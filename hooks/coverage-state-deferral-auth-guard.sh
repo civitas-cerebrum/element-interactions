@@ -66,12 +66,21 @@
 
 set -euo pipefail
 
+# Resolve jq: prefer the binary bundled with the hook install, fall back to
+# system jq for in-repo testing before postinstall has run.
+JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
+[ -x "$JQ" ] || JQ="$(command -v jq || true)"
+if [ -z "$JQ" ]; then
+  echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: jq not found at \$HOOK_DIR/bin/jq nor on PATH. Reinstall the package or install jq manually." >&2
+  exit 1
+fi
+
 if [ "${DEFERRAL_AUTH_GUARD:-on}" = "off" ]; then
   exit 0
 fi
 
 emit_deny() {
-  jq -n --arg r "$1" '{
+  "$JQ" -n --arg r "$1" '{
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
       "permissionDecision": "deny",
@@ -81,14 +90,14 @@ emit_deny() {
 }
 
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
+TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
 
 case "$TOOL_NAME" in
   Write|Edit) ;;
   *) exit 0 ;;
 esac
 
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""')
+FILE_PATH=$(echo "$INPUT" | "$JQ" -r '.tool_input.file_path // ""')
 case "$FILE_PATH" in
   *tests/e2e/docs/coverage-expansion-state.json) ;;
   *) exit 0 ;;
@@ -99,14 +108,14 @@ esac
 # subsequent Write (which writes the full file).
 [ "$TOOL_NAME" = "Edit" ] && exit 0
 
-CONTENT=$(echo "$INPUT" | jq -r '.tool_input.content // ""')
+CONTENT=$(echo "$INPUT" | "$JQ" -r '.tool_input.content // ""')
 [ -z "$CONTENT" ] && exit 0
 
 # Must parse as JSON; if not, defer to the schema-guard which will
 # emit a shape error.
-echo "$CONTENT" | jq empty >/dev/null 2>&1 || exit 0
+echo "$CONTENT" | "$JQ" empty >/dev/null 2>&1 || exit 0
 
-STATUS=$(echo "$CONTENT" | jq -r '.status // ""')
+STATUS=$(echo "$CONTENT" | "$JQ" -r '.status // ""')
 [ "$STATUS" = "complete" ] && exit 0
 
 # Identify deferred entries. The deferredJourneys[] array can live at
@@ -126,7 +135,7 @@ STATUS=$(echo "$CONTENT" | jq -r '.status // ""')
 # the entry as a violation. The `_authorizer_type` field captures jq's
 # native type so the loop below can distinguish "no authorizer" from
 # "authorizer present but wrong type".
-ENTRIES=$(echo "$CONTENT" | jq -r '
+ENTRIES=$(echo "$CONTENT" | "$JQ" -r '
   ([.deferredJourneys // []] | flatten)
   + [.. | objects | select(has("journey") and has("reason") and (has("stage_a_cycles") | not))]
   | .[]

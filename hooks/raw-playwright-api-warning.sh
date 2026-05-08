@@ -50,9 +50,18 @@
 
 set -euo pipefail
 
+# Resolve jq: prefer the binary bundled with the hook install, fall back to
+# system jq for in-repo testing before postinstall has run.
+JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
+[ -x "$JQ" ] || JQ="$(command -v jq || true)"
+if [ -z "$JQ" ]; then
+  echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: jq not found at \$HOOK_DIR/bin/jq nor on PATH. Reinstall the package or install jq manually." >&2
+  exit 1
+fi
+
 # --- helpers ---
 emit_warn() {
-  jq -n --arg m "$1" '{
+  "$JQ" -n --arg m "$1" '{
     "systemMessage": $m,
     "suppressOutput": false
   }'
@@ -60,14 +69,14 @@ emit_warn() {
 
 # --- input ---
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
+TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
 
 case "$TOOL_NAME" in
   Write|Edit) ;;
   *) exit 0 ;;
 esac
 
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""')
+FILE_PATH=$(echo "$INPUT" | "$JQ" -r '.tool_input.file_path // ""')
 case "$FILE_PATH" in
   *.spec.ts|*.spec.tsx|*.spec.js) ;;
   *) exit 0 ;;
@@ -75,9 +84,9 @@ esac
 
 # Compute target content slice we want to scan.
 if [ "$TOOL_NAME" = "Write" ]; then
-  CONTENT=$(echo "$INPUT" | jq -r '.tool_input.content // ""')
+  CONTENT=$(echo "$INPUT" | "$JQ" -r '.tool_input.content // ""')
 elif [ "$TOOL_NAME" = "Edit" ]; then
-  CONTENT=$(echo "$INPUT" | jq -r '.tool_input.new_string // ""')
+  CONTENT=$(echo "$INPUT" | "$JQ" -r '.tool_input.new_string // ""')
 fi
 
 # Match raw Playwright APIs that have a Steps equivalent. Strip line and block
