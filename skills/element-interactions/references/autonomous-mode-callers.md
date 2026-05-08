@@ -32,6 +32,68 @@ The orchestrator supports two autonomous entry points, distinguished by the `ent
 - For `coverage-expansion`: `journey: "<j-id>"` references an entry in `tests/e2e/docs/journey-map.md`. The orchestrator loads only that journey's block, not the whole map.
 - The orchestrator runs the full Stage 1 → 2 → 3 → 4 sequence under autonomous gates.
 
+### Mandatory output for `onboarding` Phase 3 — discovery draft
+
+When the caller is `onboarding` Phase 3 (and ONLY then — `coverage-expansion` callers do not produce drafts; their per-journey work is scoped to one block of an existing map), the orchestrator MUST produce a structured discovery draft alongside the spec. The draft captures every page the happy path touched and every link it observed but did not follow — the inputs that drive `journey-mapping`'s iterative cycles in Phase 4.
+
+**File:** `tests/e2e/docs/.discovery-draft.json` (dotfile — gitignored, not a committed artifact; transient state consumed by Phase 4).
+
+**Sentinel:** the file's first key MUST be `"discovery-draft-version": 1`. Phase-4 hooks refuse to consume drafts without the sentinel.
+
+**Schema:**
+
+```json
+{
+  "discovery-draft-version": 1,
+  "generated-by": "phase3-happy-path",
+  "generated-at": "<ISO-8601>",
+  "app-url": "<baseURL>",
+
+  "visited-routes": [
+    {
+      "url": "/",
+      "role-as": "unauthed-visitor | authed-user | authed-<role>",
+      "kind-guess": "<section-id from canonical vocabulary>",
+      "interactive-elements": ["<element>", ...],
+      "links-out": [
+        { "to": "/signup", "label-or-action": "Sign Up nav button" },
+        { "to": "/books/{id}", "label-or-action": "book card click" }
+      ]
+    }
+  ],
+
+  "unvisited-but-linked": [
+    { "url": "/marketplace", "seen-from": "/", "section-guess": "marketplace" }
+  ],
+
+  "sections-inferred": [
+    {
+      "id": "<canonical section-id>",
+      "routes-visited": ["/", "/books/{id}"],
+      "routes-suggested": ["/?genre=*"],
+      "role-required": "unauthed-visitor | authed-user | authed-<role>",
+      "seed-data-needed": "yes (50 books) | no | conditional"
+    }
+  ],
+
+  "handover-to-phase4": {
+    "cycle-1-targets": ["<section-id>", ...],
+    "credentials-discovered": {
+      "signup-open": true,
+      "signup-endpoint": "POST /api/auth/signup",
+      "demo-credentials": null,
+      "admin-path": null
+    }
+  }
+}
+```
+
+`cycle-1-targets` is the union of `sections-inferred[].id` and the section-guesses in `unvisited-but-linked`. `credentials-discovered` tells `journey-mapping` Phase 4 whether cycle agents can self-credential or whether gated areas should defer to coverage-expansion. Canonical section vocabulary lives in `journey-mapping/SKILL.md` §"Section vocabulary" — cycle agents pick from the list.
+
+**When the orchestrator writes the draft:** at the end of Stage 3 (after the spec runs 3× green), before Stage 4a starts. The draft is independent of the spec — Stage 4a/4b operate on the spec, not the draft.
+
+**Failure mode:** if the orchestrator cannot infer at least one section (zero pages visited, zero links observed), it returns `{ status: 'failed', error: 'discovery-draft-empty', happyPathDescription }` rather than writing an empty draft. An empty draft is a contract violation; absence of the file is the error condition Phase 4 hooks check for.
+
 ---
 
 ## Entry point: stage-3 (bundle-driven — discovery already done)

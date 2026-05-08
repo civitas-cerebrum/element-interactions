@@ -116,13 +116,21 @@ The companion writes `tests/e2e/docs/app-context.md` and a sentinel-bearing `tes
 
 The companion runs Stages 1–4 inline with gates suspended, using the description + the site map from Phase 2 to pick the target flow. Any failure routes through `failure-diagnosis` automatically.
 
+**Mandatory Phase-3 deliverables (autonomous mode):**
+
+- `tests/e2e/<scenario>.spec.ts` — the spec.
+- `page-repository.json` entries for elements touched.
+- **`tests/e2e/docs/.discovery-draft.json`** — structured discovery output that captures every page Stage 2/3 visited, every link observed (visited + unvisited-but-linked), section inferences, and credentials policy. Schema and sentinel rules in `../element-interactions/references/autonomous-mode-callers.md` §"Mandatory output for `onboarding` Phase 3 — discovery draft". The file is gitignored — it's transient state consumed by Phase 4. An empty draft is a contract violation, not a degenerate case; the orchestrator returns `{ status: 'failed', error: 'discovery-draft-empty' }` rather than writing one.
+
 **Commit:** `test: happy path — <scenario name>`. The orchestrator returns the scenario name in its summary; use that.
 
-### Phase 4 — Full journey mapping
+### Phase 4 — Full journey mapping (iterative cycles)
 
 **Delegate to:** `journey-mapping` with `args: "phases-2-4"`.
 
-The companion reads the existing sentinel-bearing Phase-1 map and fills in Phases 2–4 (flow identification, prioritisation, journey map document). File is overwritten in place; sentinel preserved.
+The companion reads the existing sentinel-bearing Phase-1 map AND the Phase-3 discovery draft (`tests/e2e/docs/.discovery-draft.json`). Phases 2 / 3 / 3.5 run as **3 to 5 iterative cycles of parallel section-agents** driven by `tests/e2e/docs/.phase4-cycle-state.json`. Per-cycle dedup terminates the loop when no new sections appear; the loop is bounded at 5 cycles regardless. After cycles converge, a single `phase4-prioritise-author:` subagent applies Phase 3 prioritisation + Phase 3.5 redundancy revision + Phase 4 authoring, overwriting `journey-map.md` in place (sentinel preserved). Full protocol in `../journey-mapping/SKILL.md` §"Iterative discovery cycles".
+
+The single-subagent sequential walkthrough is forbidden in `phases-2-4` mode — `journey-mapping`'s kernel rule and the `journey-mapping-cycle-gate.sh` hook both reject it. Gated areas the cycle agents cannot self-credential into are recorded under `## Gated Areas (Not Mapped)` for `coverage-expansion` to handle later (when the user supplies credentials).
 
 **Commit:** `docs: journey map — <N> journeys prioritized`.
 

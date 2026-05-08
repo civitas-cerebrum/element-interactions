@@ -96,6 +96,8 @@ Field rules:
 | `probe-` | `clean`, `findings-emitted`, `blocked` | — |
 | `process-validator-` | `greenlight`, `block` | — |
 | `phase-validator-` | `greenlight` | `improvements-needed` |
+| `phase4-cycle-<N>-section-` | `section-complete`, `section-deferred`, `blocked` | — |
+| `phase4-prioritise-author-` | `journey-map-authored`, `blocked` | — |
 
 The non-terminal `improvements-needed` statuses (reviewer + phase-validator) deliberately keep the slot leashed: the orchestrator's contract is to redispatch under the SAME slug with a stricter brief, and the redispatch refreshes the registry entry's `started_at` timestamp + `cycle` value. This prevents a non-terminal handover from clearing the slot, then a parallel orchestrator-driven write attempt slipping through the direct-compose gate while the redispatch is in flight.
 
@@ -626,8 +628,99 @@ For each role, the dispatch-brief template lives in:
 | `probe-` | `skills/coverage-expansion/references/adversarial-subagent-contract.md` |
 | `process-validator-` | `skills/coverage-expansion/references/process-validator-workflow.md` |
 | `phase-validator-` | `skills/onboarding/SKILL.md` (phase-validator dispatch section) |
+| `phase4-cycle-<N>-section-` | `skills/journey-mapping/SKILL.md` (iterative discovery cycles section) |
+| `phase4-prioritise-author-` | `skills/journey-mapping/SKILL.md` (iterative discovery cycles section) |
 
 Each template carries a "Writeback contract" subsection naming its role's spill-path convention.
+
+---
+
+## 2.7 Iterative-discovery section + author returns (`phase4-cycle-*-section-*`, `phase4-prioritise-author`)
+
+Used by `journey-mapping` in `phases-2-4` mode. Per-section cycle agents return structured section blocks; the final author returns a single `journey-map-authored` confirmation.
+
+### Per-section return — `phase4-cycle-<N>-section-<id>:`
+
+Index-level fields inline; flow descriptions, per-route step lists, and state-variation tables spill to `tests/e2e/docs/.subagent-returns/phase4-cycle-<N>-section-<id>.md` (sentinel: `<!-- subagent-returns:phase4-cycle:<N>:section:<id> -->` on line 1).
+
+Inline body (≤ ~250 words):
+
+```yaml
+handover:
+  role: phase4-cycle-<N>-section-<id>
+  cycle: <N>
+  status: section-complete | section-deferred | blocked
+  next-action: orchestrator merges into .phase4-cycle-state.json
+
+section: <id>
+cycle: <N>
+routes-driven: ["<url>", ...]
+routes-suggested: ["<url>", ...]      # observed but not driven (cycle budget, gated, etc.)
+flows-identified: <count>
+state-variations-recorded: <count>
+
+new-sections-discovered:
+  - id: <new-section-id>
+    rationale: <one sentence — why this is its own section, not an extension>
+    routes-suggested: ["<url>", ...]
+
+gated-deferred-to-coverage-expansion:
+  - url: <url>
+    reason: <admin-role | paid-plan | mfa-required | sso-bypass-required | other>
+    credentials-needed: <one-sentence description>
+
+spill: tests/e2e/docs/.subagent-returns/phase4-cycle-<N>-section-<id>.md
+summary: <one sentence — what was driven, how many flows, key oddities>
+```
+
+Spill file body (full content): per-route record (URL, role-as, snapshot summary, interactive elements, state variations, links-out), per-flow description (steps, branches, exit), and any oddities surfaced for the author's awareness (banner / modal observations, console errors, response-shape surprises).
+
+**Status semantics:**
+
+- `section-complete` — every route in the input target list was driven; flow-set is closed (no further routes-suggested for THIS section).
+- `section-deferred` — some routes-suggested remain undriven (cycle agent ran out of CLI budget, encountered a transient error, etc.). Orchestrator may re-dispatch the same section on the next cycle with the residual targets — counts as "new" for cycle-N+1's empty-check (deferral propagates work forward).
+- `blocked` — the section's primary entry route returned an error, the agent could not self-credential into a gated entry, or the brief was malformed. Section is recorded as blocked in the state file; `phase4-prioritise-author:` lists it under `## Gated Areas (Not Mapped)` with the block reason.
+
+**Banned tokens:** Stage-A severities (`critical`, `high`, etc.) — section returns do NOT carry severity; they describe flows, not findings. Reviewer must-fix calibration vocabulary — section agents do not review.
+
+### Author return — `phase4-prioritise-author:`
+
+Single dispatch after cycles converge. Inline body only — no spill needed (the journey map IS the artifact).
+
+```yaml
+handover:
+  role: phase4-prioritise-author
+  cycle: 1
+  status: journey-map-authored | blocked
+  next-action: dispatch phase-validator-4 next
+
+cycles-consumed: <N>
+convergence-status: converged | hard-cap-reached | single-cycle-floor
+
+journey-map:
+  path: tests/e2e/docs/journey-map.md
+  sentinel-preserved: true
+  pages-discovered: <N>
+  flows-identified: <N>
+  priority-breakdown: { p0: <N>, p1: <N>, p2: <N>, p3: <N> }
+
+phase-3-5-revisions:
+  sub-journeys-extracted: <N>
+  variants-collapsed: <N>
+  decompositions: <N>
+
+gated-areas-not-mapped: <N>     # length of ## Gated Areas (Not Mapped) section
+mapping-completeness-note: <verbatim from the authored frontmatter line>
+
+summary: <one sentence — N journeys across <pages>, <gated> deferred to coverage-expansion>
+```
+
+**Status semantics:**
+
+- `journey-map-authored` — file written, sentinel on line 1, all section blocks consumed, Phase 3.5 revision log present. Phase-validator-4 is the next step.
+- `blocked` — author cannot synthesise a valid journey map (e.g., no section returned `section-complete`, all sections blocked, or the cycle state file is corrupt). Surfaces to onboarding orchestrator with a concrete redirect ("re-dispatch cycle <N>", "supply credentials for <gated-area>", etc.).
+
+**Banned tokens:** any per-flow detail not in the journey-map document itself. The author's return is an index of what was authored, not a re-summary of the content.
 
 ---
 
