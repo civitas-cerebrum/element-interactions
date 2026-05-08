@@ -1208,5 +1208,5 @@ If you're adding to element-repository first:
 - [ ] Action methods include the `ensureAttached(timeout)` preamble
 - [ ] Live test added in `tests/live-element-location.spec.ts`
 - [ ] Coverage 100% (`npx test-coverage`)
-- [ ] Patch version bumped
+- [ ] **No version bump in this PR** — release-time only, per Rule 15. Bump happens on the release branch when the maintainer publishes.
 - [ ] README updated if adding to the public surface

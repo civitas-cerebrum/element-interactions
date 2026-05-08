@@ -13,7 +13,7 @@ description: >
 
 Generate a branded HTML presentation deck that summarizes the test automation work done in the current project. The deck is designed to communicate QA value to stakeholders — managers, product owners, and team leads who want to understand what was built, what it covers, and what value it delivers.
 
-The output is a single self-contained HTML file that can be opened in any browser and exported to PDF via Print > Save as PDF.
+The output is a single self-contained HTML file plus an auto-rendered PDF. The PDF is exported every run — no user confirmation, no manual Print > Save as PDF step.
 
 ---
 
@@ -152,9 +152,17 @@ Every slide follows this pattern:
 
 ## Output
 
-1. **Write the HTML file** to the project root as `qa-summary-deck.html` (or a name the user specifies)
-2. **Open it in the browser** using `open <path>` (macOS) or `xdg-open <path>` (Linux)
-3. **Tell the user** how to export to PDF: Print > Save as PDF, landscape mode. The CSS includes `@page` rules for clean page breaks.
+The flow is non-interactive — once the HTML is written, the PDF export runs automatically. Do **not** ask the user whether to render the PDF; always render it. The user can ignore the PDF if they only want the HTML.
+
+1. **Write the HTML file** to the project root as `qa-summary-deck.html` (or a name the user specifies).
+2. **Render the PDF** by running:
+   ```bash
+   node node_modules/@civitas-cerebrum/element-interactions/skills/work-summary-deck/scripts/export-pdf.js qa-summary-deck.html
+   ```
+   The script uses the project's existing `@playwright/test` peer dependency (no extra install) to print the deck in landscape with `@page` defaults preserved. Output PDF lands next to the HTML (`qa-summary-deck.pdf`). The script prints the resolved PDF path to stdout. If the script's stdout is non-empty AND the file exists, treat the export as complete.
+3. **Open the PDF** for the user — `open <pdf-path>` on macOS, `xdg-open <pdf-path>` on Linux. Open the HTML too only if the user asked for it; the PDF is the canonical deliverable.
+
+If the script errors (e.g. no Chromium binary, no `@playwright/test`), report the failure with the exact stderr to the user — do NOT silently fall back to "open it and Print > Save as PDF". The contract for this skill is: PDF every time, automatically.
 
 ---
 
@@ -163,16 +171,19 @@ Every slide follows this pattern:
 **User says:** "generate a report of the work we've done"
 1. Collect data from all sources
 2. Compute metrics
-3. Generate the deck with project-specific content
-4. Open in browser
+3. Generate the HTML deck with project-specific content
+4. Auto-export to PDF via the bundled script (no confirmation prompt)
+5. Open the PDF
 
 **User says:** "create a deck for the team standup"
 1. Same flow, but keep it shorter (5-6 slides)
 2. Focus on metrics and recent progress
+3. PDF still auto-exported
 
 **User says:** "export a summary with our bug findings"
 1. Same flow, but emphasize the bug discovery results slide
 2. Include the full bug classification table if available
+3. PDF still auto-exported
 
 ---
 

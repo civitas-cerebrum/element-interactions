@@ -239,6 +239,28 @@ Auto-mode does not satisfy "explicit scope reduction." Inferred user preference 
 
 This rule applies regardless of how reasonable the caller's estimate is. "16 journeys × 5 passes = many hours" is a true statement and not authorisation. Onboarding's front-load gate already disclosed "tens of minutes to several hours" to the user — that disclosure is the user's authorisation for the full pipeline, and the caller is bound by it.
 
+### 15. Test data discipline — secrets in `.env`, variables centralised
+
+Two rules govern how test data shows up in spec files. Both are enforced by `test-data-discipline-guard.sh` (PreToolUse:Edit|Write|MultiEdit on `*.spec.{ts,js,…}` and `*.test.{ts,js,…}`). See `references/harness-hooks.md` for the hook contract.
+
+- **Project secrets MUST live in `.env`** (gitignored) and load into specs via `process.env.<NAME>`. Hardcoded credential literals — `password`, `passwd`, `pwd`, `api_key` / `apiKey`, `secret`, `token`, `bearer`, `access_key` / `accessKey`, `auth` — assigned to a string literal in a spec file are **denied**. The escape on a single line is a `process.env.` reference: `const password = process.env.LOGIN_PASSWORD;`. The escape across the suite (legacy / migrating) is `TEST_DATA_DISCIPLINE_GUARD=warn` (downgrades to warn) or `=off` (silent allow).
+
+- **Test-data variables SHOULD be centralised in a single class / module** — e.g. `tests/fixtures/test-data.ts` exporting a `TestData` class or namespace. Scattered top-level `const NAME = "literal"` declarations across spec files (URLs, account names, magic strings) drift across files and resist refactor. The guard **warns** (does not deny) when it sees a top-level magic constant in a spec file that does NOT also import from a centralised data module (`test-data`, `testData`, `fixtures`, `fixture`, `constants`, `constant`). The recommended shape:
+
+  ```ts
+  // tests/fixtures/test-data.ts
+  export class TestData {
+    static readonly BASE_URL = process.env.BASE_URL ?? "https://staging.example.com";
+    static readonly ADMIN_EMAIL = "admin+e2e@example.com";
+  }
+
+  // tests/login.spec.ts
+  import { TestData } from "./fixtures/test-data";
+  // …use TestData.BASE_URL / TestData.ADMIN_EMAIL throughout the spec…
+  ```
+
+If you genuinely need a one-off literal in a spec (a hard-coded element label, a test-only string), put it inline in the assertion — the guard only flags top-level uppercase constant declarations, not inline literals inside `expect(...).toBe("literal")` or step calls.
+
 ### Workflow
 - **Run the tests** to validate your work. Do not skip this.
 - **Commit** after every confirmed success. Do not batch.

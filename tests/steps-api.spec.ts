@@ -225,7 +225,7 @@ test.describe('TC_046: verifyImages - Image Verification', () => {
     });
 
     await test.step('verifyImages with verifyDecoded:true also passes for real images', async () => {
-      await steps.verifyImages( 'firstCarouselImage','ProductCarouselPage', true, undefined, { verifyDecoded: true });
+      await steps.verifyImages( 'firstCarouselImage','ProductCarouselPage', true, { verifyDecoded: true });
     });
 
     log('TC_046 verifyImages — passed');
