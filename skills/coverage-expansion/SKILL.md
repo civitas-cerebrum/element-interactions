@@ -51,14 +51,16 @@ If you are about to dispatch fewer passes than the mode requires, or fewer journ
 
 **Onboarding-pipeline contract**: when invoked from `onboarding` Phase 5 (autonomous mode), the front-load gate has already authorised the full pipeline ("tens of minutes to several hours"). The orchestrator may not stop pre-emptively in autonomous mode — the only valid mid-run stop is exit #2 *after at least one wave has returned*. "Mostly done with Phase 3 happy-path, surfacing back to user" is not a valid Phase 5 exit.
 
-### Reviewer parallelism is non-negotiable
+### Reviewer parallelism is non-negotiable (and one optional batch step)
 
 Stage B reviewers run **at host max parallelism**, not one at a time. A pass with 16 journeys dispatches up to 16 reviewers in one parallel wave (subject to the shared-resource audit's credential caps — see §"Parallel cap — lifted and jointly applied"). Reviewer dispatch is NOT a serialised cost.
 
 The contract:
-- **Per-journey**: each reviewer reads ONE journey's spec + journey block + live app (Stage B is never batched).
+- **Per-journey**: each reviewer reads ONE journey's spec + journey block + live app (Stage B is per-journey by default).
 - **Across journeys**: dispatched in parallel up to the host-max cap, sharing the same in-flight pool with Stage A retries.
 - **Within a journey**: Stage A and Stage B are sequential (a journey's own A and B never overlap), but its B can run while a sibling journey's A is in flight.
+
+**Batch reviewer mode — Pass 1/2/3 cycle-1 only.** For the cycle-1 Stage B of compositional Passes 1, 2, and 3, the orchestrator dispatches **one** Opus reviewer that reads all in-flight journeys' Stage A spill files together and emits per-journey verdicts in a single return. ~85% of compositional cycle-1 reviews return greenlight; per-journey isolation over-pays for that majority. Role-prefix `reviewer-batch-pass-<N>:`; return shape in [`references/reviewer-subagent-contract.md`](references/reviewer-subagent-contract.md) §"Batch reviewer mode (cycle-1 compositional only)". For any flagged journey in the batch return, the orchestrator dispatches a follow-up cycle-2 `mode: per-journey` reviewer. **Adversarial Passes 4 and 5 never batch** — the per-journey live-app probe + matrix coverage check is load-bearing. **Cycle-2+ is always per-journey**, regardless of pass.
 
 If you are about to stop after Stage A claiming "running 16 reviewers is too much for this session" — re-read this section. 16 reviewers in parallel is one wave. The wave is the contract.
 
@@ -91,7 +93,8 @@ Every Agent dispatch description starts with a role-explicit prefix. The prefix 
 |---|---|---|---|
 | Stage A composer (per journey) | `composer-j-<slug>:` | `composer-j-<slug>-<pass>-c<N>` | `subagent-return-schema.md` §1 + §2 (Stage A) |
 | Stage A composer (sub-journey) | `composer-sj-<slug>:` | `composer-sj-<slug>-<pass>-c<N>` | as above |
-| Stage B reviewer | `reviewer-j-<slug>:` | `reviewer-j-<slug>-<pass>-c<N>` | `subagent-return-schema.md` §2.4 (Stage B) |
+| Stage B reviewer (per journey) | `reviewer-j-<slug>:` | `reviewer-j-<slug>-<pass>-c<N>` | `subagent-return-schema.md` §2.4 (Stage B) |
+| Stage B reviewer (batch — compositional cycle-1 only) | `reviewer-batch-pass-<N>:` | (no CLI session — static reader) | `subagent-return-schema.md` §2.4-batch (`verdicts:` array wrapping per-journey §2.4 returns) |
 | Adversarial probe (passes 4-5) | `probe-j-<slug>:` | `probe-j-<slug>-<pass>` | Stage A finding shape + ledger |
 | Sub-orchestrator (process-validator) | `process-validator-<scope>:` | (no CLI session) | Reviewer-shape (§2.4) applied to a manifest |
 | Phase 1 discovery | `phase1-<entry>:` | `phase1-<entry>` | site-map / page entries |
@@ -358,7 +361,7 @@ The full per-pass pipeline (steps 1–8), pass differences, commit-message conve
 - **Stage B never commits.** Reviewer judgements live in the state file's `review_status` and `final_must_fix` fields, never as commits. `review(j-…)` and any review-tagged commit form is forbidden.
 - **Stage A and B are parallel by default.** A journey's Stage B fires as soon as that journey's Stage A returns and the cap has a slot — not after every Stage A in the pass completes. Finishing all Stage A first then starting all Stage B is contract-violating.
 - **Parallel cap counts A and B jointly.** One pool of in-flight slots; A, B, and A-retry compete. A journey's own A and B never overlap (sequential within a journey); across journeys any A/B interleaving is possible. Queue order is FIFO.
-- **Hybrid model selection — Pass 1, Pass 4, Pass 5 on Opus, Pass 2/3 execution on Sonnet, all review on Opus.** Empirical data from a 30-journey onboarding cycle (issue #164) showed Sonnet/Opus parity on adversarial probes for the categories observed in that cycle. The hybrid policy nonetheless keeps Pass 4 on Opus: Pass 4's findings feed Pass 5's regression layer, and probe-depth quality at the Pass 4 boundary determines what gets locked in downstream — the cost delta does not justify trading away regression-input quality. Pass 1 establishes the test foundation and runs Opus throughout (composer + reviewer); Pass 5 produces the regression layer that locks in verified boundaries — the durable artifact that catches future regressions — and runs Opus throughout (gap analysis, targeted probes, regression-test authoring). Sonnet is reserved for the mechanical re-pass composers in Passes 2 and 3, where the bulk of journeys return `covered-exhaustively` and the work is by definition incremental. Batched review (per #164.2) keeps Opus reviewers affordable: one Opus reviewer cross-synthesises N journeys' worth of evidence, replacing N per-journey reviewers. Per-journey Stage B in passes 2-5 also stays on Opus while batching ramps — review judgement is the quality boundary the rest of the pipeline relies on. Default by dispatch type:
+- **Hybrid model selection — Pass 1, Pass 4, Pass 5 on Opus, Pass 2/3 execution on Sonnet, all review on Opus.** Empirical data from a 30-journey onboarding cycle showed Sonnet/Opus parity on adversarial probes for the categories observed in that cycle. The hybrid policy nonetheless keeps Pass 4 on Opus: Pass 4's findings feed Pass 5's regression layer, and probe-depth quality at the Pass 4 boundary determines what gets locked in downstream — the cost delta does not justify trading away regression-input quality. Pass 1 establishes the test foundation and runs Opus throughout (composer + reviewer); Pass 5 produces the regression layer that locks in verified boundaries — the durable artifact that catches future regressions — and runs Opus throughout (gap analysis, targeted probes, regression-test authoring). Sonnet is reserved for the mechanical re-pass composers in Passes 2 and 3, where the bulk of journeys return `covered-exhaustively` and the work is by definition incremental. Batched review keeps Opus reviewers affordable: one Opus reviewer cross-synthesises N journeys' worth of evidence, replacing N per-journey reviewers. Per-journey Stage B in passes 2-5 also stays on Opus while batching ramps — review judgement is the quality boundary the rest of the pipeline relies on. Default by dispatch type:
 
   | Dispatch type | Model | Rationale |
   |---|---|---|
@@ -371,7 +374,7 @@ The full per-pass pipeline (steps 1–8), pass differences, commit-message conve
   | Pass 5 targeted probes | **opus** | Regression layer is the durable artifact; quality at probe time determines what gets locked in |
   | Pass 5 regression-test authoring | **opus** | Same — assertion shape + edge nuance in regression tests propagates forward indefinitely |
   | Stage B reviewer — per-journey (passes 2-5) | **opus** | Review judgement boundary; per-journey while batching ramps |
-  | Stage B batch reviewer (when used; #164.2) | **opus** | Cross-journey synthesis is where Opus shines |
+  | Stage B batch reviewer (when used) | **opus** | Cross-journey synthesis is where Opus shines |
   | Cleanup ledger dedup | **opus** | Semantic clustering quality matters |
   | Phase 7 deck / report | **opus** | Client-facing narrative quality |
   | Failure-diagnosis | **opus** | Root-cause reasoning depth |
@@ -382,11 +385,11 @@ The full per-pass pipeline (steps 1–8), pass differences, commit-message conve
   - The user may request Opus for everything (e.g. `mode: depth, model: opus-all`) for a high-stakes audit; document the override in the front-load gate.
   - A pass with `final_must_fix` carry-overs from the prior pass forces that journey's next Stage A composer onto Opus regardless of the table (the must-fix is hard; a mechanical Sonnet re-pass won't resolve it). Note this override is now scoped to Pass 2/3 Stage A composers — Stage B reviewers (per-journey and batch) are Opus by default, so no review-side override is required.
 
-  This section supersedes the prior "cost-blind, opus-default" rule. The change is empirically grounded for execution-side dispatches: the Pass 2 and Pass 3 re-pass composers drop to Sonnet because the work is mechanical (the majority of journeys return `covered-exhaustively`). Pass 4 stays on Opus despite issue #164's observed Sonnet/Opus parity on adversarial probes — the parity covered the probe categories surfaced in that one cycle, and Pass 4's findings are the input to Pass 5's regression layer; probe-depth quality at that boundary determines what gets locked in. Review judgement stays on Opus across all passes — per-journey while batching ramps, and at the batch reviewer once #164.2 is in steady state. See issue #164 for the per-dispatch cost analysis.
-- **P0/P1/P2 NEVER batch.** P3-only batching, capped at 7 per brief, Stage A only — Stage B always per-journey. Sharing pages with P3 siblings is not authorisation; priority is load-bearing.
-- **P3 small-surface journeys may opt OUT of adversarial passes (Passes 4 & 5).** Per #164.4, P3 logout / role-chooser / modal-only journeys empirically produce 0–2 unique adversarial findings each — their entire adversarial surface is already covered via portal-wide pattern citations from larger journeys. The skip is **opt-in per project**, declared up-front in the state file's `adversarialSkippedJourneys: []` field with rationale per entry. Default is "include all" — the orchestrator never silently skips a P3 from adversarial work; the operator opts the journey out by name. Compositional passes (1–3) ALWAYS run on every journey including P3. **Exclusion criteria** (must hold for a journey to qualify for opt-out):
+  This section supersedes the prior "cost-blind, opus-default" rule. The change is empirically grounded for execution-side dispatches: the Pass 2 and Pass 3 re-pass composers drop to Sonnet because the work is mechanical (the majority of journeys return `covered-exhaustively`). Pass 4 stays on Opus despite the observed Sonnet/Opus parity on adversarial probes — the parity covered the probe categories surfaced in that one cycle, and Pass 4's findings are the input to Pass 5's regression layer; probe-depth quality at that boundary determines what gets locked in. Review judgement stays on Opus across all passes — per-journey while batching ramps, and at the batch reviewer once batching is in steady state.
+- **Stage A always per-journey except the documented P3-batch ≤7 exception. Stage B per-journey except the documented compositional-cycle-1 batch-reviewer exception (one reviewer per pass; never adversarial; never cycle-2+).** P0/P1/P2 NEVER use the P3-batch Stage A exception — P3-only batching, capped at 7 per brief; sharing pages with P3 siblings is not authorisation for batching at the Stage-A side, priority is load-bearing. Adversarial Passes 4-5 NEVER use the batch-reviewer Stage B exception (per-journey live-app probe + matrix coverage check is structurally per-journey). Cycle-2+ ALWAYS uses per-journey reviewers regardless of pass — by cycle 2 the orchestrator already knows which journeys need attention.
+- **P3 small-surface journeys may opt OUT of adversarial passes (Passes 4 & 5).** P3 logout / role-chooser / modal-only journeys empirically produce 0–2 unique adversarial findings each — their entire adversarial surface is already covered via portal-wide pattern citations from larger journeys. The skip is **opt-in per project**, declared up-front in the state file's `adversarialSkippedJourneys: []` field with rationale per entry. Default is "include all" — the orchestrator never silently skips a P3 from adversarial work; the operator opts the journey out by name. Compositional passes (1–3) ALWAYS run on every journey including P3. **Exclusion criteria** (must hold for a journey to qualify for opt-out):
   - Priority is P3.
-  - The journey's `Pages touched` list is a subset of pages already adversarial-probed by a larger journey AND covered by a portal-wide pattern entry (per #164.3).
+  - The journey's `Pages touched` list is a subset of pages already adversarial-probed by a larger journey AND covered by a portal-wide pattern entry.
   - The journey has zero unique adversarial findings in any prior pass-4 ledger entry (or has no prior entries).
   - The journey is one of: logout, role-chooser, single-modal disclosure, single-info-display, breadcrumb-nav, or equivalent low-surface shape.
 
@@ -394,9 +397,9 @@ The full per-pass pipeline (steps 1–8), pass differences, commit-message conve
 - **Auto-compaction at 70%.** State written first, then `/compact`, then resume from state. Mid-cycle Stage A returns persist to a scratch file (`tests/e2e/docs/.coverage-expansion-cycle-<slug>-cycle-<N>.json`) before compacting; mid-cycle restart from a fresh Stage A dispatch is NOT acceptable.
 - **`blocked-cycle-stalled`, `blocked-cycle-exhausted`, `blocked-dispatch-failure` are valid terminals**, not pass failures. Mark them faithfully — calling cycle-7-exhausted "greenlit" corrupts the state file and the next pass's trigger-4 input.
 
-### Trigger-gated re-pass for Passes 2 & 3 (issue #164.1)
+### Trigger-gated re-pass for Passes 2 & 3
 
-Pass 2 and Pass 3 are **conditional** on per-journey triggers checked at the orchestrator level. Empirically (issue #164's farmedvisie-t2 cycle), 22 of 30 Pass-2 dispatches and 21 of 30 Pass-3 dispatches return `covered-exhaustively` — the subagent loaded full context just to confirm "no work needed." The orchestrator can make that decision in three checks, saving ~3.5M tokens per cycle.
+Pass 2 and Pass 3 are **conditional** on per-journey triggers checked at the orchestrator level. Empirically, 22 of 30 Pass-2 dispatches and 21 of 30 Pass-3 dispatches return `covered-exhaustively` — the subagent loaded full context just to confirm "no work needed." The orchestrator can make that decision in three checks, saving ~3.5M tokens per cycle.
 
 **Per-journey triggers (orchestrator checks before dispatching):**
 
@@ -426,7 +429,7 @@ Pass 2 and Pass 3 are **conditional** on per-journey triggers checked at the orc
 - The orchestrator MUST record `triggers_checked` with all three booleans for every gated-skip entry. A skip without that evidence is silent scope narrowing — `hooks/coverage-state-schema-guard.sh` denies it.
 - A gated-skip entry with any trigger == true is a contract violation (the orchestrator should have dispatched).
 - Gated-skip entries count as "work done" for the §"Two valid exits" pre-emptive-stop check — a Pass 2 with all 30 journeys gated-skipped is legitimately complete.
-- This rule applies to **Passes 2 and 3 only**. Pass 1 dispatches every journey unconditionally; Passes 4 and 5 remain dispatch-driven (the adversarial discipline is empirically valuable, not redundant — see #164's per-pass yield data).
+- This rule applies to **Passes 2 and 3 only**. Pass 1 dispatches every journey unconditionally; Passes 4 and 5 remain dispatch-driven (the adversarial discipline is empirically valuable, not redundant).
 - The orchestrator never inferentially batches gated skips into one entry — one entry per journey, with that journey's three triggers explicitly checked.
 
 The §"Re-pass mode for compositional passes 2–3" reference (depth-mode-pipeline.md) describes the dispatched-path's brief contents and rejection rules. Trigger-gating sits ABOVE that — only when at least one trigger fires does the dispatched-path apply.
