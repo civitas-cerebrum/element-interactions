@@ -7,7 +7,9 @@ description: >
   or when another companion skill encounters a test failure.
   Guides the agent through screenshot analysis, DOM inspection, root cause hypothesis,
   then fixes test issues autonomously or reports app bugs with evidence.
-trigger: always
+  Also auto-invoked via Skill tool from element-interactions Rule 7, test-composer's stabilization loop,
+  bug-discovery's adversarial probes, test-repair's per-cluster diagnosis, and any subagent that runs tests
+  and observes a failure — those callers explicitly route to this skill rather than relying on always-load.
 ---
 
 # Singularity — Failure Diagnosis
