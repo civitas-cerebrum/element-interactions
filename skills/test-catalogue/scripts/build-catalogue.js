@@ -4,7 +4,7 @@
  *
  * Usage (from a project root that has tests/e2e/*.spec.ts and tests/e2e/docs/journey-map.md):
  *   node path/to/this/build-catalogue.js \
- *     [--brand spritecloud|civitas-cerebrum|default] \
+ *     [--brand civitas-cerebrum|default] \
  *     [--output test-catalogue.pdf]
  *
  * Writes test-catalogue.html to cwd. A second step (Playwright chromium) renders the PDF —
@@ -37,7 +37,7 @@ async function main() {
   }
 
   const decorated = tests.map((t) => crossReference(t, journeyMap));
-  const grouped = groupByPortal(decorated);
+  const grouped = groupBySection(decorated);
   const totals = computeTotals(decorated, journeyMap);
 
   const html = renderHtml({
@@ -84,16 +84,46 @@ function loadJourneyMap(file) {
     const priority = /\*\*Priority:\*\*\s*(P[0-3])/.exec(block)?.[1] ?? null;
     const category = /\*\*Category:\*\*\s*([^\n]+)/.exec(block)?.[1]?.trim() ?? null;
     const entry = /\*\*Entry:\*\*\s*([^\n]+)/.exec(block)?.[1]?.trim() ?? null;
-    const portal = inferPortal(entry, id);
-    map[id] = { id, purpose, priority, category, entry, portal };
+    const explicitSection = /\*\*Section:\*\*\s*([^\n]+)/.exec(block)?.[1]?.trim() ?? null;
+    const section = inferSectionLabel({ explicitSection, entry, id });
+    map[id] = { id, purpose, priority, category, entry, section };
   }
   return map;
 }
 
-function inferPortal(entry, id) {
-  const s = (entry || '') + ' ' + (id || '');
-  if (/etdr|\badmin\b|administrator|caregiver/i.test(s)) return 'Administrator portal';
-  if (/manager|acceptatie.medicheckapp|\/login\b|\/patients/i.test(s)) return 'Manager portal';
+/**
+ * Derive a primary-section label per journey.
+ *
+ * Order of precedence (data-driven, no hardcoded app sections):
+ *  1. Explicit `**Section:**` field in the journey-map block.
+ *  2. Host + first path segment of the journey's `Entry:` URL.
+ *  3. First hyphen-separated token of the journey's `j-<slug>` ID.
+ *  4. "Cross-cutting" — the catch-all when nothing above resolves.
+ *
+ * The label IS whatever the data yields. The skill does not canonicalise to
+ * named app sections — different apps will produce different labels, and that
+ * is intentional. Cross-cutting goes last in render order regardless.
+ */
+function inferSectionLabel({ explicitSection, entry, id }) {
+  if (explicitSection) return explicitSection;
+
+  if (entry) {
+    try {
+      const url = new URL(entry);
+      const host = url.hostname || '';
+      const firstSegment = (url.pathname || '/').split('/').filter(Boolean)[0] || '';
+      if (host && firstSegment) return `${host}/${firstSegment}`;
+      if (host) return host;
+    } catch (_) {
+      // entry wasn't a parseable URL — fall through to id-based fallback
+    }
+  }
+
+  if (id && id.startsWith('j-')) {
+    const tokens = id.slice(2).split('-');
+    if (tokens.length >= 2) return tokens[0];
+  }
+
   return 'Cross-cutting';
 }
 
@@ -164,17 +194,27 @@ function findNearbyComment(lines, idx) {
 
 function crossReference(test, map) {
   const journeyMeta = map[test.journey] || null;
-  const portal = journeyMeta?.portal
-    ?? (test.file.startsWith('tests/e2e/manager-') ? 'Manager portal'
-        : test.file.startsWith('tests/e2e/admin-') ? 'Administrator portal'
-        : 'Cross-cutting');
+  const section = journeyMeta?.section
+    ?? sectionFromFilename(test.file);
   const priority = journeyMeta?.priority || inferPriorityFromTags(test.tags) || 'P3';
   const type = classifyType(test);
   const purpose = journeyMeta?.purpose || '(Unmapped journey)';
   const status = test.marker === 'active' ? 'Active'
     : test.marker === 'failing-expected' ? 'Failing-expected'
     : 'Skipped';
-  return { ...test, portal, priority, type, purpose, status, journeyMeta };
+  return { ...test, section, priority, type, purpose, status, journeyMeta };
+}
+
+function sectionFromFilename(file) {
+  // Last-resort fallback when the journey isn't in the map and we have nothing
+  // but a spec filename. Use the first hyphen-separated token of the basename.
+  // Sub-journeys, regression batches, and unhyphenated files fall into
+  // Cross-cutting so they don't inflate the primary axis.
+  const base = path.basename(file, '.spec.ts');
+  if (base.startsWith('sj-') || /-regression$/.test(base)) return 'Cross-cutting';
+  const firstToken = base.split('-')[0];
+  if (!firstToken || base === firstToken) return 'Cross-cutting';
+  return firstToken;
 }
 
 function inferPriorityFromTags(tags) {
@@ -192,19 +232,19 @@ function classifyType(t) {
   return 'happy path';
 }
 
-function groupByPortal(tests) {
-  const portals = {};
+function groupBySection(tests) {
+  const sections = {};
   for (const t of tests) {
-    (portals[t.portal] ||= []).push(t);
+    (sections[t.section] ||= []).push(t);
   }
-  for (const portal of Object.keys(portals)) {
-    portals[portal].sort((a, b) => {
+  for (const section of Object.keys(sections)) {
+    sections[section].sort((a, b) => {
       if (a.priority !== b.priority) return a.priority.localeCompare(b.priority);
       if (a.journey !== b.journey) return a.journey.localeCompare(b.journey);
       return a.name.localeCompare(b.name);
     });
   }
-  return portals;
+  return sections;
 }
 
 function computeTotals(tests, map) {
@@ -213,10 +253,10 @@ function computeTotals(tests, map) {
   const failing = tests.filter((t) => t.status === 'Failing-expected').length;
   const active = total - skipped - failing;
   const journeys = new Set(tests.map((t) => t.journey).filter(Boolean));
-  const byPortal = {};
-  for (const t of tests) byPortal[t.portal] = (byPortal[t.portal] || 0) + 1;
+  const bySection = {};
+  for (const t of tests) bySection[t.section] = (bySection[t.section] || 0) + 1;
   const regressions = tests.filter((t) => t.isRegression).length;
-  return { total, active, skipped, failing, journeys: journeys.size, byPortal, regressions, mappedJourneys: Object.keys(map).length };
+  return { total, active, skipped, failing, journeys: journeys.size, bySection, regressions, mappedJourneys: Object.keys(map).length };
 }
 
 function fail(msg) { console.error(msg); process.exit(1); }
@@ -225,7 +265,6 @@ function fail(msg) { console.error(msg); process.exit(1); }
 
 const palettes = {
   default: { bg: '#0A0E14', ink: '#E6EAF2', inkMute: '#8892A6', brand: '#00A3FF', accent: '#FF7A1A' },
-  spritecloud: { bg: '#0A0E14', ink: '#E6EAF2', inkMute: '#8892A6', brand: '#00A3FF', accent: '#FF7A1A' },
   'civitas-cerebrum': { bg: '#0d1117', ink: '#e6edf3', inkMute: '#7d8590', brand: '#3fb950', accent: '#58a6ff' },
 };
 
@@ -234,6 +273,12 @@ function renderHtml(ctx) {
   // inline this template into the agent's generation so they can tailor the
   // cover-page copy per engagement.
   const pal = palettes[ctx.brand] || palettes.default;
+  // Render section pages in a stable order: alphabetical, but with
+  // "Cross-cutting" pinned to the end — it's structurally the catch-all.
+  const sectionOrder = Object.keys(ctx.grouped)
+    .filter((s) => s !== 'Cross-cutting')
+    .sort()
+    .concat(ctx.grouped['Cross-cutting'] ? ['Cross-cutting'] : []);
   return `<!doctype html><html><head><meta charset="utf-8"><title>Test Catalogue — ${ctx.appName}</title>
 <style>
 :root { --bg:${pal.bg}; --ink:${pal.ink}; --mute:${pal.inkMute}; --brand:${pal.brand}; --accent:${pal.accent}; }
@@ -263,8 +308,8 @@ tr:nth-child(odd) td{background:rgba(255,255,255,0.02);}
 .failing-expected{color:var(--accent);}
 </style></head><body>
 ${renderCover(ctx)}
-${renderContents(ctx)}
-${Object.keys(ctx.grouped).sort().map((portal) => renderPortalSection(portal, ctx.grouped[portal], ctx)).join('\n')}
+${renderContents(ctx, sectionOrder)}
+${sectionOrder.map((s) => renderSection(s, ctx.grouped[s], ctx)).join('\n')}
 ${renderRegressionSection(ctx)}
 ${renderSkippedSection(ctx)}
 </body></html>`;
@@ -276,7 +321,7 @@ function renderCover(ctx) {
 <div style="flex:1;display:flex;flex-direction:column;justify-content:center;">
 <h3>Scenario inventory</h3>
 <h1>${ctx.appName}</h1>
-<p style="color:var(--mute);font-size:16px;max-width:720px;margin-top:14px;">A stakeholder-facing inventory of every automated scenario in the suite — grouped by portal, sorted by priority, with active, skipped and regression coverage listed transparently.</p>
+<p style="color:var(--mute);font-size:16px;max-width:720px;margin-top:14px;">A stakeholder-facing inventory of every automated scenario in the suite — grouped by primary section, sorted by priority, with active, skipped and regression coverage listed transparently.</p>
 <div class="total-grid">
 <div class="stat"><div class="num">${ctx.totals.total}</div><div class="lab">Total scenarios</div></div>
 <div class="stat"><div class="num">${ctx.totals.journeys}</div><div class="lab">Journeys covered</div></div>
@@ -288,8 +333,8 @@ function renderCover(ctx) {
 </section>`;
 }
 
-function renderContents(ctx) {
-  const rows = Object.keys(ctx.grouped).sort().map((p) => `<tr><td>${p}</td><td>${ctx.grouped[p].length}</td></tr>`).join('');
+function renderContents(ctx, sectionOrder) {
+  const rows = sectionOrder.map((s) => `<tr><td>${escapeHtml(s)}</td><td>${ctx.grouped[s].length}</td></tr>`).join('');
   return `<section class="page">
 <header class="catalogue"><span>Contents</span><span>${ctx.appName}</span></header>
 <h2>Contents</h2>
@@ -300,7 +345,7 @@ function renderContents(ctx) {
 </section>`;
 }
 
-function renderPortalSection(portal, tests, ctx) {
+function renderSection(section, tests, ctx) {
   const byPriority = {};
   for (const t of tests) (byPriority[t.priority] ||= []).push(t);
   const tables = ['P0', 'P1', 'P2', 'P3']
@@ -308,8 +353,8 @@ function renderPortalSection(portal, tests, ctx) {
     .map((p) => renderPriorityTable(p, byPriority[p]))
     .join('\n');
   return `<section class="page">
-<header class="catalogue"><span>${portal}</span><span>${ctx.appName}</span></header>
-<h2>${portal}</h2>
+<header class="catalogue"><span>${escapeHtml(section)}</span><span>${ctx.appName}</span></header>
+<h2>${escapeHtml(section)}</h2>
 <p style="color:var(--mute);font-size:12px;margin-bottom:16px;">${tests.length} scenarios</p>
 ${tables}
 </section>`;

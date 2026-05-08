@@ -147,14 +147,14 @@ The cross-journey synthesis is a real upgrade, not just a cost optimisation: a s
      pass: <N>
      cycle: 1
      verdicts:
-       - journey: j-create-user
+       - journey: j-a
          status: greenlight
          summary: <one-line>
-       - journey: j-zb-view-orders
+       - journey: j-b
          status: improvements-needed
          spill: tests/e2e/docs/.subagent-returns/reviewer-batch-pass-<N>-c1.md
-         findings: [j-zb-view-orders-1-1-R-01, j-zb-view-orders-1-1-R-02]
-       - journey: j-tt-permission-form-modal
+         findings: [j-b-1-1-R-01, j-b-1-1-R-02]
+       - journey: j-c
          status: greenlight
          summary: <one-line>
    ```
@@ -170,18 +170,18 @@ The cross-journey synthesis is a real upgrade, not just a cost optimisation: a s
    ```markdown
    <!-- subagent-returns:reviewer-batch:pass-<N>:cycle-1 -->
 
-   ## j-zb-view-orders
+   ## j-b
 
    ### missing-scenarios
-   - **j-zb-view-orders-1-1-R-01** [must-fix] — mobile variant absent
+   - **j-b-1-1-R-01** [must-fix] — mobile variant absent
 
    ### craft-issues
-   - **j-zb-view-orders-1-1-R-02** [must-fix] — inline selector in spec
+   - **j-b-1-1-R-02** [must-fix] — inline selector in spec
 
-   ## j-other-journey-flagged
+   ## j-d
 
    ### verification-misses
-   - **j-other-journey-flagged-1-1-R-01** [must-fix] — assertion targets a different element than tested
+   - **j-d-1-1-R-01** [must-fix] — assertion targets a different element than tested
    ```
 
    Every flagged journey's section starts with `## j-<slug>`. The §2.6 sentinel goes at the top of the file (line 1).

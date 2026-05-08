@@ -45,8 +45,8 @@ State file shape (minimum fields):
   "adversarialTotals": { ... },
   "adversarialSkippedJourneys": [
     {
-      "journey": "j-zb-logout",
-      "rationale": "P3 logout, single-page surface already probed by j-zb-create-location pass-4 app-wide CSRF entry; zero unique findings in prior passes",
+      "journey": "j-logout",
+      "rationale": "P3 logout, single-page surface already probed by a larger journey's pass-4 app-wide CSRF entry; zero unique findings in prior passes",
       "criteria": ["priority-p3", "page-subset-covered", "zero-prior-findings", "low-surface-shape"]
     }
   ],

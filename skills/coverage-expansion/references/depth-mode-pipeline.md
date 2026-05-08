@@ -264,7 +264,7 @@ After pass 5 commits, the orchestrator dispatches one additional, non-per-journe
 ### Task for the cleanup subagent
 
 1. Read `tests/e2e/docs/adversarial-findings.md` in full.
-2. Identify near-duplicate findings across journey sections (e.g., "nav-cart badge does not clear after checkout" flagged by multiple journeys).
+2. Identify near-duplicate findings across journey sections (e.g., the same UI-state desync flagged by multiple journeys).
 3. Consolidate duplicates into the top-level `## Cross-cutting findings` section, listing every journey where each finding surfaced. Leave a short "_See cross-cutting: <title>_" backref in each journey's section (one line per moved finding).
 4. Fix obvious formatting / ordering issues (broken lists, inconsistent severity labels).
 5. Do NOT drop or edit substantive finding content. Do NOT re-classify findings. This is a dedup/consolidation step only.

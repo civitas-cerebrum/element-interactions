@@ -29,7 +29,7 @@ Every subagent dispatched by `coverage-expansion`, `test-composer`, or `bug-disc
 | `scope` | One sentence naming the probe surface — page, endpoint, element, flow step. |
 | `expected` | One sentence describing correct behaviour. |
 | `observed` | One sentence describing the actual behaviour. |
-| `coverage` | One of three forms: (a) `none` — no covering test/pattern; (b) a spec-file path plus test name that locks the finding (e.g. `tests/e2e/j-checkout-regression.spec.ts › rejects negative quantity`); (c) `app-wide:<pattern-id>` where `<pattern-id>` is a stable kebab-case identifier from `tests/e2e/docs/app-wide-patterns.md` (per `coverage-expansion/references/app-wide-scan.md`). Form (c) cites a app-wide pattern documented by the one-shot Pass-4 prelude scan; per-journey probes use it to avoid re-deriving recurring patterns. |
+| `coverage` | One of three forms: (a) `none` — no covering test/pattern; (b) a spec-file path plus test name that locks the finding (e.g. `tests/e2e/j-<slug>-regression.spec.ts › <test name>`); (c) `app-wide:<pattern-id>` where `<pattern-id>` is a stable kebab-case identifier from `tests/e2e/docs/app-wide-patterns.md` (per `coverage-expansion/references/app-wide-scan.md`). Form (c) cites an app-wide pattern documented by the one-shot Pass-4 prelude scan; per-journey probes use it to avoid re-deriving recurring patterns. |
 
 ### Severity rubric
 
@@ -46,10 +46,10 @@ No finding may escalate above `info` if it is not visible in a screenshot. That 
 ### Worked example
 
 ```
-- **j-checkout-4-03** [high] — server accepts negative quantity on cart update
-  - scope: POST /api/cart/items price=-1 submitted via the quantity stepper on /cart
-  - expected: 400 with a validation error surfaced in the cart error banner
-  - observed: 200 with total recalculated to a negative sum; banner never shown
+- **j-<slug>-4-03** [high] — <one-sentence finding title>
+  - scope: <single sentence — endpoint / element / flow step under probe>
+  - expected: <one sentence — what correct behaviour looks like>
+  - observed: <one sentence — what actually happened>
   - coverage: none
 ```
 
@@ -71,7 +71,7 @@ The envelope sits at the top of the return body, separate from the role-specific
 
 ```
 handover:
-  role: <role-prefixed slug — e.g., composer-j-checkout>
+  role: <role-prefixed slug — e.g., composer-j-<slug>>
   cycle: <integer ≥ 1>
   status: <role-specific enum — see table below>
   next-action: <one-line directive for the orchestrator>
@@ -84,7 +84,7 @@ Field rules:
 | `role` | Verbatim role-prefixed slug from the dispatching brief's description. Must match a registered slug. |
 | `cycle` | Integer cycle number. MUST equal the cycle on the matching registry entry; mismatch → harness refuses to deregister, asks for redispatch under the correct cycle. |
 | `status` | Role-specific enum (see table). Terminal statuses deregister immediately; non-terminal statuses hold the slot for redispatch under the same slug. |
-| `next-action` | One sentence telling the orchestrator what to do next ("dispatch reviewer-j-checkout cycle 1", "advance to Phase 4", "redispatch composer-j-checkout cycle 2 with must-fix list", etc.). |
+| `next-action` | One sentence telling the orchestrator what to do next ("dispatch reviewer-j-<slug> cycle 1", "advance to Phase 4", "redispatch composer-j-<slug> cycle 2 with must-fix list", etc.). |
 
 #### Per-role status enum
 
@@ -111,10 +111,10 @@ The match is strict — slug + cycle, both must agree. A handover with a slug no
 
 ```
 handover:
-  role: composer-j-checkout
+  role: composer-j-<slug>
   cycle: 1
   status: new-tests-landed
-  next-action: dispatch reviewer-j-checkout cycle 1
+  next-action: dispatch reviewer-j-<slug> cycle 1
 
 status: new-tests-landed
 tests-added: 6
@@ -127,22 +127,22 @@ run-time: 47s
 
 ```
 handover:
-  role: reviewer-j-checkout
+  role: reviewer-j-<slug>
   cycle: 1
   status: improvements-needed
-  next-action: redispatch composer-j-checkout cycle 2 with must-fix list j-checkout-1-1-R-{01,02}
+  next-action: redispatch composer-j-<slug> cycle 2 with must-fix list j-<slug>-1-1-R-{01,02}
 
 status: improvements-needed
-journey: j-checkout
+journey: j-<slug>
 pass: 1
 cycle: 1
 
 missing-scenarios:
-  - **j-checkout-1-1-R-01** [must-fix] — mobile breakpoint never exercised
+  - **j-<slug>-1-1-R-01** [must-fix] — <missing-scenario title>
     - …
 ```
 
-Here the registry holds the `j-checkout` slot across cycles 1 → 2 because reviewer returned `improvements-needed`. The composer cycle-2 redispatch under the same `composer-j-checkout` slug refreshes the slot's `cycle` to `2`; if a second stale cycle-1 reviewer handover later arrives, the cycle-mismatch check catches it.
+Here the registry holds the `j-<slug>` slot across cycles 1 → 2 because reviewer returned `improvements-needed`. The composer cycle-2 redispatch under the same `composer-j-<slug>` slug refreshes the slot's `cycle` to `2`; if a second stale cycle-1 reviewer handover later arrives, the cycle-mismatch check catches it.
 
 #### Initial release: WARN-mode validation, deregistration always fires
 
@@ -407,7 +407,7 @@ Each spill file's first line carries a sentinel comment so unrelated tooling can
 <!-- subagent-returns:<role>:<identity-keys>:cycle-<C> -->
 ```
 
-Examples: `<!-- subagent-returns:reviewer:j-checkout:pass-1:cycle-2 -->`, `<!-- subagent-returns:phase-validator:5:cycle-1 -->`, `<!-- subagent-returns:process-validator:stage-a-wave:cycle-1 -->`.
+Examples: `<!-- subagent-returns:reviewer:j-<slug>:pass-1:cycle-2 -->`, `<!-- subagent-returns:phase-validator:5:cycle-1 -->`, `<!-- subagent-returns:process-validator:stage-a-wave:cycle-1 -->`.
 
 #### Compliant return body shapes (per role)
 
@@ -700,35 +700,35 @@ Every Pass block MUST open with a `**Pass <N> — <kind> (YYYY-MM-DD)**` line, i
 ### 3.4 Worked example
 
 ```markdown
-### j-checkout
+### j-<slug>
 
-**Pass 4 — probe (2026-04-23)**
+**Pass 4 — probe (YYYY-MM-DD)**
 
-Scope: cart + checkout mutation endpoints, price/qty tamper, state-skip probes.
+Scope: <one-sentence probe surface — endpoints, elements, flows under test>.
 
-#### j-checkout-4-01 [high] — server accepts negative quantity on cart update
-- expected: 400 with validation error in cart error banner
-- observed: 200 with total recalculated to a negative sum; banner never shown
+#### j-<slug>-4-01 [high] — <one-sentence finding title>
+- expected: <one sentence — correct behaviour>
+- observed: <one sentence — actual behaviour>
 - ledger-only: true
 - coverage: none
 
-#### j-checkout-4-02 [medium] — price field editable via client-side before submit
-- expected: server ignores client-supplied price and recomputes from SKU
-- observed: server honoured client price on first submit until second attempt
+#### j-<slug>-4-02 [medium] — <one-sentence finding title>
+- expected: <one sentence>
+- observed: <one sentence>
 - ledger-only: true
 - coverage: none
 
 **Pass 4 summary:** probes=12, boundaries=8, suspected-bugs=2 (crit=0, high=1, med=1, low=0)
 
-**Pass 5 — consolidation (2026-04-24)**
+**Pass 5 — consolidation (YYYY-MM-DD)**
 
 Scope: compound probes, ambiguous-resolution, regression authoring for pass-4 boundaries.
 
-#### j-checkout-5-01 [low] — cart badge desynced after tab-replay
-- expected: badge count equals cart length after replay
-- observed: badge lags by one; clears on manual nav
+#### j-<slug>-5-01 [low] — <one-sentence finding title>
+- expected: <one sentence>
+- observed: <one sentence>
 - ledger-only: false
-- coverage: tests/e2e/j-checkout-regression.spec.ts › badge clears after replay
+- coverage: tests/e2e/j-<slug>-regression.spec.ts › <test name>
 
 **Pass 5 summary:** probes=6, boundaries=5, suspected-bugs=0 (crit=0, high=0, med=0, low=0)
 ```

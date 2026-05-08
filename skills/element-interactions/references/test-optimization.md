@@ -166,7 +166,7 @@ The detailed rules for each check are in §1 through §6 below.
 
 ## §2 Hardcoded shared resources
 
-**Trigger:** the spec hardcodes a fixed resource ID in a mutation path. Detected by literal matches against `Stable seed resources` entries in app-context's Test Infrastructure (e.g. literal strings `book-001`, `listing-XYZ`, `testuser1@…`) appearing in `steps.click('addToCart…')` paths or in mutation API helpers.
+**Trigger:** the spec hardcodes a fixed resource ID in a mutation path. Detected by literal matches against `Stable seed resources` entries in app-context's Test Infrastructure (e.g. literal strings `<resource-001>`, `<seed-id>`, `<seed-username>@…`) appearing in `steps.click('<mutation-trigger>…')` paths or in mutation API helpers.
 
 **Rule:** either (a) rotate via a per-test counter / random-index lookup against the seed catalog, OR (b) ensure `beforeEach(resetState)` is in place (rule §1).
 
@@ -175,18 +175,18 @@ The detailed rules for each check are in §1 through §6 below.
 **Rotation pattern:**
 
 ```typescript
-const SEED_BOOKS = ['book-001','book-002','book-003','book-004','book-005','book-006','book-007','book-008','book-009','book-010'];
+const SEED_RESOURCES = ['<resource-001>', '<resource-002>', /* …populate from app-context.md… */];
 
-test('happy-path: add to cart, checkout', async ({ steps }) => {
-  const bookIdx = test.info().workerIndex * 7 + (test.info().retry ?? 0);  // worker × 7 + retry
-  const bookId = SEED_BOOKS[bookIdx % SEED_BOOKS.length];
-  // …rest of test uses bookId, e.g. steps.click('bookCardTitle' + bookId.replace('book-',''), 'HomePage');
+test('<happy-path test name>', async ({ steps }) => {
+  const idx = test.info().workerIndex * 7 + (test.info().retry ?? 0);  // worker × 7 + retry
+  const resourceId = SEED_RESOURCES[idx % SEED_RESOURCES.length];
+  // …rest of test uses resourceId, e.g. steps.click('<element>' + resourceId, '<PageName>');
 });
 ```
 
 The exact seed list comes from `app-context.md`'s `Stable seed resources`. Do not invent IDs.
 
-**Flag-and-stop exception:** if the journey is *deliberately about* the named resource (e.g. `j-purchase-the-great-gatsby` literally tests `book-001` because the journey name says so), leave the literal in place and add a `// stage4a:resource-deliberate` comment for human review. Do not auto-rotate.
+**Flag-and-stop exception:** if the journey is *deliberately about* the named resource (e.g. `j-flow-targets-<resource-id>` literally exercises `<resource-001>` because the journey name says so), leave the literal in place and add a `// stage4a:resource-deliberate` comment for human review. Do not auto-rotate.
 
 ## §3 Per-run uniqueness for created entities
 
@@ -233,8 +233,8 @@ For values that participate in case-sensitivity tests, prefer `crypto.randomUUID
 | login | yes | no | keep UI |
 | login | no | yes | keep UI; flag A-gap to journey-mapping |
 | login | no | no | keep UI |
-| cart-add | yes | yes (`POST /api/cart/items`) | use `seedCart()` helper |
-| theme toggle | yes | no API equivalent | keep UI |
+| <resource-create> | yes | yes (`POST <endpoint>`) | use `seed<Resource>()` helper |
+| <UI-only toggle> | yes | no API equivalent | keep UI |
 
 ### Helper template — `setAuthCookie`
 
@@ -370,7 +370,7 @@ The agent does not auto-flip `mode: 'serial'` to per-test isolation because doin
 ```typescript
 test.describe.configure({ mode: 'serial', timeout: 60_000 });
 
-test.describe('j-cart-clear — Clear entire cart', () => {
+test.describe('j-<slug> — <one-sentence journey title>', () => {
   test('sentinel: app health + auth ready', async ({ steps, request }) => {
     const res = await request.get('/api/health');
     expect(res.ok()).toBe(true);
@@ -378,7 +378,7 @@ test.describe('j-cart-clear — Clear entire cart', () => {
     await steps.verifyPresence('homeRoot', 'HomePage');
   });
 
-  test('happy-path: add items, clear cart, empty state shown, badge gone', async ({ steps }) => {
+  test('happy-path: <one-sentence variant title>', async ({ steps }) => {
     // …real test, depends on the sentinel having warmed the env
   });
 });

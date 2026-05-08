@@ -201,9 +201,9 @@ Examples:
 [onboarding] Happy path green — committed
 [onboarding] Coverage expansion starting (mode: depth, 5 passes)
 [onboarding] Coverage expansion pass 1/5 starting — 44 journeys, dual-stage A↔B
-[coverage-expansion] Pass 1/5, journey j-checkout: cycle 1/7, review greenlight
-[coverage-expansion] Pass 1/5, journey j-account-mfa: cycle 2/7, review greenlight (1 retry — mobile variant added)
-[coverage-expansion] Pass 1/5, journey j-admin-roles: cycle 7/7, review blocked-cycle-exhausted
+[coverage-expansion] Pass 1/5, journey j-a: cycle 1/7, review greenlight
+[coverage-expansion] Pass 1/5, journey j-b: cycle 2/7, review greenlight (1 retry — mobile variant added)
+[coverage-expansion] Pass 1/5, journey j-c: cycle 7/7, review blocked-cycle-exhausted
 [onboarding] Coverage expansion pass 1/5 complete — 27 tests added, 3 branches discovered, 1 journey blocked-cycle-exhausted
 [onboarding] Coverage expansion pass 2/5 complete — 14 tests added, 1 sub-journey promoted, all journeys greenlit
 [onboarding] Coverage expansion pass 3/5 complete — 8 tests added, cross-journey interactions covered

@@ -412,9 +412,9 @@ test(<j-slug>): <variant>
 - One journey per commit, one variant per commit. Do not batch multiple variants into a single commit; do not batch multiple journeys into a single commit.
 
 Examples:
-- `test(j-checkout): happy-path`
-- `test(j-reset-password): error-states`
-- `test(j-add-user): data-lifecycle`
+- `test(j-<slug>): happy-path`
+- `test(j-<slug>): error-states`
+- `test(j-add-<entity>): data-lifecycle`
 
 Do NOT use `test(pass<N>): …`, `feat(e2e): …`, or `test(<j1>, <j2>): …` — see the **Commit-message conventions** table in `coverage-expansion/SKILL.md` for the full list of anti-patterns across all passes.
 
