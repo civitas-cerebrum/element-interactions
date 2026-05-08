@@ -327,7 +327,7 @@ The mechanical rule: **any `signupFresh` / `loginFresh` / `addToCartViaUI` call 
    }
    ```
 
-   Example substitution (BookHive): `'[data-testid="cookie-accept"]', '[data-testid="welcome-close"]'`.
+   Example substitution: `'[data-testid="cookie-accept"]', '[data-testid="welcome-close"]'`.
 
 2. Populate the `HELPER SLOT: beforeEach` slot in `base.ts` (NOT a freeform region — the slot is the single contracted insertion point for fixture-level `beforeEach` hooks):
 
