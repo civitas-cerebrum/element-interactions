@@ -167,6 +167,8 @@ Only valid when the subagent **inspected** the journey. Required evidence:
 
 If the table has one or more rows with `coverage: none`, the subagent has NOT covered exhaustively and MUST compose tests or escalate.
 
+**Orchestrator-written `gated_skip: true` state-file entries.** `covered-exhaustively` is also valid as a `result:` value in orchestrator-written `gated_skip: true` state-file entries (per `coverage-expansion/SKILL.md` §"Trigger-gated re-pass for Passes 2 & 3"). In that context, the per-expectation mapping table is replaced by the `triggers_checked` evidence object — the orchestrator's three checks ARE the audit trail. The mapping-table requirement above applies only to subagent-return bodies; orchestrator-written gated-skip entries instead carry `triggers_checked: { map_delta, sibling_ledger_update, must_fix_carry_over }` (all three booleans, all three `false`), validated by `hooks/coverage-state-schema-guard.sh`.
+
 ### 2.2 `status: no-new-tests-by-rationalisation` — **not a valid return**
 
 This state describes the failure mode where a subagent punts on the dispatch, rationalises that tests would be redundant, and returns without inspection. **This is not a valid return from any compositional or adversarial pass.** Orchestrators treat such returns as contract violations and MUST re-dispatch the subagent with a stricter brief.
