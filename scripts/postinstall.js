@@ -144,6 +144,7 @@ const HOOK_MANIFEST = [
   { file: 'failure-diagnosis-stage0-preread-guard.sh', event: 'PreToolUse', matcher: 'Write|Edit', timeout: 10 },
   { file: 'contributing-skill-preread-guard.sh',  event: 'PreToolUse', matcher: 'Write|Edit|MultiEdit', timeout: 10 },
   { file: 'mcp-browser-tool-redirect.sh',         event: 'PreToolUse', matcher: MCP_PLAYWRIGHT_BROWSER_TOOLS, timeout: 10 },
+  { file: 'skill-subagent-only-guard.sh',         event: 'PreToolUse', matcher: 'Skill',       timeout: 10 },
 
   // PostToolUse — observers (record + warn)
   { file: 'suite-gate-ratchet.sh',                event: 'PostToolUse', matcher: 'Bash',       timeout: 10 },

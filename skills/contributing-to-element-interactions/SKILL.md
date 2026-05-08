@@ -1,6 +1,13 @@
 ---
 name: contributing-to-element-interactions
+subagent-only: true
 description: >
+  **Subagent-only.** The full contribution methodology is too heavy to keep
+  in the orchestrator's transcript every cycle. The orchestrator detects
+  contribution intent and dispatches a `contribution-handover-` subagent;
+  the subagent loads this skill. The `skill-subagent-only-guard.sh` hook
+  denies orchestrator-context invocations.
+
   Use this skill when contributing to the @civitas-cerebrum/element-interactions
   package or its skill suite — and, just as importantly, when a consumer hits
   the package's edges from the outside. Two trigger families:
