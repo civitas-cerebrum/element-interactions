@@ -66,6 +66,15 @@
 
 set -euo pipefail
 
+# Resolve jq: prefer the binary bundled with the hook install, fall back to
+# system jq for in-repo testing before postinstall has run.
+JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
+[ -x "$JQ" ] || JQ="$(command -v jq || true)"
+if [ -z "$JQ" ]; then
+  echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: jq not found at \$HOOK_DIR/bin/jq nor on PATH. Reinstall the package or install jq manually." >&2
+  exit 1
+fi
+
 # Skills reserved for subagent context only. Keep this list in sync with the
 # `subagent-only: true` frontmatter field on the corresponding SKILL.md files.
 SUBAGENT_ONLY_SKILLS=(
@@ -74,7 +83,7 @@ SUBAGENT_ONLY_SKILLS=(
 )
 
 emit_deny() {
-  jq -n --arg r "$1" '{
+  "$JQ" -n --arg r "$1" '{
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
       "permissionDecision": "deny",
@@ -84,14 +93,14 @@ emit_deny() {
 }
 
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty' 2>/dev/null)
 
 [ "$TOOL_NAME" = "Skill" ] || exit 0
 
 # Skill tool input shape: { skill: "<name>", args?: "..." }. The fully
 # qualified plugin form is "<plugin>:<skill>" — strip the plugin prefix
 # before comparing so consumers can ship the skill under any plugin namespace.
-SKILL_RAW=$(echo "$INPUT" | jq -r '.tool_input.skill // empty' 2>/dev/null)
+SKILL_RAW=$(echo "$INPUT" | "$JQ" -r '.tool_input.skill // empty' 2>/dev/null)
 [ -n "$SKILL_RAW" ] || exit 0
 
 SKILL_NAME="${SKILL_RAW##*:}"
@@ -114,10 +123,10 @@ detect_context() {
   fi
 
   local parent_tool_use_id agent_id transcript_path cwd
-  parent_tool_use_id=$(echo "$INPUT" | jq -r '.parent_tool_use_id // empty' 2>/dev/null)
-  agent_id=$(echo "$INPUT" | jq -r '.agent_id // empty' 2>/dev/null)
-  transcript_path=$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
-  cwd=$(echo "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
+  parent_tool_use_id=$(echo "$INPUT" | "$JQ" -r '.parent_tool_use_id // empty' 2>/dev/null)
+  agent_id=$(echo "$INPUT" | "$JQ" -r '.agent_id // empty' 2>/dev/null)
+  transcript_path=$(echo "$INPUT" | "$JQ" -r '.transcript_path // empty' 2>/dev/null)
+  cwd=$(echo "$INPUT" | "$JQ" -r '.cwd // empty' 2>/dev/null)
 
   if [ -n "$parent_tool_use_id" ] || [ -n "$agent_id" ]; then
     echo "subagent"
