@@ -222,6 +222,12 @@ const cart  = await steps.getSessionStorage('cart.count');    // string | null
 
 ```ts
 await steps.verifyPresence('elementName', 'PageName');
+// parallel presence check — all resolved concurrently via Promise.all
+await steps.verifyAllPresent([
+  { elementName: 'title',  pageName: 'ProductDetailsPage' },
+  { elementName: 'price',  pageName: 'ProductDetailsPage' },
+  { elementName: 'addToCart', pageName: 'ProductDetailsPage' },
+]);
 await steps.verifyAbsence('elementName', 'PageName');
 await steps.verifyText('elementName', 'PageName', 'Expected text');
 await steps.verifyText('elementName', 'PageName');  // no args = asserts not empty
@@ -230,7 +236,8 @@ await steps.verifyCount('elementName', 'PageName', { exactly: 3 });        // al
 await steps.verifyState('elementName', 'PageName', 'enabled');              // 'disabled', 'editable', 'checked', 'focused', 'visible', 'hidden', 'attached', 'inViewport'
 await steps.verifyAttribute('elementName', 'PageName', 'href', '/path');
 await steps.verifyInputValue('elementName', 'PageName', 'expected');
-await steps.verifyImages('elementName', 'PageName');
+await steps.verifyImages('elementName', 'PageName');                        // visibility + src + naturalWidth (default)
+await steps.verifyImages('elementName', 'PageName', true, { verifyDecoded: true }); // also runs Image.decode() per image
 await steps.verifyUrlContains('/dashboard');
 await steps.verifyTabCount(2);
 

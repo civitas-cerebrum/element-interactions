@@ -138,10 +138,10 @@ Each journey is a self-contained block so a downstream subagent can be handed **
 
 **Formatting rules for downstream parseability:**
 
-- Every journey has a stable `j-<slug>` ID (`j-book-demo`, `j-reset-password`, etc.).
+- Every journey has a stable `j-<slug>` ID. Slugs are kebab-case, ≤16 chars where possible (slug-length budget — see `playwright-cli-protocol.md`).
 - Every sub-journey has a stable `sj-<slug>` ID.
 - `Pages touched:` is a comma-separated list of concrete URL paths or page names matching the site map. `coverage-expansion` uses this field to build the journey independence graph.
-- `UI-covers:` is a comma-separated list of canonical flow names that this journey's happy-path exercises *through the UI* (no API shortcuts in the happy-path itself). Stage 4a §4 (API shortcuts for tested prerequisites) cross-references this registry: a flow listed here in any journey is eligible for API-shortcut replacement in *other* journeys. Canonical flow names — extend per app: `login`, `signup`, `logout`, `browse-catalog`, `view-detail`, `cart-add`, `cart-modify`, `cart-clear`, `checkout`, `order-view`, `order-return`, `listing-create`, `listing-buy`, `marketplace-browse`, `profile-edit`, `theme-toggle`.
+- `UI-covers:` is a comma-separated list of **flow names** (kebab-case, project-specific) that this journey's happy-path exercises *through the UI* — no API shortcuts in the happy-path itself. Stage 4a §4 (API shortcuts for tested prerequisites) cross-references this registry: a flow listed here in any journey is eligible for API-shortcut replacement in *other* journeys. The vocabulary is per-project and grows as journey-mapping discovers flows; pick names that read as the action being exercised (`<verb>` or `<verb>-<resource>`).
 - Journey blocks appear in priority order (all P0 blocks, then all P1, etc.) — priority is carried in each block's `Priority:` field rather than in section headings, so the file is flat and every `j-<slug>` heading is addressable the same way.
 - No cross-journey shorthand: every reference to another journey uses its full ID.
 

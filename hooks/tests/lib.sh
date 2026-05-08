@@ -193,7 +193,7 @@ payload() {
     case "$k" in
       tool_name)
         out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" '. + {tool_name: $v}') ;;
-      description|prompt|command|file_path|content|new_string)
+      description|prompt|command|file_path|content|new_string|skill|args)
         out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" --arg k "$k" '.tool_input = ((.tool_input // {}) + {($k): $v})') ;;
       response_text)
         out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" '.tool_response = ((.tool_response // {}) + {output: $v})') ;;
@@ -204,7 +204,7 @@ payload() {
         out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" '. + {cwd: $v}') ;;
       hook_event_name)
         out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" '. + {hook_event_name: $v}') ;;
-      last_assistant_message|agent_id|agent_type|session_id|transcript_path)
+      last_assistant_message|agent_id|agent_type|session_id|transcript_path|parent_tool_use_id)
         out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" --arg k "$k" '. + {($k): $v}') ;;
       *) echo "payload: unknown key $k" >&2; return 1 ;;
     esac
