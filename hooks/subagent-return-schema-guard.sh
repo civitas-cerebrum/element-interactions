@@ -111,9 +111,18 @@
 
 set -euo pipefail
 
+# Resolve jq: prefer the binary bundled with the hook install, fall back to
+# system jq for in-repo testing before postinstall has run.
+JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
+[ -x "$JQ" ] || JQ="$(command -v jq || true)"
+if [ -z "$JQ" ]; then
+  echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: jq not found at \$HOOK_DIR/bin/jq nor on PATH. Reinstall the package or install jq manually." >&2
+  exit 1
+fi
+
 # --- helpers ---
 emit_warn() {
-  jq -n --arg m "$1" '{
+  "$JQ" -n --arg m "$1" '{
     "systemMessage": $m,
     "suppressOutput": false
   }'
@@ -121,10 +130,10 @@ emit_warn() {
 
 # --- input ---
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
+TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
 [ "$TOOL_NAME" != "Agent" ] && exit 0
 
-DESCRIPTION=$(echo "$INPUT" | jq -r '.tool_input.description // ""')
+DESCRIPTION=$(echo "$INPUT" | "$JQ" -r '.tool_input.description // ""')
 
 # Route by role prefix. We only validate the four schemas that have a
 # defined return shape — phase1/stage2/cleanup are documented as
@@ -151,7 +160,7 @@ esac
 # Fallback: stringify the whole tool_response object so we still see the
 # subagent's content regardless of where the harness placed it.
 RESPONSE=$(
-  echo "$INPUT" | jq -r '
+  echo "$INPUT" | "$JQ" -r '
     [
       (.tool_response.output? | if type == "array" then map(.text? // (. | tostring)) | join("\n") elif type == "string" then . else (. | tostring) end),
       (.tool_response.result? // empty | tostring),
@@ -164,7 +173,7 @@ RESPONSE=$(
 # whole. Better to grep across noise than to falsely warn on an empty
 # response we couldn't parse.
 if [ -z "$RESPONSE" ]; then
-  RESPONSE=$(echo "$INPUT" | jq -r '
+  RESPONSE=$(echo "$INPUT" | "$JQ" -r '
     if (.tool_response // null) == null then ""
     elif (.tool_response | type) == "string" then .tool_response
     else (.tool_response | tostring)
@@ -248,12 +257,12 @@ if [ "$HANDOVER_PRESENT" = "true" ] && [ -n "$HANDOVER_ROLE" ] && [ -n "$HANDOVE
   esac
 
   if [ -n "$HANDOVER_SLUG" ] && echo "$HANDOVER_SLUG" | grep -qE '^(j|sj)-[a-z0-9-]+$'; then
-    GUARD_CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+    GUARD_CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")
     GUARD_REPO_ROOT=$(git -C "$GUARD_CWD" rev-parse --show-toplevel 2>/dev/null || echo "$GUARD_CWD")
     GUARD_IN_FLIGHT="$GUARD_REPO_ROOT/tests/e2e/docs/.in-flight-composers.json"
 
     if [ -f "$GUARD_IN_FLIGHT" ]; then
-      REG_CYCLE=$(jq -r --arg s "$HANDOVER_SLUG" '.composers[$s].cycle // empty' "$GUARD_IN_FLIGHT" 2>/dev/null || echo "")
+      REG_CYCLE=$("$JQ" -r --arg s "$HANDOVER_SLUG" '.composers[$s].cycle // empty' "$GUARD_IN_FLIGHT" 2>/dev/null || echo "")
 
       if [ -n "$REG_CYCLE" ]; then
         if [ "$HANDOVER_CYCLE" != "$REG_CYCLE" ]; then
@@ -277,7 +286,7 @@ if [ "$HANDOVER_PRESENT" = "true" ] && [ -n "$HANDOVER_ROLE" ] && [ -n "$HANDOVE
 
           if [ "$IS_TERMINAL" = "true" ]; then
             # Deregister: remove the slug. Atomic write via .tmp + mv.
-            UPDATED=$(jq --arg s "$HANDOVER_SLUG" 'del(.composers[$s])' "$GUARD_IN_FLIGHT" 2>/dev/null || echo "")
+            UPDATED=$("$JQ" --arg s "$HANDOVER_SLUG" 'del(.composers[$s])' "$GUARD_IN_FLIGHT" 2>/dev/null || echo "")
             if [ -n "$UPDATED" ]; then
               echo "$UPDATED" > "$GUARD_IN_FLIGHT.tmp" 2>/dev/null && mv "$GUARD_IN_FLIGHT.tmp" "$GUARD_IN_FLIGHT" || rm -f "$GUARD_IN_FLIGHT.tmp"
             fi
@@ -362,7 +371,7 @@ if [ "$ROLE" = "composer" ]; then
     SPILL_P=$(echo "$RESPONSE" | grep -E '^[[:space:]]*pass:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*pass:[[:space:]]*//' | tr -d '[:space:]' || true)
     SPILL_C=$(echo "$RESPONSE" | grep -E '^[[:space:]]*cycle:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*cycle:[[:space:]]*//' | tr -d '[:space:]' || true)
     if [ -n "$SPILL_J" ] && [ -n "$SPILL_P" ] && [ -n "$SPILL_C" ]; then
-      SPILL_CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+      SPILL_CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")
       SPILL_REPO_ROOT=$(git -C "$SPILL_CWD" rev-parse --show-toplevel 2>/dev/null || echo "$SPILL_CWD")
       SPILL_PATH="$SPILL_REPO_ROOT/tests/e2e/docs/.subagent-returns/composer-${SPILL_J}-${SPILL_P}-c${SPILL_C}.md"
       if [ ! -f "$SPILL_PATH" ]; then
@@ -426,7 +435,7 @@ if [ "$ROLE" = "reviewer" ]; then
     SPILL_CYCLE=$(echo "$RESPONSE" | grep -E '^[[:space:]]*cycle:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*cycle:[[:space:]]*//' | tr -d '[:space:]' || true)
 
     if [ -n "$SPILL_JOURNEY" ] && [ -n "$SPILL_PASS" ] && [ -n "$SPILL_CYCLE" ]; then
-      SPILL_CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+      SPILL_CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")
       SPILL_REPO_ROOT=$(git -C "$SPILL_CWD" rev-parse --show-toplevel 2>/dev/null || echo "$SPILL_CWD")
       SPILL_PATH="$SPILL_REPO_ROOT/tests/e2e/docs/.subagent-returns/reviewer-${SPILL_JOURNEY}-${SPILL_PASS}-c${SPILL_CYCLE}.md"
 
@@ -460,7 +469,7 @@ if [ "$ROLE" = "probe" ]; then
     SPILL_P=$(echo "$RESPONSE" | grep -E '^[[:space:]]*pass:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*pass:[[:space:]]*//' | tr -d '[:space:]' || true)
     SPILL_C=$(echo "$RESPONSE" | grep -E '^[[:space:]]*cycle:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*cycle:[[:space:]]*//' | tr -d '[:space:]' || true)
     if [ -n "$SPILL_J" ] && [ -n "$SPILL_P" ] && [ -n "$SPILL_C" ]; then
-      SPILL_CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+      SPILL_CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")
       SPILL_REPO_ROOT=$(git -C "$SPILL_CWD" rev-parse --show-toplevel 2>/dev/null || echo "$SPILL_CWD")
       SPILL_PATH="$SPILL_REPO_ROOT/tests/e2e/docs/.subagent-returns/probe-${SPILL_J}-${SPILL_P}-c${SPILL_C}.md"
       if [ ! -f "$SPILL_PATH" ]; then
@@ -486,7 +495,7 @@ if [ "$ROLE" = "process-validator" ]; then
     SPILL_SCOPE=$(echo "$DESCRIPTION" | sed -E 's/^process-validator-([a-z0-9-]+).*/\1/' || true)
     SPILL_C=$(echo "$RESPONSE" | grep -E '^[[:space:]]*cycle:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*cycle:[[:space:]]*//' | tr -d '[:space:]' || true)
     if [ -n "$SPILL_SCOPE" ] && [ -n "$SPILL_C" ]; then
-      SPILL_CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+      SPILL_CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")
       SPILL_REPO_ROOT=$(git -C "$SPILL_CWD" rev-parse --show-toplevel 2>/dev/null || echo "$SPILL_CWD")
       SPILL_PATH="$SPILL_REPO_ROOT/tests/e2e/docs/.subagent-returns/process-validator-${SPILL_SCOPE}-c${SPILL_C}.md"
       if [ ! -f "$SPILL_PATH" ]; then
@@ -541,7 +550,7 @@ if [ "$ROLE" = "phase-validator" ]; then
     SPILL_PHASE=$(echo "$RESPONSE" | grep -E '^[[:space:]]*phase:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*phase:[[:space:]]*//' | tr -d '[:space:]' || true)
     SPILL_C=$(echo "$RESPONSE" | grep -E '^[[:space:]]*cycle:[[:space:]]*' | head -1 | sed -E 's/^[[:space:]]*cycle:[[:space:]]*//' | tr -d '[:space:]' || true)
     if [ -n "$SPILL_PHASE" ] && [ -n "$SPILL_C" ]; then
-      SPILL_CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+      SPILL_CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")
       SPILL_REPO_ROOT=$(git -C "$SPILL_CWD" rev-parse --show-toplevel 2>/dev/null || echo "$SPILL_CWD")
       SPILL_PATH="$SPILL_REPO_ROOT/tests/e2e/docs/.subagent-returns/phase-validator-${SPILL_PHASE}-c${SPILL_C}.md"
       if [ ! -f "$SPILL_PATH" ]; then

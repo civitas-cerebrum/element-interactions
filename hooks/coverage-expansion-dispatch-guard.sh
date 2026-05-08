@@ -61,9 +61,18 @@
 
 set -euo pipefail
 
+# Resolve jq: prefer the binary bundled with the hook install, fall back to
+# system jq for in-repo testing before postinstall has run.
+JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
+[ -x "$JQ" ] || JQ="$(command -v jq || true)"
+if [ -z "$JQ" ]; then
+  echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: jq not found at \$HOOK_DIR/bin/jq nor on PATH. Reinstall the package or install jq manually." >&2
+  exit 1
+fi
+
 # --- helpers ---
 emit_deny() {
-  jq -n --arg r "$1" '{
+  "$JQ" -n --arg r "$1" '{
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
       "permissionDecision": "deny",
@@ -73,7 +82,7 @@ emit_deny() {
 }
 
 emit_warn() {
-  jq -n --arg m "$1" '{
+  "$JQ" -n --arg m "$1" '{
     "systemMessage": $m,
     "suppressOutput": false
   }'
@@ -81,11 +90,11 @@ emit_warn() {
 
 # --- input ---
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
+TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
 [ "$TOOL_NAME" != "Agent" ] && exit 0
 
-DESCRIPTION=$(echo "$INPUT" | jq -r '.tool_input.description // ""')
-PROMPT=$(echo "$INPUT" | jq -r '.tool_input.prompt // ""')
+DESCRIPTION=$(echo "$INPUT" | "$JQ" -r '.tool_input.description // ""')
+PROMPT=$(echo "$INPUT" | "$JQ" -r '.tool_input.prompt // ""')
 
 # Allowed description prefixes (single-journey scope, plus process-validator).
 # process-validator-<scope>: dispatched by the parent orchestrator BEFORE a
@@ -234,7 +243,7 @@ if [ "$DESCRIPTION_HAS_ROLE_PREFIX" = true ]; then
   esac
 
   if [ -n "$REG_SLUG" ] && echo "$REG_SLUG" | grep -qE '^(j|sj)-[a-z0-9-]+$'; then
-    REG_CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+    REG_CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")
     REG_REPO_ROOT=$(git -C "$REG_CWD" rev-parse --show-toplevel 2>/dev/null || echo "$REG_CWD")
     REG_IN_FLIGHT="$REG_REPO_ROOT/tests/e2e/docs/.in-flight-composers.json"
     mkdir -p "$REG_REPO_ROOT/tests/e2e/docs" 2>/dev/null || true
@@ -252,12 +261,12 @@ if [ "$DESCRIPTION_HAS_ROLE_PREFIX" = true ]; then
     [ -z "$REG_CYCLE" ] && REG_CYCLE=1
 
     if [ -f "$REG_IN_FLIGHT" ]; then
-      REG_EXISTING=$(jq '.' "$REG_IN_FLIGHT" 2>/dev/null || echo '{"composers":{}}')
+      REG_EXISTING=$("$JQ" '.' "$REG_IN_FLIGHT" 2>/dev/null || echo '{"composers":{}}')
     else
       REG_EXISTING='{"composers":{}}'
     fi
 
-    REG_UPDATED=$(echo "$REG_EXISTING" | jq \
+    REG_UPDATED=$(echo "$REG_EXISTING" | "$JQ" \
       --arg slug "$REG_SLUG" \
       --arg desc "$DESCRIPTION" \
       --arg ts "$REG_TIMESTAMP" \

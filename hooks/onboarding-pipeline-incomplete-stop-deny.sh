@@ -83,21 +83,30 @@
 
 set -euo pipefail
 
+# Resolve jq: prefer the binary bundled with the hook install, fall back to
+# system jq for in-repo testing before postinstall has run.
+JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
+[ -x "$JQ" ] || JQ="$(command -v jq || true)"
+if [ -z "$JQ" ]; then
+  echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: jq not found at \$HOOK_DIR/bin/jq nor on PATH. Reinstall the package or install jq manually." >&2
+  exit 1
+fi
+
 if [ "${ONBOARDING_STOP_DENY:-on}" = "off" ]; then
   exit 0
 fi
 
 emit_block() {
-  jq -n --arg r "$1" '{
+  "$JQ" -n --arg r "$1" '{
     "decision": "block",
     "reason": $r
   }'
 }
 
 INPUT=$(cat)
-SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
-CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
-STOP_HOOK_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false' 2>/dev/null || echo "false")
+SESSION_ID=$(echo "$INPUT" | "$JQ" -r '.session_id // empty' 2>/dev/null || echo "")
+CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")
+STOP_HOOK_ACTIVE=$(echo "$INPUT" | "$JQ" -r '.stop_hook_active // false' 2>/dev/null || echo "false")
 REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || echo "$CWD")
 
 DOCS_DIR="$REPO_ROOT/tests/e2e/docs"
@@ -131,7 +140,7 @@ if [ -f "$DOCS_DIR/journey-map.md" ] && \
 fi
 
 if [ -f "$DOCS_DIR/coverage-expansion-state.json" ]; then
-  CE_STATUS=$(jq -r '.status // ""' "$DOCS_DIR/coverage-expansion-state.json" 2>/dev/null || echo "")
+  CE_STATUS=$("$JQ" -r '.status // ""' "$DOCS_DIR/coverage-expansion-state.json" 2>/dev/null || echo "")
   if [ "$CE_STATUS" != "complete" ]; then
     MID_PIPELINE=1
     SIGNALS="${SIGNALS}
@@ -141,7 +150,7 @@ fi
 
 LEDGER_INCOMPLETE=0
 if [ -f "$DOCS_DIR/onboarding-phase-ledger.json" ]; then
-  PHASE_7_STATUS=$(jq -r '.phases."7".status // "missing"' "$DOCS_DIR/onboarding-phase-ledger.json" 2>/dev/null || echo "missing")
+  PHASE_7_STATUS=$("$JQ" -r '.phases."7".status // "missing"' "$DOCS_DIR/onboarding-phase-ledger.json" 2>/dev/null || echo "missing")
   if [ "$PHASE_7_STATUS" != "greenlight" ]; then
     MID_PIPELINE=1
     LEDGER_INCOMPLETE=1
@@ -157,7 +166,7 @@ fi
 # done — silent allow regardless of other signals.
 if [ -f "$DOCS_DIR/onboarding-phase-ledger.json" ] && [ "$LEDGER_INCOMPLETE" -eq 0 ]; then
   # Phase 7 is greenlight — additional safety: confirm no other phase is in-progress.
-  ANY_NOT_GREEN=$(jq -r '
+  ANY_NOT_GREEN=$("$JQ" -r '
     [.phases // {} | to_entries[] | .value.status]
     | map(select(. != "greenlight"))
     | length
@@ -190,7 +199,7 @@ NEXT=$((COUNT + 1))
 # --- tailor redirect for the specific Phase-5 sub-cases ---------------------
 PHASE5_REDIRECT=""
 if [ -f "$DOCS_DIR/coverage-expansion-state.json" ]; then
-  CURRENT_PASS=$(jq -r '.currentPass // 0' "$DOCS_DIR/coverage-expansion-state.json" 2>/dev/null || echo 0)
+  CURRENT_PASS=$("$JQ" -r '.currentPass // 0' "$DOCS_DIR/coverage-expansion-state.json" 2>/dev/null || echo 0)
   case "$CURRENT_PASS" in ''|*[!0-9]*) CURRENT_PASS=0 ;; esac
 
   # Count dispatches[] entries specifically under .passes[].dispatches.
@@ -198,7 +207,7 @@ if [ -f "$DOCS_DIR/coverage-expansion-state.json" ]; then
   # over-counted: `deferredJourneys[]` entries also have a `journey` key
   # (PR #173), and any future schema field with a `journey` member would
   # inflate the count.
-  DISPATCH_COUNT=$(jq -r '[.passes // {} | to_entries[] | .value.dispatches // [] | .[]] | length' "$DOCS_DIR/coverage-expansion-state.json" 2>/dev/null || echo 0)
+  DISPATCH_COUNT=$("$JQ" -r '[.passes // {} | to_entries[] | .value.dispatches // [] | .[]] | length' "$DOCS_DIR/coverage-expansion-state.json" 2>/dev/null || echo 0)
   case "$DISPATCH_COUNT" in ''|*[!0-9]*) DISPATCH_COUNT=0 ;; esac
 
   # Count dispatches that lack a terminal review_status — i.e. genuinely
@@ -207,7 +216,7 @@ if [ -f "$DOCS_DIR/coverage-expansion-state.json" ]; then
   # alone can't distinguish "auto-compact never attempted" from "all
   # dispatches landed cleanly". The auto-compact redirect should fire
   # only when at least one dispatch has no terminal-stamp.
-  IN_FLIGHT=$(jq -r '[.passes // {} | to_entries[] | .value.dispatches // [] | .[] | select(.review_status == null or .review_status == "")] | length' "$DOCS_DIR/coverage-expansion-state.json" 2>/dev/null || echo 0)
+  IN_FLIGHT=$("$JQ" -r '[.passes // {} | to_entries[] | .value.dispatches // [] | .[] | select(.review_status == null or .review_status == "")] | length' "$DOCS_DIR/coverage-expansion-state.json" 2>/dev/null || echo 0)
   case "$IN_FLIGHT" in ''|*[!0-9]*) IN_FLIGHT=0 ;; esac
 
   COMPACT_FILES=0

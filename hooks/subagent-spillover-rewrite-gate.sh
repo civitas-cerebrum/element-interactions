@@ -60,14 +60,23 @@
 
 set -euo pipefail
 
+# Resolve jq: prefer the binary bundled with the hook install, fall back to
+# system jq for in-repo testing before postinstall has run.
+JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
+[ -x "$JQ" ] || JQ="$(command -v jq || true)"
+if [ -z "$JQ" ]; then
+  echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: jq not found at \$HOOK_DIR/bin/jq nor on PATH. Reinstall the package or install jq manually." >&2
+  exit 1
+fi
+
 # --- input ---
 INPUT=$(cat)
 
-RESPONSE=$(echo "$INPUT" | jq -r '.last_assistant_message // ""' 2>/dev/null || echo "")
+RESPONSE=$(echo "$INPUT" | "$JQ" -r '.last_assistant_message // ""' 2>/dev/null || echo "")
 [ -z "$RESPONSE" ] && exit 0
 
-AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // empty' 2>/dev/null || echo "")
-CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+AGENT_ID=$(echo "$INPUT" | "$JQ" -r '.agent_id // empty' 2>/dev/null || echo "")
+CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")
 REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || echo "$CWD")
 
 # --- handover envelope parse (§2.0) ---------------------------------------

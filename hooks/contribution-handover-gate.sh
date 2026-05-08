@@ -95,8 +95,17 @@
 
 set -euo pipefail
 
+# Resolve jq: prefer the binary bundled with the hook install, fall back to
+# system jq for in-repo testing before postinstall has run.
+JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
+[ -x "$JQ" ] || JQ="$(command -v jq || true)"
+if [ -z "$JQ" ]; then
+  echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: jq not found at \$HOOK_DIR/bin/jq nor on PATH. Reinstall the package or install jq manually." >&2
+  exit 1
+fi
+
 emit_deny() {
-  jq -n --arg r "$1" '{
+  "$JQ" -n --arg r "$1" '{
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
       "permissionDecision": "deny",
@@ -141,10 +150,10 @@ EOF
 
 # --- input ---
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
+TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
 [ "$TOOL_NAME" != "Bash" ] && exit 0
 
-CMD=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
+CMD=$(echo "$INPUT" | "$JQ" -r '.tool_input.command // ""')
 
 # Filter: only fire on `git push origin <branch>` or `gh pr create`.
 # `git push` without `origin` (e.g. `git push fork`, `git push --dry-run`)
@@ -178,7 +187,7 @@ else
   # Only fire inside the element-interactions repo. We detect by checking
   # for the package.json `name` field. Don't accidentally gate other repos
   # a contributor might be working in with the same harness config.
-  PKG_NAME=$(jq -r '.name // empty' "$REPO_ROOT/package.json" 2>/dev/null || true)
+  PKG_NAME=$("$JQ" -r '.name // empty' "$REPO_ROOT/package.json" 2>/dev/null || true)
   [ "$PKG_NAME" != "@civitas-cerebrum/element-interactions" ] && exit 0
 fi
 
@@ -209,12 +218,12 @@ verification, but a missing handover makes the omission visible." \
 fi
 
 # --- check 2: valid JSON ---
-if ! jq empty "$HANDOVER" >/dev/null 2>&1; then
-  parse_err=$(jq empty "$HANDOVER" 2>&1 || true)
+if ! "$JQ" empty "$HANDOVER" >/dev/null 2>&1; then
+  parse_err=$("$JQ" empty "$HANDOVER" 2>&1 || true)
   msg=$(build_message \
 "Contribution handover is not valid JSON." \
 "  Option A — view the parse error
-    jq empty .contribution-handover.json
+    "$JQ" empty .contribution-handover.json
   Option B — start fresh
     cp .contribution-handover.template.json .contribution-handover.json
     # then re-fill" \
@@ -272,7 +281,7 @@ UNJUSTIFIED_FIELDS=()
 
 while IFS= read -r path; do
   [ -z "$path" ] && continue
-  value=$(jq -r --arg p "$path" 'getpath($p | split(".")) | tojson' "$HANDOVER" 2>/dev/null || echo "null")
+  value=$("$JQ" -r --arg p "$path" 'getpath($p | split(".")) | tojson' "$HANDOVER" 2>/dev/null || echo "null")
 
   if [ "$value" = "null" ]; then
     UNSET_FIELDS+=("$path")
@@ -283,7 +292,7 @@ while IFS= read -r path; do
     parent=$(echo "$path" | awk -F. '{print $1}')
     leaf=$(echo "$path" | awk -F. '{print $NF}')
     reason_path="$parent.${leaf}Reason"
-    reason=$(jq -r --arg p "$reason_path" 'getpath($p | split(".")) // ""' "$HANDOVER" 2>/dev/null || echo "")
+    reason=$("$JQ" -r --arg p "$reason_path" 'getpath($p | split(".")) // ""' "$HANDOVER" 2>/dev/null || echo "")
     if [ "${#reason}" -lt 20 ]; then
       UNJUSTIFIED_FIELDS+=("$path = $value (reason: \"${reason}\")")
     fi
@@ -346,7 +355,7 @@ fi
 # --- check 6: README claim matches diff vs. origin/main ---
 # Test mode: read the "README in diff" signal from a sentinel file in the
 # fixture dir (presence == "yes, modified"). Production: ask git directly.
-README_CLAIM=$(jq -r '.docs.readmeUpdated' "$HANDOVER" 2>/dev/null || echo "null")
+README_CLAIM=$("$JQ" -r '.docs.readmeUpdated' "$HANDOVER" 2>/dev/null || echo "null")
 README_IN_DIFF=0
 if [ "$TEST_MODE" -eq 1 ]; then
   [ -f "$REPO_ROOT/_README_IN_DIFF" ] && README_IN_DIFF=1
@@ -408,16 +417,16 @@ README. Either way, claim and reality must agree." \
 fi
 
 # --- check 7: version.from / to match package.json diff ---
-VERSION_BUMPED_CLAIM=$(jq -r '.version.patchBumpedOnce' "$HANDOVER" 2>/dev/null || echo "null")
+VERSION_BUMPED_CLAIM=$("$JQ" -r '.version.patchBumpedOnce' "$HANDOVER" 2>/dev/null || echo "null")
 if [ "$VERSION_BUMPED_CLAIM" = "true" ]; then
-  CLAIM_FROM=$(jq -r '.version.from' "$HANDOVER" 2>/dev/null || echo "")
-  CLAIM_TO=$(jq -r '.version.to' "$HANDOVER" 2>/dev/null || echo "")
+  CLAIM_FROM=$("$JQ" -r '.version.from' "$HANDOVER" 2>/dev/null || echo "")
+  CLAIM_TO=$("$JQ" -r '.version.to' "$HANDOVER" 2>/dev/null || echo "")
   if [ "$TEST_MODE" -eq 1 ]; then
     ACTUAL_FROM=$(cat "$REPO_ROOT/_PKG_FROM" 2>/dev/null || echo "")
     ACTUAL_TO=$(cat "$REPO_ROOT/_PKG_TO" 2>/dev/null || echo "")
   else
-    ACTUAL_FROM=$(git -C "$REPO_ROOT" show "origin/main:package.json" 2>/dev/null | jq -r '.version' 2>/dev/null || echo "")
-    ACTUAL_TO=$(jq -r '.version' "$REPO_ROOT/package.json" 2>/dev/null || echo "")
+    ACTUAL_FROM=$(git -C "$REPO_ROOT" show "origin/main:package.json" 2>/dev/null | "$JQ" -r '.version' 2>/dev/null || echo "")
+    ACTUAL_TO=$("$JQ" -r '.version' "$REPO_ROOT/package.json" 2>/dev/null || echo "")
   fi
   if [ -n "$ACTUAL_FROM" ] && [ -n "$ACTUAL_TO" ] && \
      { [ "$CLAIM_FROM" != "$ACTUAL_FROM" ] || [ "$CLAIM_TO" != "$ACTUAL_TO" ]; }; then
