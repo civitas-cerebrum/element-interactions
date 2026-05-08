@@ -334,5 +334,57 @@ assert_warn "$H" "$(payload tool_name=Agent description='reviewer-j-checkout: cy
 
 rm -rf "$SPILL_TMP"
 
+section "schema-guard: selector-development (§4.5)"
+
+ENV_SD='handover:
+  role: selector-development-submit-button
+  cycle: 1
+  status: ok
+  next-action: record ledger entry
+
+'
+
+# Well-formed status=ok return → silent allow.
+assert_allow "$H" "$(payload tool_name=Agent description='selector-development-submit-button: jit' response_text="${ENV_SD}status: ok
+mode: jit
+scope: submit-button
+attribute:
+  name: data-testid
+  value: submit-button
+files_modified:
+  - src/components/Form.tsx
+guardrails:
+  before_snapshot: pass
+  patch_applied: pass
+  typecheck: pass
+  unit_tests: pass
+  e2e: pass
+  after_snapshot: pass
+  visual_diff: pass
+ledger_entry: added data-testid=submit-button to Form.tsx")" "selector-development status=ok full → ALLOW"
+
+# Missing status: → WARN.
+assert_warn "$H" "$(payload tool_name=Agent description='selector-development-submit-button: jit' response_text='mode: jit
+guardrails:
+  before_snapshot: pass
+  patch_applied: pass
+  typecheck: pass
+  unit_tests: pass
+  e2e: pass
+  after_snapshot: pass
+  visual_diff: pass')" "selector-development missing status → WARN" "status: <ok|skipped|blocked>"
+
+# status=blocked without blocked_artifact → WARN.
+assert_warn "$H" "$(payload tool_name=Agent description='selector-development-submit-button: jit' response_text='status: blocked
+mode: jit
+guardrails:
+  before_snapshot: pass
+  patch_applied: fail
+  typecheck: skip
+  unit_tests: skip
+  e2e: skip
+  after_snapshot: skip
+  visual_diff: skip')" "selector-development status=blocked missing blocked_artifact → WARN" "blocked_artifact"
+
 section "schema-guard: tool-name filtering"
 assert_allow "$H" "$(payload tool_name=Bash command='git commit -m \"x\"')" "Bash invocation → silent allow"

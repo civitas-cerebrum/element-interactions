@@ -771,15 +771,15 @@ If any of the above is missing or a banned token is present, the caller re-dispa
 
 The same grep-based shape signals are enforced at the harness layer by `hooks/subagent-return-schema-guard.sh` (auto-installed via `scripts/postinstall.js`). The hook:
 
-- Routes by Agent description prefix (`composer-` / `reviewer-` / `probe-` / `process-validator-` / `phase-validator-`); other prefixes (`phase1-`, `stage2-`, `cleanup-`) skip validation.
-- Greps the subagent's return for the §4.1 markers above plus the per-status evidence (`tests-added` + `run-time` for `new-tests-landed`, mapping table for `covered-exhaustively`, `reason` for `blocked` / `skipped`, `exit-criteria-checked` array + `findings: []` on greenlight for `phase-validator`, etc.).
+- Routes by Agent description prefix (`composer-` / `reviewer-` / `probe-` / `process-validator-` / `phase-validator-` / `selector-development-`); other prefixes (`phase1-`, `stage2-`, `cleanup-`) skip validation.
+- Greps the subagent's return for the §4.1 markers above plus the per-status evidence (`tests-added` + `run-time` for `new-tests-landed`, mapping table for `covered-exhaustively`, `reason` for `blocked` / `skipped`, `exit-criteria-checked` array + `findings: []` on greenlight for `phase-validator`, `mode` + `guardrails` for `selector-development-`, etc.).
 - Emits a non-blocking `systemMessage` listing missing markers and any banned tokens detected. The orchestrator sees the warning and re-dispatches.
 
 The hook is a backstop, not a replacement: callers still run the orchestrator-side grep per §4.1. The harness layer catches malformed returns the orchestrator missed; the orchestrator-side check catches violations that depend on caller-specific context the hook can't see (e.g., whether a `Test expectations:` row is missing from the mapping table). Initial release is warn-only — a follow-up promotes to block-mode after a representative run produces a ≤2% false-positive rate.
 
 ### 4.3 Harness validator — handover-envelope leash + deregistration
 
-The same `hooks/subagent-return-schema-guard.sh` hook also enforces the §2.0 handover envelope and drives the registry leash. Behavior on a `composer-` / `reviewer-` / `probe-` / `process-validator-` / `phase-validator-` return:
+The same `hooks/subagent-return-schema-guard.sh` hook also enforces the §2.0 handover envelope and drives the registry leash. Behavior on a `composer-` / `reviewer-` / `probe-` / `process-validator-` / `phase-validator-` / `selector-development-` return:
 
 1. **Envelope parse.** Greps the return for the four envelope fields (`role:`, `cycle:`, `status:`, `next-action:`). Missing or malformed envelope emits a WARN; does not block. Deregistration cannot proceed without a parseable envelope, so the registry slot remains held until TTL expiry — the WARN tells the orchestrator to revise the brief so future returns include the envelope.
 2. **Registry lookup.** Reads `tests/e2e/docs/.in-flight-composers.json` for an entry under the slug derived from `handover.role` (the `j-<slug>` / `sj-<slug>` portion). Slug not present → fall through to role-specific schema check; the registry can't deregister what isn't there.
@@ -790,6 +790,70 @@ The same `hooks/subagent-return-schema-guard.sh` hook also enforces the §2.0 ha
 Envelope-validation mode is WARN initially; a follow-up promotes to BLOCK after a representative run shows zero false positives. **Deregistration itself fires in both WARN and BLOCK mode** — the registry update is mechanical bookkeeping, not validation, so the leash works correctly even before BLOCK promotion.
 
 The TTL (30 min) on registry entries remains as a failsafe for crashed / abandoned dispatches that never return an envelope. Explicit deregistration via terminal-status handover is the primary cleanup path; TTL is the secondary one.
+
+### 4.4 Per-prefix routing table (description-prefix → validation target)
+
+| Description prefix | Validation target |
+|---|---|
+| `composer-<j-slug>:` | Stage A — `status:` enum (new-tests-landed \| covered-exhaustively \| blocked \| skipped) + per-status fields (tests-added / run-time; mapping table; reason; reason+authorizer) |
+| `reviewer-<j-slug>:` | Stage B (§2.4) — `status:` (greenlight \| improvements-needed) + journey/pass/cycle + summary on greenlight \| findings sub-list on improvements-needed |
+| `probe-<j-slug>:` | Adversarial — `probes:` + `boundaries:` + `findings:` count or list |
+| `process-validator-<scope>:` | Sub-orchestrator — reviewer-shape applied to a manifest (`status:`, `findings:`, `summary:`) |
+| `phase-validator-<N>:` | Phase-exit checkpoint (§2.5) — `status:` + `phase:` + `exit-criteria-checked:` array + `summary:` (REQUIRED on both statuses) + `findings: []` literal on greenlight \| ≥1 `pv-<phase>-<nn>` must-fix on improvements-needed |
+| `selector-development-<scope>:` | Selector-development — `status:` enum (ok \| skipped \| blocked) + `mode` (jit \| audit) + `attribute` + `files_modified` + `guardrails` (7 sub-statuses) + `skipped_reason` (when status=skipped) + `blocked_artifact` (when status=blocked) |
+| `phase1-` / `stage2-` / `cleanup-` / bare `j-` / bare `sj-` | Silent allow — free-form or unstructured returns; no validation |
+
+### 4.5 Selector-development return schema
+
+Subagents dispatched under the `selector-development-<scope>:` description prefix return a result envelope documenting whether a stable test-attribute was added (`ok`), was already present or inapplicable (`skipped`), or could not be applied due to a missing prerequisite (`blocked`).
+
+#### Canonical envelope
+
+```jsonc
+{
+  "status": "ok" | "skipped" | "blocked",
+  "mode": "jit" | "audit",
+  "scope": "<element-key>" | "<page-id>",
+  "attribute": { "name": "data-testid", "value": "submit-button" },
+  "files_modified": ["src/components/Form.tsx"],
+  "guardrails": {
+    "before_snapshot": "pass",
+    "patch_applied":   "pass",
+    "typecheck":       "pass",
+    "unit_tests":      "pass",
+    "e2e":             "pass",
+    "after_snapshot":  "pass",
+    "visual_diff":     "pass"
+  },
+  "ledger_entry": "...",
+  "skipped_reason": "no-inert-option" | "not-frontend-project" | "selector-already-stable" | null,
+  "blocked_artifact": "<path>" | null
+}
+```
+
+#### Field rules
+
+| Field | Rule |
+|---|---|
+| `status` | One of `ok`, `skipped`, `blocked`. No other values. |
+| `mode` | One of `jit` (just-in-time, triggered by a test-writing dispatch) or `audit` (periodic sweep). |
+| `scope` | The element key or page identifier the subagent was dispatched for. |
+| `attribute` | Object with `name` and `value` — the attribute added or verified. Present on `ok`; may be omitted on `skipped` / `blocked`. |
+| `files_modified` | Array of repo-relative paths changed by the patch. Empty array (`[]`) on `skipped` / `blocked`. |
+| `guardrails` | Seven sub-statuses (`before_snapshot`, `patch_applied`, `typecheck`, `unit_tests`, `e2e`, `after_snapshot`, `visual_diff`). Each is one of `pass`, `skip`, or `fail`. Required on `ok`; recommended on `blocked`. |
+| `ledger_entry` | Human-readable one-line summary for the selector ledger. |
+| `skipped_reason` | Required when `status=skipped`. One of `no-inert-option`, `not-frontend-project`, `selector-already-stable`. Null otherwise. |
+| `blocked_artifact` | Required when `status=blocked`. Repo-relative path to the artifact (file, component, config) that must be resolved before the selector can be added. Null otherwise. |
+
+#### Minimal conformance check (what the hook validates)
+
+- `status:` followed by one of `ok | skipped | blocked`.
+- `mode:` followed by `jit` or `audit`.
+- `guardrails:` block present (the 7-sub-status object).
+- On `status: skipped`: `skipped_reason:` present with one of the valid enum values.
+- On `status: blocked`: `blocked_artifact:` present and non-null.
+
+The hook emits a WARN (non-blocking, initial release) when any of these markers is absent.
 
 ---
 
