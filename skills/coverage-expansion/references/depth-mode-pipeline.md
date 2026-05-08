@@ -131,7 +131,7 @@ The Phase-0 shared-resource audit (PR #106) still caps parallelism where the app
 
 ### Model selection
 
-Model selection per dispatch type — see [`coverage-expansion/SKILL.md`](../SKILL.md) §"Hybrid model selection — Pass 1 + Pass 5 on Opus, Pass 2/3/4 execution on Sonnet, all review on Opus" for the canonical table. Pass 5 is the regression layer — its targeted probes and regression-test authoring run Opus because the artifacts they produce are durable. The kernel rule supersedes any prior cost-blind / opus-default framing.
+Model selection per dispatch type — see [`coverage-expansion/SKILL.md`](../SKILL.md) §"Hybrid model selection — Pass 1, Pass 4, Pass 5 on Opus, Pass 2/3 execution on Sonnet, all review on Opus" for the canonical table. Pass 5 is the regression layer — its targeted probes and regression-test authoring run Opus because the artifacts they produce are durable; Pass 4's adversarial probes also run Opus because their findings are the input to that regression layer. The kernel rule supersedes any prior cost-blind / opus-default framing.
 
 Before every pass dispatch (step 4 of the per-pass pipeline), emit a declarative scope preview. The preview is informational only — there is no confirmation prompt, no timeout, no abort option, and no reduce-scope offer. The contract is every journey in the (roster − adversarialSkippedJourneys), every pass; the preview makes that contract explicit so any mid-pass rationalisation is visible against the declared scope.
 

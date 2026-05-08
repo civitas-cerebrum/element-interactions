@@ -92,9 +92,9 @@ pre-discovery estimates; actuals land after Phase 1 and are reported via progres
     (every journey, every pass — no skips)
   • Phase 6 bug hunts: ~<M_low>–<M_high> dispatches
   • Parallel peak: <P> agents depending on credential availability
-  • Model: per `coverage-expansion/SKILL.md` §"Hybrid model selection" (Pass 1
-    + Pass 5 on Opus end-to-end, Pass 2/3/4 execution on Sonnet, all Stage B
-    review and synthesis on Opus)
+  • Model: per `coverage-expansion/SKILL.md` §"Hybrid model selection" (Pass 1,
+    Pass 4, and Pass 5 on Opus end-to-end, Pass 2/3 re-pass composers on Sonnet,
+    all Stage B review and synthesis on Opus)
   • Expected wall-clock: ~<H1>–<H2> h active
 
 The scope preview is informational only. The skill's contract is full coverage; the
