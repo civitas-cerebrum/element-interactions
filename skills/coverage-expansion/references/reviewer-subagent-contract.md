@@ -2,6 +2,28 @@
 
 Every Stage B subagent dispatched by `coverage-expansion` — across all 5 passes, compositional and adversarial — follows this contract. It is analogous to the compositional `test-composer` and adversarial probe contracts, but covers the reviewer role specifically.
 
+**Two invocation modes:**
+
+- **`mode: per-journey`** — one Stage B reviewer per journey per cycle. Used for cycle-2+ retries, all adversarial Pass-4/5 reviews, and any cycle the operator has flagged as needing human-grade attention. Full per-journey contract: §"Role" through §"Dispatch brief template" below.
+- **`mode: batch`** — one Stage B reviewer per **pass** that reads all in-flight journeys' spill files together and emits per-journey verdicts. Used for **Pass 1 / 2 / 3 cycle-1 only** — ~85% of compositional cycle-1 reviewers return `greenlight`, so per-journey isolation over-pays for that majority. Batch contract: §"Batch reviewer mode (cycle-1 compositional only)" at the end of this file.
+
+**Mode selection** (the orchestrator decides at dispatch time):
+
+| Pass | Cycle | Mode |
+|---|---|---|
+| 1 (compositional) | 1 | batch |
+| 1 (compositional) | 2+ | per-journey (only flagged journeys re-dispatched) |
+| 2 (compositional re-pass) | 1 | batch |
+| 2 (compositional re-pass) | 2+ | per-journey |
+| 3 (compositional consolidation) | 1 | batch |
+| 3 (compositional consolidation) | 2+ | per-journey |
+| 4 (adversarial probing) | any | per-journey (always) |
+| 5 (adversarial regression) | any | per-journey (always) |
+
+Adversarial passes never use batch mode — the per-journey live-app probe + matrix coverage check is load-bearing for adversarial discipline and benefits from isolated context. Compositional cycle-2+ retries are per-journey because the orchestrator already knows which specific journeys need attention; batching cycle-2 retries would defeat the purpose.
+
+A `mode: batch` reviewer that wants per-journey depth on a flagged journey returns `improvements-needed` for that journey in its return; the orchestrator then dispatches a follow-up cycle-2 per-journey reviewer for that journey only. Subagents do not switch modes mid-flight.
+
 ## Role
 
 A **staff-level QA engineer**, dispatched fresh for each journey-and-cycle pair. The reviewer's only job is to judge Stage A's output for this journey in this pass and either greenlight it or return a structured `improvements-needed` brief. The reviewer does not write tests, does not probe the app to produce new findings for the ledger, does not modify any file on disk. Pure read-plus-return.
@@ -33,6 +55,7 @@ A **staff-level QA engineer**, dispatched fresh for each journey-and-cycle pair.
    - `missing-scenarios` the reviewer invented adversarially (not from the expectations list) → record ONLY when the category is `adversarial-missed` in passes 4–5; otherwise do not surface.
    - **Passes 4–5 only — matrix-coverage gap → record.** Any negative-case-matrix entry from the journey's matrix that Stage A did NOT probe (no corresponding ledger finding) is a `missing-scenarios` finding with category `matrix-missed`. The matrix is the adversarial coverage floor per `adversarial-subagent-contract.md`; reviewers do not exercise discretion on this — every matrix entry must have a ledger finding (`Boundaries verified`, `Suspected bugs`, or `Ambiguous` are all acceptable; absence is not).
    - Cosmetic `craft-issues` (naming, ordering, comment quality) → do not surface.
+   - **Passes 4–5 only — `craft-issues:re-derived-app-wide-pattern` → record.** Per-journey probes that re-find a pattern documented in `tests/e2e/docs/app-wide-patterns.md` instead of citing via `coverage: app-wide:<pattern-id>` waste discovery cycles. The reviewer cross-references the journey's findings against the catalogue (read at dispatch time as Input 9 of `adversarial-subagent-contract.md`) and records this finding when the patterns overlap. Exception: a finding that names a app-wide-applicable pattern NOT in the catalogue is correctly emitted with `coverage: none` per `app-wide-scan.md` §"What if a per-journey probe finds a app-wide pattern not in the catalogue?" — do NOT flag those.
 7. **Detect stalled loops.** Stall is "Stage A has had two consecutive retry attempts on the same `must-fix` list and resolved nothing." Operationally: the reviewer's current `must-fix` list is identical (same finding-IDs, same titles, same suggested fixes) to **both** the immediately-prior cycle's list AND the cycle-before-that's list — three identical lists in a row across cycles N, N-1, N-2. Set a top-level `stalled: true` flag in the return only when this three-identical-cycles condition holds. Single-cycle equality (current == prior-1, but prior-1 != prior-2) is NOT stall — the reviewer in cycle N may legitimately have caught a finding the cycle-(N-1) reviewer missed, and cycle N+1 matching cycle N is the first repeat, not yet stagnation. The orchestrator runs the same three-cycle check (per coverage-expansion §"Retry loop") and either signal terminates as `blocked-cycle-stalled`. The reviewer flag is the **primary signal** because the reviewer has full per-cycle context (suggested-fix wording, evidence pointers) the orchestrator's set comparison can't see; the orchestrator's check is a defence against reviewer non-compliance, not a substitute. Reviewers that fire the flag prematurely (on a single-cycle match) trigger false stalls and waste retry budget; reviewers that systematically omit it produce one extra cycle of orchestrator-side delay — accuracy of the three-cycle check is the calibration target.
 
    The cycle history needed to evaluate this rule is provided to the reviewer per §"Inputs" item 9 (prior-cycle must-fix lists). A cycle-1 or cycle-2 reviewer cannot satisfy the three-cycle condition by definition and MUST NOT set `stalled: true`; the flag is only available from cycle 3 onward.
@@ -84,3 +107,96 @@ Procedure:
 7. **If your verdict is `improvements-needed`, apply the §2.6 spillover contract** — write the full `missing-scenarios:` / `craft-issues:` / `verification-misses:` sub-lists to `tests/e2e/docs/.subagent-returns/reviewer-<journey-slug>-<pass>-c<cycle>.md` (start the file with the sentinel comment `<!-- subagent-returns:reviewer:<journey-slug>:pass-<N>:cycle-<C> -->`). Your return body inlines only the index-level fields — `status`, `journey`, `pass`, `cycle`, `spill: <path>`, and a `findings:` list of finding-IDs (no inline blocks). The harness `SubagentStop` rewrite-gate (`hooks/subagent-spillover-rewrite-gate.sh`) enforces this — non-compliant returns are blocked at stop, stderr feedback names the missing path / wrong shape, and you rewrite in-session. `greenlight` returns are exempt from spillover (already index-only by definition).
 8. Close your session: `npx playwright-cli -s=<your-slug> close`. Return using the canonical schema. Do NOT commit, do NOT modify files, do NOT append to the ledger. Do NOT run `close-all` (the parent owns that).
 ~~~
+
+---
+
+## Batch reviewer mode (cycle-1 compositional only)
+
+The batch reviewer is one Opus reviewer per pass that reads all in-flight journeys' spill files plus the journey-map slice plus the page-repository, and emits per-journey verdicts in a single return. Used for compositional Pass-1/2/3 cycle-1 reviews only; adversarial passes (4–5) and cycle-2+ retries always remain `mode: per-journey`.
+
+The cross-journey synthesis is a real upgrade, not just a cost optimisation: a single reviewer reading 30 returns at once can flag "journey X surfaced pattern Y but journey Z missed it"; the per-journey reviewer is structurally blind to siblings.
+
+### Inputs (given at dispatch time)
+
+1. **Map slice**: the relevant `### j-<slug>` blocks for every in-flight journey, in `journey-map.md` order.
+2. **Page-repo slices**: one consolidated page-repo entry list covering every page touched by any in-flight journey.
+3. **Pass + cycle**: explicit (always cycle 1; pass ∈ {1, 2, 3}).
+4. **Stage A returns**, per journey, in one of two forms (the orchestrator's brief picks per-journey based on Stage A's status):
+   - **`status: new-tests-landed`** (the dominant case at compositional cycle-1) → the orchestrator passes the composer's full structured return body in the brief. Composer spillover does NOT trigger for `new-tests-landed` (per `subagent-return-schema.md` §2.6 — only `covered-exhaustively` triggers composer spillover, since `new-tests-landed` returns are already index-only). The brief includes: committed test paths, discovery report, expectations-mapped count, and any other index-level fields the composer emitted.
+   - **`status: covered-exhaustively`** → the brief points at the §2.6 spill file at `tests/e2e/docs/.subagent-returns/composer-<JOURNEY>-<pass>-c1.md`. The reviewer reads the spill for the full per-expectation mapping table.
+
+   The reviewer reads whichever form is provided; the brief construction is the orchestrator's responsibility.
+5. **Per-journey gated-skip evidence**: journeys flagged `gated_skip: true` in the state file (per `coverage-expansion/SKILL.md` §"Trigger-gated re-pass") are excluded from the batch reviewer's roster — no review needed. The roster is the journeys whose Stage A actually dispatched this cycle.
+6. **App-context slice**: the consolidated `app-context.md` sections for every page touched.
+7. **No live app** — see §"Behavior" item 2 below for why the batch reviewer is a static reader.
+
+### Behavior
+
+1. **No `playwright-cli` session.** A batch reviewer is a static reviewer of Stage A spill files + map + page-repo. Live-app verification is per-journey work; the per-journey contract still applies for any journey the batch reviewer flags `improvements-needed`. The follow-up cycle-2 reviewer opens its own session per the legacy contract.
+2. **Read every spill file** in the in-flight roster. Cross-reference each journey's spill against:
+   - Its `Test expectations:` list in the map block (every expectation must have a covering test in the spill's mapping table).
+   - The page-repo slice (selectors used in tests must exist in the page-repo).
+   - Sibling spills (cross-journey consistency: pattern X surfaced in journey A but missed in journey B that shares the same page).
+3. **Apply the must-fix calibration** from §"Behavior" item 6 of the per-journey contract — same recording rules. The batch reviewer is judging the same shape of finding, just across many journeys at once.
+4. **Return per-journey verdicts** in a single structured return. The schema is the per-journey return schema (§2.4) wrapped in a top-level array:
+
+   ```yaml
+   handover:
+     role: reviewer-batch-pass-<N>
+     status: batch-complete
+     pass: <N>
+     cycle: 1
+     verdicts:
+       - journey: j-a
+         status: greenlight
+         summary: <one-line>
+       - journey: j-b
+         status: improvements-needed
+         spill: tests/e2e/docs/.subagent-returns/reviewer-batch-pass-<N>-c1.md
+         findings: [j-b-1-1-R-01, j-b-1-1-R-02]
+       - journey: j-c
+         status: greenlight
+         summary: <one-line>
+   ```
+
+   Greenlit journeys carry only a one-line `summary` — no spill file, no findings list. Flagged journeys carry the §2.6 spillover shape (`spill:` path + `findings:` list); the spill file is appended to the same `tests/e2e/docs/.subagent-returns/` directory but under a single filename naming the batch:
+
+   ```
+   tests/e2e/docs/.subagent-returns/reviewer-batch-pass-<N>-c1.md
+   ```
+
+   Inside that file, sections are namespaced by journey:
+
+   ```markdown
+   <!-- subagent-returns:reviewer-batch:pass-<N>:cycle-1 -->
+
+   ## j-b
+
+   ### missing-scenarios
+   - **j-b-1-1-R-01** [must-fix] — mobile variant absent
+
+   ### craft-issues
+   - **j-b-1-1-R-02** [must-fix] — inline selector in spec
+
+   ## j-d
+
+   ### verification-misses
+   - **j-d-1-1-R-01** [must-fix] — assertion targets a different element than tested
+   ```
+
+   Every flagged journey's section starts with `## j-<slug>`. The §2.6 sentinel goes at the top of the file (line 1).
+
+5. **Stalled-loop detection does NOT apply** — batch mode is cycle-1 only. Stall detection is a cycle-3 mechanic; if a journey reaches cycle 3 without resolving, the per-journey reviewer flags it.
+
+### Hard constraints (batch-specific)
+
+- **The cycle-1 wave of pass N only.** A batch reviewer dispatched at cycle ≥ 2 within any pass, or at any cycle in adversarial Pass 4 / Pass 5, is a contract violation. One batch reviewer per compositional pass; the constraint applies independently per pass.
+- **Compositional passes only.** Pass 4 and 5 dispatch one reviewer per journey, never a batch.
+- **No live app.** The batch reviewer is a static reader; for any flagged journey that needs live-app verification, the orchestrator follows up with a `mode: per-journey` cycle-2 reviewer that opens its own session.
+- **One return per pass.** The batch reviewer's return is a single object with a `verdicts:` array; the orchestrator parses verdicts and dispatches per-journey cycle-2 reviewers for any `improvements-needed` entry.
+- **Dispatch-guard carve-out.** `hooks/coverage-expansion-dispatch-guard.sh` skips its meta-content leak check for descriptions matching `^reviewer-batch-pass-[0-9]+:` — the batch brief references compositional pass scope by construction, so those phrases are part of the rule rather than a leak.
+- **Return-shape enforcement is markdown-only (for now).** `subagent-spillover-rewrite-gate.sh` and `subagent-return-schema-guard.sh` do not yet recognise the `reviewer-batch-pass-<N>` role-prefix or the `verdicts:` array shape; a non-compliant batch return will land in the orchestrator's transcript without harness intervention. Hook backstop is a follow-up.
+
+### Dispatch prefix
+
+The orchestrator dispatches batch with `description: "reviewer-batch-pass-<N>: cycle 1"`. The `reviewer-` family prefix is already recognised by `coverage-expansion-dispatch-guard.sh`; the `-batch-` infix triggers the batch return-shape validation in the schema-guard.

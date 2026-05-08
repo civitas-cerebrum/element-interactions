@@ -59,15 +59,17 @@ For each `### j-…` heading in `journey-map.md`, read lines until the next blan
 
 - `**Priority:**` → `P0` | `P1` | `P2` | `P3`
 - `**Category:**` → free text
-- `**Entry:**` → URL; portal inferred from hostname:
-  - `acceptatie.medicheckapp.nl` → Manager portal
-  - `etdr-acceptatie.medicheckapp.nl` / `acceptatie-etdr.medicheckapp.nl` → Administrator portal
-  - anything else → Cross-cutting
+- `**Entry:**` → URL; the **primary section label** is derived at runtime from the URL's host + first path segment. Cluster journeys by that derived label. The skill does NOT carry a built-in label list — whatever the data yields IS the label.
+  - If the journey-map's heading block carries an explicit `**Section:**` field, prefer that over the URL-derived label.
+  - If neither is present, fall back to the file-name prefix (see §"Section inference fallbacks" below).
 - The heading text itself (after the `:`) → journey purpose (one-liner for the catalogue).
 
-## Portal inference fallbacks
+## Section inference fallbacks
 
-If a journey is not in the map (Unmapped), try the file-name prefix:
-- `manager-*` → Manager portal
-- `admin-*` → Administrator portal
-- `role-choice-*`, `happy-path`, `search-sort-*`, `pass5-*` → Cross-cutting
+If a journey is not in the map (Unmapped) AND its `Entry:` URL is unavailable:
+
+1. Take the spec filename minus `.spec.ts`.
+2. The first hyphen-separated token (e.g., `<token>` from `<token>-<rest>.spec.ts`) is the candidate section label.
+3. Files without a hyphen (`happy-path.spec.ts` after the hyphen-aware split, OR truly unhyphenated files), files starting with `sj-`, and any cross-section regression batches go into a final **Cross-cutting** section.
+
+The fallback is heuristic; the journey-map-driven path is authoritative when available. The skill never bakes in named sections — every label originates either from the data or from a `Section:` field the user wrote.
