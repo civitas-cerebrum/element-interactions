@@ -134,6 +134,7 @@ const HOOK_MANIFEST = [
   { file: 'commit-message-gate.sh',               event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'commit-attribution-gate.sh',           event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'version-bump-against-npm-guard.sh',    event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
+  { file: 'version-bump-authorisation-guard.sh',  event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'commit-author-signature-guard.sh',     event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'suite-gate-ratchet.sh',                event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'journey-map-sentinel-guard.sh',        event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
