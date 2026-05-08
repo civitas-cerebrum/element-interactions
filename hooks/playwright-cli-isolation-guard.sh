@@ -13,7 +13,11 @@
 # subcommands like close-all / kill-all / list / install-browser /
 # --version / --help). The slug must:
 #   1. Begin with a recognized role prefix (composer-, reviewer-, probe-,
-#      process-validator-, phase1-, phase2-, stage2-, cleanup-, companion-, fd-).
+#      process-validator-, phase1-, phase2-, phase4-, stage2-, cleanup-,
+#      companion-, fd-).
+#      phase4-c<N>-s-<section-id> covers journey-mapping iterative-cycle
+#      section agents (added in 0.3.6 dogfood; cycle protocol per
+#      skills/journey-mapping/SKILL.md §"Iterative discovery cycles").
 #   2. Not match a collision-prone reserved word (default, test, session, …).
 #   3. Be 6–28 characters (the macOS UNIX-socket-path cap leaves ~28 chars
 #      of slug headroom under $TMPDIR/pw-XXXXXXXX/cli/<16-hash>-<slug>.sock).
@@ -112,7 +116,7 @@ fi
 # composer-j-<slug>, reviewer-j-<slug>, probe-j-<slug> are the role-explicit
 # forms. Companion-mode and failure-diagnosis prefixes (`companion-`, `fd-`)
 # are also accepted — they're documented in playwright-cli-protocol.md §3.1.
-SLUG_PREFIX_REGEX='^(phase1|phase2|stage2|composer|reviewer|probe|cleanup|companion|fd)-[a-z0-9][a-z0-9-]*'
+SLUG_PREFIX_REGEX='^(phase1|phase2|phase4|stage2|composer|reviewer|probe|cleanup|companion|fd)-[a-z0-9][a-z0-9-]*'
 
 emit_deny() {
   "$JQ" -n --arg r "$1" '{
@@ -183,7 +187,7 @@ Fix: prefix the slug with this subagent's role so .playwright-cli/<slug>* files 
   -s=phase1-<entry>                          Phase-1 discovery
   -s=stage2-<scenario>                       element inspection
 
-Allowed prefixes: composer- | reviewer- | probe- | phase1- | phase2- | stage2- | cleanup- | companion- | fd-
+Allowed prefixes: composer- | reviewer- | probe- | phase1- | phase2- | phase4- | stage2- | cleanup- | companion- | fd-
 
 Bare \`j-\` and \`sj-\` slug prefixes were dropped per issue #126 — they're role-ambiguous. Use \`composer-j-<slug>\`, \`reviewer-j-<slug>\`, or \`probe-j-<slug>\` based on the dispatching subagent's role.
 

@@ -136,7 +136,7 @@ fi
 # We allow those by checking for any role prefix and skipping the registry
 # check when the role isn't composer/probe (those subagents aren't
 # orchestrator-direct; the dispatch path itself authorised them).
-ROLE=$(echo "$SLUG" | grep -oE '^(composer|reviewer|probe|phase1|phase2|stage2|cleanup|companion|fd)' || echo "")
+ROLE=$(echo "$SLUG" | grep -oE '^(composer|reviewer|probe|phase1|phase2|phase4|stage2|cleanup|companion|fd)' || echo "")
 
 if [ -z "$ROLE" ]; then
   # Slug has no recognised role prefix — playwright-cli-isolation-guard
@@ -144,13 +144,13 @@ if [ -z "$ROLE" ]; then
   exit 0
 fi
 
-# Reviewer / phase1 / phase2 / stage2 / cleanup / companion / fd are not
-# tracked in the registry (the registry only carries composer + probe per
-# dispatch-guard scope). Those subagents are dispatched through the
-# Agent-tool path, which the dispatch-guard already validates. Allow CLI
-# use under those role prefixes.
+# Reviewer / phase1 / phase2 / phase4 / stage2 / cleanup / companion / fd
+# are not tracked in the in-flight registry (the registry only carries
+# composer + probe per dispatch-guard scope). Those subagents are
+# dispatched through the Agent-tool path, which the dispatch-guard already
+# validates. Allow CLI use under those role prefixes.
 case "$ROLE" in
-  reviewer|phase1|phase2|stage2|cleanup|companion|fd) exit 0 ;;
+  reviewer|phase1|phase2|phase4|stage2|cleanup|companion|fd) exit 0 ;;
 esac
 
 # composer- or probe-: must map to an in-flight slug in the registry.

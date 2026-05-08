@@ -152,6 +152,7 @@ const HOOK_MANIFEST = [
   { file: 'skill-subagent-only-guard.sh',         event: 'PreToolUse', matcher: 'Skill',       timeout: 10 },
   { file: 'happy-path-discovery-draft-required.sh', event: 'PreToolUse', matcher: 'Agent',     timeout: 10 },
   { file: 'journey-mapping-cycle-gate.sh',        event: 'PreToolUse', matcher: 'Agent',       timeout: 10 },
+  { file: 'phase4-concurrency-log-format.sh',     event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
 
   // PostToolUse — observers (record + warn)
   { file: 'suite-gate-ratchet.sh',                event: 'PostToolUse', matcher: 'Bash',       timeout: 10 },
