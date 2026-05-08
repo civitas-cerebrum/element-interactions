@@ -823,10 +823,10 @@ export class Steps {
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param scroll - Whether to scroll each image into view before checking. Defaults to `true`.
-     * @param imageOptions - `verifyDecoded`: run `Image.decode()` per image (default: false).
      * @param options - Optional step options for element resolution.
+     * @param imageOptions - `verifyDecoded`: run `Image.decode()` per image (default: false).
      */
-    async verifyImages(elementName: string, pageName: string, scroll: boolean = true, imageOptions?: { verifyDecoded?: boolean }, options?: StepOptions): Promise<void> {
+    async verifyImages(elementName: string, pageName: string, scroll: boolean = true, options?: StepOptions, imageOptions?: { verifyDecoded?: boolean }): Promise<void> {
         log.verify('Verifying images for "%s" in "%s" (scroll: %s)', elementName, pageName, scroll);
         await this.actionWithStrategy(elementName, pageName, options).verifyImages(scroll, imageOptions);
     }

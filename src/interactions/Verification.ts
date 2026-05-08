@@ -535,7 +535,7 @@ export class Verifications {
         const productImages = await imagesLocator.all();
 
         if (productImages.length === 0) {
-            throw new Error(`No images found for '${imagesLocator}'.`);
+            throw new Error(`No images found for '${imagesLocator.toString()}'.`);
         }
 
         for (let i = 0; i < productImages.length; i++) {
@@ -559,7 +559,7 @@ export class Verifications {
                         return false;
                     }
                 });
-                expect(isDecoded, `Image ${i + 1} failed to decode for ${imagesLocator}`).toBe(true);
+                expect(isDecoded, `Image ${i + 1} failed to decode for ${imagesLocator.toString()}`).toBe(true);
             }
         }
     }
