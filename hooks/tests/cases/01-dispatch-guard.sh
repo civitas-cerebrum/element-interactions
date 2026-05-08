@@ -35,6 +35,11 @@ assert_deny "$H" "$(payload tool_name=Agent description='probe-j-x: pass 4' prom
 assert_warn "$H" "$(payload tool_name=Agent description='cleanup-ledger:' prompt='after depth mode pass 5, dedup the ledger')" "cleanup + leak → soft WARN" "orchestrator meta-content"
 assert_warn "$H" "$(payload tool_name=Agent description='phase1-root:' prompt='during depth mode pass 1 discovery')" "phase1 + leak → soft WARN"
 
+section "dispatch-guard: batch-reviewer carve-out (issue #164.2)"
+assert_allow "$H" "$(payload tool_name=Agent description='reviewer-batch-pass-1: cycle 1' prompt='review all in-flight journeys for compositional pass 1 cycle 1')" "reviewer-batch-pass-1 + compositional pass scope → ALLOW (carve-out)"
+assert_allow "$H" "$(payload tool_name=Agent description='reviewer-batch-pass-2: cycle 1' prompt='pass 2 batch review across all in-flight journeys')" "reviewer-batch-pass-2 + pass 2 scope → ALLOW (carve-out)"
+assert_allow "$H" "$(payload tool_name=Agent description='reviewer-batch-pass-3: cycle 1' prompt='compositional pass 3 — review all spill files')" "reviewer-batch-pass-3 + compositional scope → ALLOW (carve-out)"
+
 section "dispatch-guard: anti-pattern D (batched dispatch via prompt body)"
 assert_deny "$H" "$(payload tool_name=Agent description='do everything' prompt='coverage-expansion: cover j-a and j-b and j-c and j-d')" "non-prefixed + 4 distinct j- in coverage-expansion prompt → DENY" "Subagent dispatch missing role-prefixed description"
 
