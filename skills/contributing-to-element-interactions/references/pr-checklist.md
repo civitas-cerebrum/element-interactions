@@ -14,7 +14,7 @@ Before opening a PR on element-interactions:
 - [ ] Tests pass: `npm run test` shows all tests passing
 - [ ] Coverage 100%: `npx test-coverage --format=github-plain` shows ✅
 - [ ] No raw Playwright leak: `grep -rn "locator\.\(click\|fill\|...\)" src/ --include="*.ts"` returns zero matches in non-`Element`-impl code
-- [ ] Version bumped exactly once, to `(npm-latest + 1 patch)` — verified against `npm view @civitas-cerebrum/element-interactions version` (Rule 15 — collision-safe across parallel PRs)
+- [ ] **No version bump in this PR** (Rule 15 — versioning is release-time, not per-PR). If the user has explicitly authorised a bump, the bash invocation is prefixed with `VERSION_BUMP_AUTHORISED=1` and `hooks/version-bump-authorisation-guard.sh` allows it; otherwise the hook denies the command.
 - [ ] API reference updated (`skills/element-interactions/references/api-reference.md`) — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] README updated under `🛠️ API Reference: Steps` — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] If adding a new method, it has a JSDoc block on the public-facing class

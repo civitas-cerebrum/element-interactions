@@ -16,11 +16,11 @@ Entry shape (use this for new entries):
 
 ## (1) Modal opens but content hangs
 
-**Symptom.** The modal-trigger interaction succeeds — a `<div role="dialog">` (or equivalent modal container) is added to the DOM and the screenshot shows the modal frame on screen. But the modal's content area never resolves: it shows only a placeholder web component (e.g. `<apple-spinner>`, `<skeleton-loader>`), none of the expected `data-qa` keys inside the modal ever match, and the URL hash never advances to the documented post-open state. The test eventually fails on a wait-for-element-inside-modal step, not on the open step itself.
+**Symptom.** The modal-trigger interaction succeeds — a `<div role="dialog">` (or equivalent modal container) is added to the DOM and the screenshot shows the modal frame on screen. But the modal's content area never resolves: it shows only a placeholder/skeleton component (the spinner-sentinel element documented in `app-context.md` for the page in question), none of the expected `data-qa` keys inside the modal ever match, and the URL hash (or other documented post-open marker) never advances. The test eventually fails on a wait-for-element-inside-modal step, not on the open step itself.
 
 **Why LLMs struggle.** The screenshot shows the modal trigger looking normal and the modal frame visible — leading the LLM to assume the modal opened correctly and the test must be using the wrong selector inside. The reasoning chain "frame visible → opened → content must be there → selector wrong" is plausible and almost always wrong here. The actual root cause is the backend feed for the modal options failing or timing out, leaving the frame mounted but its content suspended on a spinner sentinel.
 
-**Disambiguating probe.** Capture `outerHTML` of the modal container (`role="dialog"` or the documented modal wrapper) and grep for the spinner-sentinel custom element documented in `app-context.md`. If the spinner sentinel is present and none of the documented inner `data-qa` keys are, the modal content is hanging. Cross-reference: a 5xx in the network capture for the modal-options endpoint, or a yellow "we're experiencing problems" banner above the modal trigger.
+**Disambiguating probe.** Capture `outerHTML` of the modal container (`role="dialog"` or the documented modal wrapper) and grep for the spinner-sentinel custom element documented in `app-context.md`. If the spinner sentinel is present and none of the documented inner `data-qa` keys are, the modal content is hanging. Cross-reference: a 5xx in the network capture for the modal-options endpoint, or any of the degradation-banner copy strings from `app-context.md`'s documented-banners list visible above the modal trigger.
 
 **Classification.** `app-bug`. Stage 4a heal: `(h) Documented-quirk match — no heal`. Report observed-vs-documented diff; do NOT modify the test.
 
@@ -28,17 +28,17 @@ Entry shape (use this for new entries):
 
 ---
 
-## (2) Single-method-restaurant false-positive
+## (2) Reduced-option-set false-positive (graceful-degradation masking)
 
-**Symptom.** The NL checkout page renders only one payment method (Credit Card), and a yellow "we're experiencing problems" banner is visible above the payment area. The test fails because it expected the full set of payment methods (iDEAL, Bancontact, Klarna, etc.) to be present and selectable.
+**Symptom.** A list-of-options widget (payment methods, shipping carriers, locale switcher, available add-ons — any documented multi-option list) renders a *strict subset* of the documented options. A degradation-banner element from `app-context.md`'s documented-banners list is visible nearby. The test fails because it expected the full set to be present / selectable.
 
-**Why LLMs struggle.** Two plausible-looking classifications converge on the wrong answer. Either (a) "the restaurant only offers Credit Card — this is a documented per-restaurant config, not a bug, so update the test's expectation" — which masks a real outage; or (b) "the test expects more methods than exist, so it's a stale assertion — re-baseline" — same masking. The LLM sees a small payment list + a banner that *looks* like a generic notification and concludes the app is in a degraded-but-correct state. The actual root cause is the modal-options fetch hanging (same backend failure shape as edge case #1), with the frontend gracefully degrading to a single fallback method rather than showing an empty list.
+**Why LLMs struggle.** Two plausible-looking classifications converge on the wrong answer. Either (a) "this configuration legitimately offers a smaller set — update the test's expectation" (treats the reduced set as documented per-configuration variance); or (b) "the test expects more options than exist, so it's a stale assertion — re-baseline" (treats it as drift). Both mask a real outage. The reasoning chain "smaller list + something that *looks* like a generic notification → app is in a documented degraded-but-correct state" is plausible and almost always wrong here. The actual root cause is the same upstream-fetch failure shape as entry #1, with the frontend gracefully degrading to a fallback subset rather than showing an empty list.
 
-**Disambiguating probe.** Read the inner `[data-qa="payment-method-interactive"]` (or the documented per-method element) in the live DOM. Click it and observe whether a `<div role="dialog">` is appended within the documented timeout. If the click does not produce the modal — or produces it with the spinner-sentinel symptom from entry #1 — this is the same backend-hanging failure, surfaced through the payment-list fallback. Cross-reference the banner copy against `app-context.md`'s list of documented degradation banners.
+**Disambiguating probe.** Pick any of the rendered options and trigger its documented downstream interaction (the click that opens its detail modal, the selection that drives a follow-on fetch, etc.). Observe whether the downstream interaction produces the documented next-state container within the documented timeout. If the downstream interaction does not produce its next-state — or produces it with the spinner-sentinel symptom from entry #1 — this is the same upstream-fetch hang, surfaced through the option-list fallback. Cross-reference the banner copy against `app-context.md`'s list of documented degradation banners; if it matches one of those copy strings, the degradation is the surface, not the root.
 
-**Classification.** `app-bug`. Stage 4a heal: `(h) Documented-quirk match — no heal`. Do NOT update the test's expected-methods list; do NOT re-baseline.
+**Classification.** `app-bug`. Stage 4a heal: `(h) Documented-quirk match — no heal`. Do NOT update the test's expected-options list; do NOT re-baseline.
 
-**Cross-link.** Stage 4 row "Modal opens but content hangs" (same backend root cause, different surface); Stage 4a row `(h)`. Originally observed in failure-diagnosis issue #156.
+**Cross-link.** Entry #1 "Modal opens but content hangs" (same upstream-fetch root cause, different surface); Stage 4a row `(h)`.
 
 ---
 
