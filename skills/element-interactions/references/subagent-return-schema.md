@@ -63,9 +63,9 @@ A compositional or adversarial pass subagent may end a journey without producing
 
 ### 2.0 Handover envelope (mandatory)
 
-Every composer / reviewer / probe / process-validator / phase-validator subagent return MUST be prefaced with a `handover:` envelope. The envelope is the contract that pairs a return with its in-flight registration entry (`tests/e2e/docs/.in-flight-composers.json`, written by `hooks/coverage-expansion-dispatch-guard.sh`) and tells the harness whether to deregister the slot or hold it for a redispatch.
+Every composer / reviewer / probe / process-validator / phase-validator subagent return MUST be prefaced with a `handover:` envelope. The envelope is the contract that pairs a return with its in-flight registration entry (written by the harness dispatch-guard) and tells the harness whether to deregister the slot or hold it for a redispatch. (Hook index: [harness-hooks.md](harness-hooks.md).)
 
-The envelope sits at the top of the return body, separate from the role-specific schema below it (§2.1 / §2.4 / §2.5 etc.). A return that omits the envelope still gets schema-checked for the role-specific shape, but the dispatch's in-flight slot remains held by the registry until TTL (30 min) — explicit deregistration is the primary cleanup path; TTL is the failsafe for crashed or abandoned dispatches.
+The envelope sits at the top of the return body, separate from the role-specific schema below it (§2.1 / §2.4 / §2.5 etc.). A return that omits the envelope still gets schema-checked for the role-specific shape, but the dispatch's in-flight slot remains held by the registry until TTL — explicit deregistration is the primary cleanup path; TTL is the failsafe for crashed or abandoned dispatches.
 
 #### Schema
 
@@ -363,7 +363,7 @@ The minimal grep-based conformance check (per §4.1's pattern, applied to phase-
 - `^summary:\s*` non-empty
 - No banned tokens
 
-The harness validator hook (`hooks/subagent-return-schema-guard.sh`) routes `phase-validator-` returns through this conformance check, same as it routes `composer-` / `reviewer-` / `probe-` / `process-validator-` returns.
+The harness return-schema guard routes `phase-validator-` returns through this conformance check, same as it routes `composer-` / `reviewer-` / `probe-` / `process-validator-` returns. (Hook index: [harness-hooks.md](harness-hooks.md).)
 
 ### 2.6 Spillover contract (hard enforcement, all five subagent roles)
 
@@ -604,11 +604,10 @@ For these statuses, the SubagentStop hook silent-allows; no spill file expected.
 
 Two hooks share the work, each at the right boundary:
 
-1. **`hooks/subagent-spillover-rewrite-gate.sh`** — `SubagentStop` matcher. The **enforcer**. Reads `last_assistant_message` from input, parses the §2.0 handover envelope, dispatches to per-role validation by `role + status`. For each spillover-triggering case, validates the body shape against §2.6 (spill file present at canonical path + body has no inline forbidden shape). On non-compliance: exit 2 with role-specific stderr feedback that names the exact spill-file path and the index-only body shape. The subagent's stop is blocked, stderr injects as next-turn input, subagent rewrites in-session. Per-`agent_id` rewrite counter at `/tmp/sst-rewrite-counter-<agent_id>`; cap at 3 → exit 0 with `[CAP-REACHED]` WARN. Compliant returns clear the counter.
+1. **Spillover rewrite-gate** (`SubagentStop`) — the **enforcer**. Validates body shape against §2.6 for each spillover-triggering role + status; non-compliant returns are blocked at stop with role-specific feedback that names the exact spill-file path and index-only body shape, and the subagent rewrites in-session. A retry cap auto-releases after a small number of attempts.
+2. **Return-schema guard** (`PostToolUse:Agent`) — the **audit trail**. WARNs about absent spill files when the enforcer is mis-installed / mis-configured / cap-released. Catches the leak post-hoc.
 
-2. **`hooks/subagent-return-schema-guard.sh`** — `PostToolUse:Agent` matcher. The **audit trail**. WARNs about absent spill file when status triggers spillover. With the SubagentStop enforcer in place, this WARN is rare (the enforcer ensures compliance before PostToolUse fires). It exists as defense-in-depth: if the SubagentStop hook is mis-installed, mis-configured, or hits the cap, the PostToolUse audit catches the leak post-hoc.
-
-Both hooks share the same role-routing logic. The SubagentStop enforcer is the primary mechanism; the PostToolUse WARN is a backstop.
+See [harness-hooks.md](harness-hooks.md) for the index entries; the hook source files are the canonical reference for cap counts, counter paths, and exit-code semantics.
 
 #### Caller contract addition (per role)
 
@@ -769,27 +768,13 @@ If any of the above is missing or a banned token is present, the caller re-dispa
 
 ### 4.2 Harness validator (PostToolUse:Agent)
 
-The same grep-based shape signals are enforced at the harness layer by `hooks/subagent-return-schema-guard.sh` (auto-installed via `scripts/postinstall.js`). The hook:
-
-- Routes by Agent description prefix (`composer-` / `reviewer-` / `probe-` / `process-validator-` / `phase-validator-`); other prefixes (`phase1-`, `stage2-`, `cleanup-`) skip validation.
-- Greps the subagent's return for the §4.1 markers above plus the per-status evidence (`tests-added` + `run-time` for `new-tests-landed`, mapping table for `covered-exhaustively`, `reason` for `blocked` / `skipped`, `exit-criteria-checked` array + `findings: []` on greenlight for `phase-validator`, etc.).
-- Emits a non-blocking `systemMessage` listing missing markers and any banned tokens detected. The orchestrator sees the warning and re-dispatches.
-
-The hook is a backstop, not a replacement: callers still run the orchestrator-side grep per §4.1. The harness layer catches malformed returns the orchestrator missed; the orchestrator-side check catches violations that depend on caller-specific context the hook can't see (e.g., whether a `Test expectations:` row is missing from the mapping table). Initial release is warn-only — a follow-up promotes to block-mode after a representative run produces a ≤2% false-positive rate.
+The same grep-based shape signals are enforced at the harness layer by a `PostToolUse:Agent` return-schema guard. The hook is a backstop, not a replacement: callers still run the orchestrator-side grep per §4.1. The harness layer catches malformed returns the orchestrator missed; the orchestrator-side check catches violations that depend on caller-specific context the hook can't see (e.g., whether a `Test expectations:` row is missing from the mapping table). See [harness-hooks.md](harness-hooks.md).
 
 ### 4.3 Harness validator — handover-envelope leash + deregistration
 
-The same `hooks/subagent-return-schema-guard.sh` hook also enforces the §2.0 handover envelope and drives the registry leash. Behavior on a `composer-` / `reviewer-` / `probe-` / `process-validator-` / `phase-validator-` return:
+The same return-schema guard also enforces the §2.0 handover envelope and drives the registry leash. On every `composer-` / `reviewer-` / `probe-` / `process-validator-` / `phase-validator-` return it parses the envelope, looks up the in-flight registry entry by slug, cycle-matches, and removes the slug on a terminal status (or leaves it in place for a non-terminal redispatch). Missing envelope or cycle-mismatch emits a fix-message WARN; the registry slot stays held until the TTL failsafe expires. **Deregistration itself fires regardless of validation mode** — the registry update is mechanical bookkeeping, not validation, so the leash works correctly even when envelope-validation is in WARN mode.
 
-1. **Envelope parse.** Greps the return for the four envelope fields (`role:`, `cycle:`, `status:`, `next-action:`). Missing or malformed envelope emits a WARN; does not block. Deregistration cannot proceed without a parseable envelope, so the registry slot remains held until TTL expiry — the WARN tells the orchestrator to revise the brief so future returns include the envelope.
-2. **Registry lookup.** Reads `tests/e2e/docs/.in-flight-composers.json` for an entry under the slug derived from `handover.role` (the `j-<slug>` / `sj-<slug>` portion). Slug not present → fall through to role-specific schema check; the registry can't deregister what isn't there.
-3. **Cycle-match check.** Compares `handover.cycle` against the registered `cycle`. Mismatch → emits a fix-message WARN asking the orchestrator to redispatch under the correct cycle; does NOT deregister.
-4. **Status routing.** On a terminal status (per §2.0 table), removes the slug from `.in-flight-composers.json`. On a non-terminal status, leaves the slug in place so the redispatch refreshes it.
-5. **Role-specific schema check.** Independently of envelope handling, the hook still runs the §4.1 / §4.2 grep checks against the role-specific schema and emits any missing-marker / banned-token WARNs.
-
-Envelope-validation mode is WARN initially; a follow-up promotes to BLOCK after a representative run shows zero false positives. **Deregistration itself fires in both WARN and BLOCK mode** — the registry update is mechanical bookkeeping, not validation, so the leash works correctly even before BLOCK promotion.
-
-The TTL (30 min) on registry entries remains as a failsafe for crashed / abandoned dispatches that never return an envelope. Explicit deregistration via terminal-status handover is the primary cleanup path; TTL is the secondary one.
+Explicit deregistration via terminal-status handover is the primary cleanup path; the registry TTL is the secondary one for crashed / abandoned dispatches that never return an envelope. (Hook index: [harness-hooks.md](harness-hooks.md).)
 
 ---
 

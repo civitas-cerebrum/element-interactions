@@ -177,7 +177,7 @@ findings:
 
 The spill file starts with the sentinel `<!-- subagent-returns:phase-validator:<phase>:cycle-<C> -->`. The exit-criteria audit (every criterion, satisfied + unsatisfied, with evidence pointers) AND the per-finding blocks (with criterion / issue / fix sub-bullets) live in the spill body.
 
-The `SubagentStop` rewrite-gate (`hooks/subagent-spillover-rewrite-gate.sh`) enforces the contract — non-compliant returns are blocked at stop, stderr feedback names the missing path / wrong shape, and the validator rewrites in-session. The orchestrator's tool result is the FINAL compliant return; the verbose audit + finding blocks never reach the parent's transcript. `greenlight` returns are exempt (already index-only with `findings: []` literal).
+A `SubagentStop` rewrite-gate enforces the contract — non-compliant returns are blocked at stop and the validator rewrites in-session, so the verbose audit + finding blocks never reach the parent's transcript. `greenlight` returns are exempt (already index-only). See [harness-hooks.md](../../element-interactions/references/harness-hooks.md).
 
 ### Banned tokens
 
@@ -234,38 +234,7 @@ If the run pauses between cycles (e.g., context-budget auto-compaction), the led
 
 ## 6. Mechanical enforcement
 
-Two harness hooks enforce the validator dispatch + ledger contract:
-
-### 6.1 `hooks/subagent-return-schema-guard.sh` — return-shape conformance
-
-PostToolUse:Agent. Routes `phase-validator-<N>:` returns through §2.5 of `subagent-return-schema.md` (status enum, phase 1–7, exit-criteria-checked array, summary required on both statuses, `findings: []` on greenlight, ≥1 `pv-<phase>-<nn>` must-fix on improvements-needed, banned tokens). Emits a non-blocking `systemMessage` listing missing markers when the validator's return is malformed. Shipped in PR A (v0.3.6).
-
-### 6.2 `hooks/phase-validator-dispatch-required.sh` — dispatch-required gate + auto-ledger
-
-Two-event hook. Shipped in PR B (v0.3.7).
-
-**PreToolUse:Agent (gate advance)**
-
-When the orchestrator about to dispatch a Phase N+1 subagent (today: composer-/reviewer-/probe-/cleanup-/process-validator- prefixes = entering Phase 5), the hook reads `tests/e2e/docs/onboarding-phase-ledger.json` and checks Phase N's status:
-
-| Ledger state for Phase N | Hook decision |
-|---|---|
-| `greenlight` | ALLOW — advance is authorised |
-| `in-progress` (cycle 1-9, last validator returned improvements-needed) | DENY — re-dispatch phase-validator-N first; the deny message includes the next cycle number |
-| `blocked-phase-validator-stalled` (cycle 10 cap reached) | DENY — terminal state; surface to user with unresolved findings |
-| Missing entry / ledger absent | DENY — no validator has been dispatched yet |
-
-`phase-validator-<N>:` dispatches are always allowed regardless of ledger state — gating the gate would deadlock the pipeline.
-
-**PostToolUse:Agent (record ledger)**
-
-When a `phase-validator-<N>:` Agent returns:
-
-- `status: greenlight` → write Phase N entry: `{ status: "greenlight", validator: "phase-validator-N", cycle: <N>, at: "<ISO>", evidence: [...] }`. Cycle counter resets on next phase.
-- `status: improvements-needed` AND cycle < 10 → write `{ status: "in-progress", cycle: <bumped>, at: "<ISO>" }`.
-- `status: improvements-needed` AND cycle == 10 → write `{ status: "blocked-phase-validator-stalled", cycle: 10, at: "<ISO>", "unresolved-findings": [<pv-IDs>] }`.
-
-The hook is the source of truth for the ledger. Onboarding MUST NOT hand-write entries — they only become valid via the harness layer.
+Two harness hooks back the validator dispatch + ledger contract: a `PostToolUse:Agent` schema-conformance check on `phase-validator-<N>:` returns, and a two-event dispatch-required gate that denies Phase N+1 advances without a Phase N greenlight in the ledger. The dispatch-required gate is also the sole writer of the ledger — Onboarding MUST NOT hand-write entries; they only become valid via the harness layer. See [harness-hooks.md](../../element-interactions/references/harness-hooks.md) for the index entries; the hook source files are the canonical reference for ledger-state decision rules and cycle-counter semantics.
 
 ### 6.3 Ledger state-file shape
 
