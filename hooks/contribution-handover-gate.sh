@@ -188,15 +188,11 @@ HANDOVER="$REPO_ROOT/.contribution-handover.json"
 if [ ! -f "$HANDOVER" ]; then
   msg=$(build_message \
 "Contribution handover missing — cannot push or open a PR without it." \
-"  Option A — first PR on this branch
-    cp .contribution-handover.template.json .contribution-handover.json
-    # fill every field with true / false / \"n/a\"; pair every false / \"n/a\"
-    # with a >= 20-char <field>Reason in the same section
-    git add .contribution-handover.json && git commit -m \"chore: contribution handover\"
-
-  Option B — handover already on another branch
-    git checkout <other-branch> -- .contribution-handover.json
-    # then re-edit for this PR's claims and recommit" \
+"  cp .contribution-handover.template.json .contribution-handover.json
+  # fill every field with true / false / \"n/a\"; pair every false / \"n/a\"
+  # with a >= 20-char <field>Reason in the same section
+  # the file is gitignored — DO NOT commit it (carrying a stale handover
+  # across branches is the failure mode this gate exists to catch)" \
 "File: $HANDOVER (does not exist)
 The handover is the structured sign-off that maps 1:1 to the hard-rule and
 design-rule index in the contributing skill. Without it the gate suite has

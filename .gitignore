@@ -28,6 +28,13 @@ tests/e2e/docs/.adversarial-findings.lock
 tests/e2e/docs/.subagent-returns/
 tests/e2e/docs/.handover-payloads/
 
+# Per-PR contribution handover — local working artefact, validated by
+# hooks/contribution-handover-gate.sh on push. Never committed; carrying
+# the previous PR's handover into a new branch is the failure mode the
+# gate exists to catch. The schema/template at
+# .contribution-handover.template.json stays tracked.
+/.contribution-handover.json
+
 api-coverage-report.txt
 
 .env
