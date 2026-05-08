@@ -33,6 +33,9 @@
 # - Missing required fields (status, currentPass, etc.)    → DENY
 # - dispatches[] entry missing dual-stage fields           → DENY
 # - currentPass >= 1 with zero dispatches recorded         → DENY (pre-emptive-stop pattern)
+# - adversarialSkippedJourneys not an array                → DENY
+# - adversarialSkippedJourneys[] entry missing journey/rationale → DENY
+# - adversarialSkippedJourneys[] entry with missing or malformed criteria → DENY
 # - Anything else                                          → silent allow
 
 set -euo pipefail
@@ -143,10 +146,19 @@ Fix: must be an integer 0-5 (0 = before pass 1, 1-3 = compositional, 4-5 = adver
   # Reference: coverage-expansion/references/anti-rationalizations.md
   #   §"Pre-emptive scope reduction" + §"Honest pre-dispatch stop"
   if [ "$CP" -ge 1 ]; then
-    # Walk the JSON looking for any object that has a `journey` key — that's
-    # a per-dispatch entry. Works whether dispatches live at top-level or
-    # nested under `passes.<N>-compositional.dispatches`.
-    DISPATCH_COUNT=$(echo "$TARGET" | jq -r '[.. | objects | select(has("journey"))] | length' 2>/dev/null || echo 0)
+    # Walk the JSON looking for evidence of work: either a dispatch entry
+    # (has `journey` plus dual-stage fields stage_a_cycles or review_status)
+    # OR a gated-skip entry (has `journey` plus `gated_skip: true` plus
+    # `triggers_checked` — issue #164.1). Both shapes count as "work
+    # happened" for the pre-emptive-stop check; the orchestrator-side
+    # trigger evaluation is real work.
+    #
+    # `adversarialSkippedJourneys[]` entries (issue #164.4) also carry a
+    # `journey` key but have neither dual-stage fields nor `gated_skip:
+    # true`, so they are naturally excluded from this count — declaring a
+    # P3 adversarial opt-out is not, on its own, evidence of dispatched
+    # work.
+    DISPATCH_COUNT=$(echo "$TARGET" | jq -r '[.. | objects | select(has("journey") and ((has("stage_a_cycles") or has("review_status")) or (.gated_skip == true and has("triggers_checked"))))] | length' 2>/dev/null || echo 0)
     if [ "$DISPATCH_COUNT" -eq 0 ]; then
       emit_deny "[BLOCKED] State-file write claims currentPass=${CP} with zero dispatches recorded.
 
@@ -192,6 +204,138 @@ Estimated session length is not authorisation.
 References:
   coverage-expansion/SKILL.md §\"Two valid exits\"
   coverage-expansion/references/anti-rationalizations.md §\"Pre-emptive scope reduction\""
+      exit 0
+    fi
+  fi
+
+  # 6. gated-skip entry validation (issue #164.1 — trigger-gated re-pass).
+  # Every entry with `gated_skip: true` MUST also carry:
+  #   - triggers_checked: object with three boolean fields:
+  #       map_delta, sibling_ledger_update, must_fix_carry_over
+  #   - All three booleans MUST be false (any true means a trigger fired
+  #     and the orchestrator should have dispatched, not skipped).
+  # An invalid gated_skip is silent scope narrowing — the orchestrator
+  # claiming work is done without recording the evidence the triggers
+  # were checked.
+  INVALID_SKIP=$(echo "$TARGET" | jq -r '
+    [.. | objects
+      | select(.gated_skip == true)
+      | (.journey // "<missing>") as $j
+      | (.triggers_checked // {}) as $tc
+      | if ($tc | type) != "object"
+            or ($tc.map_delta | type) != "boolean"
+            or ($tc.sibling_ledger_update | type) != "boolean"
+            or ($tc.must_fix_carry_over | type) != "boolean"
+            or $tc.map_delta == true
+            or $tc.sibling_ledger_update == true
+            or $tc.must_fix_carry_over == true
+        then $j
+        else empty
+        end
+    ] | join(", ")
+  ' 2>/dev/null || echo "")
+  if [ -n "$INVALID_SKIP" ]; then
+    emit_deny "[BLOCKED] gated_skip entries malformed or missing trigger evidence.
+
+File: $FILE_PATH
+Offending journeys: ${INVALID_SKIP}
+
+Fix: every \`gated_skip: true\` entry MUST carry \`triggers_checked\` with all three booleans (map_delta, sibling_ledger_update, must_fix_carry_over), and ALL THREE MUST be \`false\`. A trigger evaluating to \`true\` means the orchestrator should have dispatched, not skipped. The shape:
+
+  {
+    \"journey\": \"j-<slug>\",
+    \"gated_skip\": true,
+    \"result\": \"covered-exhaustively\",
+    \"review_status\": \"greenlight\",
+    \"triggers_checked\": {
+      \"map_delta\": false,
+      \"sibling_ledger_update\": false,
+      \"must_fix_carry_over\": false
+    }
+  }
+
+Why: the gated-skip is a contract claim that the orchestrator checked all three triggers and found nothing. Without the field, the skip is silent scope narrowing dressed as efficiency. With any trigger == true, the skip is a contract violation — that journey needed re-pass work and the orchestrator skipped it.
+
+Reference: skills/coverage-expansion/SKILL.md §\"Trigger-gated re-pass for Passes 2 & 3\"
+           skills/coverage-expansion/references/state-file-schema.md §\"Gated-skip entries\""
+    exit 0
+  fi
+
+  # 7. adversarialSkippedJourneys[] shape validation (issue #164.4 — opt-in
+  # P3 adversarial-skip). The field is optional; when present it MUST be an
+  # array, and every entry MUST have a non-empty `journey` and a non-empty
+  # `rationale`. Missing rationale = silent scope narrowing in disguise.
+  HAS_SKIP_FIELD=$(echo "$TARGET" | jq -e 'has("adversarialSkippedJourneys")' >/dev/null 2>&1 && echo yes || echo no)
+  if [ "$HAS_SKIP_FIELD" = "yes" ]; then
+    SKIP_TYPE=$(echo "$TARGET" | jq -r '.adversarialSkippedJourneys | type' 2>/dev/null || echo "null")
+    if [ "$SKIP_TYPE" != "array" ]; then
+      emit_deny "[BLOCKED] adversarialSkippedJourneys must be an array.
+
+File: $FILE_PATH
+Got: ${SKIP_TYPE}
+
+Fix: shape per skills/coverage-expansion/references/state-file-schema.md §\"adversarialSkippedJourneys[] field\":
+
+  \"adversarialSkippedJourneys\": [
+    {
+      \"journey\": \"j-<slug>\",
+      \"rationale\": \"<non-empty explanation>\",
+      \"criteria\": [\"priority-p3\", \"page-subset-covered\", \"zero-prior-findings\", \"low-surface-shape\"]
+    }
+  ]"
+      exit 0
+    fi
+
+    # Each entry: journey + rationale required.
+    INVALID=$(echo "$TARGET" | jq -r '
+      [.adversarialSkippedJourneys[]
+        | select((.journey // "") == "" or (.rationale // "") == "")
+        | (.journey // "<missing>")
+      ] | join(", ")
+    ' 2>/dev/null || echo "")
+    if [ -n "$INVALID" ]; then
+      emit_deny "[BLOCKED] adversarialSkippedJourneys[] entries missing required fields.
+
+File: $FILE_PATH
+Offending entries (by journey or '<missing>'): ${INVALID}
+
+Fix: every entry MUST have a non-empty 'journey' and a non-empty 'rationale'. Vague rationales (\"low value\", \"P3 doesn't need it\") fail the contract; specific rationales naming the covered surface and the portal-wide entry that subsumes it pass. The opt-out is meaningful only if the project-time author explained WHY this journey is excluded — silent skip is what the field is here to prevent.
+
+See skills/coverage-expansion/SKILL.md §\"P3 small-surface journeys may opt OUT of adversarial passes\" for the four exclusion criteria the orchestrator must satisfy."
+      exit 0
+    fi
+
+    # Each entry's `criteria` array MUST contain ALL FOUR canonical strings
+    # (priority-p3, page-subset-covered, zero-prior-findings, low-surface-shape).
+    # Order doesn't matter; missing or extra strings → DENY. Per #164.4 the
+    # criteria array is mechanical evidence the orchestrator checked each rule;
+    # missing criteria = silent partial-evidence opt-out.
+    BAD_CRITERIA=$(echo "$TARGET" | jq -r '
+      def canonical: ["priority-p3","page-subset-covered","zero-prior-findings","low-surface-shape"];
+      [.adversarialSkippedJourneys[]
+        | select(
+            (.criteria // null) == null
+            or (.criteria | type) != "array"
+            or ((.criteria | sort) != (canonical | sort))
+          )
+        | (.journey // "<missing>")
+      ] | join(", ")
+    ' 2>/dev/null || echo "")
+    if [ -n "$BAD_CRITERIA" ]; then
+      emit_deny "[BLOCKED] adversarialSkippedJourneys[] entries with missing or malformed 'criteria' array.
+
+File: $FILE_PATH
+Offending entries (by journey or '<missing>'): ${BAD_CRITERIA}
+
+Fix: every entry's 'criteria' MUST be an array containing exactly the four canonical strings (order doesn't matter):
+  - priority-p3
+  - page-subset-covered
+  - zero-prior-findings
+  - low-surface-shape
+
+Missing criteria, extra non-canonical strings, an empty array, or an absent field all DENY — the array is the orchestrator's mechanical evidence that all four exclusion criteria hold. Silent partial evidence is silent scope narrowing; that is what this field is here to prevent.
+
+See skills/coverage-expansion/SKILL.md §\"P3 small-surface journeys may opt OUT of adversarial passes\"."
       exit 0
     fi
   fi

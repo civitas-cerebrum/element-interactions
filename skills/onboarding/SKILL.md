@@ -92,9 +92,9 @@ pre-discovery estimates; actuals land after Phase 1 and are reported via progres
     (every journey, every pass — no skips)
   • Phase 6 bug hunts: ~<M_low>–<M_high> dispatches
   • Parallel peak: <P> agents depending on credential availability
-  • Model: opus default for every Stage A and Stage B dispatch (cost-blind);
-    narrow cycle-1 Stage B sonnet-confirmation exception may apply to ~<sonnet-count>
-    previously-greenlit journeys (per the skill's Model selection §)
+  • Model: per `coverage-expansion/SKILL.md` §"Hybrid model selection" (Pass 1,
+    Pass 4, and Pass 5 on Opus end-to-end, Pass 2/3 re-pass composers on Sonnet,
+    all Stage B review and synthesis on Opus)
   • Expected wall-clock: ~<H1>–<H2> h active
 
 The scope preview is informational only. The skill's contract is full coverage; the
@@ -221,6 +221,8 @@ Examples:
 
 The seven-phase pipeline (Phase 1 Scaffold → Phase 2 Groundwork discovery → Phase 3 Happy path → Phase 4 Full journey mapping → Phase 5 Coverage expansion → Phase 6 Bug hunts → Phase 7 Final summary) is specified in [`references/phases-walkthrough.md`](references/phases-walkthrough.md). Read it before authoring or modifying any phase logic.
 
+**Onboarding is a parent-only orchestrator.** Dispatching the onboarding skill as a subagent (e.g. `Agent(prompt: "You are the onboarding orchestrator running the seven-phase pipeline …")`) hits the recursive-dispatch wall — subagents cannot fan out their own children, so the dispatched orchestrator returns `blocked-dispatch-failure: structural` after burning a full subagent budget. The parent must read this skill INTO its own context and dispatch the per-phase leaf subagents directly. **Harness-enforced by `hooks/parent-only-orchestrator-dispatch-block.sh`** (PreToolUse:Agent — denies dispatches whose prompt asks the subagent to act as the onboarding orchestrator, regardless of whether the literal "skill"/"SKILL.md" word appears).
+
 ### Hard rules — kernel-resident
 
 #### One rule, applied to every phase
@@ -251,6 +253,8 @@ Refusing to start a phase is not an exit — it's a contract violation, distinct
 
 - **Phase 5 must DISPATCH at least one composer wave** before exit #2 is invocable. Phase 3 (happy-path scaffolded test) is NOT a Phase 5 dispatch — different phases, different subagents, different work. Harness-enforced by `coverage-state-schema-guard.sh`.
 - The same principle generalises to every phase: an empty progress log + state file claiming "exit #2" is refusing to start, not exit #2.
+
+**Stop-event harness backstop**: `hooks/onboarding-pipeline-incomplete-stop-deny.sh` (Stop) reads the phase ledger and the coverage-expansion state file on every Stop the orchestrator emits. It blocks the stop with `decision: block` when mid-pipeline signals are present (sentinel-bearing journey-map, coverage-expansion state file with `.status != "complete"`, ledger phase 7 not greenlit) and no authorisation sentinel exists. The deny message tailors the redirect to the specific Phase-5 sub-case (zero dispatches → "dispatch the first wave"; in-flight dispatches present + no auto-compact → "auto-compact, don't stop"). User-authorised early stops are signalled by `touch .claude/onboarding-stop-authorized` (or `tests/e2e/docs/.onboarding-stop-authorized`) — the hook honours either path. The hook also honours the harness-supplied `stop_hook_active: true` payload field (silent allow when the agent is already running because of a prior Stop block, to avoid unrecoverable loops). A consecutive-block cap (3 attempts per session) provides a second escape from runaway deny loops. Escape hatch: `ONBOARDING_STOP_DENY=off` set in the parent process that launched Claude Code.
 
 #### Phase-validator checkpoint — every phase ends with a dispatch
 
