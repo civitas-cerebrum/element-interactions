@@ -34,6 +34,31 @@
 
 set -euo pipefail
 
+# Skip close-all when a parallel-dispatch protocol is in flight. The phase4
+# iterative-cycle protocol dispatches up to 7+ cycle agents in parallel;
+# each owns its own playwright-cli session. close-all on any one agent's
+# SubagentStop would wipe ALL siblings' sessions, mid-flow.
+#
+# Detection: presence of tests/e2e/docs/.phase4-cycle-state.json (the cycle
+# state file is created on first cycle agent return and persists until the
+# author commits and the run completes). When present, skip close-all and
+# rely on agents closing their own sessions.
+#
+# This deferral creates a small risk of orphaned sessions surviving past
+# phase4 completion; the parent or the next phase's invocation can call
+# close-all itself if it needs a clean slate.
+
+INPUT=$(cat 2>/dev/null || echo "{}")
+CWD=$(echo "$INPUT" | (command -v jq >/dev/null 2>&1 && jq -r '.cwd // ""' 2>/dev/null) || echo "")
+[ -z "$CWD" ] && CWD="$PWD"
+REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || echo "$CWD")
+
+if [ -f "$REPO_ROOT/tests/e2e/docs/.phase4-cycle-state.json" ]; then
+  # Phase4 cycle protocol in flight — skip close-all to preserve sibling
+  # CLI sessions.
+  exit 0
+fi
+
 if command -v npx >/dev/null 2>&1; then
   npx playwright-cli close-all >/dev/null 2>&1 || true
 fi

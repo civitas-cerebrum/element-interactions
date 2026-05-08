@@ -77,6 +77,46 @@ fi
 
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
+
+# === Bash branch — close the >> / > redirect bypass ========================
+if [ "$TOOL_NAME" = "Bash" ]; then
+  CMD=$(echo "$INPUT" | "$JQ" -r '.tool_input.command // ""')
+  CWD_BASH=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")
+  REPO_ROOT_BASH=$(git -C "$CWD_BASH" rev-parse --show-toplevel 2>/dev/null || echo "$CWD_BASH")
+  STATE_BASH="$REPO_ROOT_BASH/tests/e2e/docs/.phase4-cycle-state.json"
+
+  # Only enforce when phase4 is in flight.
+  [ ! -f "$STATE_BASH" ] && exit 0
+
+  # Detect redirects to the canonical OR known non-canonical concurrency-log
+  # paths. Patterns covered:
+  #   ... > tests/e2e/docs/.phase4-concurrency-log.jsonl
+  #   ... >> tests/e2e/docs/.phase4-concurrency-log.jsonl
+  #   ... > tests/e2e/docs/.concurrency-log/<file>
+  #   ... > absolute/path/.phase4-concurrency-log.jsonl
+  # AND tee / cat-redirect equivalents.
+  #
+  # Exclusion: stderr-only redirects (`2>` / `2>&1`) don't count.
+  # Match stdout redirects only (not stderr `2>`, `&>`, etc.). The pattern
+  # requires the `>` to be preceded by start-of-string OR a non-digit/non-`&`
+  # character — that excludes `2>`, `1>`, `&>`, `2>&1`.
+  if echo "$CMD" | grep -qE '(^|[^0-9&])>>?[[:space:]]*[^[:space:]&]*\.phase4-concurrency-log\.jsonl' \
+     || echo "$CMD" | grep -qE '(^|[^0-9&])>>?[[:space:]]*[^[:space:]&]*\.concurrency-log/' \
+     || echo "$CMD" | grep -qE 'tee[[:space:]]+(-a[[:space:]]+)?[^[:space:]]*\.(phase4-)?concurrency-log'; then
+    "$JQ" -n --arg cmd "$CMD" --arg canonical "tests/e2e/docs/.phase4-concurrency-log.jsonl" '{
+      "hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": ("[BLOCKED] Bash redirect to the concurrency log bypasses the format guard.\n\n──────────────────────────────────────────────────────────────────\nDo this instead:\n──────────────────────────────────────────────────────────────────\nUse the Write tool to append to " + $canonical + ". The Write|Edit guard validates each line against the strict JSONL schema (timestamp, from, conflict-type ∈ enum, resource, action-taken ∈ enum). Bash >> appends slip past the validator.\n\nIf you genuinely need to script the append, the cleanest path is:\n\n  1. Read the current file content\n  2. Append your validated entry as a new line\n  3. Write the full content back via Write\n\n──────────────────────────────────────────────────────────────────\nWhat was wrong:\n──────────────────────────────────────────────────────────────────\nCommand: " + $cmd + "\n\nReferences:\n  skills/journey-mapping/SKILL.md §\"Concurrency coordination\"\n  skills/element-interactions/references/subagent-return-schema.md §\"Concurrency-log emission rules\"\n\nEscape hatch: CONCURRENCY_LOG_FORMAT_GUARD=off (defeats the contract).")
+      }
+    }'
+    exit 0
+  fi
+
+  exit 0
+fi
+
+# === Write/Edit branch (original) ==========================================
 case "$TOOL_NAME" in
   Write|Edit) ;;
   *) exit 0 ;;
