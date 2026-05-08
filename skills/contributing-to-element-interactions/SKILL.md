@@ -195,6 +195,17 @@ If none of the above fit, **stop and discuss** before writing code. There's prob
 
 ## 🚨 Hard rules — don't violate
 
+### Read this skill before editing the package
+
+**Rule.** Any agent preparing to modify files inside this package's contribution surface — `src/`, `hooks/`, `skills/`, `scripts/`, `package.json`, `tsconfig*.json`, `.github/` — MUST first load this skill (`skills/contributing-to-element-interactions/SKILL.md`) in the current session. Either invoke it via the `Skill` tool or `Read` the file directly. The skill encodes the architecture, the API-vs-structural-gap distinction, the hard rules, and the design invariants every contribution must respect; an agent that hasn't loaded it is editing blind.
+
+**Enforced by `hooks/contributing-skill-preread-guard.sh`** (PreToolUse:Edit|Write|MultiEdit). The hook only activates when CWD is this package's own repo (detected via `package.json` name), so consumer projects that have the package as a dependency are not affected. DENY by default. Mode controls via `CONTRIBUTING_SKILL_PREREAD_GUARD`:
+- unset / `deny` / `on` → block the edit until the skill is loaded (default)
+- `warn` → systemMessage nudge, edit proceeds
+- `off` → silent allow
+
+Editing this SKILL.md itself is exempt — the edit IS the read.
+
 ### Methodology improvements ship as programmatic hooks, not just markdown
 
 **Every PR that adds, modifies, or strengthens a rule, workflow, phase, gate, invariant, or contract in any `skills/*/SKILL.md` (or its referenced files under `references/`) MUST ship a corresponding harness hook in `hooks/` that enforces the rule programmatically — or include an explicit, reviewer-visible note explaining why mechanical enforcement is impossible.**
@@ -299,6 +310,17 @@ for n in 156 157; do gh issue view $n --json author -q '.number, .author.login' 
 **Self-reported / chore caveat.** When the contributor is also the issue author, self-attribution is still appropriate — the audit trail is the value, not the social acknowledgement. For purely-chore commits with no upstream issue, the rule does not apply.
 
 **Harness-enforced by `hooks/commit-attribution-gate.sh`** (PreToolUse:Bash, filters to `git commit`). When the commit references an issue without a `Reported-by:` / `Issue-reported-by:` line, the hook emits a `systemMessage` with the gh-CLI snippet to fetch the author. Escape hatch for genuine edge cases: `COMMIT_ATTRIBUTION_GATE=off`.
+
+### AI assistants don't get `Co-Authored-By:` trailers
+
+**Rule.** Every commit's sole author is the human contributor. AI assistants (Claude, Anthropic, borealis.local, anything similar) MUST NOT appear as a `Co-Authored-By:` trailer in the commit body. Real-human co-author lines (`Co-Authored-By: Jane Doe <jane@example.com>`) are unaffected.
+
+The Anthropic CLAUDE.md template appends `Co-Authored-By: borealis.local …` to every commit Claude generates — that is the single source of these trailers. The upstream fix is to remove the trailer instruction from your project `CLAUDE.md` or `~/.claude/CLAUDE.md` so it stops being suggested.
+
+**Enforced by `hooks/commit-author-signature-guard.sh`** (PreToolUse:Bash, filters to `git commit`). DENY by default. The hook only fires when an AI-sentinel pattern is present, so real-human commits never trigger it. Mode controls via `COMMIT_AUTHOR_SIGNATURE_GUARD`:
+- unset / `deny` / `on` → block the commit (default)
+- `warn` → systemMessage nudge, commit proceeds
+- `off` → silent allow (escape hatch for genuine edge cases — e.g. quoting a prior commit body inside a `git log` test fixture)
 
 ### No raw `locator.*()` in element-interactions src/
 
