@@ -28,7 +28,7 @@ The dispatch brief written by the `coverage-expansion` orchestrator includes a p
 6. Path to `tests/e2e/docs/.adversarial-findings.lock` — advisory lockfile for parallel appends (see below).
 7. App credentials from `app-context.md`.
 8. Live docker stack URL + any secondary user accounts needed for cross-account probing.
-9. **Portal-wide pattern catalogue** at `tests/e2e/docs/portal-wide-patterns.md` — established by the one-time `probe-portal-wide:` scan that runs before Pass-4 per-journey probes. The brief MUST cite portal-wide patterns via `coverage: portal-wide:<pattern-id>` rather than re-deriving them. Full spec: [`portal-wide-scan.md`](portal-wide-scan.md). Stage B reviewer flags `craft-issues` finding `re-derived-portal-wide-pattern` when a per-journey probe re-finds a catalogued pattern instead of citing.
+9. **App-wide pattern catalogue** at `tests/e2e/docs/app-wide-patterns.md` — established by the one-time `probe-app-wide:` scan that runs before Pass-4 per-journey probes. The brief MUST cite app-wide patterns via `coverage: app-wide:<pattern-id>` rather than re-deriving them. Full spec: [`app-wide-scan.md`](app-wide-scan.md). Stage B reviewer flags `craft-issues` finding `re-derived-app-wide-pattern` when a per-journey probe re-finds a catalogued pattern instead of citing.
 
 ## Behavior
 

@@ -1,23 +1,23 @@
-# Portal-Wide Pattern Scan — Pre-Pass-4 single dispatch
+# App-Wide Pattern Scan — Pre-Pass-4 single dispatch
 
-**Status:** authoritative spec for the one-shot portal-wide scan that precedes Pass 4 (and informs Pass 5). Cited from `coverage-expansion/SKILL.md` §"Adversarial passes (4 and 5)" and from `adversarial-subagent-contract.md`.
+**Status:** authoritative spec for the one-shot app-wide scan that precedes Pass 4 (and informs Pass 5). Cited from `coverage-expansion/SKILL.md` §"Adversarial passes (4 and 5)" and from `adversarial-subagent-contract.md`.
 **Scope:** what the scan does, how it's dispatched, the pattern catalogue it establishes, the output file format, and how per-journey probes cite the catalogue rather than re-finding each pattern.
 
 For the per-journey adversarial subagent contract that runs after the scan, see `adversarial-subagent-contract.md`.
 
 ---
 
-## What the portal-wide scan does
+## What the app-wide scan does
 
-A **single** adversarial dispatch fired before Pass 4's per-journey probes. Its job is to find and document the patterns that recur across every journey — security headers, CSRF behaviour, error envelopes for nonsense parameters, asset-disclosure footprints, CORS posture — so the per-journey probes don't each re-derive them. ~80% of `info`-severity Pass-4 findings are duplicates of patterns in the catalogue below; documenting once and citing via `coverage: portal-wide:<pattern-id>` replaces ~30 per-journey re-derivations of each.
+A **single** adversarial dispatch fired before Pass 4's per-journey probes. Its job is to find and document the patterns that recur across every journey — security headers, CSRF behaviour, error envelopes for nonsense parameters, asset-disclosure footprints, CORS posture — so the per-journey probes don't each re-derive them. ~80% of `info`-severity Pass-4 findings are duplicates of patterns in the catalogue below; documenting once and citing via `coverage: app-wide:<pattern-id>` replaces ~30 per-journey re-derivations of each.
 
 ---
 
 ## When the scan runs
 
-Once per `mode: depth` run, dispatched as the **first** Pass-4 step (before any per-journey probe). Output file is `tests/e2e/docs/portal-wide-patterns.md` (created by the scan; absent before).
+Once per `mode: depth` run, dispatched as the **first** Pass-4 step (before any per-journey probe). Output file is `tests/e2e/docs/app-wide-patterns.md` (created by the scan; absent before).
 
-In `mode: breadth`, the scan does NOT run — breadth is a single-sweep mode that doesn't dedicate a pass to adversarial work. Breadth users who want portal-wide pattern documentation can invoke the scan manually.
+In `mode: breadth`, the scan does NOT run — breadth is a single-sweep mode that doesn't dedicate a pass to adversarial work. Breadth users who want app-wide pattern documentation can invoke the scan manually.
 
 If the scan output file already exists from a prior run on the same project, the scan re-runs anyway — patterns drift over time as the app evolves. The orchestrator overwrites the file rather than merging; the prior file lives in git history.
 
@@ -25,10 +25,10 @@ If the scan output file already exists from a prior run on the same project, the
 
 ## Dispatch shape
 
-Description prefix: `probe-portal-wide:`. Single subagent, dedicated `playwright-cli` session, isolated context. Recognised by `hooks/coverage-expansion-dispatch-guard.sh` as a leaf-shape probe (the `probe-` family).
+Description prefix: `probe-app-wide:`. Single subagent, dedicated `playwright-cli` session, isolated context. Recognised by `hooks/coverage-expansion-dispatch-guard.sh` as a leaf-shape probe (the `probe-` family).
 
 ```
-description: "probe-portal-wide: pass 4 — establish pattern catalogue"
+description: "probe-app-wide: pass 4 — establish pattern catalogue"
 ```
 
 Brief inputs:
@@ -37,9 +37,9 @@ Brief inputs:
 2. App credentials.
 3. Live app URL.
 4. The pattern catalogue checklist (below).
-5. Output file path (`tests/e2e/docs/portal-wide-patterns.md`).
+5. Output file path (`tests/e2e/docs/app-wide-patterns.md`).
 
-Brief explicitly says: do NOT iterate the journey map; this is a portal-wide reconnaissance pass, not a per-journey probe. The map will be probed per-journey in subsequent dispatches.
+Brief explicitly says: do NOT iterate the journey map; this is a app-wide reconnaissance pass, not a per-journey probe. The map will be probed per-journey in subsequent dispatches.
 
 Model: opus, per the Pass 4 row of `coverage-expansion/SKILL.md` §"Hybrid model selection".
 
@@ -47,7 +47,7 @@ Model: opus, per the Pass 4 row of `coverage-expansion/SKILL.md` §"Hybrid model
 
 ## Pattern catalogue checklist
 
-The scan investigates every pattern in this checklist and documents the result for each. Each pattern has a stable `<pattern-id>` that per-journey probes cite via `coverage: portal-wide:<pattern-id>`.
+The scan investigates every pattern in this checklist and documents the result for each. Each pattern has a stable `<pattern-id>` that per-journey probes cite via `coverage: app-wide:<pattern-id>`.
 
 | Pattern ID | What to probe | What to record |
 |---|---|---|
@@ -72,16 +72,16 @@ The orchestrator updates this checklist as new patterns surface in the wild — 
 
 ---
 
-## Output file format — `tests/e2e/docs/portal-wide-patterns.md`
+## Output file format — `tests/e2e/docs/app-wide-patterns.md`
 
 ```markdown
-<!-- portal-wide-scan:generated -->
+<!-- app-wide-scan:generated -->
 
-# Portal-Wide Pattern Catalogue
+# App-Wide Pattern Catalogue
 
 **Scanned at:** 2026-05-06T14:00:00Z
 **Pass:** 4 (prelude)
-**Subagent:** probe-portal-wide
+**Subagent:** probe-app-wide
 **App URL:** <baseURL>
 
 ## Patterns
@@ -91,7 +91,7 @@ The orchestrator updates this checklist as new patterns surface in the wild — 
 - **Expected per security best practices:** 403
 - **Severity:** info
 - **Note:** the app returns 404 (route-not-found semantics) rather than 403 (forbidden) when a CSRF token is tampered. This is consistent across every protected endpoint probed (POST /api/orders, PUT /api/users/me, DELETE /api/items/123).
-- **Cite as:** `coverage: portal-wide:csrf-tamper-status`
+- **Cite as:** `coverage: app-wide:csrf-tamper-status`
 
 ### autocomplete-credential-inputs
 - **Status observed:**
@@ -99,58 +99,58 @@ The orchestrator updates this checklist as new patterns surface in the wild — 
   - `/signup` → no `autocomplete` on either input ✗
   - `/account/change-password` → no `autocomplete` on any of the three password inputs ✗
 - **Severity:** info
-- **Cite as:** `coverage: portal-wide:autocomplete-credential-inputs`
+- **Cite as:** `coverage: app-wide:autocomplete-credential-inputs`
 
 ### sort-unknown-field-status
 - **Status observed:** 500 (with stack trace partially exposed in the response body's `detail:` field)
 - **Severity:** medium (stack-trace disclosure in error body)
-- **Cite as:** `coverage: portal-wide:sort-unknown-field-status`
+- **Cite as:** `coverage: app-wide:sort-unknown-field-status`
 
 (continues — 16 sections total, one per pattern in §"Pattern catalogue checklist" above)
 ```
 
 Required structure:
 
-- Sentinel comment `<!-- portal-wide-scan:generated -->` at line 1 (allows hooks to recognise the file as scan output).
+- Sentinel comment `<!-- app-wide-scan:generated -->` at line 1 (allows hooks to recognise the file as scan output).
 - One `### <pattern-id>` per pattern in the catalogue, in catalogue order. **All 16 sections must be present** — one per pattern in §"Pattern catalogue checklist" above. Missing a section means the scan didn't probe that pattern; emit it with `Status observed: not probed` + `Severity: info` + the canonical `Cite as:` line rather than omitting the section.
 - Every section has at minimum: `Status observed:` + `Severity:` + `Cite as:`.
-- The `Cite as:` line MUST be exactly `**Cite as:** \`coverage: portal-wide:<pattern-id>\`` — single-line, backticked, no surrounding prose. This shape is machine-parseable (a future structural-validation hook greps each `### <pattern-id>` block for a `Cite as: \`coverage: portal-wide:<id>\`` whose `<id>` matches the section header). Don't paraphrase the citation text or split it across lines.
+- The `Cite as:` line MUST be exactly `**Cite as:** \`coverage: app-wide:<pattern-id>\`` — single-line, backticked, no surrounding prose. This shape is machine-parseable (a future structural-validation hook greps each `### <pattern-id>` block for a `Cite as: \`coverage: app-wide:<id>\`` whose `<id>` matches the section header). Don't paraphrase the citation text or split it across lines.
 
 Hooks may extend this with additional structural validation in a follow-up issue (the file is currently markdown-only, with the sentinel comment as the load-bearing machine-readable signal). The `Cite as:` shape rule above is the contract such a hook will enforce.
 
 ---
 
-## What if a per-journey probe finds a portal-wide pattern not in the catalogue?
+## What if a per-journey probe finds a app-wide pattern not in the catalogue?
 
-Emit the finding normally with `coverage: none` (the canonical "no covering pattern" form per `subagent-return-schema.md` §1). The orchestrator records the finding-ID for the next cycle's catalogue update PR; the catalogue itself never updates mid-cycle — additions ride in via PR per the Hard constraint above. Treating the finding as `coverage: none` keeps the citation discipline honest while flagging the catalogue gap for human review. Stage B reviewer does NOT flag `re-derived-portal-wide-pattern` for these findings (the pattern wasn't in the catalogue at scan time, so the per-journey probe couldn't have cited it).
+Emit the finding normally with `coverage: none` (the canonical "no covering pattern" form per `subagent-return-schema.md` §1). The orchestrator records the finding-ID for the next cycle's catalogue update PR; the catalogue itself never updates mid-cycle — additions ride in via PR per the Hard constraint above. Treating the finding as `coverage: none` keeps the citation discipline honest while flagging the catalogue gap for human review. Stage B reviewer does NOT flag `re-derived-app-wide-pattern` for these findings (the pattern wasn't in the catalogue at scan time, so the per-journey probe couldn't have cited it).
 
 ---
 
 ## How per-journey probes cite the catalogue
 
-Per-journey probes (Pass 4 and 5) include the portal-wide patterns file in their `coverage:` references. When a per-journey probe finds a pattern that the catalogue already documents, it cites in the canonical finding-block shape from `subagent-return-schema.md` §1:
+Per-journey probes (Pass 4 and 5) include the app-wide patterns file in their `coverage:` references. When a per-journey probe finds a pattern that the catalogue already documents, it cites in the canonical finding-block shape from `subagent-return-schema.md` §1:
 
 ```markdown
 - **<JOURNEY-A>-4-07** [info] — CSRF tamper returns 404 not 403
   - **scope**: POST /api/checkout/submit
   - **expected**: 403
   - **observed**: 404
-  - **coverage**: portal-wide:csrf-tamper-status
+  - **coverage**: app-wide:csrf-tamper-status
 ```
 
-The `coverage:` field's third valid form `portal-wide:<pattern-id>` is documented in `subagent-return-schema.md` §1 (alongside the existing `none` and spec-file-path forms). The §4.1 grep validator accepts it.
+The `coverage:` field's third valid form `app-wide:<pattern-id>` is documented in `subagent-return-schema.md` §1 (alongside the existing `none` and spec-file-path forms). The §4.1 grep validator accepts it.
 
-The `coverage:` field IS the citation. The per-journey probe does NOT re-document the pattern in its own ledger entries — the citation is the documentation. Stage B reviewer (per the reviewer-subagent-contract) checks that per-journey probes cite portal-wide patterns rather than re-finding them, and flags `craft-issues` finding `re-derived-portal-wide-pattern` when a probe's finding could have been a citation.
+The `coverage:` field IS the citation. The per-journey probe does NOT re-document the pattern in its own ledger entries — the citation is the documentation. Stage B reviewer (per the reviewer-subagent-contract) checks that per-journey probes cite app-wide patterns rather than re-finding them, and flags `craft-issues` finding `re-derived-app-wide-pattern` when a probe's finding could have been a citation.
 
 ---
 
 ## Hard constraints
 
-- **One scan per `mode: depth` run.** Re-runs only when the orchestrator starts a fresh `mode: depth` invocation. **Resume signal:** the orchestrator treats the **presence** of `tests/e2e/docs/portal-wide-patterns.md` (with the `<!-- portal-wide-scan:generated -->` sentinel) as the sole resume signal — if the file exists, the prelude has already run for this `mode: depth` invocation; if not, dispatch it. This avoids polluting the state-file schema with a Pass-4-specific flag.
-- **Runs first.** The portal-wide scan finishes (output file written + committed) before any Pass-4 per-journey probe is dispatched.
+- **One scan per `mode: depth` run.** Re-runs only when the orchestrator starts a fresh `mode: depth` invocation. **Resume signal:** the orchestrator treats the **presence** of `tests/e2e/docs/app-wide-patterns.md` (with the `<!-- app-wide-scan:generated -->` sentinel) as the sole resume signal — if the file exists, the prelude has already run for this `mode: depth` invocation; if not, dispatch it. This avoids polluting the state-file schema with a Pass-4-specific flag.
+- **Runs first.** The app-wide scan finishes (output file written + committed) before any Pass-4 per-journey probe is dispatched.
 - **Single subagent, no fan-out.** The scan is a leaf probe; it does NOT dispatch its own children. The pattern catalogue (16 patterns at the time of writing — see §"Pattern catalogue checklist") is short enough that one subagent covers it.
-- **Exempt from dual-stage Stage A/B contract.** The portal-wide-scan prelude is a leaf reconnaissance dispatch, not a journey-iteration cycle. It has no Stage B reviewer. The Stage A output (the catalogue file) is the entire deliverable; subsequent per-journey Pass-4 probes use it as input, but those per-journey probes carry their own dual-stage A/B per the journey contract. The prelude does NOT count toward Pass-4 dispatch totals.
-- **Output file is committed**. Commit message: `docs(portal-wide): pattern catalogue established (pre-pass-4)` (per `depth-mode-pipeline.md` §"Commit-message conventions" — added to the table in this PR).
+- **Exempt from dual-stage Stage A/B contract.** The app-wide-scan prelude is a leaf reconnaissance dispatch, not a journey-iteration cycle. It has no Stage B reviewer. The Stage A output (the catalogue file) is the entire deliverable; subsequent per-journey Pass-4 probes use it as input, but those per-journey probes carry their own dual-stage A/B per the journey contract. The prelude does NOT count toward Pass-4 dispatch totals.
+- **Output file is committed**. Commit message: `docs(app-wide): pattern catalogue established (pre-pass-4)` (per `depth-mode-pipeline.md` §"Commit-message conventions" — added to the table in this PR).
 - **Severity defaults are conservative.** Most patterns map to `info` severity (informational, not necessarily a bug); the scan's role is documentation, not classification. Per-journey probes may upgrade severity when the pattern manifests as a real boundary.
 
 ---
@@ -158,6 +158,6 @@ The `coverage:` field IS the citation. The per-journey probe does NOT re-documen
 ## Cross-links
 
 - `coverage-expansion/SKILL.md` §"Adversarial passes (4 and 5)" — invokes this scan as the Pass-4 prelude.
-- `adversarial-subagent-contract.md` §"Inputs" — per-journey probes get the portal-wide-patterns file as Input 9 alongside the journey-specific inputs.
+- `adversarial-subagent-contract.md` §"Inputs" — per-journey probes get the app-wide-patterns file as Input 9 alongside the journey-specific inputs.
 - `references/adversarial-findings-schema.md` — the `coverage:` field that holds the citation.
 - Issue #164.3 (this scan's filing) for the empirical motivation and savings analysis.
