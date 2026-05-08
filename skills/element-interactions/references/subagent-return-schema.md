@@ -92,6 +92,7 @@ Field rules:
 |---|---|---|
 | `composer-` | `new-tests-landed`, `covered-exhaustively`, `blocked`, `skipped` | — |
 | `reviewer-` | `greenlight` | `improvements-needed` |
+| `reviewer-batch-pass-<N>-` | `batch-complete` | — |
 | `probe-` | `clean`, `findings-emitted`, `blocked` | — |
 | `process-validator-` | `greenlight`, `block` | — |
 | `phase-validator-` | `greenlight` | `improvements-needed` |
@@ -166,6 +167,8 @@ Only valid when the subagent **inspected** the journey. Required evidence:
 
 If the table has one or more rows with `coverage: none`, the subagent has NOT covered exhaustively and MUST compose tests or escalate.
 
+**Orchestrator-written `gated_skip: true` state-file entries.** `covered-exhaustively` is also valid as a `result:` value in orchestrator-written `gated_skip: true` state-file entries (per `coverage-expansion/SKILL.md` §"Trigger-gated re-pass for Passes 2 & 3"). In that context, the per-expectation mapping table is replaced by the `triggers_checked` evidence object — the orchestrator's three checks ARE the audit trail. The mapping-table requirement above applies only to subagent-return bodies; orchestrator-written gated-skip entries instead carry `triggers_checked: { map_delta, sibling_ledger_update, must_fix_carry_over }` (all three booleans, all three `false`), validated by `hooks/coverage-state-schema-guard.sh`.
+
 ### 2.2 `status: no-new-tests-by-rationalisation` — **not a valid return**
 
 This state describes the failure mode where a subagent punts on the dispatch, rationalises that tests would be redundant, and returns without inspection. **This is not a valid return from any compositional or adversarial pass.** Orchestrators treat such returns as contract violations and MUST re-dispatch the subagent with a stricter brief.
@@ -231,6 +234,46 @@ Every reviewer finding carries `[must-fix]`. There is no nice-to-have bracket, n
 **Reviewer finding-ID subformat:** `<journey-slug>-<pass>-<cycle>-R-<nn>` where `<cycle>` is a two-digit zero-padded integer (`01`..`07`) and `R` tags the finding as reviewer-sourced (distinguishes it from Stage A's `<journey-slug>-<pass>-<nn>` format). This subformat is an explicit addition to §1's finding-ID rules; Stage B subagents MUST use it, Stage A subagents MUST NOT.
 
 **Caller contract addition:** Callers dispatching reviewer subagents (currently `coverage-expansion` only) must accept `greenlight` and `improvements-needed` as valid return statuses and MUST NOT treat `improvements-needed` as a schema violation. The retry loop for `improvements-needed` is documented in `skills/coverage-expansion/SKILL.md` §"Retry loop".
+
+### 2.4-batch — Batch reviewer return shape (compositional cycle-1 only — issue #164.2)
+
+Returned by subagents dispatched under the `reviewer-batch-pass-<N>:` role-prefix. The handover envelope's `status` is `batch-complete` (added to the §2.0 status enum specifically for this shape). The body wraps per-journey verdicts in a `verdicts:` array. Each verdict is a §2.4-shape return scoped to one journey — same fields, just nested under the array.
+
+Shape:
+
+```yaml
+handover:
+  role: reviewer-batch-pass-<N>
+  status: batch-complete
+  pass: <N>
+  cycle: 1
+  next-action: dispatch reviewer-<JOURNEY> cycle 2 for the flagged journeys
+
+verdicts:
+  - journey: <JOURNEY>
+    status: greenlight
+    summary: <one-line; no findings>
+  - journey: <ANOTHER-JOURNEY>
+    status: improvements-needed
+    spill: tests/e2e/docs/.subagent-returns/reviewer-batch-pass-<N>-c1.md
+    findings:
+      - <ANOTHER-JOURNEY>-<N>-1-R-01
+      - <ANOTHER-JOURNEY>-<N>-1-R-02
+```
+
+Per-verdict shape rules:
+- `status: greenlight` → body inlines only `journey` + `summary`. No `spill:`, no `findings:`.
+- `status: improvements-needed` → body inlines `journey` + `spill:` (path to the shared per-pass spill file) + `findings:` (list of finding-IDs only — no inline blocks; the full sub-bullets live in the spill file's `## <JOURNEY>` section per §2.6).
+
+Hard constraints (validated by the dispatch-guard / spillover-rewrite-gate when those hooks gain batch-reviewer awareness):
+
+- `cycle: 1` only. A batch reviewer dispatched at cycle ≥ 2 is a contract violation.
+- `pass ∈ {1, 2, 3}` only. Adversarial Passes 4 and 5 always use `mode: per-journey`.
+- One batch reviewer per pass. Multiple batch reviewers within the same pass-cycle pair are forbidden.
+
+The reviewer-finding-ID subformat `<JOURNEY>-<pass>-<cycle>-R-<nn>` (per §2.4 above) applies to findings cited within the verdicts. Reviewer findings emerge at cycle 1 here, so `<cycle>` is always `1`.
+
+Spill-file naming: `tests/e2e/docs/.subagent-returns/reviewer-batch-pass-<N>-c1.md`, sentinel `<!-- subagent-returns:reviewer-batch:pass-<N>:cycle-1 -->` on line 1, sections namespaced by `## <JOURNEY>`. Registered in `skill-registry.md` §"Non-skill sentinel strings".
 
 ### 2.5 Phase-validator return (Onboarding phase exit checkpoint)
 

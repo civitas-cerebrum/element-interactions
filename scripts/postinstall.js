@@ -127,6 +127,7 @@ const MCP_PLAYWRIGHT_BROWSER_TOOLS = [
 const HOOK_MANIFEST = [
   // PreToolUse — guards (fail-closed)
   { file: 'coverage-expansion-dispatch-guard.sh', event: 'PreToolUse', matcher: 'Agent',       timeout: 10 },
+  { file: 'parent-only-orchestrator-dispatch-block.sh', event: 'PreToolUse', matcher: 'Agent', timeout: 10 },
   { file: 'phase-validator-dispatch-required.sh', event: 'PreToolUse', matcher: 'Agent',       timeout: 10 },
   { file: 'playwright-cli-isolation-guard.sh',    event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'coverage-expansion-orchestrator-cli-block.sh', event: 'PreToolUse', matcher: 'Bash', timeout: 10 },
@@ -136,6 +137,7 @@ const HOOK_MANIFEST = [
   { file: 'suite-gate-ratchet.sh',                event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'journey-map-sentinel-guard.sh',        event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
   { file: 'coverage-state-schema-guard.sh',       event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
+  { file: 'coverage-state-deferral-auth-guard.sh', event: 'PreToolUse', matcher: 'Write|Edit', timeout: 10 },
   { file: 'playwright-config-defaults-guard.sh',  event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
   { file: 'failure-diagnosis-stage0-preread-guard.sh', event: 'PreToolUse', matcher: 'Write|Edit', timeout: 10 },
   { file: 'mcp-browser-tool-redirect.sh',         event: 'PreToolUse', matcher: MCP_PLAYWRIGHT_BROWSER_TOOLS, timeout: 10 },
@@ -150,6 +152,9 @@ const HOOK_MANIFEST = [
   // SubagentStop — enforcement (must run synchronously) + cleanup (async)
   { file: 'subagent-spillover-rewrite-gate.sh',   event: 'SubagentStop', matcher: null,        timeout: 10 },
   { file: 'playwright-cli-cleanup-on-stop.sh',    event: 'SubagentStop', matcher: null,        timeout: 30, async: true },
+
+  // Stop — main-agent stop guards
+  { file: 'onboarding-pipeline-incomplete-stop-deny.sh', event: 'Stop',  matcher: null,        timeout: 10 },
 ];
 
 function copyHookFile(hookSrc, hookDest) {
