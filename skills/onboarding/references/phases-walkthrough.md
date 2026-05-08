@@ -27,7 +27,34 @@ Do **not** add, remove, or upgrade any other dependencies. Do **not** modify the
 
 **Scaffold files** (Level A and B, whichever are missing):
 
-- `playwright.config.ts` — minimal config with `baseURL` from the front-load gate, `testDir: './tests/e2e'`, `reporter: 'html'`, headless true.
+- `playwright.config.ts` — scaffolded with the package's documented defaults (see `../element-interactions/references/playwright-config-defaults.md`):
+  - `baseURL` from the front-load gate
+  - `testDir: './tests/e2e'`
+  - `reporter: 'html'`
+  - `headless: true`
+  - **`retries: process.env.CI ? 2 : 1`** — at least one retry by default so transient failures get a second pass that produces video evidence.
+  - **`use.video: 'on-first-retry'`** — the canonical default. First-pass failures stay light; reruns capture video so failures are documented automatically.
+  - **`use.trace: 'on-first-retry'`** — full Playwright trace on the same boundary; pairs with the video for diagnosis.
+
+  Concrete starting content:
+
+  ```typescript
+  import { defineConfig } from '@playwright/test';
+
+  export default defineConfig({
+    testDir: './tests/e2e',
+    reporter: 'html',
+    retries: process.env.CI ? 2 : 1,
+    use: {
+      baseURL: '<from front-load gate>',
+      headless: true,
+      video: 'on-first-retry',
+      trace: 'on-first-retry',
+    },
+  });
+  ```
+
+  Consumers may override later, but the scaffold ships these on by default. The `playwright-config-defaults-guard.sh` hook surfaces a `systemMessage` warning when a `playwright.config.ts` write strips these defaults without a documented reason.
 - `tests/fixtures/base.ts` — `baseFixture` export wiring `Steps` and `ContextStore`, with four `HELPER SLOT` comment markers that Stage 4a (test optimization) populates on demand. Exact starting content:
 
   ```typescript
@@ -103,7 +130,7 @@ The companion reads the existing sentinel-bearing Phase-1 map and fills in Phase
 
 **Delegate to:** `coverage-expansion` with `args: "mode: depth"`.
 
-That skill runs five journey-by-journey passes internally (3 compositional via test-composer + 2 adversarial via bug-discovery), each pass split per-journey into Stage A (compose/probe) + Stage B (fresh staff-QA reviewer with its own isolated `playwright-cli` session) running an A↔B retry loop up to 7 cycles per journey per pass. Subagent dispatch is opus-default (cost-blind), parallelised for independent journeys, with map growth reconciled between passes. Onboarding's role here is simply to invoke it and relay `[coverage-expansion]` progress lines upstream — no per-pass or per-cycle orchestration at this layer.
+That skill runs five journey-by-journey passes internally (3 compositional via test-composer + 2 adversarial via bug-discovery), each pass split per-journey into Stage A (compose/probe) + Stage B (fresh staff-QA reviewer with its own isolated `playwright-cli` session) running an A↔B retry loop up to 7 cycles per journey per pass. Subagent dispatch follows the hybrid model policy per `coverage-expansion/SKILL.md` §"Hybrid model selection" — Pass 1, Pass 4, and Pass 5 on Opus end-to-end (foundation + adversarial probes + regression layer), Pass 2/3 re-pass composers on Sonnet, all Stage B review and synthesis on Opus — parallelised for independent journeys, with map growth reconciled between passes. Onboarding's role here is simply to invoke it and relay `[coverage-expansion]` progress lines upstream — no per-pass or per-cycle orchestration at this layer.
 
 Between and after the five passes, `coverage-expansion` itself refreshes its view of `app-context.md` and `journey-map.md`; onboarding does not need its own refresh step at this phase. When the skill returns, append a "Coverage expansion — new knowledge" section to `onboarding-report.md` summarising total tests added, new journeys discovered, and any sub-journeys promoted.
 

@@ -87,6 +87,8 @@ This skill runs in two scopes. The probing categories below apply to both, but t
 
 When standalone, derive an analogous per-page negative-case list on the fly: for every primary positive flow you observe on a page (the "QA happy-path" interpretation), enumerate at least one negative complement (missing required field, malformed input, unauthorised access, replay / idempotency, session boundary) before moving on. The matrix concept does not vanish in standalone mode — it is built ad-hoc from observation rather than supplied in a brief.
 
+**App-wide bug-discovery is a parent-only orchestrator.** Dispatching this skill as a subagent at app-wide scope (Phase 1a / Phase 1b across multiple journeys, "standalone bug-discovery", "fan out probes") hits the recursive-dispatch wall — subagents cannot fan out their own children. The parent must iterate journeys itself and dispatch one `probe-j-<slug>:` Agent call per journey directly. The journey-scoped invocation (called by `coverage-expansion` as a Pass-4/5 leaf) is leaf-shape and remains valid. **Harness-enforced by `hooks/parent-only-orchestrator-dispatch-block.sh`** (PreToolUse:Agent — denies app-wide / multi-journey dispatches via orchestrator-role language, regardless of whether the literal "skill"/"SKILL.md" word appears; per-journey single-scope dispatches with `probe-j-<slug>:` description prefix bypass the hook entirely).
+
 ---
 
 ## Phase 1a: Element Probing

@@ -38,10 +38,20 @@ description: >
   the package, the exact workflow for adding new APIs cleanly, and how to
   distinguish an API gap from a structural gap.
 
+  (C) **Issue-queue / roadmap work on this repo.** Any request to triage,
+  plan, or implement open issues filed against `civitas-cerebrum/element-
+  interactions`. Triggers: "check the github issues", "look at the open
+  issues", "implementation roadmap", "implement issue #N", "ship issue #N",
+  "work on the open issues", "let's get started on the issues", "address
+  the issue queue", "pick up an issue", "what's left to ship", "go through
+  the issues", "what should we work on next" (when CWD is the package's
+  own repo).
+
   Triggers also on: "contribute to element-interactions", any request to
-  modify files under the package's `src/`, "open an issue on element-
-  interactions", "open a PR on element-interactions", or any of the structural
-  / protocol-gap phrases above.
+  modify files under the package's `src/`, `skills/`, or `hooks/`, "open an
+  issue on element-interactions", "open a PR on element-interactions", any
+  of the structural / protocol-gap phrases above, or any framing that
+  implies work *on the package itself* rather than *with it*.
 ---
 
 # Contributing to @civitas-cerebrum/element-interactions
@@ -185,6 +195,29 @@ If none of the above fit, **stop and discuss** before writing code. There's prob
 
 ## 🚨 Hard rules — don't violate
 
+### Methodology improvements ship as programmatic hooks, not just markdown
+
+**Every PR that adds, modifies, or strengthens a rule, workflow, phase, gate, invariant, or contract in any `skills/*/SKILL.md` (or its referenced files under `references/`) MUST ship a corresponding harness hook in `hooks/` that enforces the rule programmatically — or include an explicit, reviewer-visible note explaining why mechanical enforcement is impossible.**
+
+Markdown is documentation, not enforcement. Under context pressure, an orchestrator reading its own rule will rationalise around it ("this case is different", "given session constraints", "I'll be transparent about the trade-off") and stop / narrow / skip anyway. This is not a hypothetical — it is the documented failure pattern of issues #139, #154, #155, and #156. The harness layer is the only second-reader the orchestrator cannot talk past.
+
+**Decision rule** (apply when you write or edit any SKILL.md rule):
+
+| Rule shape | Hook surface |
+|---|---|
+| "Read X before doing Y" | `PreToolUse:Edit\|Write\|Agent` checks transcript for the required Read before allowing the dependent tool call. |
+| "Don't stop until Y is done" | `Stop` or `SubagentStop` reads a ledger / state file, denies stop when invariant fails. |
+| "Don't dispatch shape Z here" | `PreToolUse:Agent` greps `tool_input.prompt` for the forbidden pattern. |
+| "State file Z must satisfy invariant W" | `PreToolUse:Write` validates the JSON / markdown shape. |
+| "Subagent return must follow shape S" | `SubagentStop` parses the handover envelope, exit-2-blocks non-compliant returns. |
+| "After phase N, file F must exist" | `PreToolUse:Agent` denies advancing to phase N+1 when F is absent or stale. |
+
+If none of these apply because the rule is genuinely unenforceable mechanically (e.g. "use the right level of detail in the brief", "be honest about uncertainty"), the SKILL.md edit MUST add a `markdown-only` tag to the relevant entry in `coverage-expansion/references/anti-rationalizations.md` so the registry continues to track the failure surface even without harness backing.
+
+**Why this is non-negotiable:** every markdown-only methodology rule that survives a release is a future incident waiting to happen. The cost of writing the hook is hours; the cost of debugging a wrong-classification incident the rule was meant to prevent is days plus the operator trust the package is supposed to earn. The asymmetry is the rule.
+
+**Reference:** `skills/contributing-to-element-interactions/SKILL.md` §"Workflow: adding a harness hook" (line 803 of this file) details the hook authoring patterns, test-case expectations, and `scripts/postinstall.js` registration. Read it before authoring any SKILL.md edit so the hook is designed alongside the rule rather than retro-fitted.
+
 ### Before filing an issue or opening a PR — check existing work and sync status
 
 Two duplicate-prevention checks are **mandatory** before creating any new GitHub issue or PR. Skipping them wastes maintainer time and has produced duplicate issues / PRs against already-fixed code.
@@ -237,7 +270,37 @@ Local vs. origin/main: in sync (or: rebased onto <sha> and re-verified).
 Dependency version: element-repository pinned at 1.4.2; latest is 1.4.2.
 ```
 
-### Commit messages don't carry AI co-author trailers (optional / opt-in DENY)
+### Attribute issue reporters
+
+**Every commit and PR that closes a GitHub issue MUST credit the issue's author with a `Reported-by:` line in the commit body and the PR description.**
+
+The contract:
+
+- The commit body that includes a `Closes #N` / `Fixes #N` / `Resolves #N` reference also includes:
+
+  ```
+  Reported-by: @<github-handle>
+  ```
+
+  Multi-reporter is fine: `Reported-by: @umutayb, @Emmdb`.
+
+- The PR description repeats the same attribution near the top, before the rest of the summary.
+
+**Why:** issue-driven improvements are the load-bearing input that makes this package's methodology improve faster than any internal review process could. The minimum acknowledgement is a verifiable line in the commit body — it travels with the merge commit, survives squash-merge, surfaces in `git log`, and is mechanically detectable. Without it, the issue author's contribution silently disappears into the maintainer's PR description and the credit graph rots over time.
+
+**How to find the author:**
+
+```bash
+gh issue view <N> --json author -q .author.login
+# Multi-issue:
+for n in 156 157; do gh issue view $n --json author -q '.number, .author.login' --jq @csv; done
+```
+
+**Self-reported / chore caveat.** When the contributor is also the issue author, self-attribution is still appropriate — the audit trail is the value, not the social acknowledgement. For purely-chore commits with no upstream issue, the rule does not apply.
+
+**Harness-enforced by `hooks/commit-attribution-gate.sh`** (PreToolUse:Bash, filters to `git commit`). When the commit references an issue without a `Reported-by:` / `Issue-reported-by:` line, the hook emits a `systemMessage` with the gh-CLI snippet to fetch the author. Escape hatch for genuine edge cases: `COMMIT_ATTRIBUTION_GATE=off`.
+
+### Commit messages don't carry AI co-author trailers (WARN-only / opt-in DENY)
 
 **Recommendation, not a hard rule.** Every commit's authorship is the human contributor's. AI assistants (Claude, Anthropic, borealis.local, anything similar) **should not** appear as a `Co-Authored-By:` trailer in the commit body. Real-human co-author lines (`Co-Authored-By: Jane Doe <jane@example.com>`) are fine.
 
@@ -247,13 +310,13 @@ Dependency version: element-repository pinned at 1.4.2; latest is 1.4.2.
 - Two branches that each carry their own AI co-author trailer three-way-merge into a duplicated, conflicting trailer block — a class of merge conflict that's purely noise.
 - The trailer creates the false impression of joint ownership when the human contributor is the one accountable for the change. Tooling-assisted authorship is fine; tooling-as-co-author is a misrepresentation of who can answer for the code.
 
-**The harness default puts the trailer there.** Anthropic's CLAUDE.md template appends `Co-Authored-By: borealis.local <198563339+borealis-local@users.noreply.github.com>` to every commit Claude generates. The upstream fix is to delete that instruction from your project's `CLAUDE.md` or `~/.claude/CLAUDE.md`.
+**The harness default puts the trailer there.** Anthropic's CLAUDE.md template appends a `Co-Authored-By: borealis.local …` line to every commit Claude generates. The upstream fix is to delete that instruction from your project's `CLAUDE.md` or `~/.claude/CLAUDE.md`.
 
-**Soft enforcement by `hooks/commit-author-signature-guard.sh`** (PreToolUse:Bash, filters to `git commit`). Default mode is **WARN-only** — when the commit body contains an AI-attribution `Co-Authored-By:` trailer, the hook emits a `systemMessage` nudge and the commit proceeds. The hook intentionally does NOT block by default because it is shipped via npm postinstall to a user-global `~/.claude/settings.json` location; a transitive dependency should not make every consumer's `git commit` mandatory-block on a stylistic rule.
+**Soft enforcement by `hooks/commit-author-signature-guard.sh`** (PreToolUse:Bash, filters to `git commit`). Default mode is **WARN-only** — when the commit body contains an AI-attribution `Co-Authored-By:` trailer, the hook emits a `systemMessage` nudge and the commit proceeds. The hook intentionally does NOT block by default: it ships via npm postinstall into a user-global `~/.claude/settings.json`, and a transitive dependency should not make every consumer's `git commit` mandatory-block on a stylistic rule.
 
 False-positive avoidance: a backticked `` `Co-Authored-By: ...` `` literal, a `<!-- Co-Authored-By: ... -->` HTML comment, or a quote-prefixed `> Co-Authored-By: ...` line are treated as documentation and silent-allow.
 
-**Opt-in DENY for strict enforcement.** Set `COMMIT_AUTHOR_SIGNATURE_GUARD=deny` (env var, per-shell or in your project's `.envrc`) to upgrade WARN to DENY for your own development setup. Escape hatch for the rare genuine edge case (e.g. embedding a prior commit body in a test fixture): `COMMIT_AUTHOR_SIGNATURE_GUARD=off`.
+**Opt-in DENY for strict enforcement.** Set `COMMIT_AUTHOR_SIGNATURE_GUARD=deny` (per-shell env var or in your project's `.envrc`) to upgrade WARN to DENY for your own setup. Escape hatch for genuine edge cases (e.g. embedding a prior commit body in a test fixture): `COMMIT_AUTHOR_SIGNATURE_GUARD=off`.
 
 ### No raw `locator.*()` in element-interactions src/
 
@@ -594,9 +657,31 @@ Every public method on `Steps` logs at one of: `tester:navigate`, `tester:intera
 
 ### 15. Patch-version one-PR-one-bump rule
 
-Run `npm version patch` **once** per PR (at the first commit). Do not bump on every follow-up commit on the same branch. The `publish.yml` workflow publishes whatever version is in `package.json` at merge time, so multi-bumps inflate the version number for nothing.
+Bump the branch **once** per PR — and bump it to **`(npm-latest + 1 patch)`**, not `(current package.json + 1 patch)`. Look up the published latest first, then bump to that ceiling plus one. Do not bump on every follow-up commit on the same branch. The `publish.yml` workflow publishes whatever version is in `package.json` at merge time, so multi-bumps inflate the version number for nothing.
 
-For minor/major bumps, same rule: bump once, at the start.
+**Recipe:**
+
+```bash
+LATEST=$(npm view @civitas-cerebrum/element-interactions version)
+# parse + bump patch
+IFS=. read -r MAJOR MINOR PATCH <<< "$LATEST"
+NEW="${MAJOR}.${MINOR}.$((PATCH + 1))"
+npm version "$NEW" --no-git-tag-version
+```
+
+Equivalent one-liner:
+
+```bash
+npm version "$(npm view @civitas-cerebrum/element-interactions version | awk -F. '{print $1"."$2"."$3+1}')" --no-git-tag-version
+```
+
+**Why bump against npm-latest, not `package.json`:**
+
+When multiple PRs are open in parallel, every branch bumping `current+1` from its own diverged base produces version collisions on merge — two branches off `0.3.6` both bump to `0.3.7`, the second to merge clobbers or duplicates the first's published version. Bumping against npm-latest collapses every open branch to a known monotonic ceiling: the first PR to merge sets the new published version, and subsequent PRs rebase + re-bump against the new ceiling. No collisions, no manual reconciliation in CI.
+
+**Edge case — `npm view` fails (no network, package not yet published).** Fall back to bumping against the current `package.json` value (the old recipe) and call out the deviation in the PR description so the reviewer can spot-check for collision against any other open PR. The `hooks/version-bump-against-npm-guard.sh` hook also silently allows when the lookup fails (offline mode), so the bump itself isn't blocked.
+
+For minor/major bumps, same rule: bump once, at the start, against `(npm-latest + 1 minor/major)`.
 
 ### 16. Tests hit the real Vue test app
 
@@ -755,8 +840,8 @@ npm run build
 npx playwright test tests/live-element-location.spec.ts
 npx test-coverage --format=github-plain     # must show 100%
 
-# 6. Bump version
-npm version patch --no-git-tag-version
+# 6. Bump version against npm-latest (Rule 15 — collision-safe across parallel PRs)
+npm version "$(npm view @civitas-cerebrum/element-repository version | awk -F. '{print $1"."$2"."$3+1}')" --no-git-tag-version
 
 # 7. Commit + push + open PR
 git add -A
@@ -791,8 +876,8 @@ npx test-coverage --format=github-plain     # must show 100%
 #    - README.md (the user-facing reference under "🛠️ API Reference: Steps")
 #    - skills/element-interactions/SKILL.md (only if the change affects workflow stages)
 
-# 5. Bump version once
-npm version patch --no-git-tag-version
+# 5. Bump version once, against npm-latest (Rule 15 — collision-safe across parallel PRs)
+npm version "$(npm view @civitas-cerebrum/element-interactions version | awk -F. '{print $1"."$2"."$3+1}')" --no-git-tag-version
 
 # 6. Populate the contribution handover
 cp .contribution-handover.template.json .contribution-handover.json
@@ -822,13 +907,16 @@ Open both PRs in parallel. Element-repository PR ships first; element-interactio
 
 Hooks live in `hooks/<name>.sh`, are installed into `~/.claude/hooks/` by `scripts/postinstall.js`, and are registered in `~/.claude/settings.json` via the `HOOK_MANIFEST` array. They run at PreToolUse / PostToolUse / SubagentStop / Stop boundaries to enforce skill contracts mechanically — markdown rules can be rationalised away mid-run, hooks cannot.
 
-When to add a hook (vs leaving the rule markdown-only):
+This section is the **how**. The **when** is fixed by the Hard rule §"Methodology improvements ship as programmatic hooks": every SKILL.md rule edit comes paired with a hook unless the rule is genuinely unenforceable mechanically. Re-read that hard rule first if you're authoring a SKILL.md change — its decision table maps each rule shape to a concrete hook surface.
 
-- The rule is **mechanically detectable** at a tool-use boundary (specific tool, file path, command pattern, response-shape signal).
-- Markdown enforcement has been observed to fail under context pressure.
-- The cost of a violation is high (corrupt state, lost work, contract violation propagating downstream).
+When to add a hook (vs declaring the rule `markdown-only`):
 
-If the rule is too contextual to detect mechanically (e.g. "use the right level of detail in this brief"), it stays markdown-only. The anti-rationalization registry (`coverage-expansion/references/anti-rationalizations.md`) has a `markdown-only` tag for those.
+- The rule is **mechanically detectable** at a tool-use boundary (specific tool, file path, command pattern, response-shape signal). → Hook.
+- Markdown enforcement has been observed to fail under context pressure. → Hook (the failure mode is no longer hypothetical).
+- The cost of a violation is high (corrupt state, lost work, contract violation propagating downstream). → Hook.
+- The rule is too contextual to detect mechanically (e.g. "use the right level of detail in this brief", "be honest about uncertainty"). → Stays markdown-only **and** the rule gets tagged in `coverage-expansion/references/anti-rationalizations.md` so the un-backed surface stays visible.
+
+The default is "ship a hook." Choosing `markdown-only` is an explicit reviewer-visible exception, not the absence of a decision.
 
 ### Hook authoring — three required patterns
 
@@ -978,6 +1066,51 @@ When you ship a new harness pattern that needs the same distinction, register at
 
 ---
 
+## 📚 Contributing to the niche-edge-cases catalogue
+
+`skills/failure-diagnosis/references/niche-edge-cases.md` documents failure shapes that LLMs routinely misclassify during the `failure-diagnosis` pipeline. It's a living catalogue: new entries are added as diagnostic sessions surface new shapes that trap the diagnoser and aren't already covered. The full criteria + entry template live in that file's §"Adding an entry"; this section explains the contribution path and how it slots into the rest of this skill's PR conventions.
+
+### When an entry qualifies
+
+All three must hold:
+
+1. **The shape misclassifies in practice.** Stage 0 + Stage 4 of `failure-diagnosis/SKILL.md` weren't enough to land the right answer cleanly — the diagnoser went the wrong direction (or was visibly close to). The catalogue is for traps, not for failures whose classification was obvious.
+2. **The disambiguating probe was non-obvious.** The thing that flipped the classification (a specific tool call, DOM read, evidence grab) is what the next diagnoser most needs. "Look at the screenshot more carefully" is not a probe.
+3. **The shape is reproducible across consumers.** A bug in *this app's* checkout flow is a project finding (goes in that project's bug ledger). A bug shape any consumer of the package could plausibly hit (modal-fetch hangs, stale page-repo entry resolves to a hidden duplicate, role-attribute serialisation breaking implicit ARIA roles, etc.) is catalogue-worthy.
+
+If any criterion fails: don't add an entry. The catalogue's value is in being skimmable during a live diagnosis, not in being exhaustive.
+
+### Entry shape
+
+Five fields per entry — Symptom / Why LLMs struggle / Disambiguating probe / Classification / Cross-link. One paragraph per field is the target. The full template + worked examples live in `niche-edge-cases.md`'s §"Adding an entry" — read it once before authoring your first entry; it's the single source of truth for the structure.
+
+### How to ship the addition
+
+Three pathways depending on what you're already shipping:
+
+| Situation | PR shape |
+|---|---|
+| **You're already mid-PR for something else** (a hook fix, a skill rule edit, etc.) | Add the catalogue entry to the same PR — one extra commit, scope-clean (purely additive to a docs file). Mention in the PR description that the entry was discovered while debugging the PR's own work. Reviewers expect this path; it doesn't trigger a scope-split flag. |
+| **You hit the niche shape outside any PR** (during a normal coverage / authoring / debugging session) | Open a small standalone PR titled `docs(failure-diagnosis): catalogue <shape-name> in niche-edge-cases`. Single-commit, single-file (this catalogue). The `docs(...)` commit-message convention from coverage-expansion's commit table applies; no version bump per Rule 15. |
+| **You hit it inside a dispatched subagent** (e.g. `failure-diagnosis` sub-skill, `bug-discovery` per-journey probe) | Surface the find in the subagent's return — name the shape, the probe, and the classification. The parent orchestrator either appends to the catalogue inline (if mid-PR) or opens the standalone PR above. **Subagents do NOT push commits directly to this catalogue**, the same way they don't push commits directly to other source files; the parent owns the write. |
+
+### Cross-link discipline
+
+When a new entry refines an existing Stage 4 / 4a row in `failure-diagnosis/SKILL.md`, update that row to point at the new entry — short citation only (`see [\`references/niche-edge-cases.md\`](references/niche-edge-cases.md) entry (N)`), don't duplicate the entry's prose into the SKILL.md table cell. The table is the skim path; the catalogue carries the depth.
+
+When a new entry is a brand-new shape with no existing Stage 4 / 4a row, leave the cross-link as `(none — new shape)`. Don't fabricate a Stage 4 row to point back at the entry; let the table remain stable until the shape is well-trodden enough to deserve a row.
+
+### What does NOT belong in the catalogue
+
+- Project-specific failure shapes (those go in the project's adversarial-findings ledger or its own bug tracker).
+- War stories from a long debugging session (the catalogue is the *answer* — the trap and the probe and the classification, nothing more).
+- Failure shapes whose Stage 4 row already covers them adequately (extending the existing row is sufficient).
+- Anything that contradicts the canonical `subagent-return-schema.md` finding-block shape (the catalogue lives alongside the finding format, not as an alternative to it).
+
+When in doubt: if the next diagnoser would benefit from finding your entry under a Cmd-F for the symptom keyword, add it. If they'd just shrug and skim past, leave it out.
+
+---
+
 ## 🧯 When a user runs into an API gap
 
 If you're using the package and want to write something like:
@@ -1051,11 +1184,13 @@ Before opening a PR on element-interactions:
 - [ ] Tests pass: `npm run test` shows all tests passing
 - [ ] Coverage 100%: `npx test-coverage --format=github-plain` shows ✅
 - [ ] No raw Playwright leak: `grep -rn "locator\.\(click\|fill\|...\)" src/ --include="*.ts"` returns zero matches in non-`Element`-impl code
-- [ ] Version bumped exactly once (`npm version patch` at first commit, not at every commit)
+- [ ] Version bumped exactly once, to `(npm-latest + 1 patch)` — verified against `npm view @civitas-cerebrum/element-interactions version` (Rule 15 — collision-safe across parallel PRs)
 - [ ] API reference updated (`skills/element-interactions/references/api-reference.md`) — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] README updated under `🛠️ API Reference: Steps` — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] If adding a new method, it has a JSDoc block on the public-facing class
 - [ ] `.contribution-handover.json` populated against `schemas/contribution-handover.schema.json` — every boolean set; every `false` / `"n/a"` paired with a specific `*Reason` field (verified by `hooks/contribution-handover-gate.sh`)
+- [ ] If this PR closes a GitHub issue, the commit body and the PR description both include `Reported-by: @<github-handle>` crediting the issue author (Hard rule §"Attribute issue reporters", verified by `hooks/commit-attribution-gate.sh`)
+- [ ] **If this PR adds, modifies, or strengthens any `skills/*/SKILL.md` rule, workflow, phase, gate, invariant, or contract, it ALSO ships a hook under `hooks/` that enforces the rule programmatically (Hard rule §"Methodology improvements ship as programmatic hooks"). When mechanical enforcement is genuinely impossible, the PR description includes a paragraph explaining why and the rule is tagged `markdown-only` in `coverage-expansion/references/anti-rationalizations.md`.**
 
 If you're adding to element-repository first:
 
