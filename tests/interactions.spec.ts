@@ -28,11 +28,13 @@ test.describe('TC_027: Draggable Page', () => {
       await steps.verifyState( 'item1','DraggablePage', 'visible');
     });
 
-    await test.step('All 4 draggable items are present', async () => {
-      await steps.verifyPresence( 'item1','DraggablePage');
-      await steps.verifyPresence( 'item2','DraggablePage');
-      await steps.verifyPresence( 'item3','DraggablePage');
-      await steps.verifyPresence( 'item4','DraggablePage');
+    await test.step('All 4 draggable items are present (parallel)', async () => {
+      await steps.verifyAllPresent([
+        { elementName: 'item1', pageName: 'DraggablePage' },
+        { elementName: 'item2', pageName: 'DraggablePage' },
+        { elementName: 'item3', pageName: 'DraggablePage' },
+        { elementName: 'item4', pageName: 'DraggablePage' },
+      ]);
     });
 
     log('TC_027 Draggable Page — passed');

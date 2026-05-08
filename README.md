@@ -485,10 +485,11 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 ### ✅ Verification
 
 * **`verifyPresence(pageName, elementName)`** — Asserts that an element is attached to the DOM and visible.
+* **`verifyAllPresent(targets: Array<{ elementName, pageName, options? }>)`** — Asserts presence of multiple independent elements in parallel via `Promise.all`. Equivalent to sequential `verifyPresence` calls but resolves all assertions concurrently — useful when a page has many content blocks to assert at once. Example: `await steps.verifyAllPresent([{ elementName: 'title', pageName: 'PDP' }, { elementName: 'price', pageName: 'PDP' }])`.
 * **`verifyAbsence(pageName, elementName)`** — Asserts that an element is hidden or detached from the DOM.
 * **`verifyText(pageName, elementName, expectedText?)`** — Asserts element text. Provide `expectedText` for an exact match, or call with no args to assert not empty.
 * **`verifyCount(pageName, elementName, options: CountVerifyOptions)`** — Asserts element count. Accepts `{ exactly: number }`, `{ greaterThan: number }`, or `{ lessThan: number }`.
-* **`verifyImages(pageName, elementName, scroll?: boolean)`** — Verifies image rendering: checks visibility, valid `src`, `naturalWidth > 0`, and the browser's native `decode()` promise. Scrolls into view by default.
+* **`verifyImages(elementName, pageName, scroll?: boolean, options?: StepOptions, imageOptions?: { verifyDecoded?: boolean })`** — Verifies image rendering: checks visibility, valid `src`, and `naturalWidth > 0`. Pass `imageOptions: { verifyDecoded: true }` to also run the browser's native `decode()` round-trip (more thorough, adds a CDP round-trip per image; off by default). Scrolls into view by default.
 * **`verifyTextContains(pageName, elementName, expectedText: string)`** — Asserts that an element's text contains the expected substring.
 * **`verifyState(pageName, elementName, state)`** — Asserts the state of an element. Supported states: `'enabled'`, `'disabled'`, `'editable'`, `'checked'`, `'focused'`, `'visible'`, `'hidden'`, `'attached'`, `'inViewport'`.
 * **`verifyAttribute(pageName, elementName, attributeName: string, expectedValue: string)`** — Asserts that an element has a specific HTML attribute with an exact value.
