@@ -28,10 +28,16 @@
     "@playwright/test": ">=1.0.0"
   },
   "devDependencies": {
+    "@babel/parser": "^7.29.3",
     "@civitas-cerebrum/test-coverage": "^0.1.0",
     "@playwright/test": "^1.59.1",
     "@types/debug": "^4.1.13",
     "@types/node": "^20.0.0",
+    "@vue/compiler-sfc": "^3.5.34",
+    "parse5": "^7.3.0",
+    "pixelmatch": "^5.3.0",
+    "pngjs": "^7.0.0",
+    "svelte": "^4.2.20",
     "typescript": "^5.0.0"
   },
   "keywords": [
