@@ -43,6 +43,13 @@ State file shape (minimum fields):
     }
   ],
   "adversarialTotals": { ... },
+  "adversarialSkippedJourneys": [
+    {
+      "journey": "j-zb-logout",
+      "rationale": "P3 logout, single-page surface already probed by j-zb-create-location pass-4 portal-wide CSRF entry; zero unique findings in prior passes",
+      "criteria": ["priority-p3", "page-subset-covered", "zero-prior-findings", "low-surface-shape"]
+    }
+  ],
   "updatedAt": "2026-04-24T..."
 }
 ```
@@ -88,7 +95,36 @@ Gated-skip entries count as "work done" for the §"Authoritative state file" pre
 
 Gated-skip entries are valid **only** for Passes 2 and 3. Pass 1 has no prior pass to gate against; Passes 4 and 5 (adversarial) keep dispatch-driven discipline because the per-journey adversarial yield is empirically uncorrelated with Pass-1 confidence.
 
+**`adversarialSkippedJourneys[]` field (issue #164.4, opt-in P3 adversarial skip):** array of objects, each with:
+
+- `journey` — the journey ID (`j-<slug>`).
+- `rationale` — non-empty string explaining why the journey is being excluded from Passes 4 and 5. Vague rationales (`"low value"`, `"P3 doesn't need it"`) fail the contract; specific rationales naming the covered surface and the portal-wide entry that subsumes it pass.
+- `criteria` — array containing all four canonical strings naming the criteria (`priority-p3`, `page-subset-covered`, `zero-prior-findings`, `low-surface-shape`); the entry's validity requires all four to be present (the array is mechanical evidence, not a tickbox). Order doesn't matter; missing or extra strings DENY at the schema-guard hook.
+
+The field is **opt-in per project, never silent**. The orchestrator may not append entries inferentially during a pass; entries land at project setup time (or in a between-pass commit explicitly authorised by the user) and stay through all subsequent runs. Compositional Passes (1–3) ignore this field — every journey gets compositional coverage regardless. Adversarial Passes (4 and 5) read it on entry and exclude listed journeys from their journey roster for those passes only.
+
+**Implementation:** the orchestrator iterates `journeyRoster - adversarialSkippedJourneys[].journey` for Passes 4 and 5; `journeyRoster` itself is NOT rewritten and `completedJourneys` continues to track only journeys whose dispatch returned in the current pass. The skip evidence lives only in `adversarialSkippedJourneys[]`.
+
 The state file is rewritten after every per-pass commit (and whenever auto-compaction triggers — see [`depth-mode-pipeline.md` §"Auto-compaction between passes"](depth-mode-pipeline.md)).
+
+**`deferredJourneys[]` field (issue #155 Gap 2 — semantic authorisation).** Top-level array of objects, one entry per deferred journey. Each entry MUST satisfy one of:
+
+- **(A)** `reason` starts with one of the allowed structural prefixes — `blocked-on-app-bug:<id>`, `test-data-prerequisite:<thing>`, `user-authorised:<verbatim quote>`. These are subagent-returned or environment-attested reasons that need no further authorisation.
+- **(B)** The entry carries an `authorizer` field whose value is a non-empty string interpreted as a verbatim quote of in-conversation user authorisation.
+
+Entry shape:
+
+```json
+{
+  "journey": "<JOURNEY-ID>",
+  "reason": "<allowed prefix or self-imposed reason>",
+  "authorizer": "<verbatim quote, OR null/absent if reason has allowed prefix>"
+}
+```
+
+**Namespace note.** This `authorizer` field is distinct from the per-`dispatches[]`-entry `authorizer` field documented above. The dispatch-entry `authorizer` is non-null only when `result == "skipped"` (per-journey skip authorised by user). The `deferredJourneys[]` `authorizer` is the verbatim quote authorising a self-imposed deferral. Two distinct contracts share the field name; the hook distinguishes by entry shape (presence of `stage_a_cycles` / `review_status` marks a dispatch entry; their absence + `journey` + `reason` marks a deferral entry).
+
+Harness-enforced by `hooks/coverage-state-deferral-auth-guard.sh` (PreToolUse:Write|Edit). Self-imposed reasons (`budget-cap`, `session-length`, `mode-deviation`, `inferred-pref`, `auto-mode-stop`) are DENY without an `authorizer:` field. Empty / whitespace-only / `null` authorizer also denies.
 
 **Journey-roster mutability.** The roster for a given pass is frozen at the start of that pass — it is a snapshot of the journey IDs the orchestrator intends to dispatch *this pass*. If a compositional pass discovers and promotes a new journey or sub-journey mid-pass, the new entry is appended to the **next** pass's roster, not retroactively to the current pass's. This prevents the "did I cover everything?" ambiguity where `journeyRoster` and `completedJourneys` diverge because the roster keeps growing. Reconciliation commits (Pass 2/3) write the new roster to the state file at the same commit that appends the new map blocks, so the post-compact resume reads a consistent roster-to-map alignment.
 

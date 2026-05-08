@@ -165,22 +165,29 @@ A subagent's brief asks it to "dispatch N parallel subagents", "spawn workers", 
 
 ---
 
-## Pattern: Sonnet cost-down rationalisation
+## Pattern: Sonnet-everywhere drift
 
-The orchestrator argues for sonnet over opus on dispatches the cost-blind posture says should be opus.
+The orchestrator argues for sonnet on dispatches the hybrid model table reserves for opus — generalising issue #164's single-cycle Sonnet/Opus parity observation on adversarial probes to dispatches the table doesn't cover (or to Pass 4 itself, which the table now keeps on opus because its findings feed Pass 5's regression layer).
 
 **Symptoms:**
-- "the journey was attempted last pass and ended at `blocked-cycle-stalled` — that counts as previously-greenlit"
-- "Pass 4 is just probing, sonnet is good enough for cycle-1 of small journeys"
-- "I ran sonnet for Stage A and opus for Stage B — that's a hybrid we never explicitly forbade"
-- "small journey, sonnet is fine"
+- "Stage B reviewer per-journey can run sonnet — schema/coverage checks are mechanical" (the table says Opus for per-journey reviewers per the post-revision policy)
+- "the batch reviewer is just aggregating per-journey reviews — sonnet is fine"
+- "Pass 5 targeted probes / regression authoring is mechanical enough for sonnet" (the regression layer is the durable artifact — quality at authoring time propagates forward indefinitely)
+- "gap analysis between passes is mechanical enough for sonnet"
+- "failure-diagnosis is small enough to run sonnet"
+- "Pass 1 composer can run sonnet — the foundation will be re-reviewed anyway"
+- "issue #164 showed Sonnet/Opus parity, so Sonnet should be fine everywhere"
 
-**Reality:** Default model for every dispatch in every stage in every pass is opus. The narrow cycle-1 Stage B sonnet-confirmation exception applies ONLY to journeys with `greenlight` (not blocked-*) in the previous pass, no map delta, and no sibling-bug ledger update. Pass 4 + Pass 5 are ALWAYS opus, both stages, full stop. Hybrid Stage A/Stage B model splits beyond the narrow exception are not authorised.
+**Reality:** The hybrid table draws the line carefully:
+- **Sonnet remains the default** only for Pass 2/3 re-pass composers — the work is mechanical (the bulk of journeys return `covered-exhaustively`), and the cycle re-runs cap any quality slippage.
+- **Opus remains** for Pass 1 Stage A composer, **Pass 4 Stage A adversarial probes** (findings feed Pass 5's regression layer, so probe-depth quality at the boundary determines what gets locked in), **all of Pass 5** (gap analysis, targeted probes, regression-test authoring — the regression layer is the durable artifact, where quality at authoring time propagates forward indefinitely), the Stage B reviewer per-journey (kept on opus to keep review judgement at the quality boundary while batching ramps), the Stage B batch reviewer, cleanup ledger dedup, Phase 7 deck/report, and failure-diagnosis.
+
+Anti-pattern is now: sonnet on dispatches the table marks Opus — specifically Pass 4 Stage A probes, Pass 5 (any sub-stage), the Stage B reviewer per-journey, the Stage B batch reviewer, and failure-diagnosis. Issue #164's empirical Sonnet/Opus parity was a single-cycle observation on adversarial probe categories surfaced in that cycle — it is not a general "Sonnet on adversarial work" mandate, and the hybrid table does not act on it for Pass 4 because Pass 4's findings feed Pass 5's regression layer. Do not generalise the observation across the table.
 
 **Hooks that catch this:**
 - (markdown-only) — model selection is not yet mechanically detectable at the dispatch boundary.
 
-**Origin:** Cost-blind posture codified in §"Model selection" of `references/depth-mode-pipeline.md`.
+**Origin:** Hybrid model policy codified in §"Hybrid model selection" of `coverage-expansion/SKILL.md` (issue #164.6).
 
 ---
 
@@ -300,6 +307,26 @@ The cost the orchestrator pays for the dodge:
 - `coverage-expansion-direct-compose-block.sh` — PostToolUse:Write|Edit on `tests/e2e/j-*.spec.ts` / `tests/e2e/sj-*.spec.ts` (incl. `-regression`) when `coverage-expansion-state.json` exists. **Hard DENY** unless the slug is registered in `tests/e2e/docs/.in-flight-composers.json` — the in-flight-composer registry maintained by the dispatch-guard hook with a 30-min TTL. Legitimate composer-subagent writes pass (slug is in-flight from a recent `composer-j-<slug>:` / `probe-j-<slug>:` Agent dispatch); orchestrator-direct writes fail at the boundary. Deny message includes the redirect template + pointer to `test-optimization.md` §1.A (per-test-user pattern) for the upstream parallelism fix.
 
 **Origin:** v0.3.4 onboarding test surfaced this as a follow-on consequence of "Pre-emptive scope reduction" — the agent identified parallelism risk correctly, then absorbed the work to avoid the risk instead of fixing the risk's upstream cause. Hook + Stage 4a §1.A added in v0.3.5.
+
+---
+
+## Pattern: `markdown-only` deferral — batch-reviewer mode (cycle-1 compositional)
+
+The "Batch reviewer mode" rule lives in `skills/coverage-expansion/references/reviewer-subagent-contract.md` §"Batch reviewer mode (cycle-1 compositional only)" (introduced in PR #177, closes #164.2). The structural backstop — extending `subagent-spillover-rewrite-gate.sh` and `subagent-return-schema-guard.sh` to recognise the `reviewer-batch-pass-<N>:` role-prefix and the `verdicts:` array shape — is **deferred** to land coherently with the mechanical-checks-first PR.
+
+**Tag:** `markdown-only`.
+**Deferred hook:** `subagent-spillover-rewrite-gate.sh` + `subagent-return-schema-guard.sh` extension for `reviewer-batch-pass-<N>:` / `verdicts:`.
+**Follow-up:** #164.7 / Wave 3I.3b.
+
+---
+
+## Pattern: `markdown-only` deferral — portal-wide-scan sentinel + citation contract
+
+The "Pass-4 prelude — portal-wide pattern scan" rule lives in `skills/coverage-expansion/SKILL.md` §"Hard rules — kernel-resident" + `references/portal-wide-scan.md` + `adversarial-subagent-contract.md` §"Inputs" #9 (introduced in PR #178, closes #164.3). The output file `tests/e2e/docs/portal-wide-patterns.md` carries the sentinel `<!-- portal-wide-scan:generated -->`, but no hook validates that writes preserve the sentinel or that new entries follow the per-pattern catalogue schema (`<pattern-id>` + `Cite as: coverage: portal-wide:<pattern-id>` line).
+
+**Tag:** `markdown-only`.
+**Deferred hook:** sentinel-validation hook for `tests/e2e/docs/portal-wide-patterns.md`, behaviour analogous to `journey-map-sentinel-guard.sh`.
+**Follow-up:** #180.
 
 ---
 
