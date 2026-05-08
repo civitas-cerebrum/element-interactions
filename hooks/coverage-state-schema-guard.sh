@@ -33,6 +33,9 @@
 # - Missing required fields (status, currentPass, etc.)    → DENY
 # - dispatches[] entry missing dual-stage fields           → DENY
 # - currentPass >= 1 with zero dispatches recorded         → DENY (pre-emptive-stop pattern)
+# - adversarialSkippedJourneys not an array                → DENY
+# - adversarialSkippedJourneys[] entry missing journey/rationale → DENY
+# - adversarialSkippedJourneys[] entry with missing or malformed criteria → DENY
 # - Anything else                                          → silent allow
 
 set -euo pipefail

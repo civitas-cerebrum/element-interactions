@@ -26,7 +26,7 @@ The dual-stage design addresses a concrete failure mode: a single subagent that 
 - Stage B: see `references/reviewer-subagent-contract.md` for the full contract and dispatch-brief template.
 - Return shape: both stages use the canonical subagent-return-schema. Stage B's return states (`greenlight`, `improvements-needed`) are additions; Stage A's existing states are unchanged.
 
-**Cost posture.** This skill defaults to the hybrid model policy in [`coverage-expansion/SKILL.md`](../SKILL.md) §"Hybrid model selection — Pass 1 on Opus, subsequent passes Sonnet for execution and Opus for review". Override paths preserved per that section.
+**Cost posture.** This skill defaults to the hybrid model policy in [`coverage-expansion/SKILL.md`](../SKILL.md) §"Hybrid model selection — Pass 1 + Pass 5 on Opus, Pass 2/3/4 execution on Sonnet, all review on Opus". Pass 1 + Pass 5 are Opus end-to-end (foundation + regression layer); intermediate passes use Sonnet for journey-level execution and Opus for review. Override paths preserved per that section.
 
 **No-skip extension.** Under dual-stage, the no-skip contract (PR #105) extends: every journey must receive both Stage A and Stage B in every pass. A journey with Stage A but no Stage B is incomplete. The terminal `review_status` set gains three subagent-evidenced blocked values — `blocked-cycle-stalled`, `blocked-cycle-exhausted`, and `blocked-dispatch-failure` — per §"Retry loop" termination conditions. (These hyphenated forms are the canonical `review_status` enum used in the state file's `dispatches[]` array; the no-skip `result` field's `blocked (reason)` shape may carry these strings as the reason text, but `review_status` itself is the bare hyphenated form.)
 
