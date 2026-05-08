@@ -88,10 +88,10 @@ The schema below is specifically for the `onboarding` Phase 3 happy-path draft (
   "handover-to-phase4": {
     "cycle-1-targets": ["<section-id>", ...],
     "credentials-discovered": {
-      "signup-open": true,
-      "signup-endpoint": "POST /api/auth/signup",
-      "demo-credentials": null,
-      "admin-path": null
+      "signup-open": true | false,
+      "signup-endpoint": "<HTTP-method> <signup-path>",
+      "demo-credentials": null | { "<role>": { "<credential-field>": "<value>" } },
+      "admin-path": null | "<admin-route>"
     }
   }
 }

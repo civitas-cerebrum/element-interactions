@@ -217,7 +217,7 @@ Cycle agents pick from this list when classifying routes. Novel categories are a
 | `cart` | /cart, /checkout | Pre-purchase state management. |
 | `order` | /orders, /orders/:id, /orders/:id/return, /receipts | Post-purchase state including returns/refunds. |
 | `marketplace` | /marketplace, /listings, /sell, /listings/:id | User-to-user supply side. |
-| `profile` | /profile, /account, /settings, /me | Authenticated user's own data + own-listings/orders entry points. |
+| `profile` | /profile, /account, /settings, /me | Authenticated user's own data + own-resource management entry points. |
 | `admin` | /admin, /admin/* | Privileged role. Often gated by credentials cycle agents cannot self-discover. |
 | `billing` | /billing, /invoices, /subscriptions, /plans | Payment / subscription management. |
 | `content` | /blog, /docs, /help, /faq, /terms, /privacy | Static / informational. |
