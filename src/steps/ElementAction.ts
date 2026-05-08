@@ -376,9 +376,9 @@ export class ElementAction {
      * decodes successfully. Collection-level — resolves with
      * `SelectionStrategy.ALL` regardless of any strategy selector.
      */
-    async verifyImages(scroll: boolean = true): Promise<void> {
+    async verifyImages(scroll: boolean = true, options?: { verifyDecoded?: boolean }): Promise<void> {
         const element = await this.resolveAll();
-        await this.interactions.verify.images(element, scroll);
+        await this.interactions.verify.images(element, scroll, options);
     }
 
     /** Assert element state. */

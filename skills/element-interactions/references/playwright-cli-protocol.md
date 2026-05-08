@@ -17,7 +17,7 @@ Consequence: the orchestrator no longer needs to "confirm per-subagent isolation
 
 ### 1.1 Empirical parallelism (G4 — what to expect)
 
-Controlled benchmark on book-hive-pw-cli (4 sessions × {open, snapshot, close} on darwin, single-host docker stack, 2026-05-01):
+Controlled benchmark (4 sessions × {open, snapshot, close} on darwin, single-host docker stack):
 
 ```
 serial wall-clock:   45.26s   (4 sequential iterations × ~11s avg)
@@ -84,23 +84,23 @@ Use `<phase>-<role>-<slug>` so `playwright-cli list` reads as a workflow summary
 | Workflow | Convention | Example |
 |---|---|---|
 | `journey-mapping` Phase 1 (per entry point) | `phase1-<entry-slug>` | `phase1-root`, `phase1-mkt`, `phase1-login` |
-| `coverage-expansion` Pass-N Stage A (compositional) | `composer-<journey-slug>-<pass>-c<N>` | `composer-j-checkout-3-c1` |
-| `coverage-expansion` Pass-N Stage B (reviewer) | `reviewer-<journey-slug>-<pass>-c<N>` | `reviewer-j-checkout-3-c1` |
-| `coverage-expansion` Pass-4/5 adversarial probe | `probe-<journey-slug>-<pass>` | `probe-j-checkout-4` |
-| `bug-discovery` per-journey adversarial | `probe-<journey-slug>` | `probe-j-checkout` |
-| `failure-diagnosis` per-failure debug session | `fd-<short-slug>` | `fd-cart-update-flake` |
-| `companion-mode` single-task verification | `companion-<task-slug>` | `companion-onb-form` |
+| `coverage-expansion` Pass-N Stage A (compositional) | `composer-<journey-slug>-<pass>-c<N>` | `composer-j-<slug>-3-c1` |
+| `coverage-expansion` Pass-N Stage B (reviewer) | `reviewer-<journey-slug>-<pass>-c<N>` | `reviewer-j-<slug>-3-c1` |
+| `coverage-expansion` Pass-4/5 adversarial probe | `probe-<journey-slug>-<pass>` | `probe-j-<slug>-4` |
+| `bug-discovery` per-journey adversarial | `probe-<journey-slug>` | `probe-j-<slug>` |
+| `failure-diagnosis` per-failure debug session | `fd-<short-slug>` | `fd-<short-slug>` |
+| `companion-mode` single-task verification | `companion-<task-slug>` | `companion-<task-slug>` |
 
 The `composer-` / `reviewer-` / `probe-` prefix on the CLI slug mirrors the role-explicit Agent description prefix that dispatched the subagent (`composer-j-<slug>:`, `reviewer-j-<slug>:`, `probe-j-<slug>:`) — same prefix on both ends, so `.playwright-cli/<slug>*` artifacts trace 1:1 to the dispatching subagent's role + journey. Bare `j-<slug>-...` / `sj-<slug>-...` slugs are deprecated; use the role-explicit form.
 
 Slugs use ASCII, lowercase, dash-separated. Do not use `/` — match the dash-separated forms in the table above so `playwright-cli list` reads cleanly.
 
-**Slug-length budget — keep under ~25 chars on darwin.** The CLI opens a Unix domain socket at `$TMPDIR/pw-<8>/cli/<16-hash>-<slug>.sock`. macOS's `sockaddr_un.sun_path` caps at 104 bytes, and after the `pw-XXXXXXXX/cli/<16-hash>-` prefix you have only ~25–30 characters of slug headroom before `listen()` fails with `EINVAL`. Empirically observed during Phase-2 validation on book-hive-pw-cli: `phase1-marketplace` (18 chars) failed; `phase1-mkt` (10 chars) worked. The cap is per-socket-path, not per-slug-string, so `$TMPDIR` length matters too.
+**Slug-length budget — keep under ~25 chars on darwin.** The CLI opens a Unix domain socket at `$TMPDIR/pw-<8>/cli/<16-hash>-<slug>.sock`. macOS's `sockaddr_un.sun_path` caps at 104 bytes, and after the `pw-XXXXXXXX/cli/<16-hash>-` prefix you have only ~25–30 characters of slug headroom before `listen()` fails with `EINVAL`. The cap is per-socket-path, not per-slug-string, so `$TMPDIR` length matters too. Empirically slugs around 18+ chars have failed on darwin while 10-char slugs work; budget conservatively.
 
 Practical guidance:
 
 - Compose phase prefixes from short tokens: `phase1-`, `fd-`, `companion-`, plus `composer-`, `reviewer-`, `probe-` for coverage-expansion / bug-discovery.
-- Keep journey slugs to ≤12 chars where you can — `j-checkout`, not `j-checkout-with-coupon-and-card`. With the role prefix, `composer-j-checkout-1-c1` is 24 chars — within budget; longer journey slugs need shortening.
+- Keep journey slugs to ≤12 chars where you can — pick a short journey slug per the journey-map convention. With the role prefix, `composer-j-<short-slug>-1-c1` (≤24 chars) is within budget; longer journey slugs push the prefixed form past the cap and need shortening.
 - Compose the slug, then `wc -c <<< "<slug>"`; abort and shorten if it crosses 25 chars.
 - Linux's 108-byte limit is slightly more forgiving but the same discipline keeps cross-OS portability cheap.
 

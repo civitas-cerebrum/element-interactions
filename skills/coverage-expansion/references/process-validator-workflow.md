@@ -52,9 +52,9 @@ The parent dispatches the validator with a **manifest** of the planned wave. The
 
 | # | description prefix | journey-id | slug | model-hint | must-fix-list summary |
 |---|---|---|---|---|---|
-| 1 | composer-j-checkout: cycle 1 | j-checkout | composer-j-checkout-2-c1 | sonnet | (n/a — pass 1) |
-| 2 | composer-j-cart: cycle 1     | j-cart     | composer-j-cart-2-c1     | sonnet | (n/a — pass 1) |
-| 3 | composer-j-orders: cycle 1   | j-orders   | composer-j-orders-2-c1   | opus   | (n/a — pass 1) |
+| 1 | composer-j-a: cycle 1 | j-a | composer-j-a-2-c1 | sonnet | (n/a — pass 1) |
+| 2 | composer-j-b: cycle 1 | j-b | composer-j-b-2-c1 | sonnet | (n/a — pass 1) |
+| 3 | composer-j-c: cycle 1 | j-c | composer-j-c-2-c1 | opus   | (n/a — pass 1) |
 
 (continue for all N rows)
 
@@ -147,13 +147,13 @@ pass: <pass number>
 findings:
   - **pv-stage-a-wave-01** [must-fix] — slug exceeds 28-char cap
     - manifest-row: 7
-    - issue: "composer-j-marketplace-buy-2-c1" is 31 chars; will fail playwright-cli daemon socket bind on darwin
-    - fix: shorten to "composer-j-mkt-buy-2-c1" (24 chars) — coordinate with journey-map slug
+    - issue: row's full slug is 31 chars; will fail playwright-cli daemon socket bind on darwin
+    - fix: shorten the journey slug to ≤16 chars so the prefixed form fits ≤28 — coordinate with journey-map slug
 
   - **pv-stage-a-wave-02** [must-fix] — brief-leak in must-fix-list summary
     - manifest-row: 12
     - issue: must-fix-list summary mentions "5-pass pipeline" — orchestrator meta-content
-    - fix: rewrite as "address Stage B finding j-orders-1-2-R-01 (mobile variant)"
+    - fix: rewrite as "address Stage B finding j-c-1-2-R-01 (mobile variant)"
 
 summary: 2 findings — one slug-length cap violation, one brief-leak. Block this wave; the parent revises rows 7 and 12 and re-emits the manifest.
 ````
@@ -236,11 +236,11 @@ A pass-2 wave of 5 composer dispatches:
 
 | # | description prefix | journey-id | slug | model-hint | must-fix-list summary |
 |---|---|---|---|---|---|
-| 1 | composer-j-checkout: cycle 1     | j-checkout     | composer-j-checkout-2-c1   | sonnet | address Stage B finding j-checkout-1-1-R-01 (mobile variant) |
-| 2 | composer-j-cart: cycle 1         | j-cart         | composer-j-cart-2-c1       | sonnet | (n/a — re-pass trigger 3, no prior must-fix) |
-| 3 | composer-j-orders: cycle 1       | j-orders       | composer-j-orders-2-c1     | opus   | address Stage B findings j-orders-1-2-R-{01,02,03} |
-| 4 | composer-j-checkout-pay: cycle 1 | sj-checkout-pay| composer-sj-pay-2-c1       | sonnet | address Stage B finding sj-checkout-pay-1-1-R-01 (error state) |
-| 5 | composer-j-marketplace-buy: cycle 1 | j-marketplace-buy | composer-j-mkt-buy-2-c1 | sonnet | (n/a) |
+| 1 | composer-j-a: cycle 1     | j-a     | composer-j-a-2-c1       | sonnet | address Stage B finding j-a-1-1-R-01 (mobile variant) |
+| 2 | composer-j-b: cycle 1     | j-b     | composer-j-b-2-c1       | sonnet | (n/a — re-pass trigger 3, no prior must-fix) |
+| 3 | composer-j-c: cycle 1     | j-c     | composer-j-c-2-c1       | opus   | address Stage B findings j-c-1-2-R-{01,02,03} |
+| 4 | composer-sj-d-1: cycle 1  | sj-d-1  | composer-sj-d-1-2-c1    | sonnet | address Stage B finding sj-d-1-1-1-R-01 (error state) |
+| 5 | composer-j-e: cycle 1     | j-e     | composer-j-e-2-c1       | sonnet | (n/a) |
 
 ## Pre-checks performed by parent before manifest emission
 - [x] All description prefixes use role-explicit form.

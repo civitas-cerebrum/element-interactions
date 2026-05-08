@@ -299,7 +299,7 @@ Fix: shape per skills/coverage-expansion/references/state-file-schema.md §\"adv
 File: $FILE_PATH
 Offending entries (by journey or '<missing>'): ${INVALID}
 
-Fix: every entry MUST have a non-empty 'journey' and a non-empty 'rationale'. Vague rationales (\"low value\", \"P3 doesn't need it\") fail the contract; specific rationales naming the covered surface and the portal-wide entry that subsumes it pass. The opt-out is meaningful only if the project-time author explained WHY this journey is excluded — silent skip is what the field is here to prevent.
+Fix: every entry MUST have a non-empty 'journey' and a non-empty 'rationale'. Vague rationales (\"low value\", \"P3 doesn't need it\") fail the contract; specific rationales naming the covered surface and the app-wide entry that subsumes it pass. The opt-out is meaningful only if the project-time author explained WHY this journey is excluded — silent skip is what the field is here to prevent.
 
 See skills/coverage-expansion/SKILL.md §\"P3 small-surface journeys may opt OUT of adversarial passes\" for the four exclusion criteria the orchestrator must satisfy."
       exit 0

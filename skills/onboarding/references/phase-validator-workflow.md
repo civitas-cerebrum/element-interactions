@@ -291,7 +291,7 @@ The ledger is committed alongside Phase N's regular commits. Resume across sessi
 
 **Phase:** 5
 **Sub-skill:** coverage-expansion
-**Project root:** /Users/dev/bookhive
+**Project root:** /Users/<user>/<project>
 
 ## Artifacts to verify
 

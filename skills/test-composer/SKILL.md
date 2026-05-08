@@ -135,7 +135,7 @@ Each variant is its own `test(...)` inside one describe block for the journey �
 
 ### Tenant cleanup hooks are non-negotiable for add-* journeys
 
-Any journey whose happy path creates a persistent tenant entity (e.g., `j-*-add-caregiver`, `j-*-add-location`, `j-*-add-group`, `j-*-add-administrator`) **must** include an explicit `test.afterAll` teardown attempt in the spec. Accumulated test records across many passes pollute shared tenants and eventually obscure real behaviour.
+Any journey whose happy path creates a persistent tenant entity (typically `j-*-add-<entity-type>` journeys — users, records, teams, resources, admins, etc.) **must** include an explicit `test.afterAll` teardown attempt in the spec. Accumulated test records across many passes pollute shared tenants and eventually obscure real behaviour.
 
 Two cases, both mandatory:
 
@@ -163,7 +163,7 @@ cleanupViaApiBackdoor(entityType: string, id: string): Promise<void>
 ```
 
 - **Intent.** Delete a tenant entity created during a test when the UI exposes no Delete path. Invoked from `test.afterAll` after the suite's happy-path variant has finished.
-- **Signature.** `entityType` is a framework-recognised entity slug (e.g., `'caregiver'`, `'location'`, `'group'`, `'administrator'`). `id` is the server-assigned identifier captured during the create flow.
+- **Signature.** `entityType` is a framework-recognised entity slug (e.g., `'user'`, `'record'`, `'team'`, `'resource'`). `id` is the server-assigned identifier captured during the create flow.
 - **Credentials.** Per-tenant API credentials live in env (`<TENANT>_API_TOKEN` or equivalent). The helper reads them; specs never handle raw credentials.
 - **Failure mode.** On non-2xx response, the helper throws; the spec's `test.afterAll` catches and surfaces `cleanup: blocked` in the subagent return.
 - **Status.** Contract only in this PR. The helper implementation, the env-credential convention, and any per-entity endpoint mapping are future follow-up work and out of scope here.
@@ -412,9 +412,9 @@ test(<j-slug>): <variant>
 - One journey per commit, one variant per commit. Do not batch multiple variants into a single commit; do not batch multiple journeys into a single commit.
 
 Examples:
-- `test(j-book-demo): happy-path`
-- `test(j-reset-password): error-states`
-- `test(j-manager-add-caregiver): data-lifecycle`
+- `test(j-<slug>): happy-path`
+- `test(j-<slug>): error-states`
+- `test(j-add-<entity>): data-lifecycle`
 
 Do NOT use `test(pass<N>): …`, `feat(e2e): …`, or `test(<j1>, <j2>): …` — see the **Commit-message conventions** table in `coverage-expansion/SKILL.md` for the full list of anti-patterns across all passes.
 

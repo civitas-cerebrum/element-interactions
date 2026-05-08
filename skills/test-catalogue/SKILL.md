@@ -8,11 +8,11 @@ description: >
   `tests/e2e/docs/journey-map.md` and at least one spec file to be present.
 ---
 
-# Test Catalogue — Client-Ready Scenario Inventory PDF
+# Test Catalogue — Stakeholder-Ready Scenario Inventory PDF
 
-Generate a printable, stakeholder-facing catalogue that answers the question **"what scenarios are we running, and why?"** at a glance. The audience is non-technical: a product owner, a manager, a client sponsor. They want to see coverage organised by portal and priority, with a short human-readable line per scenario and a transparent list of anything explicitly deferred.
+Generate a printable, stakeholder-facing catalogue that answers the question **"what scenarios are we running, and why?"** at a glance. The audience is non-technical: a product owner, a manager, a sponsor. They want to see coverage organised by primary section and priority, with a short human-readable line per scenario and a transparent list of anything explicitly deferred.
 
-Output is an A4-landscape PDF (and its HTML source), cover page first, sectioned by portal, sorted by priority, with a dedicated adversarial-regression section and a skipped-with-reason section at the end.
+Output is an A4-landscape PDF (and its HTML source), cover page first, sectioned by primary structural axis, sorted by priority, with a dedicated adversarial-regression section and a skipped-with-reason section at the end. The primary structural axis is **derived per project at runtime** from the journey map (URL-prefix clusters or file-name clusters) — the skill is a renderer, not a domain model, so it does not hardcode any app's section names.
 
 ---
 
@@ -36,7 +36,7 @@ It does NOT activate during test writing, coverage expansion, repair, or debuggi
 | Source | Path | Purpose |
 |---|---|---|
 | Spec files | `tests/e2e/**/*.spec.ts` | Scenario extraction |
-| Journey map | `tests/e2e/docs/journey-map.md` | Must start with `<!-- journey-mapping:generated -->` sentinel. Cross-referenced for priority / category / entry / portal. |
+| Journey map | `tests/e2e/docs/journey-map.md` | Must start with `<!-- journey-mapping:generated -->` sentinel. Cross-referenced for priority / category / entry / section. |
 
 If either input is missing, stop and tell the user — do not fabricate a journey map.
 
@@ -51,7 +51,7 @@ If either input is missing, stop and tell the user — do not fabricate a journe
 
 | Arg | Default | Effect |
 |---|---|---|
-| `brand: <name>` | generic dark-mode | Overrides the cover/accent palette. Known brands: `spritecloud` (blue `#00A3FF` + orange `#FF7A1A`), `civitas-cerebrum` (green `#3fb950`). |
+| `brand: <name>` | generic dark-mode | Overrides the cover/accent palette. Built-in: `civitas-cerebrum` (green `#3fb950`). Additional brands may be added by appending a row to the palette table below. |
 | `output: <path>` | `test-catalogue.pdf` | Output PDF filename at repo root |
 
 ---
@@ -72,16 +72,16 @@ For every `tests/e2e/**/*.spec.ts`:
    - Any `@tag` substrings inside the test name (e.g., `@mobile`, `@security`)
 4. Determine the journey ID from either:
    - The outer `describe` name if it starts with `j-` or `sj-`, or
-   - The file-name convention: `<portal>-<slug>.spec.ts` → attempt matching `j-<portal>-<slug>` against journey-map headings.
+   - The file-name convention: `<section-prefix>-<slug>.spec.ts` → attempt matching `j-<section-prefix>-<slug>` against journey-map headings.
 
 Implementation hint: a tolerant regex-based walk is sufficient. You do not need a real AST — spec files in this framework follow predictable patterns (see `references/spec-parsing.md`).
 
 ### Phase 2 — Cross-reference
 
-Load `journey-map.md`. For each `### j-…` heading, extract the metadata block that follows (Priority, Category, Entry, Portal-inferred-from-Entry). Build a lookup table.
+Load `journey-map.md`. For each `### j-…` heading, extract the metadata block that follows (Priority, Category, Entry, Section-inferred-from-Entry). Build a lookup table.
 
 For each extracted test:
-- If its journey matches → attach priority, category, portal, short purpose (the heading text).
+- If its journey matches → attach priority, category, primary section, short purpose (the heading text).
 - If the spec file name ends in `-regression.spec.ts` → mark as `adversarial-regression` and, when adversarial-findings.md lists a matching boundary (`VB-NN` or `P4-…` code), attach that code.
 - If the enclosing describe starts with `sj-` → mark as `structural` (these are composed into journeys rather than being user-facing journeys themselves).
 - If the test is `test.skip` at statement position → keep the skip + capture any human-readable reason from a nearby comment on the preceding lines (best-effort).
@@ -90,34 +90,33 @@ Unmatched tests go into an "Unmapped" bucket in the catalogue — visible so the
 
 ### Phase 3 — Categorise
 
-The catalogue is grouped on **two axes**:
+The catalogue is grouped on **two axes**, both derived from the journey map at runtime — neither is hardcoded by the skill:
 
-1. **Primary (outer) grouping — portal.** Read from the journey-map Entry URL prefix or file-name convention:
-   - Manager portal
-   - Administrator portal
-   - Cross-cutting (sub-journeys, regression-only specs spanning both)
+1. **Primary (outer) grouping — section.** The top-level structural axis: the highest-level cohorts the app naturally splits into (different portals / different user roles / different host names — whatever the journey map's `Entry:` URLs reveal). Derived per project per §"Deriving the primary section axis" below. The skill does NOT carry a built-in list of sections; the cluster labels are whatever the data yields.
+2. **Secondary (inner) grouping — page area.** Within each primary section, group by the part of the application the scenarios exercise. Derived per project per §"Deriving the page-area taxonomy" below. **Never group by priority tier.** Stakeholders care about "what parts of the app are covered," not "which priority bucket does the test sit in." Priority stays visible as a per-scenario chip (see below) — it does not drive the grouping.
 
-2. **Secondary (inner) grouping — page section.** Within each portal, group by the part of the application the scenarios exercise (e.g., Login / Auth, Clients, Locations, Groups, Caregivers, Administrators, Organisation settings, Orders, Medication administration, Double-control, Account / Profile). **Never group by priority tier.** Stakeholders care about "what parts of the app are covered," not "which priority bucket does the test sit in." Priority stays visible as a per-scenario chip (see below) — it does not drive the grouping.
+Within a page area, sort **alphabetically by journey ID**.
 
-Within a page section, sort **alphabetically by journey ID**.
+#### Deriving the primary section axis
 
-#### Deriving the page-section taxonomy
+1. Read every journey's `Entry:` URL from `journey-map.md`.
+2. Extract the host + first path segment (`https://<host>/<first-segment>/...`).
+3. Cluster journeys by that prefix — one cluster per distinct prefix.
+4. The cluster label IS the prefix (or the journey-map's explicit `Section:` field if present). The skill does not canonicalise to friendly names; the data's own grouping IS the grouping.
+5. If `Entry:` is absent across the map, fall back to clustering by the first hyphen-separated token of each spec file's name.
+6. If the result is a single cluster (the app is all one host + path), the catalogue uses no primary axis — just one section with the page-area axis underneath.
 
-The taxonomy is never hardcoded. Derive it per project by reading three sources:
+Cross-cutting journeys (sub-journeys, regression-only specs spanning multiple primary sections) go into a final "Cross-cutting" section regardless of the cluster algorithm's output.
 
-1. **`journey-map.md` `Pages touched:` lines** — every journey lists concrete URL paths or page names. Cluster these.
-2. **`app-context.md` section headings** — if the page-discovery skill recorded section names, those are the canonical human labels.
-3. **Spec file naming and `describe()` blocks** — often reveal the intended section (`clients.spec.ts`, `describe('Groups — manager')`).
-
-Algorithm:
+#### Deriving the page-area taxonomy
 
 1. Enumerate every distinct URL path / page name from `Pages touched:` across all journeys.
-2. Cluster by URL-path prefix (e.g., `/clients/*`, `/locations/*`, `/users/*`). One cluster = one candidate section.
-3. For each cluster, assign the human label from `app-context.md` if available, otherwise infer from the URL segment (`/caregivers` → "Caregivers").
-4. Fold singleton clusters (≤1 journey) into the closest sibling section — or into a catch-all "Miscellaneous" section if none fits. Do not leave a section with a single journey unless the project genuinely has a standalone section.
-5. Target **10–14 total sections** across both portals. Fewer than 8 means the taxonomy is too coarse to be useful; more than 18 means it's too granular to scan. Adjust by merging adjacent singletons or splitting overly broad sections.
+2. Cluster by URL-path prefix (e.g., `/<area-A>/*`, `/<area-B>/*`). One cluster = one candidate page area.
+3. For each cluster, assign the human label from `app-context.md` if available, otherwise infer from the URL segment (e.g., `/<area-name>` → titlecase the segment).
+4. Fold singleton clusters (≤1 journey) into the closest sibling area — or into a catch-all "Miscellaneous" area if none fits. Do not leave an area with a single journey unless the project genuinely has a standalone area.
+5. Target **10–14 total areas** across the catalogue. Fewer than 8 means the taxonomy is too coarse to be useful; more than 18 means it's too granular to scan. Adjust by merging adjacent singletons or splitting overly broad areas.
 
-The result is a derived, project-specific taxonomy. Write it out in the skill's return summary so reviewers can see what was chosen. Present the final section list on the catalogue's contents page with journey count per section, so a reader can see coverage density at a glance.
+The result is a derived, project-specific taxonomy. Write it out in the skill's return summary so reviewers can see what was chosen. Present the final area list on the catalogue's contents page with journey count per area, so a reader can see coverage density at a glance.
 
 If the journey map is sparse or missing, fall back to clustering by spec-file name prefix — this is less accurate but produces a usable taxonomy without the map.
 
@@ -144,10 +143,10 @@ Every page has a header (brand wordmark + section micro-label + page-number `NN 
 
 Page order:
 
-1. **Cover page** — app name, date, headline totals (total scenarios, journeys covered, portal breakdown, active-vs-skipped count).
+1. **Cover page** — app name, date, headline totals (total scenarios, journeys covered, primary-section breakdown, active-vs-skipped count).
 2. **Contents page** — section list with starting page numbers.
-3. **One or more pages per portal.** For each portal:
-   - Section header page (portal name, portal one-liner, scenario count, priority distribution).
+3. **One or more pages per primary section.** For each section:
+   - Section header page (section name, section one-liner, scenario count, priority distribution).
    - Table pages grouped by priority tier. Columns: `Journey` · `Scenario` · `Type` · `Status`. When the table overflows, continue on the next page with the same headers.
 4. **Adversarial regression section.** Table of every boundary-lock test with file, test name, verified-boundary code (if extractable), and category.
 5. **Skipped-with-reason section.** Full list of every skipped test grouped by reason (env, blocked by tenant data, known bug, etc). This page is the transparency commitment — it must exist even when empty (rendering an explicit "No scenarios deferred" block).
@@ -242,8 +241,8 @@ The catalogue is a stakeholder-facing deliverable; the stakeholder cannot proof 
    |---|---|
    | Cover | App name and date correct; every stat tile shows a real number (no `NaN`, `undefined`, `0 of 0` when the suite has tests); brand wordmark renders; dark background fills the entire page (no white margins from a `print-color-adjust` failure). |
    | Contents | Every section produced by Phase 3 (Categorise) is listed with a starting page number; page numbers monotonically increasing; no missing or duplicated section. |
-   | Portal section header | Portal name + one-liner present; per-portal scenario count matches the portal split shown on the cover; priority-distribution chips render. |
-   | Portal table page | Header row `Journey · Scenario · Type · Status` visible; rows aligned, no horizontal overflow; priority and type chips coloured per palette; zebra striping present; no truncated cells; no "—" in a column that should be populated. |
+   | Primary section header | Section name + one-liner present; per-section scenario count matches the section split shown on the cover; priority-distribution chips render. |
+   | Primary section table page | Header row `Journey · Scenario · Type · Status` visible; rows aligned, no horizontal overflow; priority and type chips coloured per palette; zebra striping present; no truncated cells; no "—" in a column that should be populated. |
    | Adversarial regression section | One row per `*-regression.spec.ts` test that exists in the source; boundary-lock codes attached when `adversarial-findings.md` lists them; no "Unknown boundary" rows that should have been resolved upstream in Phase 2. |
    | Skipped-with-reason section | When empty: an explicit "No scenarios deferred" block, not a blank page. When non-empty: every row has a human-readable reason — no `TODO`, `tbd`, blank, or `?` reasons. Reasons grouped consistently. |
    | Every page (cross-cutting) | Page-number footer `NN / TOTAL` monotonically increasing, `TOTAL` constant across every page; brand palette consistent; no page falls back to Chromium light-mode default while neighbours stay dark; header micro-label matches the section the page belongs to. |
@@ -293,8 +292,9 @@ The catalogue is a stakeholder-facing deliverable; the stakeholder cannot proof 
 | `--ok` | `#34D399` | Active-status chips |
 
 Brand overrides:
-- `brand: spritecloud` — same palette as above (this is already the default alignment).
 - `brand: civitas-cerebrum` — swap `--brand` to `#3fb950`, keep `--accent` at `#58a6ff`, use `#0d1117` as `--bg`.
+
+Additional brands ride in via PR — append a row above with the override values. The skill does not infer brand from project name or hostname.
 
 ---
 
@@ -331,7 +331,7 @@ The registry row is a hard dependency of this skill's discoverability — if the
 | Excuse | Reality |
 |--------|---------|
 | "The client asked how long it took, so I'll add a runtime/velocity section" | Answer the client directly in chat or in the deck narrative — the catalogue is an inventory document, not an engagement report. Velocity language in the catalogue signals "we're selling effort, not coverage" to the client's procurement team. |
-| "The journey map is missing but I can infer from specs" | Stop and ask the user to run `journey-mapping` first. An inferred map makes up priority / portal / purpose data — the catalogue then ships with authoritative-looking but fabricated metadata. |
+| "The journey map is missing but I can infer from specs" | Stop and ask the user to run `journey-mapping` first. An inferred map makes up priority / section / purpose data — the catalogue then ships with authoritative-looking but fabricated metadata. |
 | "I'll combine the deck and the catalogue to save effort" | They are deliberately paired but distinct: deck = narrative, catalogue = inventory. Merging them produces a document that is too long to present and too abstract to audit. |
 | "Light-mode for clients who print B&W" | Dark-mode is the skill's contract; adding a light-mode toggle doubles the rendering surface and the brand-palette matrix without the client having asked. If a specific engagement needs light-mode, land a branded-override row in the skill's palette table — not an ad-hoc fork at render time. |
 | "PDF verification is slow / fails on corner cases — comment it out to ship" | Verification is non-negotiable. A catalogue that ships with a silently-truncated PDF is a broken deliverable to a stakeholder who cannot verify it themselves; the verification IS the guarantee. Fix the root cause (usually an HTML slide without a `data-slide-id`) rather than removing the check. |
@@ -346,10 +346,10 @@ The registry row is a hard dependency of this skill's discoverability — if the
 2. Cross-reference `journey-map.md`.
 3. Render `test-catalogue.html` and `test-catalogue.pdf` at repo root (per-slide render + page-count verify).
 4. **Phase 6: exhaustive visual inspection** — read every page of the PDF in order, run the per-page-type checks, fix and re-render until every page passes.
-5. Report headline numbers (total scenarios, journeys covered, portal breakdown, skipped count) plus the `visual-inspection:` line (PASS or WARN with surfaced issues).
+5. Report headline numbers (total scenarios, journeys covered, primary-section breakdown, skipped count) plus the `visual-inspection:` line (PASS or WARN with surfaced issues).
 
-**User says:** "catalogue the suite, brand: spritecloud, output: medicheck-catalogue.pdf"
-1. Same flow, palette forced to spritecloud, output filename overridden.
+**User says:** "catalogue the suite, brand: <brand-name>, output: <filename>.pdf"
+1. Same flow, palette forced to the named brand (must be a row in the palette table), output filename overridden.
 2. Phase 6 runs unchanged.
 3. Report the headline + `visual-inspection:` line.
 

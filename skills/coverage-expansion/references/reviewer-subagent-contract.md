@@ -55,6 +55,7 @@ A **staff-level QA engineer**, dispatched fresh for each journey-and-cycle pair.
    - `missing-scenarios` the reviewer invented adversarially (not from the expectations list) → record ONLY when the category is `adversarial-missed` in passes 4–5; otherwise do not surface.
    - **Passes 4–5 only — matrix-coverage gap → record.** Any negative-case-matrix entry from the journey's matrix that Stage A did NOT probe (no corresponding ledger finding) is a `missing-scenarios` finding with category `matrix-missed`. The matrix is the adversarial coverage floor per `adversarial-subagent-contract.md`; reviewers do not exercise discretion on this — every matrix entry must have a ledger finding (`Boundaries verified`, `Suspected bugs`, or `Ambiguous` are all acceptable; absence is not).
    - Cosmetic `craft-issues` (naming, ordering, comment quality) → do not surface.
+   - **Passes 4–5 only — `craft-issues:re-derived-app-wide-pattern` → record.** Per-journey probes that re-find a pattern documented in `tests/e2e/docs/app-wide-patterns.md` instead of citing via `coverage: app-wide:<pattern-id>` waste discovery cycles. The reviewer cross-references the journey's findings against the catalogue (read at dispatch time as Input 9 of `adversarial-subagent-contract.md`) and records this finding when the patterns overlap. Exception: a finding that names a app-wide-applicable pattern NOT in the catalogue is correctly emitted with `coverage: none` per `app-wide-scan.md` §"What if a per-journey probe finds a app-wide pattern not in the catalogue?" — do NOT flag those.
 7. **Detect stalled loops.** Stall is "Stage A has had two consecutive retry attempts on the same `must-fix` list and resolved nothing." Operationally: the reviewer's current `must-fix` list is identical (same finding-IDs, same titles, same suggested fixes) to **both** the immediately-prior cycle's list AND the cycle-before-that's list — three identical lists in a row across cycles N, N-1, N-2. Set a top-level `stalled: true` flag in the return only when this three-identical-cycles condition holds. Single-cycle equality (current == prior-1, but prior-1 != prior-2) is NOT stall — the reviewer in cycle N may legitimately have caught a finding the cycle-(N-1) reviewer missed, and cycle N+1 matching cycle N is the first repeat, not yet stagnation. The orchestrator runs the same three-cycle check (per coverage-expansion §"Retry loop") and either signal terminates as `blocked-cycle-stalled`. The reviewer flag is the **primary signal** because the reviewer has full per-cycle context (suggested-fix wording, evidence pointers) the orchestrator's set comparison can't see; the orchestrator's check is a defence against reviewer non-compliance, not a substitute. Reviewers that fire the flag prematurely (on a single-cycle match) trigger false stalls and waste retry budget; reviewers that systematically omit it produce one extra cycle of orchestrator-side delay — accuracy of the three-cycle check is the calibration target.
 
    The cycle history needed to evaluate this rule is provided to the reviewer per §"Inputs" item 9 (prior-cycle must-fix lists). A cycle-1 or cycle-2 reviewer cannot satisfy the three-cycle condition by definition and MUST NOT set `stalled: true`; the flag is only available from cycle 3 onward.
@@ -146,14 +147,14 @@ The cross-journey synthesis is a real upgrade, not just a cost optimisation: a s
      pass: <N>
      cycle: 1
      verdicts:
-       - journey: j-create-user
+       - journey: j-a
          status: greenlight
          summary: <one-line>
-       - journey: j-zb-view-orders
+       - journey: j-b
          status: improvements-needed
          spill: tests/e2e/docs/.subagent-returns/reviewer-batch-pass-<N>-c1.md
-         findings: [j-zb-view-orders-1-1-R-01, j-zb-view-orders-1-1-R-02]
-       - journey: j-tt-permission-form-modal
+         findings: [j-b-1-1-R-01, j-b-1-1-R-02]
+       - journey: j-c
          status: greenlight
          summary: <one-line>
    ```
@@ -169,18 +170,18 @@ The cross-journey synthesis is a real upgrade, not just a cost optimisation: a s
    ```markdown
    <!-- subagent-returns:reviewer-batch:pass-<N>:cycle-1 -->
 
-   ## j-zb-view-orders
+   ## j-b
 
    ### missing-scenarios
-   - **j-zb-view-orders-1-1-R-01** [must-fix] — mobile variant absent
+   - **j-b-1-1-R-01** [must-fix] — mobile variant absent
 
    ### craft-issues
-   - **j-zb-view-orders-1-1-R-02** [must-fix] — inline selector in spec
+   - **j-b-1-1-R-02** [must-fix] — inline selector in spec
 
-   ## j-other-journey-flagged
+   ## j-d
 
    ### verification-misses
-   - **j-other-journey-flagged-1-1-R-01** [must-fix] — assertion targets a different element than tested
+   - **j-d-1-1-R-01** [must-fix] — assertion targets a different element than tested
    ```
 
    Every flagged journey's section starts with `## j-<slug>`. The §2.6 sentinel goes at the top of the file (line 1).
