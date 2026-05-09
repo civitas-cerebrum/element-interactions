@@ -114,10 +114,20 @@ ALLOWED_PREFIX_REGEX='^(phase1-[a-z0-9-]+|phase2-[a-z0-9-]+|phase4-cycle-[0-9]+-
 # slugs — P3 batches are composer dispatches by definition.
 P3_BATCH_REGEX='^\[P3-batch\][[:space:]]+composer-[a-z0-9-]+([[:space:]]*,[[:space:]]*composer-[a-z0-9-]+){0,6}([[:space:]]*:|[[:space:]]|$)'
 
+# Relevance-group form: `[group] composer-j-a, composer-j-b, ...:`
+# (cap 5 enforced via comma count: initial + up to 4 more). Distinct from
+# `[P3-batch]` — applies to compositional passes when a priority tier has
+# > 5 journeys, group composition is by relevance (same priority + shared
+# section / overlapping `Pages touched`). Stage B remains per-journey within
+# the group; cycle-2+ break-out semantics match the P3-batch path.
+GROUP_REGEX='^\[group\][[:space:]]+composer-[a-z0-9-]+([[:space:]]*,[[:space:]]*composer-[a-z0-9-]+){0,4}([[:space:]]*:|[[:space:]]|$)'
+
 DESCRIPTION_HAS_ROLE_PREFIX=false
 if echo "$DESCRIPTION" | grep -qE "$ALLOWED_PREFIX_REGEX"; then
   DESCRIPTION_HAS_ROLE_PREFIX=true
 elif echo "$DESCRIPTION" | grep -qE "$P3_BATCH_REGEX"; then
+  DESCRIPTION_HAS_ROLE_PREFIX=true
+elif echo "$DESCRIPTION" | grep -qE "$GROUP_REGEX"; then
   DESCRIPTION_HAS_ROLE_PREFIX=true
 fi
 
@@ -357,6 +367,7 @@ Fix: re-issue as N parallel single-journey Agent calls in one message. Each call
   stage2-<scenario>:        element inspection
   cleanup-<scope>:          ledger / cleanup
   [P3-batch] composer-j-a,composer-j-b,...:  P3 batch (≤7, P3 priority only)
+  [group] composer-j-a,composer-j-b,...:     relevance group (≤5, compositional passes, when a priority tier has >5 journeys)
 
 The role-prefix appears unchanged on the subagent's CLI session slug (see playwright-cli-isolation-guard) so .playwright-cli/<slug>* trace files map 1:1 to the subagent's role + journey.
 
