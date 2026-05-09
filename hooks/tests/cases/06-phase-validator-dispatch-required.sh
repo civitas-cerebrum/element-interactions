@@ -44,19 +44,26 @@ EOF
 assert_deny "$H" "$(payload tool_name=Agent hook_event_name=PreToolUse description='composer-j-checkout: cycle 1' prompt='cover j-checkout' cwd="$REPO")" "Phase 4 stalled + composer dispatch → DENY (stalled)" "Phase 4 is stalled"
 rm -rf "$REPO"
 
-section "phase-validator-dispatch-required: PreToolUse — phase-validator dispatches always allowed"
+section "phase-validator-dispatch-required: PreToolUse — phase-validator-1 unconditional, chain rule for N>=2"
 
-# T5: phase-validator dispatch with no ledger → ALLOW (gate doesn't gate itself)
+# T5: phase-validator-1 with no ledger → ALLOW (chain rule's special case;
+# Phase 1 has no prior to gate against, so the validator can always run).
 REPO=$(make_repo)
-assert_allow "$H" "$(payload tool_name=Agent hook_event_name=PreToolUse description='phase-validator-4: cycle 1' prompt='verify Phase 4' cwd="$REPO")" "phase-validator-4 with no ledger → ALLOW"
+assert_allow "$H" "$(payload tool_name=Agent hook_event_name=PreToolUse description='phase-validator-1: cycle 1' prompt='verify Phase 1' cwd="$REPO")" "phase-validator-1 with no ledger → ALLOW (no prior phase)"
 rm -rf "$REPO"
 
-# T6: phase-validator dispatch with stalled prior phase → ALLOW (gate doesn't gate itself)
+# T6: phase-validator-5 with Phase 4 stalled → DENY. Under the new
+# validator-chain rule (I-1), phase-validator-N for N>=2 requires
+# phase-validator-(N-1) greenlit. blocked-phase-validator-stalled is
+# explicitly NOT greenlight, so dispatching the next-phase validator is
+# blocked. This was previously a permissive "gate doesn't gate itself"
+# test; the chain rule supersedes it because rubber-stamping past a
+# stalled prior phase was the bypass we are closing.
 REPO=$(make_repo)
 cat > "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" <<EOF
 {"phases":{"4":{"status":"blocked-phase-validator-stalled","validator":"phase-validator-4","cycle":10,"at":"2026-05-02T00:00:00Z","unresolved-findings":["pv-4-01"]}}}
 EOF
-assert_allow "$H" "$(payload tool_name=Agent hook_event_name=PreToolUse description='phase-validator-5: cycle 1' prompt='verify Phase 5' cwd="$REPO")" "phase-validator-5 with stalled Phase 4 → ALLOW"
+assert_deny "$H" "$(payload tool_name=Agent hook_event_name=PreToolUse description='phase-validator-5: cycle 1' prompt='verify Phase 5' cwd="$REPO")" "phase-validator-5 with stalled Phase 4 → DENY (chain rule)" "before phase-validator-4 greenlight"
 rm -rf "$REPO"
 
 section "phase-validator-dispatch-required: PreToolUse — non-phase-mapped prefixes silent allow"
@@ -191,4 +198,67 @@ else
   FAIL_DETAILS+=("composer-* should not write ledger")
   echo "${CLR_FAIL}  ✗${CLR_RST} composer-* should not write ledger"
 fi
+rm -rf "$REPO"
+
+section "phase-validator-dispatch-required: validator-chain rule (I-1)"
+
+# C1: phase-validator-1 with no ledger → ALLOW (no prior phase to gate against)
+REPO=$(make_repo)
+assert_allow "$H" "$(payload tool_name=Agent hook_event_name=PreToolUse description='phase-validator-1: cycle 1' prompt='validate phase 1' cwd="$REPO")" "phase-validator-1 with no ledger → ALLOW"
+rm -rf "$REPO"
+
+# C2: phase-validator-2 with no ledger → DENY (Phase 1 not greenlit)
+REPO=$(make_repo)
+assert_deny "$H" "$(payload tool_name=Agent hook_event_name=PreToolUse description='phase-validator-2: cycle 1' prompt='validate phase 2' cwd="$REPO")" "phase-validator-2 with no Phase 1 greenlight → DENY" "before phase-validator-1 greenlight"
+rm -rf "$REPO"
+
+# C3: phase-validator-7 with phases 1-5 greenlit but phase 6 in-progress → DENY (skip-to-7 path)
+REPO=$(make_repo)
+cat > "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" <<EOF
+{"phases":{"1":{"status":"greenlight","cycle":1},"2":{"status":"greenlight","cycle":1},"3":{"status":"greenlight","cycle":1},"4":{"status":"greenlight","cycle":1},"5":{"status":"greenlight","cycle":1},"6":{"status":"in-progress","cycle":1}}}
+EOF
+assert_deny "$H" "$(payload tool_name=Agent hook_event_name=PreToolUse description='phase-validator-7: cycle 1' prompt='validate phase 7' cwd="$REPO")" "phase-validator-7 dispatched while Phase 6 in-progress → DENY (chain rule)" "before phase-validator-6 greenlight"
+rm -rf "$REPO"
+
+# C4: phase-validator-6 with phases 1-5 greenlit → ALLOW (chain satisfied)
+REPO=$(make_repo)
+cat > "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" <<EOF
+{"phases":{"1":{"status":"greenlight","cycle":1},"2":{"status":"greenlight","cycle":1},"3":{"status":"greenlight","cycle":1},"4":{"status":"greenlight","cycle":1},"5":{"status":"greenlight","cycle":1}}}
+EOF
+assert_allow "$H" "$(payload tool_name=Agent hook_event_name=PreToolUse description='phase-validator-6: cycle 1' prompt='validate phase 6' cwd="$REPO")" "phase-validator-6 with Phase 5 greenlight → ALLOW (chain satisfied)"
+rm -rf "$REPO"
+
+section "phase-validator-dispatch-required: probe-* differentiation (I-1)"
+
+# P1: probe-* with coverage-state.status=="in-progress" + Phase 4 greenlight → ALLOW (Phase 5 adversarial)
+REPO=$(make_repo)
+cat > "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" <<EOF
+{"phases":{"4":{"status":"greenlight","cycle":1}}}
+EOF
+cat > "$REPO/tests/e2e/docs/coverage-expansion-state.json" <<EOF
+{"status":"in-progress","mode":"depth","currentPass":4,"journeyRoster":["j-a"],"passes":{},"updatedAt":"2026-05-09T08:00:00Z"}
+EOF
+assert_allow "$H" "$(payload tool_name=Agent hook_event_name=PreToolUse description='probe-j-a: pass 4' prompt='probe j-a' cwd="$REPO")" "probe-* with cov-state in-progress + Phase 4 greenlit → ALLOW (Phase 5 adversarial)"
+rm -rf "$REPO"
+
+# P2: probe-* with coverage-state.status=="complete" + Phase 4 greenlit but Phase 5 NOT greenlit → DENY (Phase 6 blocked)
+REPO=$(make_repo)
+cat > "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" <<EOF
+{"phases":{"4":{"status":"greenlight","cycle":1}}}
+EOF
+cat > "$REPO/tests/e2e/docs/coverage-expansion-state.json" <<EOF
+{"status":"complete","mode":"depth","currentPass":5,"journeyRoster":["j-a"],"passes":{},"updatedAt":"2026-05-09T08:00:00Z"}
+EOF
+assert_deny "$H" "$(payload tool_name=Agent hook_event_name=PreToolUse description='probe-j-a: bug-discovery flow' prompt='probe j-a phase 6' cwd="$REPO")" "probe-* with cov-state complete + Phase 5 not greenlit → DENY (Phase 6 blocked)" "before phase-validator-5 greenlight"
+rm -rf "$REPO"
+
+# P3: probe-* with coverage-state.status=="complete" + Phase 5 greenlit → ALLOW (Phase 6 entry)
+REPO=$(make_repo)
+cat > "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" <<EOF
+{"phases":{"4":{"status":"greenlight","cycle":1},"5":{"status":"greenlight","cycle":1}}}
+EOF
+cat > "$REPO/tests/e2e/docs/coverage-expansion-state.json" <<EOF
+{"status":"complete","mode":"depth","currentPass":5,"journeyRoster":["j-a"],"passes":{},"updatedAt":"2026-05-09T08:00:00Z"}
+EOF
+assert_allow "$H" "$(payload tool_name=Agent hook_event_name=PreToolUse description='probe-j-a: bug-discovery flow' prompt='probe j-a phase 6' cwd="$REPO")" "probe-* with cov-state complete + Phase 5 greenlit → ALLOW (Phase 6 entry)"
 rm -rf "$REPO"

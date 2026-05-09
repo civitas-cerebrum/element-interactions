@@ -159,6 +159,69 @@ Fix: must be an integer 0-5 (0 = before pass 1, 1-3 = compositional, 4-5 = adver
     exit 0
   fi
 
+  # 4.5. Within-Phase-5 progression invariant. status="complete" must imply
+  # all five passes have actually run, not "Pass 1 partial then declared
+  # done". Closes I-1 of the BookHive Run-2 follow-up: in Run-2 the
+  # orchestrator wrote `passes."1-compositional".status: "partial"` and
+  # would have proceeded to write status:"complete" at session end —
+  # nothing in the schema stopped that mismatch. The check is keyed off
+  # the documented per-pass key shape (`<N>-compositional` / `<N>-adversarial`)
+  # — pass keys 1-3 must be compositional with status:"complete", pass
+  # keys 4-5 must be adversarial with status:"complete", currentPass must
+  # be 5. A status:"complete" write missing any of those is the
+  # premature-completion bypass and is denied.
+  STATUS_VAL=$(echo "$TARGET" | "$JQ" -r '.status // empty' 2>/dev/null)
+  if [ "$STATUS_VAL" = "complete" ]; then
+    PROGRESSION_FAIL=""
+    if [ "$CP" -lt 5 ]; then
+      PROGRESSION_FAIL="currentPass is ${CP} (must be 5 when status=complete)"
+    else
+      # Check each of the five canonical pass slots for status: "complete".
+      # Pass key shape: "<N>-compositional" for N in 1-3, "<N>-adversarial"
+      # for N in 4-5. Missing slot or non-complete status fails the check.
+      for PASS_KEY in "1-compositional" "2-compositional" "3-compositional" "4-adversarial" "5-adversarial"; do
+        PASS_STATUS=$(echo "$TARGET" | "$JQ" -r --arg k "$PASS_KEY" '.passes[$k].status // "absent"' 2>/dev/null || echo "absent")
+        if [ "$PASS_STATUS" != "complete" ]; then
+          PROGRESSION_FAIL="passes.\"${PASS_KEY}\".status is \"${PASS_STATUS}\" (must be \"complete\" when state.status=complete)"
+          break
+        fi
+      done
+    fi
+    if [ -n "$PROGRESSION_FAIL" ]; then
+      emit_deny "[BLOCKED] coverage-expansion-state.json status=\"complete\" without all five passes recorded as complete.
+
+──────────────────────────────────────────────────────────────────
+Do this instead:
+──────────────────────────────────────────────────────────────────
+The depth-mode contract is 3 compositional + 2 adversarial passes + cleanup. Declaring the run complete with any pass missing or in a non-complete state is silent scope reduction — the BookHive Run-2 'Pass 1 first wave only landed' bypass shape.
+
+Either:
+  (a) Run the missing passes and only then write status=\"complete\". The
+      passes object must carry all five keys (1-compositional,
+      2-compositional, 3-compositional, 4-adversarial, 5-adversarial)
+      with status:\"complete\" each, and currentPass must be 5.
+  (b) Take exit #2 (commit-what-landed + resume). That requires
+      status:\"in-progress\" + a per-pass status that honestly names the
+      partial state (e.g. \"in-progress\" or a structural reason that
+      passes the framing-token check). It also requires the explicit
+      early-stop authorisation sentinel (.claude/onboarding-stop-authorized)
+      if the partiality is agent-chosen rather than environment-imposed.
+
+──────────────────────────────────────────────────────────────────
+What was wrong:
+──────────────────────────────────────────────────────────────────
+File:           $FILE_PATH
+state.status:   \"complete\"
+Failure:        ${PROGRESSION_FAIL}
+
+References:
+  skills/coverage-expansion/SKILL.md §\"Two valid exits\"
+  skills/coverage-expansion/SKILL.md §\"Five passes + per-pass dedup + cross-pass cleanup\"
+  skills/coverage-expansion/references/depth-mode-pipeline.md §\"Per-pass completion criteria\""
+      exit 0
+    fi
+  fi
+
   # 5. Pre-emptive-stop detection. If currentPass >= 1, at least one dispatch
   # MUST be recorded somewhere in the file. A state file with currentPass=1
   # and zero dispatches is the "honest stopping point before doing any work"
@@ -283,6 +346,18 @@ References:
     # was found inside a *reason*-bearing field, not in some unrelated
     # cosmetic string. We do this by re-running has_framing_token against
     # the targeted reason-field projection.
+    #
+    # Field-list maintenance contract: this list enumerates the reason
+    # field names the orchestrator has been observed using
+    # (stage_b_deferral_reason, deferral_reason, reason, stop-reason,
+    # stopReason, deferred.* values). The recursive `..` descent catches
+    # any of these names ANYWHERE in the JSON tree, but a brand-new field
+    # name (e.g. completion_note, exit_summary, wrap_up_reason) would slip
+    # past until added here. New observed bypass names get added in the
+    # same commit that lands the verbatim fixture replicating them — the
+    # fixture-driven tests are the regression contract. See
+    # hooks/tests/fixtures/bookhive-bypass-artifacts/ for the canonical
+    # fixture pattern and a40b3c2 for the workflow.
     REASON_BLOB=$(echo "$TARGET" | "$JQ" -r '
       [
         (.. | objects | select(has("stage_b_deferral_reason")) | .stage_b_deferral_reason),

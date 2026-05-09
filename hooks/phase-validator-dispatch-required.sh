@@ -124,19 +124,75 @@ mkdir -p "$REPO_ROOT/tests/e2e/docs" 2>/dev/null || true
 
 # === PreToolUse branch: gate Phase N+1 dispatches ==========================
 if [ "$EVENT_NAME" = "PreToolUse" ]; then
-  # Phase-validator dispatches are always allowed — gating the gate is a deadlock.
+  # Phase-validator dispatches are gated by the validator-chain rule:
+  # phase-validator-N (for N >= 2) requires phase-validator-(N-1)
+  # greenlit. Without the chain, the orchestrator could dispatch
+  # phase-validator-7 directly and rubber-stamp a Phase-7 greenlight
+  # while Phases 5-6 sat unvalidated — closes I-1 of the BookHive Run-2
+  # follow-up review.
   case "$DESCRIPTION" in
-    phase-validator-*) exit 0 ;;
+    phase-validator-*)
+      PV_PHASE=$(echo "$DESCRIPTION" | sed -nE 's/^phase-validator-([1-7])[^a-zA-Z0-9]*.*/\1/p')
+      if [ -n "$PV_PHASE" ] && [ "$PV_PHASE" -ge 2 ]; then
+        PV_PRIOR=$((PV_PHASE - 1))
+        PV_PRIOR_STATUS=""
+        if [ -f "$LEDGER" ]; then
+          PV_PRIOR_STATUS=$("$JQ" -r --arg p "$PV_PRIOR" '.phases[$p].status // empty' "$LEDGER" 2>/dev/null || echo "")
+        fi
+        if [ "$PV_PRIOR_STATUS" != "greenlight" ]; then
+          emit_deny "[BLOCKED] phase-validator-${PV_PHASE} dispatched before phase-validator-${PV_PRIOR} greenlight.
+
+──────────────────────────────────────────────────────────────────
+Do this instead — dispatch the prior validator first:
+──────────────────────────────────────────────────────────────────
+The phase-validator chain MUST run sequentially. phase-validator-N requires phase-validator-(N-1) greenlit. The orchestrator cannot skip directly to phase-validator-${PV_PHASE} when Phase ${PV_PRIOR} is unvalidated.
+
+Dispatch phase-validator-${PV_PRIOR} first; resolve any improvements-needed findings; then re-issue this dispatch.
+
+──────────────────────────────────────────────────────────────────
+What was wrong:
+──────────────────────────────────────────────────────────────────
+Description:                     \"${DESCRIPTION}\"
+Phase ${PV_PRIOR} ledger status: \"${PV_PRIOR_STATUS:-absent}\"
+Required:                        phase-validator-${PV_PRIOR} greenlight before phase-validator-${PV_PHASE} dispatch
+
+References:
+  skills/onboarding/SKILL.md §\"Phase-validator checkpoint\"
+  skills/onboarding/references/phase-validator-workflow.md"
+          exit 0
+        fi
+      fi
+      exit 0 ;;
   esac
 
   # Map the dispatch's description prefix to a Phase boundary it crosses.
-  # Only one transition is enforced today: Phase 4 → 5 (composer/reviewer/
-  # probe/cleanup/process-validator dispatches mean the orchestrator is
-  # entering coverage-expansion work).
+  # Three transitions are enforced today:
+  #   (1) Phase 4 → 5: composer/reviewer/cleanup/process-validator
+  #       dispatches mean the orchestrator is entering coverage-expansion
+  #       per-journey work.
+  #   (2) Phase 5 (adversarial Passes 4-5) vs Phase 6: probe-* dispatches
+  #       are shared between Phase 5 adversarial passes and Phase 6
+  #       bug-discovery. Distinguished by coverage-expansion-state.json.status:
+  #       "complete" → Phase 6 entry (requires phase-validator-5 greenlight);
+  #       anything else → still inside Phase 5 (requires phase-validator-4).
+  #   (3) Phase 6 → 7 is enforced via the validator-chain rule above
+  #       (phase-validator-7 requires phase-validator-6 greenlight) and via
+  #       the BENCHMARK / onboarding-report write-guards.
   ENTERING_PHASE=""
+  COVERAGE_STATE_FILE="$REPO_ROOT/tests/e2e/docs/coverage-expansion-state.json"
   case "$DESCRIPTION" in
-    composer-*|reviewer-*|probe-*|cleanup-*|process-validator-*)
+    composer-*|reviewer-*|cleanup-*|process-validator-*)
       ENTERING_PHASE=5 ;;
+    probe-*)
+      COV_STATUS=""
+      if [ -f "$COVERAGE_STATE_FILE" ]; then
+        COV_STATUS=$("$JQ" -r '.status // empty' "$COVERAGE_STATE_FILE" 2>/dev/null || echo "")
+      fi
+      if [ "$COV_STATUS" = "complete" ]; then
+        ENTERING_PHASE=6
+      else
+        ENTERING_PHASE=5
+      fi ;;
     *) exit 0 ;;  # not yet phase-mapped — silent allow
   esac
 

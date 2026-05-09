@@ -124,6 +124,26 @@ assert_allow "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/covera
 INNOCENT_PROSE='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{"1-compositional":{"dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]}},"completedJourneys":["j-a"],"updatedAt":"2026-05-09T07:30:00Z"}'
 assert_allow "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$INNOCENT_PROSE")" "no framing tokens anywhere → ALLOW"
 
+# Within-Phase-5 progression invariant (I-1 of BookHive Run-2 follow-up review).
+# status:"complete" must imply all five passes (1-compositional, 2-compositional,
+# 3-compositional, 4-adversarial, 5-adversarial) carry status:"complete" and
+# currentPass==5. The three failure modes below all surface the bypass shape.
+
+ALL_PASSES_COMPLETE='{"status":"complete","mode":"depth","currentPass":5,"journeyRoster":["j-a"],"passes":{"1-compositional":{"status":"complete","dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]},"2-compositional":{"status":"complete","dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]},"3-compositional":{"status":"complete","dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]},"4-adversarial":{"status":"complete","dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]},"5-adversarial":{"status":"complete","dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]}},"updatedAt":"2026-05-09T08:00:00Z"}'
+assert_allow "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$ALL_PASSES_COMPLETE")" "status=complete with all 5 passes complete + currentPass=5 → ALLOW"
+
+# Failure mode 1: status=complete but currentPass < 5
+LOW_PASS='{"status":"complete","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{"1-compositional":{"status":"complete","dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]}},"updatedAt":"2026-05-09T08:00:00Z"}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$LOW_PASS")" "status=complete with currentPass<5 → DENY (Run-2 'Pass 1 first wave only' shape)" "currentPass is 1"
+
+# Failure mode 2: status=complete + currentPass=5 but a pass slot missing
+MISSING_PASS='{"status":"complete","mode":"depth","currentPass":5,"journeyRoster":["j-a"],"passes":{"1-compositional":{"status":"complete","dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]},"2-compositional":{"status":"complete","dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]},"3-compositional":{"status":"complete","dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]},"4-adversarial":{"status":"complete","dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]}},"updatedAt":"2026-05-09T08:00:00Z"}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$MISSING_PASS")" "status=complete missing 5-adversarial pass → DENY" "5-adversarial"
+
+# Failure mode 3: status=complete + currentPass=5 + all keys present but one is "partial"
+PASS_PARTIAL='{"status":"complete","mode":"depth","currentPass":5,"journeyRoster":["j-a"],"passes":{"1-compositional":{"status":"partial","dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]},"2-compositional":{"status":"complete","dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]},"3-compositional":{"status":"complete","dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]},"4-adversarial":{"status":"complete","dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]},"5-adversarial":{"status":"complete","dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]}},"updatedAt":"2026-05-09T08:00:00Z"}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$PASS_PARTIAL")" "status=complete with one pass status=partial → DENY (Run-2 1-compositional partial shape)" "1-compositional"
+
 section "coverage-expansion-direct-compose-block (in-flight gated)"
 H="$HOOK_DIR/coverage-expansion-direct-compose-block.sh"
 
