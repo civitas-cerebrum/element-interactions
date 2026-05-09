@@ -93,6 +93,37 @@ assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverag
 GATED_MISSING_FIELD='{"status":"in-progress","mode":"depth","currentPass":2,"journeyRoster":["j-a"],"passes":{"2-compositional":{"dispatches":[{"journey":"j-a","gated_skip":true,"result":"covered-exhaustively","review_status":"greenlight","triggers_checked":{"map_delta":false,"sibling_ledger_update":false}}]}},"updatedAt":"2026-05-06T00:00:00Z"}'
 assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$GATED_MISSING_FIELD")" "gated_skip with missing must_fix_carry_over → DENY" "missing trigger evidence"
 
+# --- framing-token detection (BookHive Run-2 bypass surface) -----------------
+# blocked-dispatch-failure with stage_b_cycles:0 + framing-token in
+# stage_b_deferral_reason → DENY. This is the canonical Run-2 shape.
+BHF_RUN2='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a","j-b"],"passes":{"1-compositional":{"dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":0,"review_status":"blocked-dispatch-failure","stage_b_deferral_reason":"context-budget — orchestrator exit #2"}]}},"updatedAt":"2026-05-09T07:30:00Z"}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$BHF_RUN2")" "BookHive Run-2 shape: blocked-dispatch-failure + 'context-budget' framing → DENY" "pre-emptive-scope-reduction framing"
+
+# Same shape but with the 'final-step instruction' framing.
+BHF_FSI='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{"1-compositional":{"dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":0,"review_status":"blocked-dispatch-failure","stage_b_deferral_reason":"the user final-step instruction asked for the BENCHMARK first"}]}},"updatedAt":"2026-05-09T07:30:00Z"}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$BHF_FSI")" "blocked-dispatch-failure + 'final-step instruction' framing → DENY" "pre-emptive-scope-reduction framing"
+
+# Top-level passes."N-X".stop-reason carrying framing → DENY.
+BHF_PASS_REASON='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{"1-compositional":{"status":"partial","stop-reason":"context-budget — onboarding orchestrator exited #2 after Pass-1 first wave","dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]}},"updatedAt":"2026-05-09T07:30:00Z"}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$BHF_PASS_REASON")" "passes.X.stop-reason with framing → DENY" "pre-emptive-scope-reduction framing"
+
+# deferred.stage-b-per-journey description carrying framing → DENY.
+BHF_DEFERRED='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{"1-compositional":{"dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]}},"deferred":{"stage-b-per-journey":"Stage B deferred for context-budget exit #2 reasons; Pass 1 first wave only"},"updatedAt":"2026-05-09T07:30:00Z"}'
+assert_deny "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$BHF_DEFERRED")" "deferred.stage-b-per-journey with framing → DENY" "pre-emptive-scope-reduction framing"
+
+# Honest structural reason — `transport-timeout` — must NOT match.
+HONEST_TRANSPORT='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{"1-compositional":{"dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":0,"review_status":"blocked-dispatch-failure","stage_b_deferral_reason":"transport-timeout: subagent did not return within 600s window"}]}},"updatedAt":"2026-05-09T07:30:00Z"}'
+assert_allow "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$HONEST_TRANSPORT")" "honest transport-timeout reason → ALLOW (no framing token)"
+
+# Honest structural reason — `harness-deny`.
+HONEST_HARNESS='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{"1-compositional":{"dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":0,"review_status":"blocked-dispatch-failure","stage_b_deferral_reason":"harness-deny: parent-only-orchestrator guard rejected the dispatch"}]}},"updatedAt":"2026-05-09T07:30:00Z"}'
+assert_allow "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$HONEST_HARNESS")" "honest harness-deny reason → ALLOW (no framing token)"
+
+# Innocent prose elsewhere in the file (e.g. completedJourneys list label) must
+# NOT trip the detector — proves the check is scoped to reason-bearing fields.
+INNOCENT_PROSE='{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{"1-compositional":{"dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]}},"completedJourneys":["j-a"],"updatedAt":"2026-05-09T07:30:00Z"}'
+assert_allow "$H" "$(payload tool_name=Write file_path='/x/tests/e2e/docs/coverage-expansion-state.json' content="$INNOCENT_PROSE")" "no framing tokens anywhere → ALLOW"
+
 section "coverage-expansion-direct-compose-block (in-flight gated)"
 H="$HOOK_DIR/coverage-expansion-direct-compose-block.sh"
 

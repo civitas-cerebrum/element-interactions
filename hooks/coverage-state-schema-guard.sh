@@ -33,6 +33,11 @@
 # - Missing required fields (status, currentPass, etc.)    → DENY
 # - dispatches[] entry missing dual-stage fields           → DENY
 # - currentPass >= 1 with zero dispatches recorded         → DENY (pre-emptive-stop pattern)
+# - Any *_reason field carries a kernel-rule framing-token
+#   (BookHive Run-2 bypass — `blocked-dispatch-failure` re-purposed
+#    as a get-out-of-Stage-B card with 'context-budget' / 'final-step
+#    instruction' / 'evening run' / 'agent-chosen deferral' framings)
+#                                                          → DENY
 # - adversarialSkippedJourneys not an array                → DENY
 # - adversarialSkippedJourneys[] entry missing journey/rationale → DENY
 # - adversarialSkippedJourneys[] entry with missing or malformed criteria → DENY
@@ -47,6 +52,19 @@ JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
 if [ -z "$JQ" ]; then
   echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: jq not found at \$HOOK_DIR/bin/jq nor on PATH. Reinstall the package or install jq manually." >&2
   exit 1
+fi
+
+# Shared framing-token detector. Loaded as a library — do NOT register
+# the lib script in the manifest. has_framing_token returns 0 when the
+# argument matches a kernel-rule loophole-language token.
+# shellcheck source=lib/framing-tokens.sh
+HOOK_LIB_DIR="$(dirname "${BASH_SOURCE[0]}")/lib"
+if [ -f "$HOOK_LIB_DIR/framing-tokens.sh" ]; then
+  source "$HOOK_LIB_DIR/framing-tokens.sh"
+else
+  # Fallback when the lib isn't installed (e.g. older client) — provide a
+  # stub that returns 1 (no match) so the hook still validates schema.
+  has_framing_token() { return 1; }
 fi
 
 # --- helpers ---
@@ -213,6 +231,135 @@ Estimated session length is not authorisation.
 References:
   coverage-expansion/SKILL.md §\"Two valid exits\"
   coverage-expansion/references/anti-rationalizations.md §\"Pre-emptive scope reduction\""
+      exit 0
+    fi
+  fi
+
+  # 5b. blocked-dispatch-failure semantics + framing-token detection.
+  #
+  # `blocked-dispatch-failure` is a legitimate review_status enum that means
+  # the dispatch transport itself failed (timeout, malformed return, harness
+  # hard-deny). It is NOT a substitute for "agent decided not to do Stage B
+  # because context felt tight" — that's pre-emptive scope reduction wearing
+  # a structural label.
+  #
+  # The BookHive Run-2 incident: 6 dispatches all stamped `review_status:
+  # blocked-dispatch-failure` + `stage_b_cycles: 0` + a free-text
+  # `stage_b_deferral_reason: "context-budget — orchestrator exit #2"`. The
+  # original schema check accepted the file because dispatches[] was non-
+  # empty; the semantic distinction was missing.
+  #
+  # Detection rule for this hook:
+  #   For each dispatches[] entry with review_status == "blocked-dispatch-
+  #   failure", concatenate every *_reason / *Reason field plus the entry's
+  #   stringified blob and run it through has_framing_token. Any match →
+  #   the orchestrator is repurposing the enum.
+  #
+  # Same check runs against any top-level *_reason / *Reason field on the
+  # state file (passes."N-X".stop-reason, deferred.* description fields,
+  # etc.) — those are also write-time prose where framing slides past the
+  # shape gate.
+  if has_framing_token "$TARGET"; then
+    # We have at least one framing match somewhere. Localise it to a
+    # specific offending dispatch (if any) for the deny payload.
+    OFFENDING_DISPATCH=$(echo "$TARGET" | "$JQ" -r '
+      [
+        .. | objects
+        | select(.review_status == "blocked-dispatch-failure")
+        | (.journey // "<unnamed>")
+      ] | .[]
+    ' 2>/dev/null | head -3 | paste -sd, -)
+
+    OFFENDING_TOPLEVEL=$(echo "$TARGET" | "$JQ" -r '
+      [
+        (.passes // {} | to_entries[] | (.value["stop-reason"] // .value.stopReason // empty)),
+        (.deferred // {} | to_entries[] | (.value | tostring)),
+        (.stop_reason // empty),
+        (.stopReason // empty)
+      ] | .[] | select(. != null and . != "")
+    ' 2>/dev/null | head -3 | tr '\n' ' ' | head -c 240)
+
+    # Run a fine-grained final check: only emit deny if the framing-token
+    # was found inside a *reason*-bearing field, not in some unrelated
+    # cosmetic string. We do this by re-running has_framing_token against
+    # the targeted reason-field projection.
+    REASON_BLOB=$(echo "$TARGET" | "$JQ" -r '
+      [
+        (.. | objects | select(has("stage_b_deferral_reason")) | .stage_b_deferral_reason),
+        (.. | objects | select(has("deferral_reason")) | .deferral_reason),
+        (.. | objects | select(has("reason")) | .reason),
+        (.. | objects | select(has("stop-reason")) | .["stop-reason"]),
+        (.. | objects | select(has("stopReason")) | .stopReason),
+        (.deferred // {} | to_entries[] | .value | tostring)
+      ] | .[] | select(. != null and . != "") | tostring
+    ' 2>/dev/null || echo "")
+
+    if [ -n "$REASON_BLOB" ] && has_framing_token "$REASON_BLOB"; then
+      MATCHED=$(matched_framing_tokens "$REASON_BLOB" 2>/dev/null | head -3 | tr '\n' '|' | sed 's/|$//')
+      emit_deny "[BLOCKED] coverage-expansion-state.json carries pre-emptive-scope-reduction framing in a reason field.
+
+──────────────────────────────────────────────────────────────────
+Do this instead — pick one:
+──────────────────────────────────────────────────────────────────
+
+  Option A — the dispatch genuinely failed (transport / timeout / malformed
+             content / harness hard-deny). Replace the loophole-framed
+             reason with the actual structural cause:
+    \"stage_b_deferral_reason\": \"transport-timeout: subagent did not
+                                 return within 600s window\"
+    \"stage_b_deferral_reason\": \"malformed-return: handover envelope
+                                 missing 'role' field\"
+    \"stage_b_deferral_reason\": \"harness-deny: subagent dispatch
+                                 rejected by parent-only-orchestrator
+                                 guard\"
+    Vague 'context-budget' / 'session-budget' / 'final-step instruction'
+    framings ARE NOT structural failures — see Option B.
+
+  Option B — you (the agent) decided not to dispatch Stage B because the
+             session was tight. That is pre-emptive scope reduction, not a
+             dispatch failure. Two valid resolutions:
+    (1) Stop-and-resume: dispatch the missing Stage B reviewers in a fresh
+        session (the existing dispatches[] entries become the resume
+        marker). Don't claim 'blocked-dispatch-failure' for work the
+        agent never attempted.
+    (2) If the user has explicitly authorised the early stop:
+        mkdir -p .claude && touch .claude/onboarding-stop-authorized
+        Then re-emit the state-file write — the partial-status sentinel
+        accepts honest scope reduction; this hook does not gate beyond
+        the schema once the sentinel is present.
+
+──────────────────────────────────────────────────────────────────
+What was wrong:
+──────────────────────────────────────────────────────────────────
+File:                   $FILE_PATH
+Offending dispatches:   ${OFFENDING_DISPATCH:-<top-level reason field>}
+Top-level reason snip:  ${OFFENDING_TOPLEVEL:-<n/a>}
+Matched framings:       ${MATCHED:-<see lib/framing-tokens.sh>}
+
+\`blocked-dispatch-failure\` is reserved for transport / timeout /
+malformed-content errors. Agent-chosen scope reduction is not a dispatch
+failure — re-labelling it as one is the exact bypass the BookHive Run-2
+incident exposed (6 dispatches stamped 'blocked-dispatch-failure' with
+'context-budget' free-text reasons). The semantic distinction belongs in
+the reason itself; the schema-guard cannot distinguish 'real failure' from
+'agent-chosen deferral dressed up' without inspecting the prose.
+
+──────────────────────────────────────────────────────────────────
+If 'I want to be transparent about why Stage B is missing' — read this:
+──────────────────────────────────────────────────────────────────
+Transparency is structurally honest reasons. 'context-budget',
+'session-budget', 'final-step instruction', 'reduced scope given session
+constraints', 'evening run', and 'partial pipeline delivered' are NOT
+structural reasons — they are the framings the kernel rule names
+verbatim. Use the early-stop authorisation sentinel
+(\`.claude/onboarding-stop-authorized\`) to capture that the work was
+explicitly cut short, then this hook allows the partial entry.
+
+References:
+  skills/coverage-expansion/references/state-file-schema.md §\"dispatches[] review_status enum\"
+  skills/coverage-expansion/SKILL.md §\"Two valid exits\"
+  skills/onboarding/SKILL.md §\"Hard rules — kernel-resident\"
+  hooks/lib/framing-tokens.sh (canonical token list)"
       exit 0
     fi
   fi

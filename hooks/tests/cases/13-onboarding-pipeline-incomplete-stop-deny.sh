@@ -324,6 +324,142 @@ assert_stop_block "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")"
 cleanup_counter "$SID"
 rm -rf "$REPO"
 
+section "onboarding-pipeline-incomplete-stop-deny: deterministic block kind (state file mid-pass + ledger incomplete) bypasses 3-strike cap"
+
+# Bypass-hardening: deterministic denies bypass the consecutive-block escape.
+# Setup: currentPass>=1 AND ledger incomplete (phase 7 != greenlight). The
+# block kind becomes deterministic and the 3-strike cap should NOT apply —
+# the agent retrying Stop without acting on the pipeline shouldn't be able
+# to escape via repetition alone.
+REPO=$(make_repo)
+SID=$(sid)
+cat > "$REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{"status":"in-progress","mode":"depth","currentPass":1,"journeyRoster":["j-a"],"passes":{"1-compositional":{"dispatches":[{"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}]}},"updatedAt":"2026-05-04T00:00:00Z"}
+EOF
+cat > "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" <<'EOF'
+{"phases":{"5":{"status":"in-progress"}}}
+EOF
+# The signals here are deterministic: state file says currentPass=1 +
+# dispatch present, ledger says phase 7 missing AND phase 5 in-progress.
+# That's a strict superset of the "real dispatch + currentPass>=1 + ledger
+# missing" case — the block kind escalates to deterministic.
+assert_stop_block "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")" "deterministic block 1 → BLOCK (no cap reset)" "deterministic"
+assert_stop_block "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")" "deterministic block 2 → BLOCK" "deterministic"
+assert_stop_block "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")" "deterministic block 3 → BLOCK" "deterministic"
+# Fourth attempt — cap WOULD have allowed if this were suspect, but
+# deterministic denies bypass the cap entirely.
+assert_stop_block "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")" "deterministic block 4 → still BLOCK (cap bypassed)" "deterministic"
+cleanup_counter "$SID"
+rm -rf "$REPO"
+
+section "onboarding-pipeline-incomplete-stop-deny: real-dispatch arithmetic — blocked-dispatch-failure does NOT count"
+
+# Bypass-hardening: a state file with 6 entries all stamped review_status:
+# blocked-dispatch-failure (the BookHive Run-2 shape) MUST be treated as
+# zero real dispatches. The previous count check accepted any non-empty
+# dispatches[], so the orchestrator could pad with placeholder failures
+# to clear the count. The new arithmetic requires:
+#   - stage_a_cycles >= 1
+#   - stage_b_cycles >= 1
+#   - review_status ∈ {greenlight, blocked-cycle-stalled,
+#                       blocked-cycle-exhausted}
+# blocked-dispatch-failure does NOT satisfy clause 3 even when cycle counts
+# are positive.
+REPO=$(make_repo)
+SID=$(sid)
+# Six dispatches, all blocked-dispatch-failure with stage_b_cycles:0 (the
+# canonical Run-2 shape). completedJourneys claims all six are done.
+cat > "$REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{
+  "status": "in-progress",
+  "mode": "depth",
+  "currentPass": 1,
+  "journeyRoster": ["j-a","j-b","j-c","j-d","j-e","j-f"],
+  "completedJourneys": ["j-a","j-b","j-c","j-d","j-e","j-f"],
+  "passes": {
+    "1-compositional": {
+      "dispatches": [
+        {"journey":"j-a","stage_a_cycles":1,"stage_b_cycles":0,"review_status":"blocked-dispatch-failure"},
+        {"journey":"j-b","stage_a_cycles":1,"stage_b_cycles":0,"review_status":"blocked-dispatch-failure"},
+        {"journey":"j-c","stage_a_cycles":1,"stage_b_cycles":0,"review_status":"blocked-dispatch-failure"},
+        {"journey":"j-d","stage_a_cycles":1,"stage_b_cycles":0,"review_status":"blocked-dispatch-failure"},
+        {"journey":"j-e","stage_a_cycles":1,"stage_b_cycles":0,"review_status":"blocked-dispatch-failure"},
+        {"journey":"j-f","stage_a_cycles":1,"stage_b_cycles":0,"review_status":"blocked-dispatch-failure"}
+      ]
+    }
+  },
+  "updatedAt": "2026-05-09T07:30:00Z"
+}
+EOF
+# The hook should:
+#   1. count REAL_DISPATCH_COUNT = 0 (none of the 6 satisfy the strict rule)
+#   2. compute COMPLETED_JOURNEYS = 6, HALF = 3
+#   3. 0 < 3 → escalate to BLOCK_KIND=deterministic
+#   4. emit a BLOCK with the deterministic line + Real dispatches: 0 / Completed journeys claimed: 6 line.
+run_hook "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")"
+TESTS_RUN=$((TESTS_RUN + 1))
+DECISION=$(echo "$HOOK_OUT" | jq -r '.decision // empty' 2>/dev/null)
+REASON=$(echo "$HOOK_OUT" | jq -r '.reason // empty' 2>/dev/null)
+if [ "$DECISION" = "block" ] && \
+   echo "$REASON" | grep -qF "Real dispatches" && \
+   echo "$REASON" | grep -qF ": 0" && \
+   echo "$REASON" | grep -qF "Completed journeys claimed: 6" && \
+   echo "$REASON" | grep -qF "deterministic"; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} 6 blocked-dispatch-failure entries → BLOCK with REAL_DISPATCH=0 + deterministic kind"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("real-dispatch arithmetic: expected BLOCK with REAL_DISPATCH=0 + deterministic. decision=${DECISION} reason=${REASON:0:400}")
+  echo "${CLR_FAIL}  ✗${CLR_RST} 6 blocked-dispatch-failure → expected REAL_DISPATCH=0 + deterministic"
+fi
+cleanup_counter "$SID"
+rm -rf "$REPO"
+
+section "onboarding-pipeline-incomplete-stop-deny: real-dispatch arithmetic — blocked-cycle-stalled DOES count"
+
+# Inverse case: blocked-cycle-stalled (an actual cycle-exhaustion state)
+# DOES satisfy the rule when paired with stage_b_cycles>=1.
+REPO=$(make_repo)
+SID=$(sid)
+cat > "$REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{
+  "status": "in-progress",
+  "mode": "depth",
+  "currentPass": 1,
+  "journeyRoster": ["j-a","j-b"],
+  "completedJourneys": ["j-a","j-b"],
+  "passes": {
+    "1-compositional": {
+      "dispatches": [
+        {"journey":"j-a","stage_a_cycles":2,"stage_b_cycles":2,"review_status":"blocked-cycle-stalled"},
+        {"journey":"j-b","stage_a_cycles":1,"stage_b_cycles":1,"review_status":"greenlight"}
+      ]
+    }
+  },
+  "updatedAt": "2026-05-09T07:30:00Z"
+}
+EOF
+# Both entries satisfy the real-dispatch rule (cycle counts + acceptable
+# review_status). REAL=2, COMPLETED=2, HALF=1. 2 >= 1 — no count-shortfall
+# escalation; only a suspect-class block (the 3-strike escape still applies).
+run_hook "$H" "$(payload tool_name=Stop session_id="$SID" cwd="$REPO")"
+TESTS_RUN=$((TESTS_RUN + 1))
+DECISION=$(echo "$HOOK_OUT" | jq -r '.decision // empty' 2>/dev/null)
+REASON=$(echo "$HOOK_OUT" | jq -r '.reason // empty' 2>/dev/null)
+if [ "$DECISION" = "block" ] && \
+   echo "$REASON" | grep -qF "Real dispatches" && \
+   echo "$REASON" | grep -qF ": 2" && \
+   echo "$REASON" | grep -qF "Completed journeys claimed: 2"; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} blocked-cycle-stalled + greenlight → REAL_DISPATCH=2"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("real-dispatch (stalled): expected REAL_DISPATCH=2. decision=${DECISION} reason=${REASON:0:400}")
+  echo "${CLR_FAIL}  ✗${CLR_RST} blocked-cycle-stalled + greenlight → expected REAL_DISPATCH=2"
+fi
+cleanup_counter "$SID"
+rm -rf "$REPO"
+
 section "onboarding-pipeline-incomplete-stop-deny: escape hatch via env var"
 
 REPO=$(make_repo)

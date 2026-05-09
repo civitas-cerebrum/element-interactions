@@ -77,9 +77,37 @@
 # - All phases greenlit                                         → silent allow
 # - Authorisation sentinel present                              → silent allow
 # - stop_hook_active payload field == true                      → silent allow
-# - Cap reached                                                 → silent allow (counter cleared)
+# - Cap reached (suspect-class only)                            → silent allow (counter cleared)
+# - Deterministic-class block                                   → BLOCK (cap does not apply)
 # - No mid-pipeline signals                                     → silent allow
 # - Anything else                                               → silent allow
+#
+# Real-dispatch arithmetic (post-BookHive-Run-2)
+# ----------------------------------------------
+# A "real" dispatch in dispatches[] satisfies all three:
+#   - stage_a_cycles >= 1
+#   - stage_b_cycles >= 1
+#   - review_status ∈ {greenlight, blocked-cycle-stalled,
+#                       blocked-cycle-exhausted}
+# `blocked-dispatch-failure` does NOT count toward real-dispatch totals
+# regardless of cycle counts. This forecloses the BookHive Run-2 bypass
+# where 6 entries with `review_status: blocked-dispatch-failure` and
+# `stage_b_cycles: 0` were stamped as "dispatched" to clear the count
+# check. When real-dispatch-count drops below 50% of completedJourneys,
+# the deny is escalated to deterministic kind.
+#
+# Block kinds
+# -----------
+# - deterministic: ledger / state file are mid-flight in a way the hook
+#                  can prove from canonical fields (currentPass>=1 +
+#                  ledger phase 7 not greenlight; or
+#                  real-dispatch-count < 0.5 * completedJourneys with
+#                  pass >= 1; or any phase >=5 in-progress in the
+#                  ledger). These bypass the consecutive-block escape.
+# - suspect      : looks mid-flight but the hook isn't sure (e.g.
+#                  journey-map sentinel + ambiguous ledger). After CAP=3
+#                  consecutive suspect blocks the hook silently allows
+#                  the stop. This is the unrecoverable-hook-bug escape.
 
 set -euo pipefail
 
@@ -90,6 +118,16 @@ JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
 if [ -z "$JQ" ]; then
   echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: jq not found at \$HOOK_DIR/bin/jq nor on PATH. Reinstall the package or install jq manually." >&2
   exit 1
+fi
+
+# Shared framing-token detector. See hooks/lib/framing-tokens.sh — single
+# source of truth for kernel-rule loophole-language tokens.
+# shellcheck source=lib/framing-tokens.sh
+HOOK_LIB_DIR="$(dirname "${BASH_SOURCE[0]}")/lib"
+if [ -f "$HOOK_LIB_DIR/framing-tokens.sh" ]; then
+  source "$HOOK_LIB_DIR/framing-tokens.sh"
+else
+  has_framing_token() { return 1; }
 fi
 
 if [ "${ONBOARDING_STOP_DENY:-on}" = "off" ]; then
@@ -177,7 +215,101 @@ if [ -f "$DOCS_DIR/onboarding-phase-ledger.json" ] && [ "$LEDGER_INCOMPLETE" -eq
   fi
 fi
 
-# --- consecutive-block cap --------------------------------------------------
+# --- block-kind determination -----------------------------------------------
+# Two flavours of deny:
+#   - deterministic: ledger / state file are mid-flight in a way the hook can
+#                    *prove* from canonical fields. The agent that retries the
+#                    Stop is asking the same question with the same data — no
+#                    point allowing an escape after N retries because nothing
+#                    will change without the agent doing actual pipeline work.
+#                    Deterministic denies do NOT increment the consecutive-
+#                    block counter; they keep blocking until the agent acts
+#                    on the pipeline state (or sets the auth sentinel).
+#   - suspect      : something looks mid-flight but the hook isn't fully sure
+#                    (e.g. a journey-map sentinel + an ambiguous ledger). For
+#                    these, the consecutive-block escape kicks in after CAP=3
+#                    so a real hook bug can never lock the user out.
+#
+# The state file alone with currentPass>=1 + dispatches counts is canonical
+# evidence the pipeline is mid-flight. The phase ledger with phase 7 not
+# greenlit and phase >=5 in-progress is also canonical. Anything else is
+# treated as suspect.
+BLOCK_KIND="suspect"
+
+# --- "real dispatch" definition --------------------------------------------
+# Per the BookHive Run-2 bypass post-mortem, the dispatch-count signal must
+# be tightened: a "real" dispatch is one that actually exercised both
+# stages of the dual-stage protocol. Specifically:
+#   - stage_a_cycles >= 1 AND
+#   - stage_b_cycles >= 1 AND
+#   - review_status ∈ {greenlight, blocked-cycle-stalled,
+#                       blocked-cycle-exhausted}
+#
+# `blocked-dispatch-failure` does NOT count even when both cycle counts
+# are positive (nothing prevents an agent from claiming '1' to clear a
+# different gate). The schema-guard catches the framing-token version of
+# this dishonesty at write time; this hook treats only true greenlights /
+# stalled cycles / exhausted cycles as evidence of work.
+REAL_DISPATCH_COUNT=0
+COMPLETED_JOURNEYS=0
+if [ -f "$DOCS_DIR/coverage-expansion-state.json" ]; then
+  REAL_DISPATCH_COUNT=$("$JQ" -r '
+    [
+      .passes // {} | to_entries[] | .value.dispatches // [] | .[]
+      | select(
+          (.stage_a_cycles // 0) >= 1
+          and (.stage_b_cycles // 0) >= 1
+          and ((.review_status // "")
+                | IN("greenlight",
+                     "blocked-cycle-stalled",
+                     "blocked-cycle-exhausted"))
+        )
+    ] | length
+  ' "$DOCS_DIR/coverage-expansion-state.json" 2>/dev/null || echo 0)
+  case "$REAL_DISPATCH_COUNT" in ''|*[!0-9]*) REAL_DISPATCH_COUNT=0 ;; esac
+
+  COMPLETED_JOURNEYS=$("$JQ" -r '(.completedJourneys // []) | length' "$DOCS_DIR/coverage-expansion-state.json" 2>/dev/null || echo 0)
+  case "$COMPLETED_JOURNEYS" in ''|*[!0-9]*) COMPLETED_JOURNEYS=0 ;; esac
+fi
+
+# Mid-flight deny logic: if currentPass >= 1 AND real-dispatch-count is below
+# 50% of completedJourneys.length, the dispatches[] count is being padded
+# with non-real entries (typically `blocked-dispatch-failure` placeholders
+# stamped after a single Stage A pass). Force a deterministic deny — the
+# state file is asserting work that the cycle/review evidence doesn't
+# corroborate.
+HALF_COMPLETED=$((COMPLETED_JOURNEYS / 2))
+if [ "$COMPLETED_JOURNEYS" -gt 0 ] && [ "$REAL_DISPATCH_COUNT" -lt "$HALF_COMPLETED" ]; then
+  BLOCK_KIND="deterministic"
+fi
+
+# State-file ledger evidence + currentPass >= 1 → deterministic. The orch is
+# explicitly mid-pass; no ambiguity from the hook side.
+if [ -f "$DOCS_DIR/coverage-expansion-state.json" ]; then
+  CP_VAL=$("$JQ" -r '.currentPass // 0' "$DOCS_DIR/coverage-expansion-state.json" 2>/dev/null || echo 0)
+  case "$CP_VAL" in ''|*[!0-9]*) CP_VAL=0 ;; esac
+  if [ "$CP_VAL" -ge 1 ] && [ "$LEDGER_INCOMPLETE" -eq 1 ]; then
+    BLOCK_KIND="deterministic"
+  fi
+fi
+
+# Phase ledger phase 7 not greenlight AND any phase >=5 in-progress →
+# deterministic.
+if [ "$LEDGER_INCOMPLETE" -eq 1 ] && [ -f "$DOCS_DIR/onboarding-phase-ledger.json" ]; then
+  IN_PROG_LATE=$("$JQ" -r '
+    [.phases // {} | to_entries[]
+      | select(((.key | tonumber? // 0) >= 5) and .value.status == "in-progress")
+    ] | length
+  ' "$DOCS_DIR/onboarding-phase-ledger.json" 2>/dev/null || echo 0)
+  case "$IN_PROG_LATE" in ''|*[!0-9]*) IN_PROG_LATE=0 ;; esac
+  if [ "$IN_PROG_LATE" -gt 0 ]; then
+    BLOCK_KIND="deterministic"
+  fi
+fi
+
+# --- consecutive-block cap (suspect-only) ----------------------------------
+# Deterministic denies bypass the cap entirely. The cap is a backstop for
+# unrecoverable hook-bug loops, not for state-file-backed denies.
 CAP=3
 COUNTER=""
 COUNT=0
@@ -187,14 +319,19 @@ if [ -n "$SESSION_ID" ]; then
   case "$COUNT" in ''|*[!0-9]*) COUNT=0 ;; esac
 fi
 
-if [ "$COUNT" -ge "$CAP" ]; then
-  # Cap reached — allow stop, clear counter so the user isn't stuck.
-  [ -n "$COUNTER" ] && rm -f "$COUNTER" 2>/dev/null || true
-  exit 0
+if [ "$BLOCK_KIND" = "suspect" ]; then
+  if [ "$COUNT" -ge "$CAP" ]; then
+    # Cap reached on suspect denies — allow stop, clear counter.
+    [ -n "$COUNTER" ] && rm -f "$COUNTER" 2>/dev/null || true
+    exit 0
+  fi
+  NEXT=$((COUNT + 1))
+  [ -n "$COUNTER" ] && echo "$NEXT" > "$COUNTER" 2>/dev/null || true
+else
+  # Deterministic deny — counter is irrelevant. Surface the kind in the
+  # message so reviewers know why the cap didn't kick in.
+  NEXT="${COUNT:-0}/deterministic"
 fi
-
-NEXT=$((COUNT + 1))
-[ -n "$COUNTER" ] && echo "$NEXT" > "$COUNTER" 2>/dev/null || true
 
 # --- tailor redirect for the specific Phase-5 sub-cases ---------------------
 PHASE5_REDIRECT=""
@@ -238,6 +375,13 @@ fi
 # --- compose and emit ------------------------------------------------------
 DEFAULT_REDIRECT="Continue dispatching the next pipeline phase. The front-load gate authorised the full pipeline (\"tens of minutes to several hours\"); auto-mode, session-length anxiety, and inferred user preference are explicitly NOT authorisation per skills/onboarding/SKILL.md §\"Hard rules — kernel-resident\"."
 
+# Format the block-attempt counter line based on kind.
+if [ "$BLOCK_KIND" = "deterministic" ]; then
+  COUNTER_LINE="Block kind: deterministic (state file / phase ledger evidence). The 3-strike auto-allow does NOT apply — only suspect-class denies (where the hook isn't sure the pipeline is mid-flight) escalate after 3 attempts."
+else
+  COUNTER_LINE="Block attempt: ${NEXT}/${CAP} (suspect-class). After ${CAP} consecutive suspect blocks the hook silently allows the stop so a user can always escape a hook-bug-driven deny loop. Deterministic denies bypass this cap."
+fi
+
 emit_block "[BLOCKED] Onboarding pipeline mid-flight — refusing to stop without explicit authorisation.
 
 ──────────────────────────────────────────────────────────────────
@@ -258,18 +402,21 @@ ${PHASE5_REDIRECT:-${DEFAULT_REDIRECT}}
 What was wrong:
 ──────────────────────────────────────────────────────────────────
 Mid-pipeline signals detected:${SIGNALS}
+Real dispatches (stage_a>=1 + stage_b>=1 + greenlight/stalled/exhausted): ${REAL_DISPATCH_COUNT}
+Completed journeys claimed: ${COMPLETED_JOURNEYS}
 
-Block attempt: ${NEXT}/${CAP}. After ${CAP} consecutive blocks the hook silently allows the stop so a user can always escape a deny loop.
+${COUNTER_LINE}
 
 ──────────────────────────────────────────────────────────────────
 If 'I want to be transparent about session constraints' — read this:
 ──────────────────────────────────────────────────────────────────
-Tone does not change the contract. A 'transparent' scope reduction is still a scope reduction; silent scope reduction dressed in candid language is still silent scope reduction. The framings the kernel rule names verbatim — 'pragmatic Pass 1', 'honest Pass 1 only', 'reduced scope given session constraints', 'the realistic depth-mode contract for this app is an evening run' — are exactly the patterns this hook is here to catch.
+Tone does not change the contract. A 'transparent' scope reduction is still a scope reduction; silent scope reduction dressed in candid language is still silent scope reduction. The framings the kernel rule names verbatim — 'pragmatic Pass 1', 'honest Pass 1 only', 'reduced scope given session constraints', 'the realistic depth-mode contract for this app is an evening run' — are exactly the patterns this hook is here to catch. The full token list lives at hooks/lib/framing-tokens.sh and now includes the BookHive Run-2 framings ('context-budget exit #2', 'Pass 1 first wave only', 'final-step instruction', 'partial pipeline delivered', 'agent-chosen deferral', etc.).
 
 References:
   skills/onboarding/SKILL.md §\"Hard rules — kernel-resident\"
   skills/coverage-expansion/SKILL.md §\"Two valid exits\"
   skills/coverage-expansion/SKILL.md §\"Auto-compaction between passes\"
+  hooks/lib/framing-tokens.sh
   Issues #139, #155
 
 Escape hatch: set ONBOARDING_STOP_DENY=off in the parent process that launched Claude Code (env vars don't persist across hook invocations — each Stop fires a fresh process, so setting it inside the agent session won't take effect on the next Stop). Or use the sentinel-file path documented above for session-persistent stops."
