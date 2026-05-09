@@ -266,6 +266,32 @@ test.describe('TC_015: File Upload Page', () => {
 
     log('TC_015 File Upload Page — passed');
   });
+
+  test('multi-file upload and drop-zone', async ({ steps }) => {
+
+    await test.step('Navigate to File Upload page via sidebar', async () => {
+      await steps.navigateTo('/');
+      await steps.click( 'fileUploadLink','SidebarNav');
+      await steps.verifyUrlContains('/file-upload');
+    });
+
+    await test.step('Upload multiple files and verify both names listed', async () => {
+      await steps.uploadFile( 'multipleFileInput','FileUploadPage', [
+        'tests/test-files/test-upload.txt',
+        'tests/data/page-repository.json',
+      ]);
+      await steps.verifyTextContains( 'multipleFileList','FileUploadPage', 'test-upload.txt');
+      await steps.verifyTextContains( 'multipleFileList','FileUploadPage', 'page-repository.json');
+    });
+
+    await test.step('Drop files onto drop zone and verify both names listed', async () => {
+      await steps.dropFiles( 'dropZone','FileUploadPage', ['report.pdf', 'photo.png']);
+      await steps.verifyTextContains( 'dropList','FileUploadPage', 'report.pdf');
+      await steps.verifyTextContains( 'dropList','FileUploadPage', 'photo.png');
+    });
+
+    log('TC_015 File Upload Page (multi + drop) — passed');
+  });
 });
 
 test.describe('TC_016: Autocomplete Page', () => {

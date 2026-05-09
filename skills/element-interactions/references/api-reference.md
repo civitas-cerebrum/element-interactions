@@ -180,7 +180,9 @@ await steps.scrollIntoView('elementName', 'PageName');
 await steps.fill('elementName', 'PageName', 'text');
 await steps.clearInput('elementName', 'PageName');
 await steps.typeSequentially('elementName', 'PageName', 'text', 50); // optional delay ms
-await steps.uploadFile('elementName', 'PageName', 'path/to/file.pdf');
+await steps.uploadFile('elementName', 'PageName', 'path/to/file.pdf');          // single file
+await steps.uploadFile('elementName', 'PageName', ['file1.pdf', 'file2.png']);  // multiple files
+await steps.dropFiles('elementName', 'PageName', ['report.pdf', 'photo.png']);  // drag-and-drop drop zone
 await steps.setSliderValue('elementName', 'PageName', 75);
 await steps.pressKey('Enter');                                 // 'Escape', 'Tab', 'Control+A', etc.
 
@@ -517,6 +519,8 @@ await steps.on('emailInput', 'LoginPage').fill('user@test.com');
 await steps.on('checkbox', 'SettingsPage').check();
 await steps.on('slider', 'SettingsPage').setSliderValue(75);
 await steps.on('fileInput', 'UploadPage').uploadFile('path/to/file.pdf');
+await steps.on('fileInput', 'UploadPage').uploadFile(['file1.pdf', 'file2.png']); // multiple files
+await steps.on('dropZone', 'UploadPage').dropFiles(['report.pdf', 'photo.png']);  // drag-and-drop
 
 // Terminal verifications
 await steps.on('title', 'ProductPage').verifyPresence();

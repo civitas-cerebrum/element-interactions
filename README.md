@@ -469,7 +469,8 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 * **`dragAndDrop(pageName, elementName, options: DragAndDropOptions)`** — Drags an element to a target element (`{ target: Locator | Element }`), by coordinate offset (`{ xOffset, yOffset }`), or both.
 * **`dragAndDropListedElement(pageName, elementName, elementText, options: DragAndDropOptions)`** — Finds a specific element by its text from a list, then drags it to a destination.
 * **`fill(pageName, elementName, text: string)`** — Clears and fills an input field with the provided text.
-* **`uploadFile(pageName, elementName, filePath: string)`** — Uploads a file to an `<input type="file">` element.
+* **`uploadFile(pageName, elementName, filePath: string | string[])`** — Uploads one or more files to an `<input type="file">` element. Pass a string array to attach multiple files in a single call.
+* **`dropFiles(pageName, elementName, filenames: string[], options?: { mimeType? })`** — Simulates dropping files onto a drop-zone by dispatching `dragenter`, `dragover`, and `drop` events with a populated `DataTransfer`. Filenames are basenames only — no real file is read from disk.
 * **`selectDropdown(pageName, elementName, options?: DropdownSelectOptions)`** — Selects an option from a `<select>` element and returns its `value`. Defaults to `{ type: DropdownSelectType.RANDOM }`. Also supports `VALUE` (exact match) and `INDEX` (zero-based).
 * **`setSliderValue(pageName, elementName, value: number)`** — Sets a range input (`<input type="range">`) to the specified numeric value.
 * **`pressKey(key: string)`** — Presses a keyboard key at the page level (e.g. `'Enter'`, `'Escape'`, `'Tab'`).

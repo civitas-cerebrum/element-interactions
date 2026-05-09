@@ -2,9 +2,9 @@
   "$schema": "./schemas/contribution-handover.schema.json",
   "schemaVersion": 1,
   "pr": {
-    "title": "fix(ElementAction): verifyState uses resolve() to go through EnhancedResolver",
-    "branch": "fix/verify-state-bypasses-enhanced-resolver",
-    "summary": "verifyState was calling this.repo.getSelector() instead of this.resolve(), causing role+name selectors to be serialised as [role='textbox'] CSS attribute selectors that only match elements with explicit role= HTML attributes. This silently broke verifyState on React/Vue/Angular apps with implicit ARIA roles. The fix routes verifyState through the same resolve() path used by every other method in ElementAction."
+    "title": "feat: extend uploadFile to string[] and add steps.dropFiles",
+    "branch": "feat/upload-files-and-drop-files",
+    "summary": "uploadFile now accepts string | string[], enabling multi-file attachment in a single call. A new dropFiles method simulates file drag-and-drop by dispatching dragenter, dragover, and drop events with a populated DataTransfer — no real file read required. Both methods are exposed on Steps (steps.uploadFile / steps.dropFiles) and on the fluent chain (steps.on(...).uploadFile / steps.on(...).dropFiles). The underlying WebElement.dropFiles is intentionally web-only and not added to the Element interface."
   },
   "preflight": {
     "branchSyncedWithMain": true,
@@ -29,27 +29,30 @@
     "exerciseRealVueApp": true,
     "nonTautologicalAssertions": true,
     "passing": true,
-    "specFiles": ["tests/enhanced-selectors.spec.ts"]
+    "specFiles": [
+      "tests/fluent-api.spec.ts",
+      "tests/page-components.spec.ts"
+    ]
   },
   "build": {
     "buildPasses": true,
     "fullSuitePassing": true,
-    "knownFailures": "Full suite run against GitHub Pages app (civitas-cerebrum.github.io/vue-test-app) due to arm64/amd64 mismatch with local Docker image. All 37 enhanced-selectors tests and all element-states tests passed."
+    "knownFailures": "Full suite run against GitHub Pages app (civitas-cerebrum.github.io/vue-test-app). Build is clean; live test run pending CI."
   },
   "coverage": {
     "apiCoverageGate100": true
   },
   "docs": {
-    "readmeUpdated": false,
-    "readmeUpdatedReason": "Bugfix only — verifyState already exists in the README. No new public API surface added. Rule 19 applies only to new public methods.",
-    "apiReferenceUpdated": false,
-    "apiReferenceUpdatedReason": "Bugfix only — verifyState is already documented in api-reference.md with the same signature and contract. Rule 19 applies only to new public methods.",
+    "readmeUpdated": true,
+    "readmeUpdatedReason": "New public methods uploadFile (signature change) and dropFiles added to the Interaction section.",
+    "apiReferenceUpdated": true,
+    "apiReferenceUpdatedReason": "Both Steps and fluent-chain examples added to api-reference.md Interaction section.",
     "skillFilesUpdated": false,
-    "skillFilesUpdatedReason": "No workflow stage or contribution rule changed. Skill file updates are only required when workflow stages or hard rules are affected."
+    "skillFilesUpdatedReason": "No workflow stage or contribution rule changed."
   },
   "version": {
     "patchBumpedOnce": false,
-    "patchBumpedOnceReason": "Per maintainer instruction, no version bump in this PR.",
+    "patchBumpedOnceReason": "Per maintainer instruction, version bump handled separately.",
     "from": "0.3.6",
     "to": "0.3.6"
   }

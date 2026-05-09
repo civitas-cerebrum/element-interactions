@@ -227,10 +227,16 @@ export class ElementAction {
         await element.action(this._timeout).pressSequentially(text, delay);
     }
 
-    /** Upload a file to a file input. */
-    async uploadFile(filePath: string): Promise<void> {
+    /** Upload one or more files to a file input. Pass a string array for multi-file inputs. */
+    async uploadFile(filePath: string | string[]): Promise<void> {
         const element = await this.resolve();
         await this.interactions.interact.uploadFile(element, filePath, { timeout: this._timeout });
+    }
+
+    /** Simulate dropping files onto a drop-zone element via DataTransfer drag events. */
+    async dropFiles(filenames: string[], mimeType?: string): Promise<void> {
+        const element = await this.resolve();
+        await this.interactions.interact.dropFiles(element, filenames, { mimeType, timeout: this._timeout });
     }
 
     /** Drag and drop the resolved element. */
