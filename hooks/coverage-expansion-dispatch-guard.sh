@@ -127,13 +127,20 @@ ALLOWED_PREFIX_REGEX='^(phase1-[a-z0-9-]+|phase2-[a-z0-9-]+|phase4-cycle-[0-9]+-
 # slugs — P3 batches are composer dispatches by definition.
 P3_BATCH_REGEX='^\[P3-batch\][[:space:]]+composer-[a-z0-9-]+([[:space:]]*,[[:space:]]*composer-[a-z0-9-]+){0,6}([[:space:]]*:|[[:space:]]|$)'
 
-# Relevance-group form: `[group] composer-j-a, composer-j-b, ...:`
-# (cap 5 enforced via comma count: initial + up to 4 more). Distinct from
+# Relevance-group form: `[group] composer-j-a, composer-j-b, ...:`  OR
+#                       `[group] probe-j-a, probe-j-b, ...:`
+# (cap 7 enforced via comma count: initial + up to 6 more). Distinct from
 # `[P3-batch]` — applies to compositional passes when a priority tier has
 # > 5 journeys, group composition is by relevance (same priority + shared
 # section / overlapping `Pages touched`). Stage B remains per-journey within
 # the group; cycle-2+ break-out semantics match the P3-batch path.
-GROUP_REGEX='^\[group\][[:space:]]+composer-[a-z0-9-]+([[:space:]]*,[[:space:]]*composer-[a-z0-9-]+){0,4}([[:space:]]*:|[[:space:]]|$)'
+#
+# Two role-explicit variants are accepted, each priority-pure:
+#   (a) compositional: all items composer-j-*  (coverage-expansion passes 1–3)
+#   (b) bug-discovery: all items probe-j-*     (Phase 6 element / flow probing)
+# Mixed-role groups (composer-j-a + probe-j-b) are forbidden — the regex
+# requires a single role-prefix family across the comma list.
+GROUP_REGEX='^\[group\][[:space:]]+(composer-[a-z0-9-]+([[:space:]]*,[[:space:]]*composer-[a-z0-9-]+){0,6}|probe-[a-z0-9-]+([[:space:]]*,[[:space:]]*probe-[a-z0-9-]+){0,6})([[:space:]]*:|[[:space:]]|$)'
 
 DESCRIPTION_HAS_ROLE_PREFIX=false
 if echo "$DESCRIPTION" | grep -qE "$ALLOWED_PREFIX_REGEX"; then

@@ -117,11 +117,14 @@ PROMPT=$(echo "$INPUT" | "$JQ" -r '.tool_input.prompt // ""')
 #     these are leaf-shape per-section / per-author-step dispatches, not
 #     orchestrator-shape)
 #   [P3-batch] composer-j-...,...   (P3 batch — the only batched-dispatch form)
+#   [group] composer-j-...,... | [group] probe-j-...,...   (relevance group;
+#     compositional or bug-discovery, capped per dispatch-guard)
 case "$DESCRIPTION" in
   composer-*|reviewer-*|probe-*|process-validator-*|phase-validator-*) exit 0 ;;
   phase1-*|phase2-*|stage2-*|cleanup-*) exit 0 ;;
   phase4-cycle-*-section-*|phase4-prioritise-author*) exit 0 ;;
   \[P3-batch\]*) exit 0 ;;
+  \[group\]*) exit 0 ;;
 esac
 
 # --- detection: which orchestrator? -----------------------------------------

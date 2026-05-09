@@ -244,32 +244,32 @@ A pass MAY use both paths in the same wave (one or more `[P3-batch]` dispatches 
 - **Same priority.** A relevance group's journeys must all share a priority tier — never mix P1 and P2 in one group. Priority is load-bearing for the orchestrator's pass-level decisions; mixing tiers in one brief erases that signal.
 - **Same section / shared `Pages touched`.** Group by relevance: prefer journeys that share a section identifier (e.g., all auth-section journeys, all cart-section journeys). When section alone leaves a tier with too few groupable journeys, fall back to overlapping `Pages touched` from the journey-map block — journeys that touch the same routes share page-repository entries and app-context knowledge, which is the cost saving the path is built around.
 - **No pending gap flags.** A journey carrying any of the three re-pass triggers (coverage gap, deferred stabilization, refined map block) is dispatched per-journey, not in a group. Same rule as P3-batch — flagged journeys need the brief's full attention.
-- **Cap 5.** Maximum 5 journeys per group. A tier of 28 journeys at the same priority becomes ⌈28/5⌉ = 6 groups. If a relevance cluster has 7 journeys, split it into 5+2 (the 2-journey group is fine — singleton and small groups are valid).
+- **Cap 7.** Maximum 7 journeys per group. A tier of 28 journeys at the same priority becomes ⌈28/7⌉ = 4 groups. If a relevance cluster has 9 journeys, split it into 7+2 (the 2-journey group is fine — singleton and small groups are valid).
 
-**Parallelism preserved.** Each group dispatches as ONE Stage A subagent under the `[group]` marker; multiple groups dispatch in parallel up to the host-max cap. With 28 journeys grouped 5-per (6 groups) the wave size is 6 — comparable to N parallel single-journey dispatches but with one fifth of the brief overhead per dispatch. Across-tier ordering (P0 first, then P1, then P2, then P3) is unchanged.
+**Parallelism preserved.** Each group dispatches as ONE Stage A subagent under the `[group]` marker; multiple groups dispatch in parallel up to the host-max cap. With 28 journeys grouped 7-per (4 groups) the wave size is 4 — comparable to N parallel single-journey dispatches but with roughly one seventh of the brief overhead per dispatch. Across-tier ordering (P0 first, then P1, then P2, then P3) is unchanged.
 
 **Stage B remains per-journey within a group.** Each journey in a `[group]` Stage A dispatch receives its own dedicated cycle-1 Stage B reviewer — same contract as the P3-batch path. The compositional-cycle-1 batch-reviewer exception (one cross-pass reviewer) is independent of `[group]` and does NOT compose with it; a `[group]` Stage A always produces per-journey cycle-1 Stage B reviewers.
 
 **Cycle-1 split-out.** A group is accepted only when every journey's cycle-1 Stage B returns `greenlight`. If any journey returns `improvements-needed`, that journey breaks out and runs its own per-journey Stage A from cycle 2 onward (with the cycle-1 group return retained as history input). The remaining greenlit journeys stay accepted at cycle 1 and proceed.
 
-**Quality safeguard.** The cap-5 group size and per-journey Stage B are the safeguards against the documented attention-rationing failure mode (every Stage B returns `improvements-needed` because the batched composer skipped Test-expectations bullets). If a group's cycle-1 reviews trend toward `improvements-needed` (≥2 of 5 in one group, or the same pattern across multiple groups in a pass), the orchestrator stops grouping for the remainder of that pass and falls back to per-journey dispatch.
+**Quality safeguard.** The cap-7 group size and per-journey Stage B are the safeguards against the documented attention-rationing failure mode (every Stage B returns `improvements-needed` because the batched composer skipped Test-expectations bullets). If a group's cycle-1 reviews trend toward `improvements-needed` (≥3 of 7 in one group, or the same pattern across multiple groups in a pass), the orchestrator stops grouping for the remainder of that pass and falls back to per-journey dispatch.
 
-**Role-prefix and harness.** The dispatch description is `[group] composer-j-<a>,composer-j-<b>,...:` (cap 5 enforced via comma count by `coverage-expansion-dispatch-guard.sh`). Items must be role-explicit `composer-` slugs. Returns are per-journey concatenated under one Agent return.
+**Role-prefix and harness.** The dispatch description is `[group] composer-j-<a>,composer-j-<b>,...:` (cap 7 enforced via comma count by `coverage-expansion-dispatch-guard.sh`). Items must be role-explicit `composer-` slugs (compositional passes). The same `[group]` marker is also accepted for `probe-j-` items by `bug-discovery` Phase 6 — see `bug-discovery/SKILL.md`. Returns are per-journey concatenated under one Agent return.
 
 **Rationalizations to reject (relevance-group path):**
 
 | Excuse | Reality |
 |--------|---------|
 | "Only 4 journeys at this priority — let's group anyway, it's neater" | Trigger is >5 journeys at the tier. With ≤5, per-journey dispatch is the rule; the saving doesn't pay for the attention-rationing risk. |
-| "Group of 6, only one extra over the cap, I'll bend the rule" | Cap 5 is not negotiable. Split into 5+1, or 3+3 if the cluster shape supports it. |
+| "Group of 8, only one extra over the cap, I'll bend the rule" | Cap 7 is not negotiable. Split into 7+1, or 4+4 if the cluster shape supports it. |
 | "Two journeys are P1 and three are P2, but they share pages — group them" | Same priority is required. Mixing erases the priority signal the orchestrator relies on for pass-level decisions. |
 | "Journey X has a coverage-gap flag, but the gap is small — keep it in the group" | Any of the three re-pass triggers kicks the journey out into per-journey dispatch. Same rule as P3-batch. The flag's verdict is the subagent's, after reading prior-pass returns — which a grouped brief cannot do. |
-| "Group cycle-1 had 3 of 5 return improvements-needed — keep grouping next pass anyway, the saving is too good" | The pattern is the rationing failure mode. Stop grouping for the rest of this pass and the next; revisit only if the pass-level review spread improves. |
+| "Group cycle-1 had 4 of 7 return improvements-needed — keep grouping next pass anyway, the saving is too good" | The pattern is the rationing failure mode. Stop grouping for the rest of this pass and the next; revisit only if the pass-level review spread improves. |
 | "Adversarial Pass 4 has 8 journeys — group them too" | Adversarial passes never group. Per-journey live-app probe + matrix coverage is structurally per-journey. |
 
 ### Batched dispatch for P3 peripheral journeys
 
-**Path scope: P3 only.** This `[P3-batch]` path covers the narrow case of adjacent low-impact P3 journeys — typically smoke or admin-portal siblings sharing one Playwright project — batched into a single brief, cap 7. P0/P1/P2 are NEVER eligible for the P3-batch path; sharing pages with P3 siblings is not authorisation for grouping non-P3 journeys at this cap. Non-P3 grouping has its own path with different criteria — see §"Relevance grouping for compositional passes" above (`[group]` marker, cap 5, triggered by tier size > 5). Do NOT mix the two paths in one dispatch.
+**Path scope: P3 only.** This `[P3-batch]` path covers the narrow case of adjacent low-impact P3 journeys — typically smoke or admin-portal siblings sharing one Playwright project — batched into a single brief, cap 7. P0/P1/P2 are NEVER eligible for the P3-batch path; sharing pages with P3 siblings is not authorisation for grouping non-P3 journeys at this cap. Non-P3 grouping has its own path with different criteria — see §"Relevance grouping for compositional passes" above (`[group]` marker, cap 7, triggered by tier size > 5). Do NOT mix the two paths in one dispatch.
 
 Dual-stage narrows this:
 
