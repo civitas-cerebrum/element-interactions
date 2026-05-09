@@ -160,6 +160,7 @@ const HOOK_MANIFEST = [
 
   // PostToolUse — observers (record + warn)
   { file: 'suite-gate-ratchet.sh',                event: 'PostToolUse', matcher: 'Bash',       timeout: 10 },
+  { file: 'task-update-phase-ledger-audit.sh',    event: 'PostToolUse', matcher: 'TodoWrite|TaskUpdate|TaskCreate|Task', timeout: 10 },
   { file: 'raw-playwright-api-warning.sh',        event: 'PostToolUse', matcher: 'Write|Edit', timeout: 10 },
   { file: 'subagent-return-schema-guard.sh',      event: 'PostToolUse', matcher: 'Agent',      timeout: 10 },
   { file: 'coverage-expansion-direct-compose-block.sh', event: 'PostToolUse', matcher: 'Write|Edit', timeout: 10 },
