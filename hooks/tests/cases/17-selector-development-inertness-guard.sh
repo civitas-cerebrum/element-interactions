@@ -128,3 +128,28 @@ assert_allow "$H" \
 assert_allow "$H" \
   "$(payload tool_name=Read file_path=/tmp/inertness-x.tsx)" \
   "Read tool → silent allow"
+
+# ---------------------------------------------------------------------------
+# Section 9 — C2: HOOK_DIR/lib path resolution works even when WORKSPACE_ROOT
+#              points at a temp dir with no hooks/lib/ subdirectory
+#
+# In a consumer workspace the hook lives at ~/.claude/hooks/ which has its own
+# lib/ sibling; $ws/hooks/lib won't exist. We simulate this by setting
+# WORKSPACE_ROOT to a fresh temp dir that has no hooks/lib/, then confirming
+# the hook still resolves the validator via HOOK_DIR/lib.
+# ---------------------------------------------------------------------------
+section "inertness-guard: C2 — HOOK_DIR/lib used when WORKSPACE_ROOT has no hooks/lib"
+
+_tmp_ws=$(mktemp -d)
+# Deliberately do NOT create $_tmp_ws/hooks/lib — simulates consumer workspace
+
+printf '%s' "$baseline_content" > /tmp/inertness-c2.tsx
+
+export CONVENTION_OVERRIDE=data-testid
+export WORKSPACE_ROOT="$_tmp_ws"
+assert_allow "$H" \
+  "$(payload tool_name=Write file_path=/tmp/inertness-c2.tsx content="$additive_content")" \
+  "WORKSPACE_ROOT has no hooks/lib → validator resolves via HOOK_DIR/lib → ALLOW"
+unset CONVENTION_OVERRIDE
+unset WORKSPACE_ROOT
+rm -rf "$_tmp_ws"

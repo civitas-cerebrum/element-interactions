@@ -158,4 +158,4 @@ If the last passing step is `visual_diff` or `commit`, exit silently (no warning
 
 4. **Specfile detection (step 5):** The stepper detects the e2e step via `playwright test` but does not validate that the spec being run matches the scope context; the calling skill is responsible for ensuring the correct test suite is invoked.
 
-5. **Visual-diff pixel threshold:** The threshold is hard-capped at ≤ 10 pixels in `hooks/lib/visual-diff.js`, but is configurable via `tests/e2e/.selector-development/config.json` for projects with legitimate non-determinism (animations, dynamic content).
+5. **Visual-diff pixel threshold:** Threshold is configurable via the CLI's `--threshold=N` flag; defaults to 0 (any pixel difference fails). There is no hard pixel cap in `hooks/lib/visual-diff.js`.

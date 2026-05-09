@@ -26,6 +26,29 @@ const cases = [
     before: fixtures('jsx-baseline.tsx'),
     after: fixtures('jsx-baseline.tsx').replace('onClick={onClick}>', 'onClick={onClick} data-testid="submitButton">'),
     expected: 'data-testid', file: 'jsx-camelcase.tsx', pass: false, reason: 'value-not-kebab-case' },
+
+  // I1: Vue directive change alongside data-testid addition → FAIL (structural-change)
+  // A model adding both data-testid AND a new @click handler must be rejected.
+  { name: 'vue directive changed + data-testid added → structural-change',
+    before: fixtures('vue-directive-baseline.vue'),
+    after: fixtures('vue-directive-changed.vue'),
+    expected: 'data-testid', file: 'vue-directive-changed.vue',
+    pass: false, reason: 'modifies-existing-attribute' },
+
+  // I1: Svelte directive change alongside data-testid addition → FAIL
+  { name: 'svelte directive changed + data-testid added → modifies-existing-attribute',
+    before: fixtures('svelte-directive-baseline.svelte'),
+    after: fixtures('svelte-directive-changed.svelte'),
+    expected: 'data-testid', file: 'svelte-directive-changed.svelte',
+    pass: false, reason: 'modifies-existing-attribute' },
+
+  // I2: JSX expression container — same-named prop with different expression body
+  // onClick={a} → onClick={b}: offsets differ so normalized value differs.
+  { name: 'jsx onClick handler change detected (I2 — different expression body)',
+    before: 'export function C() { return <button onClick={a}>x</button>; }',
+    after:  'export function C() { return <button onClick={b} data-testid="submit-button">x</button>; }',
+    expected: 'data-testid', file: 'jsx-expr-change.tsx',
+    pass: false, reason: 'modifies-existing-attribute' },
 ];
 
 let passed = 0, failed = 0;

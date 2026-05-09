@@ -95,7 +95,13 @@ detect_step() {
         echo "after_snapshot"; return
       fi
       # e2e: playwright test (but NOT playwright-cli)
-      if echo "$cmd" | grep -qE '(^|[;|][[:space:]]*|&&[[:space:]]*)playwright[[:space:]]+test([[:space:]]|$)'; then
+      # Accepts bare `playwright test` as well as runner-prefixed forms:
+      # `npx playwright test`, `bunx playwright test`,
+      # `pnpm exec playwright test`, `yarn exec playwright test` —
+      # mirroring the canonical runner list from playwright-cli-isolation-guard.sh.
+      RUNNERS='(npx|bunx|pnpm[[:space:]]+exec|yarn[[:space:]]+exec)[[:space:]]+'
+      SEP='(^|[;|][[:space:]]*|&&[[:space:]]*)'
+      if echo "$cmd" | grep -qE "${SEP}(${RUNNERS})?playwright[[:space:]]+test([[:space:]]|$)"; then
         echo "e2e"; return
       fi
       # typecheck: npm run typecheck, tsc --noEmit, npx tsc
@@ -372,8 +378,8 @@ Receipt: ${RECEIPT}"
     if [ -n "${FAKE_STAGED_HASH:-}" ]; then
       STAGED_HASH="$FAKE_STAGED_HASH"
     else
-      FILES_ARG=$(jq -r '.files[] // empty' "$RECEIPT" 2>/dev/null | tr '\n' ' ')
-      STAGED_HASH=$(git -C "$WS" diff --cached -- $FILES_ARG 2>/dev/null | sha256sum | awk '{print $1}' || echo "")
+      mapfile -t FILES_ARR < <(jq -r '.files[]? // empty' "$RECEIPT" 2>/dev/null)
+      STAGED_HASH=$(git -C "$WS" diff --cached -- "${FILES_ARR[@]}" 2>/dev/null | sha256sum | awk '{print $1}' || echo "")
     fi
 
     if [ -z "$RECEIPT_HASH" ] || [ "$RECEIPT_HASH" != "$STAGED_HASH" ]; then

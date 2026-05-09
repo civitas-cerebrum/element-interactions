@@ -12,7 +12,7 @@
 # step is not `visual_diff` or `commit`, the skill stopped mid-pipeline —
 # surface a WARN with the recovery instruction.
 
-set -uo pipefail
+set -euo pipefail
 
 # Stop hooks may receive a payload but we don't need any tool fields. Discard stdin.
 cat >/dev/null
@@ -32,7 +32,11 @@ case "$last" in
 esac
 
 files=$(jq -r '.files[]?' "$receipt" | tr '\n' ' ')
-message="selector-development: incomplete patch detected for scope '${scope}' (last step: ${last:-<none>}). Run: git checkout -- ${files}&& rm '${receipt}' '${scope_file}'. Otherwise the next selector-development invocation will refuse to start."
+if [ -n "${files// /}" ]; then
+  message="selector-development: incomplete patch detected for scope '${scope}' (last step: ${last:-<none>}). Run: git checkout -- ${files} && rm '${receipt}' '${scope_file}'. Otherwise the next selector-development invocation will refuse to start."
+else
+  message="selector-development: incomplete patch detected for scope '${scope}' (last step: ${last:-<none>}). Run: rm '${receipt}' '${scope_file}'. Otherwise the next selector-development invocation will refuse to start."
+fi
 
 jq -n --arg msg "$message" '{systemMessage:$msg}'
 exit 0

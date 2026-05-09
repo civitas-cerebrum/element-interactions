@@ -53,6 +53,26 @@ function flattenJSX(ast) {
         if (attr.value) {
           if (attr.value.type === 'StringLiteral') {
             value = attr.value.value;
+          } else if (attr.value.type === 'JSXExpressionContainer' && attr.value.expression) {
+            // Distinguish expressions by their identifier/member name when available,
+            // and fall back to source offsets. Two same-named attributes with different
+            // expression bodies will produce different fingerprints, causing
+            // compareElements to flag the change as modifies-existing-attribute.
+            const expr = attr.value.expression;
+            let exprFingerprint;
+            if (expr.type === 'Identifier') {
+              // onClick={handler} — use the identifier name
+              exprFingerprint = `id:${expr.name}`;
+            } else if (expr.type === 'MemberExpression') {
+              // onClick={obj.method} — use member expression source
+              const obj = expr.object && expr.object.name ? expr.object.name : '?';
+              const prop = expr.property && expr.property.name ? expr.property.name : '?';
+              exprFingerprint = `mem:${obj}.${prop}`;
+            } else {
+              // For complex expressions use start/end offsets as a best-effort fingerprint
+              exprFingerprint = `range:${expr.start}-${expr.end}`;
+            }
+            value = `__expr__#${exprFingerprint}`;
           } else {
             value = '__expr__';
           }
@@ -87,7 +107,12 @@ function parseVue(src) {
 
 /**
  * Flatten Vue compiler-sfc template AST.
- * type 1 = ELEMENT, type 6 = plain ATTRIBUTE, type 7 = DIRECTIVE (skip).
+ * type 1 = ELEMENT, type 6 = plain ATTRIBUTE, type 7 = DIRECTIVE.
+ *
+ * Directives (@click, v-if, v-bind, etc.) are included as sentinel entries
+ * so that adding/removing/changing a directive is detected as structural change.
+ * We don't compare directive bodies — only count them. Any change in the
+ * non-test-attribute structure is a structural change.
  */
 function flattenVue(node) {
   const result = [];
@@ -95,9 +120,23 @@ function flattenVue(node) {
     if (!n) return;
     if (n.type === 1) {
       // ELEMENT
-      const attrs = (n.props || [])
-        .filter(p => p.type === 6)  // plain attributes only
-        .map(p => ({ name: p.name, value: p.value ? p.value.content : null }));
+      const attrs = (n.props || []).map((p, idx) => {
+        if (p.type === 6) {
+          // Plain attribute
+          return { name: p.name, value: p.value ? p.value.content : null };
+        }
+        // Directive (type 7: @click, v-if, v-bind, etc.) — represent as
+        // a sentinel that includes the directive's expression content and source
+        // offsets, so that changing a handler body (oldHandler → newHandler)
+        // is detected as modifies-existing-attribute.
+        const expContent = p.exp ? p.exp.content : '';
+        const startOffset = p.loc && p.loc.start ? p.loc.start.offset : idx;
+        const endOffset   = p.loc && p.loc.end   ? p.loc.end.offset   : idx;
+        return {
+          name: `__directive_${idx}__`,
+          value: `__directive__:${p.name}@${startOffset}-${endOffset}:${expContent}`,
+        };
+      });
       result.push({ tag: n.tag, attrs });
       (n.children || []).forEach(walk);
     } else if (n.children) {
@@ -128,19 +167,36 @@ function parseSvelte(src) {
 /**
  * Flatten Svelte AST.
  * type === 'Element' has name, attributes, children.
- * Only Attribute type (not EventHandler, Binding, etc.) are plain attrs.
+ * Plain Attribute nodes are extracted normally; all other attribute-like nodes
+ * (EventHandler: on:click, Binding, Transition, Action, Animation) are
+ * represented as sentinels so that count changes are detected as structural.
+ * We don't compare their bodies — only count them. The principle: any change
+ * in the non-test-attribute structure is a structural change.
  */
 function flattenSvelte(node) {
   const result = [];
   function walk(n) {
     if (!n) return;
     if (n.type === 'Element') {
-      const attrs = (n.attributes || [])
-        .filter(a => a.type === 'Attribute')
-        .map(a => ({
-          name: a.name,
-          value: Array.isArray(a.value) && a.value.length > 0 ? a.value[0].data : null,
-        }));
+      const attrs = (n.attributes || []).map((a, idx) => {
+        if (a.type === 'Attribute') {
+          return {
+            name: a.name,
+            value: Array.isArray(a.value) && a.value.length > 0 ? a.value[0].data : null,
+          };
+        }
+        // EventHandler, Binding, Transition, Action, Animation — represent as
+        // a sentinel that includes the node's source offsets and expression name
+        // so that changing a handler body (oldHandler → newHandler) is detected
+        // as modifies-existing-attribute.
+        const expName = a.expression && a.expression.name ? a.expression.name : '';
+        const startOff = a.start !== undefined ? a.start : idx;
+        const endOff   = a.end   !== undefined ? a.end   : idx;
+        return {
+          name: `__directive_${idx}__`,
+          value: `__directive__:${a.type}@${startOff}-${endOff}:${expName}`,
+        };
+      });
       result.push({ tag: n.name, attrs });
       (n.children || []).forEach(walk);
     } else if (n.type === 'Fragment') {

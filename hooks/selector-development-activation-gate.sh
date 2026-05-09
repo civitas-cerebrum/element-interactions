@@ -17,7 +17,7 @@
 #
 # .ts/.js are accepted only when the path lives under /src/ /app/ /pages/ /components/.
 
-set -uo pipefail
+set -euo pipefail
 
 input=$(cat)
 tool_name=$(echo "$input" | jq -r '.tool_name // empty')

@@ -724,3 +724,126 @@ assert_allow "$H" \
   "commit gate: extra staged file present but hash scoped to receipt files → ALLOW"
 
 unset WORKSPACE_ROOT
+
+# ---------------------------------------------------------------------------
+# Section 15 — npx/bunx/pnpm runner-prefixed playwright test → e2e step
+#
+# C3 fix: SKILL.md instructs `npx playwright test <spec>`.  The old regex
+# required bare `playwright test` at a command separator — npx-prefixed form
+# was never matched, stalling the pipeline permanently at step 5.
+# This section verifies all canonical runners are now accepted.
+# ---------------------------------------------------------------------------
+section "pipeline-stepper: npx/bunx/pnpm exec playwright test → e2e ALLOW (C3)"
+
+_unit_tests_passed() {
+  _steps_json \
+    "before_snapshot:pass" \
+    "patch_applied:pass" \
+    "typecheck:pass" \
+    "unit_tests:pass"
+}
+
+# 15a: npx playwright test <spec> → e2e detected → ALLOW
+STEPS=$(_unit_tests_passed)
+WS=$(_boot_state "submit-button" "jit" "$STEPS")
+export WORKSPACE_ROOT="$WS"
+assert_allow "$H" \
+  "$(payload tool_name=Bash command="npx playwright test tests/e2e/foo.spec.ts" hook_event_name=PreToolUse cwd="$WS")" \
+  "npx playwright test <spec> → e2e detected → ALLOW"
+unset WORKSPACE_ROOT
+
+# 15b: bunx playwright test <spec> → e2e detected → ALLOW
+STEPS=$(_unit_tests_passed)
+WS=$(_boot_state "submit-button" "jit" "$STEPS")
+export WORKSPACE_ROOT="$WS"
+assert_allow "$H" \
+  "$(payload tool_name=Bash command="bunx playwright test tests/e2e/bar.spec.ts" hook_event_name=PreToolUse cwd="$WS")" \
+  "bunx playwright test <spec> → e2e detected → ALLOW"
+unset WORKSPACE_ROOT
+
+# 15c: pnpm exec playwright test <spec> → e2e detected → ALLOW
+STEPS=$(_unit_tests_passed)
+WS=$(_boot_state "submit-button" "jit" "$STEPS")
+export WORKSPACE_ROOT="$WS"
+assert_allow "$H" \
+  "$(payload tool_name=Bash command="pnpm exec playwright test tests/e2e/baz.spec.ts" hook_event_name=PreToolUse cwd="$WS")" \
+  "pnpm exec playwright test <spec> → e2e detected → ALLOW"
+unset WORKSPACE_ROOT
+
+# 15d: yarn exec playwright test → e2e detected → ALLOW
+STEPS=$(_unit_tests_passed)
+WS=$(_boot_state "submit-button" "jit" "$STEPS")
+export WORKSPACE_ROOT="$WS"
+assert_allow "$H" \
+  "$(payload tool_name=Bash command="yarn exec playwright test tests/e2e/qux.spec.ts" hook_event_name=PreToolUse cwd="$WS")" \
+  "yarn exec playwright test → e2e detected → ALLOW"
+unset WORKSPACE_ROOT
+
+# 15e: bare playwright test still works (regression guard)
+STEPS=$(_unit_tests_passed)
+WS=$(_boot_state "submit-button" "jit" "$STEPS")
+export WORKSPACE_ROOT="$WS"
+assert_allow "$H" \
+  "$(payload tool_name=Bash command="playwright test tests/e2e/foo.spec.ts" hook_event_name=PreToolUse cwd="$WS")" \
+  "bare playwright test <spec> → e2e detected → ALLOW (regression guard)"
+unset WORKSPACE_ROOT
+
+# ---------------------------------------------------------------------------
+# Section 16 — path-with-spaces in receipt files → commit gate still ALLOWs (I3)
+#
+# I3 fix: FILES_ARG was unquoted, splitting on spaces. Verify that a file
+# path containing a space is handled correctly by the git diff hash computation.
+# ---------------------------------------------------------------------------
+section "pipeline-stepper: path-with-spaces in receipt files → commit gate ALLOW (I3)"
+
+ALL_7_S16=$(_steps_json \
+  "before_snapshot:pass" \
+  "patch_applied:pass" \
+  "typecheck:pass" \
+  "unit_tests:pass" \
+  "e2e:pass" \
+  "after_snapshot:pass" \
+  "visual_diff:pass")
+
+# Build a git repo with a file path containing a space
+WS_SPACE=$(mktemp -d)
+git -C "$WS_SPACE" init -q
+git -C "$WS_SPACE" config user.email "test@test.com"
+git -C "$WS_SPACE" config user.name "Test"
+
+mkdir -p "$WS_SPACE/tests/e2e/.selector-development"
+mkdir -p "$WS_SPACE/src/my component"
+
+# Create initial commit so HEAD exists
+printf 'initial\n' > "$WS_SPACE/README.md"
+git -C "$WS_SPACE" add README.md
+git -C "$WS_SPACE" commit -q -m "init"
+
+# Create and stage a frontend file with a space in its path
+SPACED_FILE="$WS_SPACE/src/my component/Button.tsx"
+printf 'export const Button = () => <button data-testid="submit-button">Click</button>;\n' > "$SPACED_FILE"
+git -C "$WS_SPACE" add "src/my component/Button.tsx"
+
+SPACE_HASH=$(git -C "$WS_SPACE" diff --cached -- "src/my component/Button.tsx" | sha256sum | awk '{print $1}')
+
+printf '%s' "submit-button" > "$WS_SPACE/tests/e2e/.selector-development/.current-scope"
+jq -n \
+  --arg scope "submit-button" \
+  --arg hash "$SPACE_HASH" \
+  --arg file "$SPACED_FILE" \
+  --argjson steps "$ALL_7_S16" \
+  '{
+    schema_version: 2,
+    mode: "jit",
+    scope: $scope,
+    git_diff_hash: $hash,
+    attribute: { name: "data-testid", value: $scope },
+    files: [$file],
+    steps: $steps
+  }' > "$WS_SPACE/tests/e2e/.selector-development/submit-button.receipt.json"
+
+export WORKSPACE_ROOT="$WS_SPACE"
+assert_allow "$H" \
+  "$(payload tool_name=Bash command="git commit -m 'feat: add testid'" hook_event_name=PreToolUse cwd="$WS_SPACE")" \
+  "commit gate: file path with space → hash matches → ALLOW"
+unset WORKSPACE_ROOT

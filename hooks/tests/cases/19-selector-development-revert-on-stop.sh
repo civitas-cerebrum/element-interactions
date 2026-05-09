@@ -34,11 +34,14 @@ receipt="$tmpdir/tests/e2e/.selector-development/submit-button.receipt.json"
 cat > "$receipt" << 'EOF'
 {
   "scope": "submit-button",
-  "files": ["selectors.json"],
+  "files": ["src/Button.tsx"],
   "steps": [
-    {"name": "capture_baseline", "status": "pass"},
-    {"name": "generate_initial", "status": "pass"},
+    {"name": "before_snapshot", "status": "pass"},
     {"name": "patch_applied", "status": "pass"},
+    {"name": "typecheck", "status": "pass"},
+    {"name": "unit_tests", "status": "pass"},
+    {"name": "e2e", "status": "pass"},
+    {"name": "after_snapshot", "status": "pass"},
     {"name": "visual_diff", "status": "pass"}
   ]
 }
@@ -53,11 +56,14 @@ receipt="$tmpdir/tests/e2e/.selector-development/button-group.receipt.json"
 cat > "$receipt" << 'EOF'
 {
   "scope": "button-group",
-  "files": ["locators.json"],
+  "files": ["src/ButtonGroup.tsx"],
   "steps": [
-    {"name": "capture_baseline", "status": "pass"},
-    {"name": "generate_initial", "status": "pass"},
+    {"name": "before_snapshot", "status": "pass"},
     {"name": "patch_applied", "status": "pass"},
+    {"name": "typecheck", "status": "pass"},
+    {"name": "unit_tests", "status": "pass"},
+    {"name": "e2e", "status": "pass"},
+    {"name": "after_snapshot", "status": "pass"},
     {"name": "visual_diff", "status": "pass"},
     {"name": "commit", "status": "pass"}
   ]
@@ -73,10 +79,9 @@ receipt="$tmpdir/tests/e2e/.selector-development/login-form.receipt.json"
 cat > "$receipt" << 'EOF'
 {
   "scope": "login-form",
-  "files": ["selectors.json", "auth.json"],
+  "files": ["src/LoginForm.tsx", "src/AuthForm.tsx"],
   "steps": [
-    {"name": "capture_baseline", "status": "pass"},
-    {"name": "generate_initial", "status": "pass"},
+    {"name": "before_snapshot", "status": "pass"},
     {"name": "patch_applied", "status": "pass"}
   ]
 }
@@ -84,21 +89,20 @@ EOF
 assert_warn "$H" "$(payload hook_event_name=Stop)" "incomplete (last = patch_applied) → WARN" "incomplete patch"
 teardown_workspace
 
-# Case 5: incomplete journal (last step = generate_initial) → WARN with recovery hint
+# Case 5: incomplete journal (last step = before_snapshot) → WARN with recovery hint
 setup_workspace
 echo "search-box" > "$tmpdir/tests/e2e/.selector-development/.current-scope"
 receipt="$tmpdir/tests/e2e/.selector-development/search-box.receipt.json"
 cat > "$receipt" << 'EOF'
 {
   "scope": "search-box",
-  "files": ["selectors.json"],
+  "files": [],
   "steps": [
-    {"name": "capture_baseline", "status": "pass"},
-    {"name": "generate_initial", "status": "pass"}
+    {"name": "before_snapshot", "status": "pass"}
   ]
 }
 EOF
-assert_warn "$H" "$(payload hook_event_name=Stop)" "incomplete (last = generate_initial) → WARN" "incomplete patch"
+assert_warn "$H" "$(payload hook_event_name=Stop)" "incomplete (last = before_snapshot) → WARN" "incomplete patch"
 teardown_workspace
 
 # Case 6: scope pointer exists but no receipt → silent allow (edge case)

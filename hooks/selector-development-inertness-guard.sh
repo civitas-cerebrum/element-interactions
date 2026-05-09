@@ -7,7 +7,12 @@
 # Env     : CONVENTION_OVERRIDE (overrides the cached convention; for tests)
 #           WORKSPACE_ROOT (defaults to git toplevel of cwd)
 
-set -uo pipefail
+set -euo pipefail
+
+# Resolve hook's own lib directory so the validator can be found when this hook
+# is installed into ~/.claude/hooks/ (where $ws/hooks/lib won't exist).
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+HOOK_LIB="$HOOK_DIR/lib"
 
 input=$(cat)
 tool_name=$(echo "$input" | jq -r '.tool_name // empty')
@@ -25,6 +30,10 @@ case "$file_path" in
 esac
 
 ws="${WORKSPACE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")}"
+
+# Fallback for dev-repo edge case where HOOK_DIR/lib doesn't exist but $ws/hooks/lib does
+# (e.g. when testing the hook directly from the repo root without postinstall).
+[ -d "$HOOK_LIB" ] || HOOK_LIB="$ws/hooks/lib"
 
 # New-file Write: no inertness contract on creation.
 if [ ! -f "$file_path" ]; then
@@ -68,7 +77,7 @@ printf '%s' "$before_content" > "$before_tmp"
 printf '%s' "$after_content"  > "$after_tmp"
 
 result=$(node -e "
-const v = require('$ws/hooks/lib/selector-diff-validator.js');
+const v = require('$HOOK_LIB/selector-diff-validator.js');
 const fs = require('fs');
 const r = v.validate({
   before: fs.readFileSync(process.argv[1], 'utf8'),
