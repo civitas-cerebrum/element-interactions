@@ -1,0 +1,55 @@
+{
+  "phases": {
+    "1": {
+      "status": "greenlight",
+      "validator": "phase-validator-1",
+      "cycle": 1,
+      "at": "2026-05-09T02:35:00Z",
+      "evidence": [
+        "package.json — three deps declared",
+        "playwright.config.ts — documented defaults present",
+        "tests/fixtures/base.ts — baseFixture + 4 HELPER SLOT markers",
+        "tests/e2e/docs/ — directory exists",
+        "tests/data/page-repository.json — valid JSON",
+        "npx playwright --version → 1.59.1 (Chromium installed)"
+      ]
+    },
+    "2": {
+      "status": "greenlight",
+      "validator": "phase-validator-2",
+      "cycle": 1,
+      "at": "2026-05-09T02:55:00Z",
+      "evidence": [
+        "tests/e2e/docs/app-context.md — Test Infrastructure section populated",
+        "tests/e2e/docs/journey-map.md — sentinel + Site Map + pending headings",
+        "git commit fe87095 — docs: initial app-context and site map"
+      ]
+    },
+    "3": {
+      "status": "greenlight",
+      "validator": "phase-validator-3",
+      "cycle": 1,
+      "at": "2026-05-09T05:05:00Z",
+      "evidence": [
+        "tests/e2e/happy-path.spec.ts — 3× green (1.6-2.1s each)",
+        "tests/e2e/docs/.discovery-draft.json — sentinel + 6 sections-inferred + 6 cycle-1-targets",
+        "tests/fixtures/global-setup.ts wired via playwright.config.ts",
+        "tests/fixtures/base.ts — signupAndAuth populated; resetState/dismissBanners/beforeEach intentionally empty (global-reset:cross-test-race)",
+        "git commit 3f637fb — test: happy path — signup, list a book, verify on marketplace"
+      ]
+    },
+    "4": {
+      "status": "greenlight",
+      "validator": "phase-validator-4",
+      "cycle": 2,
+      "at": "2026-05-09T06:00:00Z",
+      "evidence": [
+        "tests/e2e/docs/journey-map.md — sentinel + 22 journeys (6 P0/9 P1/2 P2/5 P3) + 4 cross-referenced sub-journeys",
+        "tests/e2e/docs/.phase4-cycle-state.json — convergence-status: converged at cycle 2 (1 discovery + 1 edge-probe), author-dispatched: true",
+        "Section → Journey Map table well-formed; all 6 sections covered",
+        "No structural smells (mobile-suffix, <3 steps, strict-subset, load+empty-only)",
+        "git commit 8b700a3 — docs: journey map — 22 journeys prioritized"
+      ]
+    }
+  }
+}

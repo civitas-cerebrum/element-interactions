@@ -135,9 +135,16 @@ if [ -f "$REPO_ROOT/.claude/onboarding-stop-authorized" ] || \
 fi
 
 # --- pipeline phase-ledger evaluation --------------------------------------
-# All known phases must be "greenlight" for the write to be considered post-
-# pipeline. Any other state (in-progress, missing, blocked) keeps the gate
-# engaged.
+# All seven canonical onboarding phases (1–7) must be present AND
+# "greenlight" for the write to be considered post-pipeline. Any other
+# state (in-progress, missing-key, blocked) keeps the gate engaged.
+#
+# Why explicit phase-7 lookup:
+# the BookHive Run-2 bypass ledger had only phases 1–4 written; phases
+# 5–7 were absent entirely. A naive "iterate present keys, check none
+# != greenlight" lets the bypass slide because absent keys aren't
+# inspected. Treating absent phase 7 as not-greenlight closes that hole
+# (matches the onboarding-pipeline-incomplete-stop-deny.sh logic).
 LEDGER="$DOCS_DIR/onboarding-phase-ledger.json"
 if [ ! -f "$LEDGER" ]; then
   # No ledger → no onboarding context detected. Silent allow — this guard
@@ -145,15 +152,16 @@ if [ ! -f "$LEDGER" ]; then
   exit 0
 fi
 
+PHASE_7_STATUS=$("$JQ" -r '.phases."7".status // "missing"' "$LEDGER" 2>/dev/null || echo "missing")
 ANY_NOT_GREEN=$("$JQ" -r '
   [.phases // {} | to_entries[] | .value.status]
   | map(select(. != "greenlight"))
   | length
 ' "$LEDGER" 2>/dev/null || echo "0")
 
-if [ "$ANY_NOT_GREEN" = "0" ]; then
-  # All phases greenlight → pipeline complete; BENCHMARK writes are exactly
-  # the deliverable. Allow.
+if [ "$ANY_NOT_GREEN" = "0" ] && [ "$PHASE_7_STATUS" = "greenlight" ]; then
+  # All present phases are greenlight AND phase 7 is explicitly greenlight
+  # → pipeline complete; BENCHMARK writes are exactly the deliverable.
   exit 0
 fi
 

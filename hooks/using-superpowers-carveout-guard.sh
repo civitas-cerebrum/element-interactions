@@ -150,13 +150,17 @@ LEDGER="$DOCS_DIR/onboarding-phase-ledger.json"
 [ -f "$LEDGER" ] || exit 0
 
 # Pipeline complete → silent allow.
+# All seven canonical phases must be present AND greenlight. Absent
+# phase 7 (BookHive Run-2 ledger shape: only phases 1-4 written) is
+# treated as not greenlight, matching the sibling write-guard hooks.
+PHASE_7_STATUS=$("$JQ" -r '.phases."7".status // "missing"' "$LEDGER" 2>/dev/null || echo "missing")
 ANY_NOT_GREEN=$("$JQ" -r '
   [.phases // {} | to_entries[] | .value.status]
   | map(select(. != "greenlight"))
   | length
 ' "$LEDGER" 2>/dev/null || echo "0")
 
-[ "$ANY_NOT_GREEN" = "0" ] && exit 0
+[ "$ANY_NOT_GREEN" = "0" ] && [ "$PHASE_7_STATUS" = "greenlight" ] && exit 0
 
 # Mid-pipeline orchestrator load of using-superpowers → emit the carve-out.
 emit_warn "[WARN] using-superpowers loaded mid-pipeline — Instruction-Priority carve-out applies.
