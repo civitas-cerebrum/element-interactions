@@ -146,6 +146,15 @@ orchestrator-loop (cycle N from 1 to 5):
        - returned-sections: <id>
        - new-sections-discovered: <ids> from return
        - kind: stamped from description suffix or return body
+     **WAIT FOR ALL CYCLE-N RETURNS BEFORE STEPS 4–5.** Cycle N+1 dispatch
+     lives inside step 5 — it is forbidden to fire until every section in
+     cycles.N.dispatched-sections appears in cycles.N.returned-sections.
+     Background dispatches do NOT count as completed until their PostToolUse
+     records the return; "all 7 cycle-N agents launched" is not the same as
+     "cycle N is done". The harness `journey-mapping-cycle-gate.sh` enforces
+     this mechanically: dispatched-sections is written by PreToolUse,
+     returned-sections by PostToolUse, and any cycle-N+1 dispatch with a
+     non-empty in-flight set (dispatched \ returned) is denied.
   4. Per-cycle dedup:
        - apply canonical section-id normalization (see §"Section vocabulary")
        - drop new-sections-discovered already present in cycles 1..N
@@ -164,6 +173,14 @@ orchestrator-loop (cycle N from 1 to 5):
          edge-probe if they don't and edge-probe hasn't run yet)
 
 post-cycle: dispatch phase4-prioritise-author: (single subagent)
+  **WAIT FOR ALL CYCLE AGENTS TO RETURN BEFORE DISPATCHING THE AUTHOR.**
+  The author consumes the union of every cycle's spill files. Authoring while
+  cycle agents are still in flight produces a partial journey map — the
+  edge findings from in-flight agents land in `.subagent-returns/` after the
+  map is committed and silently disappear. The harness denies the author
+  dispatch when convergence-status (auto-derived from cycle data) is not
+  "converged" or "hard-cap-reached"; both require every dispatched section
+  in the highest cycle to appear in returned-sections.
   - reads ALL section blocks from cycle returns (spill files + state file)
   - applies Phase 3 prioritisation (P0/P1/P2/P3)
   - applies Phase 3.5 redundancy revision + structural-smell prevention

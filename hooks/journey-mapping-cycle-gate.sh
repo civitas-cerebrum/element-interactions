@@ -184,6 +184,46 @@ release_lock() {
   rmdir "$LOCKDIR" 2>/dev/null || true
 }
 
+# Initialise state file if missing. Idempotent. Caller must hold the lock.
+init_state_if_missing() {
+  if [ ! -f "$STATE" ]; then
+    "$JQ" -n --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{
+      "phase4-cycle-state-version": 1,
+      "started-at": $now,
+      "draft-path": "tests/e2e/docs/.discovery-draft.json",
+      "cycles": {},
+      "convergence-status": "continuing",
+      "author-dispatched": false,
+      "author-attempts": 0,
+      "unvalidated-sections-flagged": []
+    }' > "$STATE.tmp" && mv "$STATE.tmp" "$STATE" || rm -f "$STATE.tmp"
+  fi
+}
+
+# Record a cycle-N dispatch: append SECTION_ID to cycles.<N>.dispatched-sections
+# (PreToolUse-side write — the in-flight set is observable as
+# dispatched-sections \ returned-sections). Caller must hold the lock.
+# Stamps cycles.<N>.kind to the first-writer's value. Args: $1=N, $2=id, $3=kind.
+record_dispatch_in_state() {
+  local n="$1" sid="$2" kind="$3"
+  init_state_if_missing
+  local updated
+  updated=$("$JQ" --arg n "$n" --arg s "$sid" --arg kind "$kind" '
+    .cycles[$n] = (
+      (.cycles[$n] // {
+        "dispatched-sections": [],
+        "returned-sections": [],
+        "new-sections-discovered": [],
+        "duplicates-merged": [],
+        "kind": $kind
+      })
+      | .["dispatched-sections"] = (.["dispatched-sections"] + [$s] | unique)
+      | .["kind"]                = (.["kind"] // $kind)
+    )
+  ' "$STATE" 2>/dev/null || cat "$STATE")
+  echo "$updated" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE" || rm -f "$STATE.tmp"
+}
+
 # Helper: extract <N> and <id> from "phase4-cycle-<N>-section-<id>[:...]".
 parse_cycle_dispatch() {
   local desc="$1"
@@ -474,14 +514,19 @@ References:
       PRE_IS_EDGE_PROBE="true"
     fi
 
-    # Check: Cycle N >= 2 — prior cycle has at least one return.
+    # Check: Cycle N >= 2 — prior cycle's dispatched-sections ⊆ returned-sections
+    # (i.e. every cycle-(N-1) agent must have returned before cycle N dispatches).
+    # This is the protocol from SKILL.md §"Cycle protocol" steps 2 → 3 → 4 → 5:
+    # cycle N+1 dispatch lives inside step 5, which is gated on step 3
+    # (collect returns) being complete for cycle N. Background dispatches do
+    # NOT count as completed until their PostToolUse return is recorded.
     if [ "$CYCLE_N" -ge 2 ]; then
       if [ ! -f "$STATE" ]; then
         emit_deny "[BLOCKED] Cycle ${CYCLE_N} dispatch with no cycle-state file.
 
-Cycle ${CYCLE_N} requires that cycle $((CYCLE_N - 1)) ran and returned at
-least one section. The state file is missing — no prior cycle has recorded
-returns.
+Cycle ${CYCLE_N} requires that cycle $((CYCLE_N - 1)) ran and ALL its
+sections returned. The state file is missing — no prior cycle has recorded
+any dispatch.
 
 State path:  ${STATE} (does not exist)
 Description: \"${DESCRIPTION}\"
@@ -490,21 +535,54 @@ Dispatch cycle 1 first."
         exit 0
       fi
 
+      # Compute the in-flight set: dispatched-sections \ returned-sections.
+      INFLIGHT=$("$JQ" -r --arg p "$((CYCLE_N - 1))" '
+        ((.cycles[$p]."dispatched-sections" // []) -
+         (.cycles[$p]."returned-sections"   // [])) | join(", ")
+      ' "$STATE" 2>/dev/null || echo "")
+      PRIOR_DISPATCHED=$("$JQ" -r --arg p "$((CYCLE_N - 1))" '
+        .cycles[$p]."dispatched-sections" // [] | length
+      ' "$STATE" 2>/dev/null || echo 0)
       PRIOR_RETURNS=$("$JQ" -r --arg p "$((CYCLE_N - 1))" '
         .cycles[$p]."returned-sections" // [] | length
       ' "$STATE" 2>/dev/null || echo 0)
 
-      if [ "$PRIOR_RETURNS" -lt 1 ]; then
-        emit_deny "[BLOCKED] Cycle ${CYCLE_N} dispatch before cycle $((CYCLE_N - 1)) has any returns.
+      if [ "$PRIOR_DISPATCHED" -lt 1 ]; then
+        emit_deny "[BLOCKED] Cycle ${CYCLE_N} dispatch before cycle $((CYCLE_N - 1)) has been dispatched.
 
-Wait for at least one cycle-$((CYCLE_N - 1)) section-agent to return before
-dispatching cycle ${CYCLE_N}.
+Description:                                \"${DESCRIPTION}\"
+Cycle $((CYCLE_N - 1)) dispatched-sections count: ${PRIOR_DISPATCHED}
 
-Description:                    \"${DESCRIPTION}\"
-Cycle $((CYCLE_N - 1)) returned-sections count: ${PRIOR_RETURNS}
+Dispatch cycle $((CYCLE_N - 1)) first and wait for all its agents to return.
 
 References:
   skills/journey-mapping/SKILL.md §\"Cycle protocol\""
+        exit 0
+      fi
+
+      if [ -n "$INFLIGHT" ]; then
+        emit_deny "[BLOCKED] Cycle ${CYCLE_N} dispatch while cycle $((CYCLE_N - 1)) is still in flight.
+
+──────────────────────────────────────────────────────────────────
+Do this instead:
+──────────────────────────────────────────────────────────────────
+Wait for ALL cycle-$((CYCLE_N - 1)) agents to return before dispatching cycle
+${CYCLE_N}. Background dispatches do NOT count as returned until their
+PostToolUse fires (i.e. the agent has actually completed and emitted its
+return body). Cycle N+1 must consume cycle N's full output to satisfy the
+\"prior-cycle context\" brief (§\"Per-section-agent contract\", SKILL.md:195).
+
+──────────────────────────────────────────────────────────────────
+What was wrong:
+──────────────────────────────────────────────────────────────────
+Description:                                \"${DESCRIPTION}\"
+Cycle $((CYCLE_N - 1)) dispatched-sections count: ${PRIOR_DISPATCHED}
+Cycle $((CYCLE_N - 1)) returned-sections   count: ${PRIOR_RETURNS}
+Still in flight:                            ${INFLIGHT}
+
+References:
+  skills/journey-mapping/SKILL.md §\"Cycle protocol\" → step 3 (collect returns)
+  skills/journey-mapping/SKILL.md §\"Per-section-agent contract\" → \"Prior-cycle context\""
         exit 0
       fi
 
@@ -536,7 +614,61 @@ References:
       fi
     fi
 
-    # All checks pass — allow.
+    # Check: same-cycle re-dispatch (catches stale-state re-runs and
+    # accidental double-dispatch within a single cycle). If the state file
+    # already lists this section under cycles.<N>.dispatched-sections, the
+    # caller is either (a) re-running cycle N over a stale state file from a
+    # previous abandoned run, or (b) double-dispatching the same section in
+    # one cycle. Both are protocol violations — the protocol dispatches each
+    # section at most once per cycle.
+    if [ -f "$STATE" ]; then
+      SAME_CYCLE_HIT=$("$JQ" -r --arg n "$CYCLE_N" --arg s "$SECTION_ID" '
+        (.cycles[$n]."dispatched-sections" // []) | index($s) // empty
+      ' "$STATE" 2>/dev/null || echo "")
+      if [ -n "$SAME_CYCLE_HIT" ]; then
+        STALE_CONVERGED=$("$JQ" -r '."convergence-status" // empty' "$STATE" 2>/dev/null || echo "")
+        emit_deny "[BLOCKED] Section \"${SECTION_ID}\" already dispatched in cycle ${CYCLE_N} of the current state file.
+
+──────────────────────────────────────────────────────────────────
+Do this instead:
+──────────────────────────────────────────────────────────────────
+Each cycle dispatches each section AT MOST ONCE. Either:
+  (a) you're re-dispatching cycle ${CYCLE_N} over a stale state file from a
+      previous run — reset the state by deleting it:
+          rm tests/e2e/docs/.phase4-cycle-state.json
+          rm -rf tests/e2e/docs/.subagent-returns/phase4-cycle-*.md
+      then re-dispatch from cycle 1; OR
+  (b) you're accidentally double-dispatching this section — drop the
+      duplicate Agent call.
+
+Stale-state symptom: convergence-status is already \"converged\" or
+\"hard-cap-reached\" before the new dispatch. Current value: \"${STALE_CONVERGED}\".
+
+──────────────────────────────────────────────────────────────────
+What was wrong:
+──────────────────────────────────────────────────────────────────
+Description:                          \"${DESCRIPTION}\"
+Section:                              ${SECTION_ID}
+Cycle:                                ${CYCLE_N}
+State convergence-status:             ${STALE_CONVERGED}
+
+References:
+  skills/journey-mapping/SKILL.md §\"Cycle protocol\""
+        exit 0
+      fi
+    fi
+
+    # All checks pass — record the dispatch in state (PreToolUse-side write
+    # so the in-flight set is observable as dispatched \\ returned). Then
+    # allow.
+    DISPATCH_KIND="discovery"
+    [ "$PRE_IS_EDGE_PROBE" = "true" ] && DISPATCH_KIND="edge-probe"
+    if acquire_lock; then
+      trap 'release_lock' EXIT
+      record_dispatch_in_state "$CYCLE_N" "$SECTION_ID" "$DISPATCH_KIND"
+      release_lock
+      trap - EXIT 2>/dev/null || true
+    fi
     exit 0
   fi
 
@@ -780,10 +912,11 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
       KIND_MISMATCH="true"
     fi
 
-    # Append section ID to dispatched-sections + returned-sections; merge
-    # new-sections-discovered; flag novel section IDs; stamp cycle.kind
-    # (only the FIRST recorded kind sticks — discovery doesn't overwrite
-    # edge-probe and vice versa).
+    # Append section ID to returned-sections (NOT dispatched-sections —
+    # that's owned by PreToolUse so the in-flight set
+    # dispatched \ returned is observable). Merge new-sections-discovered;
+    # flag novel section IDs; stamp cycle.kind (only the FIRST recorded kind
+    # sticks — discovery doesn't overwrite edge-probe and vice versa).
     UPDATED=$("$JQ" --arg n "$CYCLE_N" \
                     --arg s "$SECTION_ID" \
                     --arg kind "$CYCLE_KIND" \
@@ -798,7 +931,6 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
           "duplicates-merged": [],
           "kind": $kind
         })
-        | .["dispatched-sections"]      = (.["dispatched-sections"]      + [$s] | unique)
         | .["returned-sections"]        = (.["returned-sections"]        + [$s] | unique)
         | .["new-sections-discovered"]  = (.["new-sections-discovered"]  + $new | unique)
         | .["completed-at"]             = $now
