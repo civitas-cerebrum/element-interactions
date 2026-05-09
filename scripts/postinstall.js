@@ -154,6 +154,8 @@ const HOOK_MANIFEST = [
   { file: 'journey-mapping-cycle-gate.sh',        event: 'PreToolUse', matcher: 'Agent',       timeout: 10 },
   { file: 'phase4-concurrency-log-format.sh',     event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
   { file: 'phase4-concurrency-log-format.sh',     event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
+  { file: 'benchmark-write-guard.sh',             event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
+  { file: 'onboarding-report-write-guard.sh',     event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
 
   // PostToolUse — observers (record + warn)
   { file: 'suite-gate-ratchet.sh',                event: 'PostToolUse', matcher: 'Bash',       timeout: 10 },
