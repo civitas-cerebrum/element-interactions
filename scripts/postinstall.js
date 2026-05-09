@@ -150,6 +150,7 @@ const HOOK_MANIFEST = [
   { file: 'test-data-discipline-guard.sh',        event: 'PreToolUse', matcher: 'Write|Edit|MultiEdit', timeout: 10 },
   { file: 'mcp-browser-tool-redirect.sh',         event: 'PreToolUse', matcher: MCP_PLAYWRIGHT_BROWSER_TOOLS, timeout: 10 },
   { file: 'skill-subagent-only-guard.sh',         event: 'PreToolUse', matcher: 'Skill',       timeout: 10 },
+  { file: 'using-superpowers-carveout-guard.sh',  event: 'PreToolUse', matcher: 'Skill',       timeout: 10 },
   { file: 'happy-path-discovery-draft-required.sh', event: 'PreToolUse', matcher: 'Agent',     timeout: 10 },
   { file: 'journey-mapping-cycle-gate.sh',        event: 'PreToolUse', matcher: 'Agent',       timeout: 10 },
   { file: 'phase4-concurrency-log-format.sh',     event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
