@@ -64,9 +64,20 @@ if [ -z "$JQ" ]; then
   exit 1
 fi
 
+# Shared no-skip messaging library.
+# shellcheck source=lib/no-skip-messaging.sh
+HOOK_LIB_DIR="$(dirname "${BASH_SOURCE[0]}")/lib"
+if [ -f "$HOOK_LIB_DIR/no-skip-messaging.sh" ]; then
+  source "$HOOK_LIB_DIR/no-skip-messaging.sh"
+else
+  no_skip_messaging_block() { echo ""; }
+fi
+
 # --- helpers ---
 emit_deny() {
-  "$JQ" -n --arg r "$1" '{
+  local reason="$1
+$(no_skip_messaging_block)"
+  "$JQ" -n --arg r "$reason" '{
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
       "permissionDecision": "deny",
@@ -76,7 +87,9 @@ emit_deny() {
 }
 
 emit_warn() {
-  "$JQ" -n --arg msg "$1" '{
+  local msg="$1
+$(no_skip_messaging_block)"
+  "$JQ" -n --arg msg "$msg" '{
     "systemMessage": $msg
   }'
 }

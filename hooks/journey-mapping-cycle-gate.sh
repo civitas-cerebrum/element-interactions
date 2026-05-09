@@ -84,9 +84,25 @@ if [ -z "$JQ" ]; then
   exit 1
 fi
 
+# Shared no-skip messaging library — single source of truth for the
+# canonical no-skip contract block every onboarding-pipeline hook must
+# include. See hooks/lib/no-skip-messaging.sh.
+# shellcheck source=lib/no-skip-messaging.sh
+HOOK_LIB_DIR="$(dirname "${BASH_SOURCE[0]}")/lib"
+if [ -f "$HOOK_LIB_DIR/no-skip-messaging.sh" ]; then
+  source "$HOOK_LIB_DIR/no-skip-messaging.sh"
+else
+  no_skip_messaging_block() { echo ""; }
+fi
+
 # --- helpers ---
+# emit_deny / emit_warn append the canonical no-skip messaging block to
+# the reason text automatically, so every deny/warn payload from this
+# hook carries the contract reminder without per-call interpolation.
 emit_deny() {
-  "$JQ" -n --arg r "$1" '{
+  local reason="$1
+$(no_skip_messaging_block)"
+  "$JQ" -n --arg r "$reason" '{
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
       "permissionDecision": "deny",
@@ -96,7 +112,9 @@ emit_deny() {
 }
 
 emit_warn() {
-  "$JQ" -n --arg msg "$1" '{ "systemMessage": $msg }'
+  local msg="$1
+$(no_skip_messaging_block)"
+  "$JQ" -n --arg msg "$msg" '{ "systemMessage": $msg }'
 }
 
 # Escape hatch.

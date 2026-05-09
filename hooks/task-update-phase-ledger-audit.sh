@@ -65,6 +65,17 @@ if [ -z "$JQ" ]; then
   exit 1
 fi
 
+# Shared no-skip messaging library — single source of truth for the
+# canonical no-skip contract block every onboarding-pipeline hook must
+# include in its deny / warn payload. See hooks/lib/no-skip-messaging.sh.
+# shellcheck source=lib/no-skip-messaging.sh
+HOOK_LIB_DIR="$(dirname "${BASH_SOURCE[0]}")/lib"
+if [ -f "$HOOK_LIB_DIR/no-skip-messaging.sh" ]; then
+  source "$HOOK_LIB_DIR/no-skip-messaging.sh"
+else
+  no_skip_messaging_block() { echo ""; }
+fi
+
 if [ "${TASK_UPDATE_PHASE_LEDGER_AUDIT:-on}" = "off" ]; then
   exit 0
 fi
@@ -190,6 +201,8 @@ Use status 'in-progress' or content 'Phase N (partial — Stage A only)'
 instead of 'completed' for progress markers. The semantic distinction
 matters because every downstream tool that scans task state for
 'phase N done' will read the same surface and apply the same logic.
+
+$(no_skip_messaging_block)
 
 References:
   skills/onboarding/SKILL.md §\"Hard rules — kernel-resident\"
