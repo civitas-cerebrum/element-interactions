@@ -42,6 +42,19 @@
 # superpowers package; the carve-out text + this hook serve as a local
 # mirror until the upstream patch lands.
 #
+# Upstream tracking
+# -----------------
+# An issue should be filed against the superpowers repo to land the
+# carve-out in `superpowers/using-superpowers/SKILL.md` (after the
+# Instruction-Priority block). When that PR merges, this hook is
+# obsoleted and SHOULD be removed in the same change that drops the
+# postinstall registration.
+#
+#   TODO(upstream): file at https://github.com/<superpowers-org>/superpowers/issues
+#                   then replace this TODO with the issue URL so the
+#                   tracking link survives across reviewers and the
+#                   removal commit can reference it.
+#
 # The hook fires only when the orchestrator (not a subagent) loads
 # using-superpowers AND the local pipeline is mid-flight. That keeps
 # noise low — Skill loads outside an active onboarding pipeline are

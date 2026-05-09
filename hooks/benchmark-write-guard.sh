@@ -3,6 +3,17 @@
 #
 # Hook    : PreToolUse:Write|Edit  (filters to BENCHMARK.md case-insensitively,
 #           any directory)
+#
+# Scope assumption
+# ----------------
+# This hook targets the onboarding-benchmark format specifically — `## Run \d+`
+# section headers + `### Verdict` headings + `Verdict:` lines + the
+# BETTER/WORSE/MIXED/SAME tag set. Repos with unrelated BENCHMARK.md files
+# (e.g. performance-benchmark documentation) pass through cleanly because
+# the deny conditions are scoped to those structural markers; a free-form
+# BENCHMARK.md with no Run-N headers and no framing tokens is always allowed.
+# If a future repo invents a new benchmark format that happens to use one of
+# these markers the trigger conditions will need narrowing.
 # Mode    : DENY (when a Run-N section header, Verdict line, BETTER/WORSE/
 #           MIXED/SAME verdict-shaped tag, or any kernel-rule framing-token
 #           is being added mid-pipeline)

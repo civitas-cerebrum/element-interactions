@@ -82,6 +82,15 @@ FRAMING_TOKEN_PATTERNS=(
   're-prioriti[sz]ed[[:space:]]+producing[[:space:]]+the[[:space:]]+benchmark'
 )
 
+# Combined ERE alternation of every pattern, exposed as a single regex string
+# for callers that need to grep / sed / awk against the catalogue without
+# function calls. Built once at source time. Use case-insensitively (e.g.
+# `grep -iE "$FRAMING_TOKENS_RE"`). Prefer `has_framing_token` for shell
+# logic; `FRAMING_TOKENS_RE` is for callers that want a single regex they
+# can pass to other tools or compose into a larger pattern.
+FRAMING_TOKENS_RE=$(IFS='|'; printf '%s' "${FRAMING_TOKEN_PATTERNS[*]}")
+export FRAMING_TOKENS_RE
+
 # has_framing_token <text>
 # Return 0 (success) when at least one pattern in FRAMING_TOKEN_PATTERNS
 # matches the input case-insensitively. Returns non-zero otherwise.

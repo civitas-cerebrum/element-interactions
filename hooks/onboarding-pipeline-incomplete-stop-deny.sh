@@ -250,6 +250,19 @@ BLOCK_KIND="suspect"
 # different gate). The schema-guard catches the framing-token version of
 # this dishonesty at write time; this hook treats only true greenlights /
 # stalled cycles / exhausted cycles as evidence of work.
+#
+# Known residual (M-2 of the BookHive Run-2 follow-up review): an
+# orchestrator that fabricates `stage_a_cycles: 1`, `stage_b_cycles: 1`,
+# `review_status: greenlight` for a journey that never had a Stage B
+# reviewer dispatched would inflate this count without leaving any
+# observable harness signal — there is no cross-validation against actual
+# Agent tool calls visible at the harness layer. The framing-tokens
+# detector on the same write provides defense-in-depth for the prose path
+# (an orchestrator that fabricates clean fields rarely also writes clean
+# prose), and the BENCHMARK / onboarding-report write-guards catch the
+# downstream artifact write. Closing the field-fabrication path directly
+# would require a per-Agent-dispatch ledger written by a PostToolUse hook;
+# tracked as future work, not in scope for the BookHive Run-2 fix.
 REAL_DISPATCH_COUNT=0
 COMPLETED_JOURNEYS=0
 if [ -f "$DOCS_DIR/coverage-expansion-state.json" ]; then
