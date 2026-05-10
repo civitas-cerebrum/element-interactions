@@ -112,7 +112,12 @@ EVENT_NAME=$(echo "$INPUT" | "$JQ" -r '.hook_event_name // ""')
 TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
 [ "$TOOL_NAME" != "Agent" ] && exit 0
 
-DESCRIPTION=$(echo "$INPUT" | "$JQ" -r '.tool_input.description // ""')
+# Strip leading/trailing whitespace from the description before any
+# pattern-matching. A leading space (`" composer-..."`) would otherwise
+# evade the case-pattern globs below and slip past every dispatch guard
+# (BookHive Run-5 red-team finding F3). Mirror this trim in every
+# description-driven hook.
+DESCRIPTION=$(echo "$INPUT" | "$JQ" -r '.tool_input.description // "" | gsub("^\\s+|\\s+$"; "")')
 
 # Resolve repo root for state-file location.
 CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")
@@ -132,7 +137,11 @@ if [ "$EVENT_NAME" = "PreToolUse" ]; then
   # follow-up review.
   case "$DESCRIPTION" in
     phase-validator-*)
-      PV_PHASE=$(echo "$DESCRIPTION" | sed -nE 's/^phase-validator-([1-7])[^a-zA-Z0-9]*.*/\1/p')
+      # Strict regex: exactly one digit 1-7 then a non-alphanumeric
+      # boundary. Without the boundary, `phase-validator-12:` would map
+      # to phase 1 via greedy `.*` match (BookHive Run-5 red-team bonus
+      # finding). Same regex shape as the PostToolUse writer below.
+      PV_PHASE=$(echo "$DESCRIPTION" | sed -nE 's/^phase-validator-([1-7])[^a-zA-Z0-9].*/\1/p')
       if [ -n "$PV_PHASE" ] && [ "$PV_PHASE" -ge 2 ]; then
         PV_PRIOR=$((PV_PHASE - 1))
         PV_PRIOR_STATUS=""
@@ -375,6 +384,44 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
     STATUS="improvements-needed"
   else
     exit 0   # malformed status; schema-guard handles
+  fi
+
+  # Schema-shape gate: require the canonical fields (per
+  # subagent-return-schema.md §2.5) BEFORE recording any ledger
+  # entry. The schema-guard hook is WARN-mode; without this gate, a
+  # one-line `status: greenlight` body with no `exit-criteria-checked:`,
+  # no `summary:`, and no `findings:` array would still be recorded as
+  # a phase greenlight (BookHive Run-5 red-team finding F1). Reject
+  # malformed returns here — silent allow at the harness level so
+  # schema-guard's WARN can still surface to the user; just don't
+  # corrupt the ledger.
+  if ! echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*phase:[[:space:]]*[1-7]'; then
+    exit 0   # missing `phase:` field
+  fi
+  if ! echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*exit-criteria-checked:'; then
+    exit 0   # missing `exit-criteria-checked:` array header
+  fi
+  if ! echo "$RESPONSE" | grep -qE '^[[:space:]]*-[[:space:]]+criterion:'; then
+    exit 0   # `exit-criteria-checked:` array has zero entries
+  fi
+  if ! echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*summary:'; then
+    exit 0   # missing `summary:` (REQUIRED on both statuses per §2.5)
+  fi
+
+  if [ "$STATUS" = "greenlight" ]; then
+    # Greenlight requires the literal `findings: []` (explicit empty
+    # array). Without this, a malformed body with no findings field
+    # whatsoever could record greenlight; the `[]` literal forces the
+    # validator to attest "I checked, there are zero findings".
+    if ! echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*findings:[[:space:]]*\[\]'; then
+      exit 0   # greenlight without explicit `findings: []`
+    fi
+  else
+    # Improvements-needed requires at least one `pv-<phase>-<nn>` finding
+    # block per §2.5. Phase number must match the dispatched phase.
+    if ! echo "$RESPONSE" | grep -qE "\\*\\*pv-${PHASE}-[0-9]+\\*\\*[[:space:]]+\\[must-fix\\]"; then
+      exit 0   # improvements-needed without any pv-<phase>-NN [must-fix] finding
+    fi
   fi
 
   TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)

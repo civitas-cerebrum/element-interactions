@@ -404,3 +404,128 @@ else
   echo "${CLR_FAIL}  ✗${CLR_RST} nested-key payload should silently exit"
 fi
 rm -rf "$REPO"
+
+section "phase-validator-dispatch-required: red-team round-1 hardening (BookHive Run-5)"
+
+# RT1: F1 — minimal greenlight body without exit-criteria-checked, summary, or findings []
+# must NOT write the ledger. This was the highest-severity finding from red-team
+# round 1: the writer keyed solely off the line-anchored `status: greenlight` regex,
+# so a 3-line body with just `status: greenlight\nphase: 3\nevidence: x` recorded
+# a phase greenlight without ever attesting to the schema.
+REPO=$(make_repo)
+SHALLOW='status: greenlight
+phase: 3
+evidence: x'
+run_hook "$H" "$(payload tool_name=Agent hook_event_name=PostToolUse description='phase-validator-3: cycle 1' response_content="$SHALLOW" cwd="$REPO")"
+
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ ! -f "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} F1 — shallow greenlight body (no exit-criteria-checked/summary/findings) → no ledger write"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  ACTUAL=$(jq -r '.phases."3".status // empty' "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" 2>/dev/null || echo "")
+  FAIL_DETAILS+=("F1: shallow greenlight body wrote ledger with status=$ACTUAL (expected silent allow, no write)")
+  echo "${CLR_FAIL}  ✗${CLR_RST} F1 — shallow greenlight body should NOT write ledger"
+fi
+rm -rf "$REPO"
+
+# RT2: F1 — well-formed greenlight (with exit-criteria-checked + summary + findings: [])
+# DOES write the ledger. Locks down that the schema-shape gate doesn't over-reject.
+REPO=$(make_repo)
+WELLFORMED='status: greenlight
+phase: 3
+sub-skill: inline
+exit-criteria-checked:
+  - criterion: scaffold complete
+    satisfied: true
+    evidence: tests/fixtures/base.ts
+findings: []
+summary: Phase 3 verified.'
+run_hook "$H" "$(payload tool_name=Agent hook_event_name=PostToolUse description='phase-validator-3: cycle 1' response_content="$WELLFORMED" cwd="$REPO")"
+
+TESTS_RUN=$((TESTS_RUN + 1))
+LEDGER_STATUS_RT2=$(jq -r '.phases."3".status // empty' "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" 2>/dev/null || echo "")
+if [ "$LEDGER_STATUS_RT2" = "greenlight" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} F1 — well-formed greenlight body still writes ledger (schema gate doesn't over-reject)"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("F1: well-formed greenlight failed to write ledger (status=$LEDGER_STATUS_RT2)")
+  echo "${CLR_FAIL}  ✗${CLR_RST} F1 — well-formed greenlight body should write ledger"
+fi
+rm -rf "$REPO"
+
+# RT3: F1 — greenlight body with summary but missing findings: [] literal
+# (e.g., omitted entirely or `findings:` with no value) must NOT write.
+# The findings: [] literal is a positive attestation "I verified zero findings"
+# — without it, the validator can't claim greenlight cleanly.
+REPO=$(make_repo)
+NO_FINDINGS_LIT='status: greenlight
+phase: 3
+sub-skill: inline
+exit-criteria-checked:
+  - criterion: c1
+    satisfied: true
+    evidence: e1
+summary: greenlight without findings literal'
+run_hook "$H" "$(payload tool_name=Agent hook_event_name=PostToolUse description='phase-validator-3: cycle 1' response_content="$NO_FINDINGS_LIT" cwd="$REPO")"
+
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ ! -f "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} F1 — greenlight without findings: [] literal → no ledger write"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("F1: greenlight without findings: [] wrote ledger anyway")
+  echo "${CLR_FAIL}  ✗${CLR_RST} F1 — greenlight without findings: [] literal should not write"
+fi
+rm -rf "$REPO"
+
+# RT4: F1 — improvements-needed without any pv-<phase>-NN finding block must NOT write.
+# Mirrors the §2.5 contract that improvements-needed REQUIRES ≥1 must-fix finding.
+REPO=$(make_repo)
+IN_NO_FINDING='status: improvements-needed
+phase: 3
+sub-skill: inline
+exit-criteria-checked:
+  - criterion: c1
+    satisfied: false
+    evidence: absent
+summary: 1 finding (claimed but not actually present in body)'
+run_hook "$H" "$(payload tool_name=Agent hook_event_name=PostToolUse description='phase-validator-3: cycle 1' response_content="$IN_NO_FINDING" cwd="$REPO")"
+
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ ! -f "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} F1 — improvements-needed without pv-N-NN finding → no ledger write"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("F1: improvements-needed without pv- finding wrote ledger anyway")
+  echo "${CLR_FAIL}  ✗${CLR_RST} F1 — improvements-needed without finding-block should not write"
+fi
+rm -rf "$REPO"
+
+# RT5: F3 — leading whitespace in description must not evade the chain-rule
+# or any other case-pattern match. The hook trims `$DESCRIPTION` after
+# jq extraction so " phase-validator-3: cycle 1" still resolves to phase 3.
+REPO=$(make_repo)
+assert_deny "$H" "$(payload tool_name=Agent hook_event_name=PreToolUse description=' phase-validator-3: cycle 1' prompt='leading-space spoof' cwd="$REPO")" "F3 — leading-space phase-validator-3 with no Phase 2 greenlight → DENY (whitespace trim)" "before phase-validator-2 greenlight"
+rm -rf "$REPO"
+
+# RT6: F3 — leading whitespace before composer-* still maps to Phase 5 boundary.
+REPO=$(make_repo)
+assert_deny "$H" "$(payload tool_name=Agent hook_event_name=PreToolUse description=' composer-j-test: cycle 1' prompt='leading-space composer spoof' cwd="$REPO")" "F3 — leading-space composer-* with no Phase 4 greenlight → DENY (whitespace trim)" "before phase-validator-4 greenlight"
+rm -rf "$REPO"
+
+# RT7: regex consistency — phase-validator-12 must NOT map to phase 1.
+# Tests the chain-rule extraction (PreToolUse) since the writer regex
+# was already strict; the chain-rule had a permissive `[^a-zA-Z0-9]*`
+# version that mis-mapped.
+REPO=$(make_repo)
+# With phase-validator-12, no valid phase number can be extracted → silent
+# allow (the dispatch isn't a recognised validator dispatch). Better than
+# misidentifying it as phase 1 and applying chain-rule logic against the
+# wrong predecessor.
+assert_allow "$H" "$(payload tool_name=Agent hook_event_name=PreToolUse description='phase-validator-12: malformed' prompt='out-of-range phase' cwd="$REPO")" "regex — phase-validator-12 (out of range) → silent allow (not mis-mapped to phase 1)"
+rm -rf "$REPO"
