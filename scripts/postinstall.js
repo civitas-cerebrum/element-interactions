@@ -157,6 +157,14 @@ const HOOK_MANIFEST = [
   { file: 'phase4-concurrency-log-format.sh',     event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'benchmark-write-guard.sh',             event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
   { file: 'onboarding-report-write-guard.sh',     event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
+  // harness-trusted-state-write-guard — closes the BookHive Run-4 self-authorisation
+  // exploit chain (self-authored stop sentinel + self-written phase-validator ledger).
+  // Denies agent writes to .claude/onboarding-stop-authorized,
+  // tests/e2e/docs/.onboarding-stop-authorized, and tests/e2e/docs/onboarding-phase-ledger.json
+  // via Write/Edit/MultiEdit AND via Bash file-creation operators (touch, > , tee, mv, cp,
+  // ln -s, dd of=). Out-of-band escape: HARNESS_TRUSTED_WRITE_GUARD=off.
+  { file: 'harness-trusted-state-write-guard.sh', event: 'PreToolUse', matcher: 'Write|Edit|MultiEdit', timeout: 10 },
+  { file: 'harness-trusted-state-write-guard.sh', event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
 
   // PostToolUse — observers (record + warn)
   { file: 'suite-gate-ratchet.sh',                event: 'PostToolUse', matcher: 'Bash',       timeout: 10 },

@@ -150,10 +150,79 @@ REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || echo "$CWD")
 DOCS_DIR="$REPO_ROOT/tests/e2e/docs"
 
 # --- escape hatch: user-authorised stop sentinel (always wins) --------------
-if [ -f "$REPO_ROOT/.claude/onboarding-stop-authorized" ] || \
-   [ -f "$DOCS_DIR/.onboarding-stop-authorized" ]; then
-  # Clear the consecutive-block counter so the next session starts fresh.
-  [ -n "$SESSION_ID" ] && rm -f "/tmp/civitas-onboarding-stop-deny-${SESSION_ID}" 2>/dev/null || true
+# Sentinel is honoured ONLY if its content does NOT match self-rationalisation
+# framing tokens. The framing-tokens.sh library lists the exact phrases the
+# kernel rule names verbatim ("context-budget exit #2", "pragmatic Pass 1",
+# "paused mid-Phase-5", "agent-chosen deferral", etc.). An agent-authored
+# sentinel that explains itself in those framings is, by construction, not
+# user authorisation — it is the agent rationalising its own scope reduction.
+# Defense in depth alongside hooks/harness-trusted-state-write-guard.sh,
+# which denies the agent from creating the sentinel in the first place.
+SENTINEL_FILE=""
+if [ -f "$REPO_ROOT/.claude/onboarding-stop-authorized" ]; then
+  SENTINEL_FILE="$REPO_ROOT/.claude/onboarding-stop-authorized"
+elif [ -f "$DOCS_DIR/.onboarding-stop-authorized" ]; then
+  SENTINEL_FILE="$DOCS_DIR/.onboarding-stop-authorized"
+fi
+
+if [ -n "$SENTINEL_FILE" ]; then
+  SENTINEL_CONTENT=$(cat "$SENTINEL_FILE" 2>/dev/null || echo "")
+  HOOK_LIB_DIR="$(dirname "${BASH_SOURCE[0]}")/lib"
+  FRAMING_HIT=""
+  if [ -f "$HOOK_LIB_DIR/framing-tokens.sh" ] && [ -n "$SENTINEL_CONTENT" ]; then
+    # Source the framing-tokens lib (provides has_framing_token + matched_framing_tokens).
+    # If the sentinel content matches any kernel-named framing, treat as agent-authored.
+    # shellcheck source=lib/framing-tokens.sh
+    source "$HOOK_LIB_DIR/framing-tokens.sh" 2>/dev/null || true
+    if declare -F has_framing_token >/dev/null 2>&1; then
+      if has_framing_token "$SENTINEL_CONTENT"; then
+        FRAMING_HIT=$(matched_framing_tokens "$SENTINEL_CONTENT" 2>/dev/null | head -1)
+        [ -z "$FRAMING_HIT" ] && FRAMING_HIT="(see hooks/lib/framing-tokens.sh — token catalogue)"
+      fi
+    fi
+  fi
+
+  if [ -z "$FRAMING_HIT" ]; then
+    # Clear the consecutive-block counter so the next session starts fresh.
+    [ -n "$SESSION_ID" ] && rm -f "/tmp/civitas-onboarding-stop-deny-${SESSION_ID}" 2>/dev/null || true
+    exit 0
+  fi
+
+  # Framing hit — sentinel content reads as agent self-rationalisation rather
+  # than user authorisation. Deny the stop and direct the agent to ASK the
+  # user instead of rephrasing the sentinel.
+  REASON="[BLOCKED] Stop sentinel exists at ${SENTINEL_FILE} but its content
+contains a self-rationalisation framing token (\"${FRAMING_HIT}\"). The kernel
+rule names this token verbatim — its presence indicates the sentinel was
+authored by the agent, not by the user, and therefore is not valid
+authorisation under skills/onboarding/SKILL.md §\"Hard rules — kernel-resident\".
+
+──────────────────────────────────────────────────────────────────
+Do this instead:
+──────────────────────────────────────────────────────────────────
+ASK the user in conversation whether they authorise an early stop and
+quote their reply VERBATIM in your next progress line. Do NOT rewrite
+the sentinel yourself with different wording — the agent is not the
+author of stop authorisations.
+
+If the user does authorise the stop, they will create or update the
+sentinel themselves out-of-band (touch / echo from their own shell).
+The agent's role is to ask, not to write.
+
+──────────────────────────────────────────────────────────────────
+What was wrong:
+──────────────────────────────────────────────────────────────────
+Sentinel file:        ${SENTINEL_FILE}
+Framing token hit:    \"${FRAMING_HIT}\"  (from hooks/lib/framing-tokens.sh)
+Sentinel content (first 240 chars):
+$(echo "$SENTINEL_CONTENT" | head -c 240)
+
+References:
+  hooks/lib/framing-tokens.sh
+  hooks/harness-trusted-state-write-guard.sh
+  skills/onboarding/SKILL.md §\"Hard rules — kernel-resident\"
+  skills/coverage-expansion/SKILL.md §\"Two valid exits\""
+  emit_block "$REASON"
   exit 0
 fi
 
