@@ -439,15 +439,35 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
     # expansion-state.json, ledger itself), so artifact-existence
     # against those is meaningful evidence of real subagent work.
     ARTIFACT_OK=0
+    # Helper: file exists AND larger than $2 bytes.
+    _f_big() { [ -f "$1" ] && [ "$(wc -c < "$1" 2>/dev/null || echo 0)" -gt "$2" ]; }
+    # Helper: file exists AND grep-matches pattern AND larger than $3 bytes.
+    _f_grep_big() { [ -f "$1" ] && grep -q "$2" "$1" 2>/dev/null && [ "$(wc -c < "$1" 2>/dev/null || echo 0)" -gt "$3" ]; }
+    # Helper: count spec files with substantive content (each >256B).
+    _has_real_spec() {
+      local f
+      shopt -s nullglob globstar 2>/dev/null || true
+      for f in "$REPO_ROOT"/tests/e2e/*.spec.ts "$REPO_ROOT"/tests/e2e/*.spec.js "$REPO_ROOT"/tests/e2e/**/*.spec.ts "$REPO_ROOT"/tests/e2e/**/*.spec.js; do
+        [ -f "$f" ] || continue
+        if [ "$(wc -c < "$f" 2>/dev/null || echo 0)" -gt 256 ]; then
+          shopt -u nullglob globstar 2>/dev/null || true
+          return 0
+        fi
+      done
+      shopt -u nullglob globstar 2>/dev/null || true
+      return 1
+    }
     case "$PHASE" in
       1)
         # Phase 1 — scaffold + deps. Package.json must declare the
         # element-interactions dep AND a baseFixture file + a Playwright
-        # config must exist on disk.
+        # config must exist on disk. I5 hardening: require baseFixture
+        # AND playwright.config to be non-empty (the agent could
+        # `: > baseFixture.ts` to forge presence otherwise).
         if [ -f "$REPO_ROOT/package.json" ] && \
            grep -q '@civitas-cerebrum/element-interactions' "$REPO_ROOT/package.json" 2>/dev/null && \
-           { [ -f "$REPO_ROOT/tests/e2e/baseFixture.ts" ] || [ -f "$REPO_ROOT/tests/e2e/baseFixture.js" ]; } && \
-           { [ -f "$REPO_ROOT/playwright.config.ts" ] || [ -f "$REPO_ROOT/playwright.config.js" ]; }; then
+           { _f_big "$REPO_ROOT/tests/e2e/baseFixture.ts" 32 || _f_big "$REPO_ROOT/tests/e2e/baseFixture.js" 32; } && \
+           { _f_big "$REPO_ROOT/playwright.config.ts" 32 || _f_big "$REPO_ROOT/playwright.config.js" 32; }; then
           ARTIFACT_OK=1
         fi
         ;;
@@ -455,50 +475,60 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
         # Phase 2 — groundwork: app-context.md with Test Infrastructure
         # section + a sentinel-bearing journey-map.md (Phase-2 lands the
         # initial map even if Phases 3-5 sections are empty).
-        if [ -f "$REPO_ROOT/tests/e2e/docs/app-context.md" ] && \
-           grep -q '## Test Infrastructure' "$REPO_ROOT/tests/e2e/docs/app-context.md" 2>/dev/null && \
+        # I5: require substantive size on app-context.md (>256B) AND
+        # sentinel-bearing journey-map.md.
+        if _f_grep_big "$REPO_ROOT/tests/e2e/docs/app-context.md" '## Test Infrastructure' 256 && \
            [ -f "$REPO_ROOT/tests/e2e/docs/journey-map.md" ] && \
            grep -q 'journey-mapping:generated' "$REPO_ROOT/tests/e2e/docs/journey-map.md" 2>/dev/null; then
           ARTIFACT_OK=1
         fi
         ;;
       3)
-        # Phase 3 — happy-path automation: at least one spec under tests/e2e/.
-        if compgen -G "$REPO_ROOT/tests/e2e/*.spec.ts" >/dev/null 2>&1 || \
-           compgen -G "$REPO_ROOT/tests/e2e/*.spec.js" >/dev/null 2>&1 || \
-           compgen -G "$REPO_ROOT/tests/e2e/**/*.spec.ts" >/dev/null 2>&1 || \
-           compgen -G "$REPO_ROOT/tests/e2e/**/*.spec.js" >/dev/null 2>&1; then
+        # Phase 3 — happy-path automation: at least one spec with
+        # substantive content (>256B, rules out `: > happy.spec.ts`).
+        if _has_real_spec; then
           ARTIFACT_OK=1
         fi
         ;;
       4)
         # Phase 4 — journey-map complete: file exists, sentinel intact,
         # AND substantive content (>1KB rules out the Phase-2 stub seed).
-        if [ -f "$REPO_ROOT/tests/e2e/docs/journey-map.md" ] && \
-           grep -q 'journey-mapping:generated' "$REPO_ROOT/tests/e2e/docs/journey-map.md" 2>/dev/null && \
-           [ "$(wc -c < "$REPO_ROOT/tests/e2e/docs/journey-map.md" 2>/dev/null || echo 0)" -gt 1024 ]; then
+        if _f_grep_big "$REPO_ROOT/tests/e2e/docs/journey-map.md" 'journey-mapping:generated' 1024; then
           ARTIFACT_OK=1
         fi
         ;;
       5)
-        # Phase 5 — coverage-expansion: state file marks complete.
+        # Phase 5 — coverage-expansion: state file marks complete AND
+        # journeys array has at least one entry (rules out a hand-
+        # crafted `{"status":"complete","journeys":[]}` forge).
         if [ -f "$REPO_ROOT/tests/e2e/docs/coverage-expansion-state.json" ] && \
-           [ "$("$JQ" -r '.status // empty' "$REPO_ROOT/tests/e2e/docs/coverage-expansion-state.json" 2>/dev/null)" = "complete" ]; then
+           [ "$("$JQ" -r '.status // empty' "$REPO_ROOT/tests/e2e/docs/coverage-expansion-state.json" 2>/dev/null)" = "complete" ] && \
+           [ "$("$JQ" -r '(.journeys // []) | length' "$REPO_ROOT/tests/e2e/docs/coverage-expansion-state.json" 2>/dev/null)" -gt 0 ]; then
           ARTIFACT_OK=1
         fi
         ;;
       6)
-        # Phase 6 — bug-discovery: adversarial findings landed.
-        if [ -f "$REPO_ROOT/tests/e2e/docs/adversarial-findings.md" ] || \
-           [ -d "$REPO_ROOT/tests/e2e/docs/bug-discovery-findings" ] || \
-           [ -f "$REPO_ROOT/tests/e2e/docs/bug-discovery-findings.md" ]; then
+        # Phase 6 — bug-discovery: adversarial findings landed with
+        # substantive content (>256B) AND mention at least one finding
+        # ID (avoids `: > adversarial-findings.md` forge). The findings
+        # are markdown with `## Finding ` or `### bug-` headers; require
+        # at least one to be present.
+        if _f_big "$REPO_ROOT/tests/e2e/docs/adversarial-findings.md" 256 && \
+           grep -qE '(##|###)[[:space:]]+(Finding|bug-|finding-|F[0-9]|H[0-9])' "$REPO_ROOT/tests/e2e/docs/adversarial-findings.md" 2>/dev/null; then
+          ARTIFACT_OK=1
+        elif [ -d "$REPO_ROOT/tests/e2e/docs/bug-discovery-findings" ] && \
+             [ "$(find "$REPO_ROOT/tests/e2e/docs/bug-discovery-findings" -type f -name '*.md' 2>/dev/null | wc -l)" -gt 0 ]; then
+          ARTIFACT_OK=1
+        elif _f_big "$REPO_ROOT/tests/e2e/docs/bug-discovery-findings.md" 256; then
           ARTIFACT_OK=1
         fi
         ;;
       7)
-        # Phase 7 — onboarding report + benchmark.
-        if [ -f "$REPO_ROOT/tests/e2e/docs/onboarding-report.md" ] || \
-           [ -f "$REPO_ROOT/tests/e2e/docs/BENCHMARK.md" ]; then
+        # Phase 7 — onboarding report (substantive) AND BENCHMARK entry.
+        # The report MUST include the per-phase summary + the BENCHMARK
+        # update marker. Empty / zero-byte reports are rejected.
+        if _f_big "$REPO_ROOT/tests/e2e/docs/onboarding-report.md" 512 && \
+           grep -qE '## (Phase|Summary|Coverage|Bug)' "$REPO_ROOT/tests/e2e/docs/onboarding-report.md" 2>/dev/null; then
           ARTIFACT_OK=1
         fi
         ;;

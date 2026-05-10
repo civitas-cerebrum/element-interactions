@@ -13,23 +13,37 @@ make_repo() {
   ( cd "$d" && git init -q )
   mkdir -p "$d/tests/e2e/docs" "$d/tests/e2e"
   # Phase 1 — scaffold + element-interactions dep + Playwright config.
+  # Round-4 I5: files must be >32 bytes to count as artifacts.
   cat > "$d/package.json" <<EOF
 {"name":"test","dependencies":{"@civitas-cerebrum/element-interactions":"^0.3.6"}}
 EOF
-  : > "$d/tests/e2e/baseFixture.ts"
-  : > "$d/playwright.config.ts"
+  echo '// baseFixture body for artifact-existence check (round-4)' > "$d/tests/e2e/baseFixture.ts"
+  echo '// playwright.config body for artifact-existence check (round-4)' > "$d/playwright.config.ts"
   # Phase 2 — app-context.md with Test Infrastructure section + journey-map seed.
+  # Round-4 I5: app-context must be >256 bytes.
   cat > "$d/tests/e2e/docs/app-context.md" <<EOF
 # App Context
+
 ## Test Infrastructure
+
 Reset endpoints: none discovered.
+Mutation endpoints section: none observed during crawl.
+Authentication: cookie session.
+Seed data: fixtures available under tests/e2e/fixtures.
 EOF
   cat > "$d/tests/e2e/docs/journey-map.md" <<EOF
 <!-- journey-mapping:generated -->
 # Journey Map
 EOF
-  # Phase 3 — a happy-path spec.
-  : > "$d/tests/e2e/happy.spec.ts"
+  # Phase 3 — a happy-path spec with substantive content (>256B).
+  cat > "$d/tests/e2e/happy.spec.ts" <<EOF
+import { test } from '@civitas-cerebrum/element-interactions';
+test('happy path placeholder spec for artifact-existence check (round-4 H9 tightening)', async ({ steps }) => {
+  await steps.navigate('/');
+  await steps.verifyElementVisible('homepage');
+  await steps.verifyElementVisible('navigation-menu');
+});
+EOF
   # Phase 4 — make the journey-map substantive (>1KB).
   printf '%s\n' '## Journey: j-checkout' >> "$d/tests/e2e/docs/journey-map.md"
   printf 'lorem ipsum dolor sit amet, consectetur adipiscing elit. %.0s' {1..30} >> "$d/tests/e2e/docs/journey-map.md"

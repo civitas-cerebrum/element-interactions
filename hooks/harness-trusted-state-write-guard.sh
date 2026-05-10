@@ -84,6 +84,13 @@ PROTECTED_PATHS=(
   "tests/e2e/docs/journey-map.md"
   "tests/e2e/docs/coverage-expansion-state.json"
 )
+# Note (round-4 I5/I8): we deliberately do NOT add app-context.md /
+# adversarial-findings.md / onboarding-report.md to PROTECTED_PATHS
+# because Phases 2, 6, 7 legitimately need to write them. The forge
+# path (zero-byte artifact + schema-perfect greenlight) is closed by
+# tightening the H9 substantive-content check in phase-validator-
+# dispatch-required.sh — that hook now requires non-trivial size AND
+# a phase-specific sentinel pattern in each artifact.
 
 # Glob-shape protected paths (matched separately because the literal
 # array's case-pattern matching gets brittle with embedded `*`). Each
@@ -377,10 +384,19 @@ text_touches_protected() {
       # H2 — accept optional quote between operator and path.
       # H4/H7 — accept absolute-path prefix between operator and the
       # repo-relative probe by allowing any non-separator chars to
-      # chew through (`/tmp/abs-repo/` before `tests/e2e/...`). The
-      # class excludes shell separators and redirect operators so the
-      # chew can't cross statement boundaries.
-      if echo "$text" | grep -qE '(>>?\|?)[[:space:]]*["'"'"']?[^|;&<>"'"'"']*'"$p_re$trailing_re"; then
+      # chew through (`/tmp/abs-repo/` before `tests/e2e/...`).
+      # I2 (round-4) — extend operator group to FD-numbered + ampersand
+      # forms: `1>`, `2>`, `3>>`, `&>`, `&>>`. Bash treats these as
+      # identical write semantics to a bare `>`. The optional digit/&
+      # prefix gets matched and discarded.
+      if echo "$text" | grep -qE '([0-9&]?>>?\|?|&>>?)[[:space:]]*["'"'"']?[^|;&<>"'"'"']*'"$p_re$trailing_re"; then
+        return 0
+      fi
+      # I3 (round-4) — process substitution: `>(cmd ... <path> ...)`.
+      # The outer `>` opens the subshell; the path lives inside. The
+      # main redirect regex skips this because `>(` violates the
+      # `[^|;&<>"']` chew-class. Match explicitly.
+      if echo "$text" | grep -qE '>\([^)]*'"$p_re"'[^)]*\)'; then
         return 0
       fi
       # `touch` / `tee` followed by the path (allow shell flags in between).
@@ -390,7 +406,11 @@ text_touches_protected() {
       # `mv` / `cp` / `ln` (H5: bare ln, not just `ln -s`) with path as last
       # arg before terminator. ln without -s creates a hardlink which the
       # attacker can then write through.
-      if echo "$text" | grep -qE '(^|[[:space:];&|])(mv|cp|ln)([[:space:]]+-[a-zA-Z]+)*[[:space:]]+[^|;&]*["'"'"']?'"$p_re$trailing_re"; then
+      # I7 (round-4) — add `install`, `rsync`, `truncate`, `cpio` to
+      # the write-verb list. Each writes/overwrites the destination
+      # path. `install -m 644 src dst`, `rsync src dst`, `truncate -s 0
+      # dst`, `cpio -o -F dst` are all functionally equivalent to `cp`.
+      if echo "$text" | grep -qE '(^|[[:space:];&|])(mv|cp|ln|install|rsync|truncate|cpio)([[:space:]]+-[a-zA-Z][a-zA-Z0-9_=]*)*[[:space:]]+[^|;&]*["'"'"']?'"$p_re$trailing_re"; then
         return 0
       fi
       # `dd of=PATH`
@@ -448,7 +468,14 @@ text_touches_protected() {
       # subshell that xargs spawns; we can't introspect it from here,
       # but the combination of (xargs|parallel) + protected-path mention
       # is suspicious enough to deny by itself.
+      # I6 (round-4) — same logic for `find ... -exec`. The -exec spawns
+      # a subshell whose command runs against each matched path. When a
+      # protected path is mentioned in the same command, the -exec is
+      # almost certainly the carrier.
       if echo "$text" | grep -qE '(^|[[:space:];&|])(xargs|parallel)([[:space:]]|$)'; then
+        return 0
+      fi
+      if echo "$text" | grep -qE '(^|[[:space:];&|])find[[:space:]]+[^|;&]*-exec[[:space:]]'; then
         return 0
       fi
       # H6 — env-var-indirected redirect. The cmd contains a redirect
@@ -467,47 +494,147 @@ text_touches_protected() {
 bash_touches_protected() {
   local cmd="$1"
 
-  # Skip the prose-mention commands first. The agent CAN reference a protected
-  # path in a commit message or PR body without writing to it. The exploit
-  # surface is direct file creation, not documentation.
-  if is_commit_or_message_command "$cmd"; then
-    return 1
-  fi
-
   # H4 — collapse `<segment>/../` traversals so a path like
   # `tests/e2e/docs/../docs/onboarding-phase-ledger.json` is detected
   # as the protected ledger.
   local cmd_canon
   cmd_canon=$(canonicalize_path "$cmd")
 
+  # I1 (round-4) — split the command into statement segments separated
+  # by `&&`, `||`, `;`, or `|`. Apply the commit-message whitelist
+  # per-segment, not whole-cmd. The old whole-cmd whitelist let
+  # `git commit -m "msg" && echo forged > <protected>` pass because the
+  # `git commit` substring exempted the full command, including the
+  # chained write. With per-segment splitting, only the literal commit
+  # segment is exempted; any other segment that performs a write-shape
+  # against a protected path is independently evaluated.
+  #
+  # Note: this still leaves the entire cmd's text_touches_protected
+  # scan running once below as a safety net; the per-segment loop is
+  # the precise check. The redundancy is intentional — text_touches_
+  # protected is line-oriented and per-statement is more accurate.
+  local segments=()
+  local seg
+  while IFS= read -r seg; do
+    [ -n "$seg" ] && segments+=("$seg")
+  done < <(printf '%s' "$cmd_canon" | awk '
+    BEGIN { RS = ""; FS = "\n" }
+    {
+      # Split on &&, ||, ;, | — preserve any embedded quoted text by
+      # NOT splitting inside single or double quotes (best effort).
+      n = length($0)
+      buf = ""
+      in_single = 0
+      in_double = 0
+      for (i = 1; i <= n; i++) {
+        c = substr($0, i, 1)
+        c2 = substr($0, i, 2)
+        if (c == "\047" && !in_double) { in_single = !in_single; buf = buf c; continue }
+        if (c == "\"" && !in_single) { in_double = !in_double; buf = buf c; continue }
+        if (in_single || in_double) { buf = buf c; continue }
+        if (c2 == "&&" || c2 == "||") { print buf; buf = ""; i++; continue }
+        if (c == ";" || c == "|" || c == "&") { print buf; buf = ""; continue }
+        buf = buf c
+      }
+      if (buf != "") print buf
+    }')
+
+  local found_write=0
+  for seg in "${segments[@]}"; do
+    # Trim leading/trailing whitespace.
+    seg="${seg#"${seg%%[![:space:]]*}"}"
+    seg="${seg%"${seg##*[![:space:]]}"}"
+    [ -z "$seg" ] && continue
+    # Per-segment commit-message exemption.
+    if is_commit_or_message_command "$seg"; then
+      continue
+    fi
+    if text_touches_protected "$seg"; then
+      found_write=1
+      break
+    fi
+  done
+  if [ "$found_write" = "1" ]; then
+    return 0
+  fi
+
+  # Whole-cmd commit-message exemption ONLY when the whole cmd has no
+  # write outside the commit segment (the per-segment loop already
+  # confirmed this). Skip the rest if the WHOLE cmd is a single
+  # commit-message command — preserves the old behavior for the simple
+  # case (commit message containing a protected path string).
+  if is_commit_or_message_command "$cmd_canon"; then
+    return 1
+  fi
+
   # H7 — script-source detection. If the command invokes a script
   # (`bash <file>`, `sh <file>`, `source <file>`, `. <file>`), read the
-  # script body and apply the same write-shape detection. The script
-  # itself may be agent-authored under /tmp (which is unprotected), so
-  # if its body redirects to a protected path the harness must catch
-  # it at the invocation point.
+  # script body and apply the same write-shape detection.
   #
-  # We grep for the invocation pattern, extract each candidate script
-  # path, and scan its body. Unreadable scripts are conservatively
-  # ignored — the agent had to write the script with a separate Write
-  # call which would have been gated by is_protected_target.
-  local invoke_lines
-  invoke_lines=$(printf '%s\n' "$cmd_canon" | grep -oE '(^|[[:space:];&|])(bash|sh|zsh|source|\.)[[:space:]]+[^[:space:]|;&]+' || true)
-  if [ -n "$invoke_lines" ]; then
-    local line
-    while IFS= read -r line; do
-      [ -z "$line" ] && continue
-      local script_path
-      script_path=$(printf '%s' "$line" | awk '{print $NF}')
-      # Strip surrounding quotes if present.
-      script_path="${script_path%\"}"; script_path="${script_path#\"}"
-      script_path="${script_path%\'}"; script_path="${script_path#\'}"
-      # Skip if the "path" looks like an option (starts with -) — that
-      # means we matched `bash -c "..."` and the body is inline in $cmd,
-      # which the regular text_touches_protected below already covers.
+  # I4 (round-4) — robust path extraction. The round-3 implementation
+  # only looked at $NF of each `verb <token>` match, which got tripped
+  # by `bash -- script`, `bash -x -e script`, and quote-bracketed paths.
+  # Use a python-style tokenizer (awk-driven) that, for each invocation
+  # site, walks tokens after the verb until it finds a non-option
+  # arg — honouring `--` as end-of-options and stripping surrounding
+  # quotes.
+  local invoke_paths
+  invoke_paths=$(printf '%s' "$cmd_canon" | awk '
+    BEGIN {
+      # Tokenize on whitespace, respecting single and double quotes.
+      RS = ""
+    }
+    {
+      n = length($0)
+      tok = ""
+      in_single = 0
+      in_double = 0
+      tokens_count = 0
+      delete tokens
+      for (i = 1; i <= n; i++) {
+        c = substr($0, i, 1)
+        if (c == "\047" && !in_double) { in_single = !in_single; tok = tok c; continue }
+        if (c == "\"" && !in_single) { in_double = !in_double; tok = tok c; continue }
+        if ((c == " " || c == "\t" || c == ";" || c == "&" || c == "|" || c == "\n") && !in_single && !in_double) {
+          if (tok != "") { tokens_count++; tokens[tokens_count] = tok; tok = "" }
+          # Boundary char itself separates statements; treat as token-boundary.
+          continue
+        }
+        tok = tok c
+      }
+      if (tok != "") { tokens_count++; tokens[tokens_count] = tok }
+      for (i = 1; i <= tokens_count; i++) {
+        t = tokens[i]
+        if (t == "bash" || t == "sh" || t == "zsh" || t == "source" || t == ".") {
+          # Walk forward looking for the script path arg.
+          end_opts = 0
+          for (j = i + 1; j <= tokens_count; j++) {
+            a = tokens[j]
+            if (a == "--") { end_opts = 1; continue }
+            if (!end_opts && substr(a, 1, 1) == "-") {
+              # -c inline body: handled by main text_touches_protected; skip
+              if (a == "-c" || a == "-e" && t != "sh") continue
+              continue
+            }
+            # Strip surrounding quotes.
+            if (length(a) >= 2) {
+              first = substr(a, 1, 1)
+              last = substr(a, length(a), 1)
+              if ((first == "\047" && last == "\047") || (first == "\"" && last == "\"")) {
+                a = substr(a, 2, length(a) - 2)
+              }
+            }
+            print a
+            break
+          }
+        }
+      }
+    }')
+  if [ -n "$invoke_paths" ]; then
+    local script_path
+    while IFS= read -r script_path; do
+      [ -z "$script_path" ] && continue
       case "$script_path" in -*) continue ;; esac
-      # Skip if path resolves under /usr, /bin, /opt — system scripts
-      # are not the exploit surface here.
       case "$script_path" in /usr/*|/bin/*|/opt/*|/sbin/*) continue ;; esac
       local body
       body=$(read_script_body "$script_path") || continue
@@ -518,7 +645,7 @@ bash_touches_protected() {
         return 0
       fi
     done <<EOF
-$invoke_lines
+$invoke_paths
 EOF
   fi
 

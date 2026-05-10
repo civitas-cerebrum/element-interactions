@@ -41,18 +41,29 @@ make_repo_h9() {
   cat > "$d/package.json" <<EOF
 {"name":"test","dependencies":{"@civitas-cerebrum/element-interactions":"^0.3.6"}}
 EOF
-  : > "$d/tests/e2e/baseFixture.ts"
-  : > "$d/playwright.config.ts"
+  echo '// baseFixture body for artifact-existence check (round-4)' > "$d/tests/e2e/baseFixture.ts"
+  echo '// playwright.config body for artifact-existence check (round-4)' > "$d/playwright.config.ts"
   cat > "$d/tests/e2e/docs/app-context.md" <<EOF
 # App Context
+
 ## Test Infrastructure
 Reset endpoints: none discovered.
+Mutation endpoints: none observed during crawl.
+Authentication: cookie session.
+Seed: fixtures under tests/e2e/fixtures.
 EOF
   cat > "$d/tests/e2e/docs/journey-map.md" <<EOF
 <!-- journey-mapping:generated -->
 # Journey Map
 EOF
-  : > "$d/tests/e2e/happy.spec.ts"
+  cat > "$d/tests/e2e/happy.spec.ts" <<EOF
+import { test } from '@civitas-cerebrum/element-interactions';
+test('happy path placeholder spec for artifact-existence check (round-4 H9 tightening)', async ({ steps }) => {
+  await steps.navigate('/');
+  await steps.verifyElementVisible('homepage');
+  await steps.verifyElementVisible('navigation-menu');
+});
+EOF
   printf 'lorem ipsum dolor sit amet, consectetur adipiscing elit. %.0s' {1..30} >> "$d/tests/e2e/docs/journey-map.md"
   echo "" >> "$d/tests/e2e/docs/journey-map.md"
   echo '{"status":"in-progress","journeys":[]}' > "$d/tests/e2e/docs/coverage-expansion-state.json"
