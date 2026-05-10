@@ -439,17 +439,20 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
     # expansion-state.json, ledger itself), so artifact-existence
     # against those is meaningful evidence of real subagent work.
     ARTIFACT_OK=0
-    # J1 (round-5) — reject symlinks. `_f_big` and `_f_grep_big` previously used
-    # `[ -f ]` which follows symlinks. Combined with the unprotected status of
-    # most artifact paths (onboarding-report.md, app-context.md, etc.), an
-    # attacker could `ln -s /tmp/forged tests/e2e/docs/onboarding-report.md`
-    # and the size/sentinel check would pass via the symlink target. Adding
-    # `[ ! -L ]` requires the artifact path to be a REGULAR file owned by the
-    # repo, not a symlink to an attacker-controlled file outside the scope.
-    # Helper: regular file (not symlink) AND larger than $2 bytes.
-    _f_big() { [ -f "$1" ] && [ ! -L "$1" ] && [ "$(wc -c < "$1" 2>/dev/null || echo 0)" -gt "$2" ]; }
-    # Helper: regular file (not symlink) AND grep-matches pattern AND larger than $3 bytes.
-    _f_grep_big() { [ -f "$1" ] && [ ! -L "$1" ] && grep -q "$2" "$1" 2>/dev/null && [ "$(wc -c < "$1" 2>/dev/null || echo 0)" -gt "$3" ]; }
+    # J1 (round-5) — reject symlinks. K1 (round-6) — also reject hardlinks
+    # (nlink > 1). Without K1, the attacker can `ln /tmp/forged
+    # tests/e2e/docs/onboarding-report.md` (hardlink, not symlink) and
+    # share the inode with their forged file; `[ ! -L ]` only catches
+    # symlinks. Requiring nlink=1 forces the artifact to be a unique
+    # regular file with no external inode-sharing.
+    _link_count() {
+      # BSD stat (macOS): `stat -f %l`. GNU stat (Linux): `stat -c %h`.
+      stat -f %l "$1" 2>/dev/null || stat -c %h "$1" 2>/dev/null || echo 1
+    }
+    # Helper: regular file (not symlink, nlink=1) AND larger than $2 bytes.
+    _f_big() { [ -f "$1" ] && [ ! -L "$1" ] && [ "$(_link_count "$1")" -eq 1 ] && [ "$(wc -c < "$1" 2>/dev/null || echo 0)" -gt "$2" ]; }
+    # Helper: regular file (not symlink, nlink=1) AND grep-matches pattern AND larger than $3 bytes.
+    _f_grep_big() { [ -f "$1" ] && [ ! -L "$1" ] && [ "$(_link_count "$1")" -eq 1 ] && grep -q "$2" "$1" 2>/dev/null && [ "$(wc -c < "$1" 2>/dev/null || echo 0)" -gt "$3" ]; }
     # J2 (round-5) — Phase 3 spec content sentinel. Previously `_has_real_spec`
     # only checked `wc -c > 256`. Any 257-byte file (e.g., `printf 'const x = %s' "$(yes 1 | head)"`)
     # passed. Add a content sentinel requiring an actual test() declaration AND
@@ -461,6 +464,7 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
       for f in "$REPO_ROOT"/tests/e2e/*.spec.ts "$REPO_ROOT"/tests/e2e/*.spec.js "$REPO_ROOT"/tests/e2e/**/*.spec.ts "$REPO_ROOT"/tests/e2e/**/*.spec.js; do
         [ -f "$f" ] || continue
         [ -L "$f" ] && continue   # J1 — reject symlinks here too
+        [ "$(_link_count "$f")" -ne 1 ] && continue   # K1 — reject hardlinks
         if [ "$(wc -c < "$f" 2>/dev/null || echo 0)" -gt 256 ] && \
            grep -qE 'from[[:space:]]+["'"'"'](@playwright/test|@civitas-cerebrum/element-interactions)["'"'"']' "$f" 2>/dev/null && \
            grep -qE '\btest[[:space:]]*\(' "$f" 2>/dev/null; then

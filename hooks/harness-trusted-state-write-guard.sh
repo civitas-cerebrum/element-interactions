@@ -290,10 +290,10 @@ is_commit_or_message_command() {
   # match. The original literal-glob version `*"git commit"*` failed on
   # `git -c commit.gpgsign=false commit` because the substring `git commit`
   # is broken up by the -c arg. (BookHive Run-5 round-2 follow-up.)
-  if echo "$cmd" | grep -qE '(^|[[:space:];&|])git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'; then
+  if echo "$cmd" | grep -qE '(^|[[:space:];&|(])git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'; then
     return 0
   fi
-  if echo "$cmd" | grep -qE '(^|[[:space:];&|])git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(tag|notes)[[:space:]]+[^|;&]*-m[[:space:]]'; then
+  if echo "$cmd" | grep -qE '(^|[[:space:];&|(])git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(tag|notes)[[:space:]]+[^|;&]*-m[[:space:]]'; then
     return 0
   fi
   case "$cmd" in
@@ -361,16 +361,18 @@ text_touches_protected() {
       # or are bare basenames of a prefix family) accept any non-space
       # tail; for full paths require a delimiter so partial-path
       # mentions don't match.
-      local trailing_re='([[:space:]"'"'"']|$|;|&|\|)'
+      # K2 (round-6) — also accept `)` as a trailing delimiter, so a
+      # protected path inside `$(...)` or `>(...)` terminates correctly.
+      local trailing_re='([[:space:]"'"'"')]|$|;|&|\|)'
       case "$p" in
         *-)
-          trailing_re='[^[:space:]|;&"'"'"']*([[:space:]"'"'"']|$|;|&|\|)' ;;
+          trailing_re='[^[:space:]|;&"'"'"')]*([[:space:]"'"'"')]|$|;|&|\|)' ;;
       esac
       # H11 — bare-basename prefixes also accept any tail.
       local pbn
       for pbn in "${PROTECTED_PATH_PREFIX_BASENAMES[@]}"; do
         if [ "$p" = "$pbn" ]; then
-          trailing_re='[^[:space:]|;&"'"'"']*([[:space:]"'"'"']|$|;|&|\|)'
+          trailing_re='[^[:space:]|;&"'"'"')]*([[:space:]"'"'"')]|$|;|&|\|)'
           break
         fi
       done
@@ -400,7 +402,7 @@ text_touches_protected() {
         return 0
       fi
       # `touch` / `tee` followed by the path (allow shell flags in between).
-      if echo "$text" | grep -qE '(^|[[:space:];&|])(touch|tee)([[:space:]]+-[a-zA-Z]+)*[[:space:]]+["'"'"']?[^|;&<>"'"'"']*'"$p_re$trailing_re"; then
+      if echo "$text" | grep -qE '(^|[[:space:];&|(])(touch|tee)([[:space:]]+-[a-zA-Z]+)*[[:space:]]+["'"'"']?[^|;&<>"'"'"']*'"$p_re$trailing_re"; then
         return 0
       fi
       # `mv` / `cp` / `ln` (H5: bare ln, not just `ln -s`) with path as last
@@ -410,7 +412,7 @@ text_touches_protected() {
       # the write-verb list. Each writes/overwrites the destination
       # path. `install -m 644 src dst`, `rsync src dst`, `truncate -s 0
       # dst`, `cpio -o -F dst` are all functionally equivalent to `cp`.
-      if echo "$text" | grep -qE '(^|[[:space:];&|])(mv|cp|ln|install|rsync|truncate|cpio)([[:space:]]+-[a-zA-Z][a-zA-Z0-9_=]*)*[[:space:]]+[^|;&]*["'"'"']?'"$p_re$trailing_re"; then
+      if echo "$text" | grep -qE '(^|[[:space:];&|(])(mv|cp|ln|install|rsync|truncate|cpio)([[:space:]]+-[a-zA-Z][a-zA-Z0-9_=]*)*[[:space:]]+[^|;&]*["'"'"']?'"$p_re$trailing_re"; then
         return 0
       fi
       # `dd of=PATH`
@@ -419,48 +421,48 @@ text_touches_protected() {
       fi
       # `rm` / `unlink` / `shred` against the protected path. Allow
       # shell flags between the verb and the path (`-rf`, `-i`, etc.).
-      if echo "$text" | grep -qE '(^|[[:space:];&|])(rm|unlink|shred)([[:space:]]+-[a-zA-Z]+)*[[:space:]]+[^|;&]*["'"'"']?'"$p_re$trailing_re"; then
+      if echo "$text" | grep -qE '(^|[[:space:];&|(])(rm|unlink|shred)([[:space:]]+-[a-zA-Z]+)*[[:space:]]+[^|;&]*["'"'"']?'"$p_re$trailing_re"; then
         return 0
       fi
       # `find <root> ... -delete` where the protected path is anywhere on
       # the line.
-      if echo "$text" | grep -qE '(^|[[:space:];&|])find[[:space:]]+[^|;&]*-delete[[:space:]]*([[:space:];&|]|$)'; then
+      if echo "$text" | grep -qE '(^|[[:space:];&|(])find[[:space:]]+[^|;&]*-delete[[:space:]]*([[:space:];&|]|$)'; then
         return 0
       fi
       # H3 — `sed -i` in-place edit / `gsed -i` (GNU sed on macOS via
       # homebrew). Both rewrite the target file. The flag attaches
       # directly to -i (e.g., `-i.bak` or `-iEXT`) on BSD sed.
-      if echo "$text" | grep -qE '(^|[[:space:];&|])(g?sed)[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*-i[a-zA-Z._-]*([[:space:]]+|.)[^|;&]*["'"'"']?'"$p_re"; then
+      if echo "$text" | grep -qE '(^|[[:space:];&|(])(g?sed)[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*-i[a-zA-Z._-]*([[:space:]]+|.)[^|;&]*["'"'"']?'"$p_re"; then
         return 0
       fi
       # H3 — `ed <file>` line-editor. The file IS the argument; any ed
       # invocation that mentions a protected path is a write attempt.
-      if echo "$text" | grep -qE '(^|[[:space:];&|])ed[[:space:]]+[^|;&]*["'"'"']?'"$p_re"; then
+      if echo "$text" | grep -qE '(^|[[:space:];&|(])ed[[:space:]]+[^|;&]*["'"'"']?'"$p_re"; then
         return 0
       fi
       # `ex` / `vi`/`vim` in batch mode (`-c "w" -c "q"`) is also a write
       # path; bundle them with ed.
-      if echo "$text" | grep -qE '(^|[[:space:];&|])(ex|vim?)[[:space:]]+(-[a-zA-Z]+[[:space:]]+[^|;&]*)*-c[[:space:]]+[^|;&]*["'"'"']?'"$p_re"; then
+      if echo "$text" | grep -qE '(^|[[:space:];&|(])(ex|vim?)[[:space:]]+(-[a-zA-Z]+[[:space:]]+[^|;&]*)*-c[[:space:]]+[^|;&]*["'"'"']?'"$p_re"; then
         return 0
       fi
       # Interpreter `-c` / `-e` / `eval` that mentions the protected path
       # with an open-for-write or unlink shape inside the script string.
-      if echo "$text" | grep -qE '(^|[[:space:];&|])(python3?|perl|ruby|node|deno|bun|pwsh|powershell)[[:space:]]+(-[ec]|eval)[[:space:]]'; then
+      if echo "$text" | grep -qE '(^|[[:space:];&|(])(python3?|perl|ruby|node|deno|bun|pwsh|powershell)[[:space:]]+(-[ec]|eval)[[:space:]]'; then
         if echo "$text" | grep -qE "open\\([^)]*,[[:space:]]*['\"][wa+][bx+]?['\"]|write\\(|writeFileSync|writeFile|writeAllText|unlink|unlinkSync|truncate|fs\\.create|>>?[[:space:]]*['\"]"; then
           return 0
         fi
-        if echo "$text" | grep -qE '(^|[[:space:];&|])(python3?|perl|ruby|node|deno|bun)[[:space:]]+-[ec][[:space:]]+[^|;&]*'"$p_re"; then
+        if echo "$text" | grep -qE '(^|[[:space:];&|(])(python3?|perl|ruby|node|deno|bun)[[:space:]]+-[ec][[:space:]]+[^|;&]*'"$p_re"; then
           return 0
         fi
       fi
       # `git apply` — patches against protected paths slip past the
       # write-shape detectors above; blanket deny when the path is
       # referenced.
-      if echo "$text" | grep -qE '(^|[[:space:];&|])git[[:space:]]+apply([[:space:]]|$)'; then
+      if echo "$text" | grep -qE '(^|[[:space:];&|(])git[[:space:]]+apply([[:space:]]|$)'; then
         return 0
       fi
       # `patch` utility — same logic as git apply.
-      if echo "$text" | grep -qE '(^|[[:space:];&|])patch[[:space:]]+(-[a-zA-Z][^|;&]*[[:space:]])?[^|;&]*'"$p_re"; then
+      if echo "$text" | grep -qE '(^|[[:space:];&|(])patch[[:space:]]+(-[a-zA-Z][^|;&]*[[:space:]])?[^|;&]*'"$p_re"; then
         return 0
       fi
       # H8 — `xargs` / `parallel` that mentions a protected path is a
@@ -472,10 +474,10 @@ text_touches_protected() {
       # a subshell whose command runs against each matched path. When a
       # protected path is mentioned in the same command, the -exec is
       # almost certainly the carrier.
-      if echo "$text" | grep -qE '(^|[[:space:];&|])(xargs|parallel)([[:space:]]|$)'; then
+      if echo "$text" | grep -qE '(^|[[:space:];&|(])(xargs|parallel)([[:space:]]|$)'; then
         return 0
       fi
-      if echo "$text" | grep -qE '(^|[[:space:];&|])find[[:space:]]+[^|;&]*-exec[[:space:]]'; then
+      if echo "$text" | grep -qE '(^|[[:space:];&|(])find[[:space:]]+[^|;&]*-exec[[:space:]]'; then
         return 0
       fi
       # H6 — env-var-indirected redirect. The cmd contains a redirect
@@ -558,14 +560,17 @@ bash_touches_protected() {
     return 0
   fi
 
-  # Whole-cmd commit-message exemption ONLY when the whole cmd has no
-  # write outside the commit segment (the per-segment loop already
-  # confirmed this). Skip the rest if the WHOLE cmd is a single
-  # commit-message command — preserves the old behavior for the simple
-  # case (commit message containing a protected path string).
-  if is_commit_or_message_command "$cmd_canon"; then
-    return 1
-  fi
+  # K2 (round-6) — DO NOT short-circuit on whole-cmd commit-message
+  # match. Round-4 I1 split the command into segments and applied the
+  # commit whitelist per-segment, but the whole-cmd fallback was left in
+  # place "for the simple case". That fallback let `git commit -m
+  # "msg $(echo forged > <protected>)"` slip through: the awk splitter
+  # doesn't track `$()` nesting, so the entire command lives in one
+  # quoted segment that matches the commit whitelist; the `$()` body —
+  # which bash DOES execute — was never inspected. The per-segment loop
+  # already exempts legitimate commit-only segments via
+  # is_commit_or_message_command inside the loop. Anything left gets
+  # the full text_touches_protected scan below.
 
   # H7 — script-source detection. If the command invokes a script
   # (`bash <file>`, `sh <file>`, `source <file>`, `. <file>`), read the
