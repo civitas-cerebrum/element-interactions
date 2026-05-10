@@ -423,6 +423,95 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
     if ! echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*findings:[[:space:]]*\[\]'; then
       exit 0   # greenlight without explicit `findings: []`
     fi
+
+    # BookHive Run-5 round-3 finding H9 — phase-validator chain forge.
+    # A schema-perfect YAML body is not proof the phase was actually
+    # done. Verify per-phase deliverables exist on disk before
+    # recording greenlight. If a phase claims greenlight without its
+    # artifact present, the subagent was either forged (orchestrator
+    # told the subagent to return verbatim YAML) or the orchestrator
+    # is racing the disk; either way, refuse the ledger write.
+    #
+    # Artifacts checked are the minimal disk-side trace each phase
+    # MUST leave. The protected-state hook (harness-trusted-state-
+    # write-guard) already prevents the agent from forging the
+    # heavyweight artifacts (journey-map.md sentinel, coverage-
+    # expansion-state.json, ledger itself), so artifact-existence
+    # against those is meaningful evidence of real subagent work.
+    ARTIFACT_OK=0
+    case "$PHASE" in
+      1)
+        # Phase 1 — scaffold + deps. Package.json must declare the
+        # element-interactions dep AND a baseFixture file + a Playwright
+        # config must exist on disk.
+        if [ -f "$REPO_ROOT/package.json" ] && \
+           grep -q '@civitas-cerebrum/element-interactions' "$REPO_ROOT/package.json" 2>/dev/null && \
+           { [ -f "$REPO_ROOT/tests/e2e/baseFixture.ts" ] || [ -f "$REPO_ROOT/tests/e2e/baseFixture.js" ]; } && \
+           { [ -f "$REPO_ROOT/playwright.config.ts" ] || [ -f "$REPO_ROOT/playwright.config.js" ]; }; then
+          ARTIFACT_OK=1
+        fi
+        ;;
+      2)
+        # Phase 2 — groundwork: app-context.md with Test Infrastructure
+        # section + a sentinel-bearing journey-map.md (Phase-2 lands the
+        # initial map even if Phases 3-5 sections are empty).
+        if [ -f "$REPO_ROOT/tests/e2e/docs/app-context.md" ] && \
+           grep -q '## Test Infrastructure' "$REPO_ROOT/tests/e2e/docs/app-context.md" 2>/dev/null && \
+           [ -f "$REPO_ROOT/tests/e2e/docs/journey-map.md" ] && \
+           grep -q 'journey-mapping:generated' "$REPO_ROOT/tests/e2e/docs/journey-map.md" 2>/dev/null; then
+          ARTIFACT_OK=1
+        fi
+        ;;
+      3)
+        # Phase 3 — happy-path automation: at least one spec under tests/e2e/.
+        if compgen -G "$REPO_ROOT/tests/e2e/*.spec.ts" >/dev/null 2>&1 || \
+           compgen -G "$REPO_ROOT/tests/e2e/*.spec.js" >/dev/null 2>&1 || \
+           compgen -G "$REPO_ROOT/tests/e2e/**/*.spec.ts" >/dev/null 2>&1 || \
+           compgen -G "$REPO_ROOT/tests/e2e/**/*.spec.js" >/dev/null 2>&1; then
+          ARTIFACT_OK=1
+        fi
+        ;;
+      4)
+        # Phase 4 — journey-map complete: file exists, sentinel intact,
+        # AND substantive content (>1KB rules out the Phase-2 stub seed).
+        if [ -f "$REPO_ROOT/tests/e2e/docs/journey-map.md" ] && \
+           grep -q 'journey-mapping:generated' "$REPO_ROOT/tests/e2e/docs/journey-map.md" 2>/dev/null && \
+           [ "$(wc -c < "$REPO_ROOT/tests/e2e/docs/journey-map.md" 2>/dev/null || echo 0)" -gt 1024 ]; then
+          ARTIFACT_OK=1
+        fi
+        ;;
+      5)
+        # Phase 5 — coverage-expansion: state file marks complete.
+        if [ -f "$REPO_ROOT/tests/e2e/docs/coverage-expansion-state.json" ] && \
+           [ "$("$JQ" -r '.status // empty' "$REPO_ROOT/tests/e2e/docs/coverage-expansion-state.json" 2>/dev/null)" = "complete" ]; then
+          ARTIFACT_OK=1
+        fi
+        ;;
+      6)
+        # Phase 6 — bug-discovery: adversarial findings landed.
+        if [ -f "$REPO_ROOT/tests/e2e/docs/adversarial-findings.md" ] || \
+           [ -d "$REPO_ROOT/tests/e2e/docs/bug-discovery-findings" ] || \
+           [ -f "$REPO_ROOT/tests/e2e/docs/bug-discovery-findings.md" ]; then
+          ARTIFACT_OK=1
+        fi
+        ;;
+      7)
+        # Phase 7 — onboarding report + benchmark.
+        if [ -f "$REPO_ROOT/tests/e2e/docs/onboarding-report.md" ] || \
+           [ -f "$REPO_ROOT/tests/e2e/docs/BENCHMARK.md" ]; then
+          ARTIFACT_OK=1
+        fi
+        ;;
+    esac
+    if [ "$ARTIFACT_OK" != "1" ]; then
+      # Don't write the ledger; surface the gap to the user via
+      # systemMessage so the orchestrator stops claiming greenlight
+      # for work that didn't happen.
+      "$JQ" -n --arg p "$PHASE" '{
+        "systemMessage": ("[HARNESS] phase-validator-" + $p + " returned greenlight but the Phase " + $p + " deliverable is missing on disk. Ledger write refused (BookHive Run-5 H9 — chain-forge defense). Audit the subagent return and re-run the phase work for real.")
+      }'
+      exit 0
+    fi
   else
     # Improvements-needed requires at least one `pv-<phase>-<nn>` finding
     # block per §2.5. Phase number must match the dispatched phase.

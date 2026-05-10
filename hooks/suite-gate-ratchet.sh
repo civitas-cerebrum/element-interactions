@@ -122,10 +122,10 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
 
   # BookHive Run-5 round-2 finding G6 — exclude non-running invocations
   # that exit 0 without actually executing tests. `playwright test --help`,
-  # `--list`, `--reporter=null`, `--show-trace`, `--version`, `--grep`
-  # against an empty match set, etc., all return success without
-  # exercising the suite — counting them as `passed` lets the agent fill
-  # the suite-gate window in seconds and clear the any-red ratchet.
+  # `--list`, `--reporter=null`, `--show-trace`, `--version`, etc., all
+  # return success without exercising the suite — counting them as
+  # `passed` lets the agent fill the suite-gate window in seconds and
+  # clear the any-red ratchet.
   if echo "$CMD" | grep -qE '(^|[[:space:]])(--help|--version|--list(-files|-tags)?|--show-trace|--show-config|--reporter=null)([[:space:]]|$)'; then
     exit 0   # informational invocation — don't record
   fi
@@ -134,16 +134,19 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
   EXIT_CODE=$(echo "$TOOL_RESPONSE" | "$JQ" -r '.exitCode // .exit_code // .returncode // "unknown"')
   STDOUT=$(echo "$TOOL_RESPONSE" | "$JQ" -r '.stdout // .output // ""' 2>/dev/null || echo "")
 
-  # Require a positive Playwright reporter signal in stdout before
-  # recording `passed`. Acceptable signals:
-  #   - "[0-9]+ passed" (default + line/list reporters' summary)
-  #   - "Running [0-9]+ test" (reporter banner — covers the case
-  #     where a single test passes and the count line elides "passed")
+  # Require a positive Playwright reporter signal in stdout AND a
+  # non-zero test count before recording `passed`. Acceptable signals:
+  #   - "[1-9][0-9]* passed" (default + line/list reporters' summary)
+  #   - "Running [1-9][0-9]* test" (reporter banner)
   # Without these, an exit-0 with no test output is `unknown` (don't
-  # record). This closes G6's `--grep zzz_no_match_zzz` and similar
-  # zero-test-but-exit-0 variants.
+  # record). The non-zero count requirement closes BookHive Run-5
+  # round-3 finding H1: `playwright test --grep zzz_no_match` exits 0
+  # and prints `Running 0 tests using 0 workers` — which used to match
+  # `Running [0-9]+ test`. The agent could fill the suite-gate window
+  # in seconds with three such invocations and clear the any-red
+  # ratchet without running any real test.
   HAS_PASS_SIGNAL=0
-  if echo "$STDOUT" | grep -qE '[0-9]+[[:space:]]+passed|Running[[:space:]]+[0-9]+[[:space:]]+test'; then
+  if echo "$STDOUT" | grep -qE '[1-9][0-9]*[[:space:]]+passed|Running[[:space:]]+[1-9][0-9]*[[:space:]]+test'; then
     HAS_PASS_SIGNAL=1
   fi
 

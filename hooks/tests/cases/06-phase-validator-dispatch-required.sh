@@ -2,11 +2,47 @@
 H="$HOOK_DIR/phase-validator-dispatch-required.sh"
 
 # Each test sets up its own temp repo so ledger mutations are isolated.
+# H9 — phase-validator artifact-existence check requires per-phase
+# deliverables on disk before recording greenlight. Seed all of them
+# here so PostToolUse greenlight tests can record the ledger without
+# needing per-test setup. Tests asserting Phase-N+1 PreToolUse behavior
+# are unaffected (the artifact-existence gate is PostToolUse-only).
 make_repo() {
   local d
   d=$(mktemp -d)
   ( cd "$d" && git init -q )
-  mkdir -p "$d/tests/e2e/docs"
+  mkdir -p "$d/tests/e2e/docs" "$d/tests/e2e"
+  # Phase 1 — scaffold + element-interactions dep + Playwright config.
+  cat > "$d/package.json" <<EOF
+{"name":"test","dependencies":{"@civitas-cerebrum/element-interactions":"^0.3.6"}}
+EOF
+  : > "$d/tests/e2e/baseFixture.ts"
+  : > "$d/playwright.config.ts"
+  # Phase 2 — app-context.md with Test Infrastructure section + journey-map seed.
+  cat > "$d/tests/e2e/docs/app-context.md" <<EOF
+# App Context
+## Test Infrastructure
+Reset endpoints: none discovered.
+EOF
+  cat > "$d/tests/e2e/docs/journey-map.md" <<EOF
+<!-- journey-mapping:generated -->
+# Journey Map
+EOF
+  # Phase 3 — a happy-path spec.
+  : > "$d/tests/e2e/happy.spec.ts"
+  # Phase 4 — make the journey-map substantive (>1KB).
+  printf '%s\n' '## Journey: j-checkout' >> "$d/tests/e2e/docs/journey-map.md"
+  printf 'lorem ipsum dolor sit amet, consectetur adipiscing elit. %.0s' {1..30} >> "$d/tests/e2e/docs/journey-map.md"
+  echo "" >> "$d/tests/e2e/docs/journey-map.md"
+  # Phase 5 — coverage-expansion-state.json. Default to in-progress so
+  # probe-* dispatches route to Phase 5 (adversarial pass) not Phase 6
+  # entry. Tests that need Phase-5 greenlight seed should override to
+  # status=complete before invoking the hook.
+  echo '{"status":"in-progress","journeys":[]}' > "$d/tests/e2e/docs/coverage-expansion-state.json"
+  # Phase 6 — adversarial findings file.
+  : > "$d/tests/e2e/docs/adversarial-findings.md"
+  # Phase 7 — onboarding report.
+  : > "$d/tests/e2e/docs/onboarding-report.md"
   echo "$d"
 }
 
