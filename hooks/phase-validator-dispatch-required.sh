@@ -439,17 +439,31 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
     # expansion-state.json, ledger itself), so artifact-existence
     # against those is meaningful evidence of real subagent work.
     ARTIFACT_OK=0
-    # Helper: file exists AND larger than $2 bytes.
-    _f_big() { [ -f "$1" ] && [ "$(wc -c < "$1" 2>/dev/null || echo 0)" -gt "$2" ]; }
-    # Helper: file exists AND grep-matches pattern AND larger than $3 bytes.
-    _f_grep_big() { [ -f "$1" ] && grep -q "$2" "$1" 2>/dev/null && [ "$(wc -c < "$1" 2>/dev/null || echo 0)" -gt "$3" ]; }
-    # Helper: count spec files with substantive content (each >256B).
+    # J1 (round-5) — reject symlinks. `_f_big` and `_f_grep_big` previously used
+    # `[ -f ]` which follows symlinks. Combined with the unprotected status of
+    # most artifact paths (onboarding-report.md, app-context.md, etc.), an
+    # attacker could `ln -s /tmp/forged tests/e2e/docs/onboarding-report.md`
+    # and the size/sentinel check would pass via the symlink target. Adding
+    # `[ ! -L ]` requires the artifact path to be a REGULAR file owned by the
+    # repo, not a symlink to an attacker-controlled file outside the scope.
+    # Helper: regular file (not symlink) AND larger than $2 bytes.
+    _f_big() { [ -f "$1" ] && [ ! -L "$1" ] && [ "$(wc -c < "$1" 2>/dev/null || echo 0)" -gt "$2" ]; }
+    # Helper: regular file (not symlink) AND grep-matches pattern AND larger than $3 bytes.
+    _f_grep_big() { [ -f "$1" ] && [ ! -L "$1" ] && grep -q "$2" "$1" 2>/dev/null && [ "$(wc -c < "$1" 2>/dev/null || echo 0)" -gt "$3" ]; }
+    # J2 (round-5) — Phase 3 spec content sentinel. Previously `_has_real_spec`
+    # only checked `wc -c > 256`. Any 257-byte file (e.g., `printf 'const x = %s' "$(yes 1 | head)"`)
+    # passed. Add a content sentinel requiring an actual test() declaration AND
+    # a known testing framework import. This rejects garbage files that meet
+    # the size bar but aren't real test specs.
     _has_real_spec() {
       local f
       shopt -s nullglob globstar 2>/dev/null || true
       for f in "$REPO_ROOT"/tests/e2e/*.spec.ts "$REPO_ROOT"/tests/e2e/*.spec.js "$REPO_ROOT"/tests/e2e/**/*.spec.ts "$REPO_ROOT"/tests/e2e/**/*.spec.js; do
         [ -f "$f" ] || continue
-        if [ "$(wc -c < "$f" 2>/dev/null || echo 0)" -gt 256 ]; then
+        [ -L "$f" ] && continue   # J1 — reject symlinks here too
+        if [ "$(wc -c < "$f" 2>/dev/null || echo 0)" -gt 256 ] && \
+           grep -qE 'from[[:space:]]+["'"'"'](@playwright/test|@civitas-cerebrum/element-interactions)["'"'"']' "$f" 2>/dev/null && \
+           grep -qE '\btest[[:space:]]*\(' "$f" 2>/dev/null; then
           shopt -u nullglob globstar 2>/dev/null || true
           return 0
         fi
@@ -568,17 +582,58 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
     EVIDENCE=$(echo "$RESPONSE" | grep -E '^[[:space:]]*evidence:' | sed -E 's/^[[:space:]]*evidence:[[:space:]]*//' | "$JQ" -R . | "$JQ" -s 'unique')
     [ -z "$EVIDENCE" ] && EVIDENCE='[]'
 
+    # J3 (round-5) — record evidence-sha256 of the per-phase primary
+    # artifact at greenlight time. Combined with the artifact-existence
+    # check that just fired (ARTIFACT_OK=1), this provides a tamper-
+    # detectable record of the on-disk state at the moment greenlight
+    # was earned. Future audit hooks can re-hash and compare against the
+    # ledger to detect post-greenlight revert/tampering.
+    _sha() {
+      [ -f "$1" ] && [ ! -L "$1" ] || { echo ""; return; }
+      if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" 2>/dev/null | awk '{print $1}'
+      elif command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" 2>/dev/null | awk '{print $1}'
+      else
+        echo ""
+      fi
+    }
+    ARTIFACT_SHA=""
+    case "$PHASE" in
+      1)
+        # Concat baseFixture + playwright.config + package.json
+        for af in "$REPO_ROOT/package.json" "$REPO_ROOT/tests/e2e/baseFixture.ts" "$REPO_ROOT/tests/e2e/baseFixture.js" "$REPO_ROOT/playwright.config.ts" "$REPO_ROOT/playwright.config.js"; do
+          [ -f "$af" ] && ARTIFACT_SHA="${ARTIFACT_SHA}$(_sha "$af"):"
+        done
+        ;;
+      2) ARTIFACT_SHA=$(_sha "$REPO_ROOT/tests/e2e/docs/app-context.md") ;;
+      3)
+        # Hash the first matching spec.
+        shopt -s nullglob globstar 2>/dev/null || true
+        for af in "$REPO_ROOT"/tests/e2e/*.spec.ts "$REPO_ROOT"/tests/e2e/*.spec.js "$REPO_ROOT"/tests/e2e/**/*.spec.ts "$REPO_ROOT"/tests/e2e/**/*.spec.js; do
+          [ -f "$af" ] && [ ! -L "$af" ] && { ARTIFACT_SHA=$(_sha "$af"); break; }
+        done
+        shopt -u nullglob globstar 2>/dev/null || true
+        ;;
+      4) ARTIFACT_SHA=$(_sha "$REPO_ROOT/tests/e2e/docs/journey-map.md") ;;
+      5) ARTIFACT_SHA=$(_sha "$REPO_ROOT/tests/e2e/docs/coverage-expansion-state.json") ;;
+      6) ARTIFACT_SHA=$(_sha "$REPO_ROOT/tests/e2e/docs/adversarial-findings.md") ;;
+      7) ARTIFACT_SHA=$(_sha "$REPO_ROOT/tests/e2e/docs/onboarding-report.md") ;;
+    esac
+
     UPDATED=$(echo "$EXISTING" | "$JQ" --arg p "$PHASE" \
       --arg s "greenlight" \
       --arg t "$TIMESTAMP" \
       --argjson c "$NEW_CYCLE" \
       --argjson ev "$EVIDENCE" \
+      --arg sha "${ARTIFACT_SHA:-unknown}" \
       '.phases[$p] = {
          status: $s,
          validator: ("phase-validator-" + $p),
          cycle: $c,
          at: $t,
-         evidence: $ev
+         evidence: $ev,
+         "evidence-sha256": $sha
        }')
     echo "$UPDATED" > "$LEDGER.tmp" && mv "$LEDGER.tmp" "$LEDGER" || rm -f "$LEDGER.tmp"
     exit 0

@@ -35,10 +35,11 @@ EOF
 <!-- journey-mapping:generated -->
 # Journey Map
 EOF
-  # Phase 3 — a happy-path spec with substantive content (>256B).
+  # Phase 3 — a happy-path spec with substantive content (>256B), the
+  # framework import (J2 sentinel), and a test() declaration.
   cat > "$d/tests/e2e/happy.spec.ts" <<EOF
 import { test } from '@civitas-cerebrum/element-interactions';
-test('happy path placeholder spec for artifact-existence check (round-4 H9 tightening)', async ({ steps }) => {
+test('happy path placeholder spec for artifact-existence check (round-5 J2 content sentinel)', async ({ steps }) => {
   await steps.navigate('/');
   await steps.verifyElementVisible('homepage');
   await steps.verifyElementVisible('navigation-menu');
