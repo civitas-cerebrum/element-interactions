@@ -331,18 +331,41 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
     exit 0   # malformed phase number; let schema-guard surface it
   fi
 
-  # Extract the response text using the same defensive pattern as
-  # subagent-return-schema-guard.sh.
+  # Extract the response text. The harness payload shape varies — Agent
+  # returns arrive under .tool_response.content (array of {type,text}) on
+  # the live claude-code harness, under .tool_response.output on some test
+  # harnesses, and occasionally as a top-level string or under
+  # .tool_response.result. Mirror subagent-return-schema-guard.sh: try the
+  # known keys first, then fall back to a whole-object stringify so a
+  # payload-shape change in the harness never silently strands the ledger
+  # writer (BookHive Run-5 finding — `.content` was the only populated key
+  # in the live harness, while every prior extractor only knew about
+  # `.output`).
   RESPONSE=$(
     echo "$INPUT" | "$JQ" -r '
       [
-        (.tool_response.output? | if type == "array" then map(.text? // (. | tostring)) | join("\n") elif type == "string" then . else (. | tostring) end),
+        (.tool_response.content? | if . == null then empty elif type == "array" then map(.text? // (. | tostring)) | join("\n") elif type == "string" then . else (. | tostring) end),
+        (.tool_response.output? | if . == null then empty elif type == "array" then map(.text? // (. | tostring)) | join("\n") elif type == "string" then . else (. | tostring) end),
         (.tool_response.result? // empty | tostring),
         (if (.tool_response | type) == "string" then .tool_response else empty end)
-      ] | map(select(. != null and . != "")) | unique | join("\n")
+      ] | map(select(. != null and . != "" and . != "null")) | unique | join("\n")
     ' 2>/dev/null || echo ""
   )
-  [ -z "$RESPONSE" ] && exit 0   # no response to parse
+
+  # Fallback: if the targeted extraction yielded nothing, dump tool_response
+  # whole. Better to grep across noise than to silently exit on a payload
+  # shape we couldn't anticipate. (Mirrors subagent-return-schema-guard.sh
+  # lines 183-192.)
+  if [ -z "$RESPONSE" ]; then
+    RESPONSE=$(echo "$INPUT" | "$JQ" -r '
+      if (.tool_response // null) == null then ""
+      elif (.tool_response | type) == "string" then .tool_response
+      else (.tool_response | tostring)
+      end
+    ' 2>/dev/null || echo "")
+  fi
+
+  [ -z "$RESPONSE" ] && exit 0   # truly no response to parse
 
   # Determine status from the response.
   STATUS=""

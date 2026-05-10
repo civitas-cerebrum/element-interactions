@@ -183,8 +183,12 @@ section() {
 
 # Helper: build a JSON payload from inline kv args. Each kv is "key=value".
 # Recognised keys: tool_name, description, prompt, command, file_path,
-# content, new_string, response_text, exit_code, stdout, cwd,
-# hook_event_name. response_text becomes tool_response.output.
+# content, new_string, response_text, response_content, exit_code, stdout,
+# cwd, hook_event_name. response_text becomes tool_response.output (the
+# legacy claude-code shape some test harnesses emit). response_content
+# becomes tool_response.content as a [{type:text,text:<v>}] array — the
+# shape the live claude-code harness actually emits for Agent returns
+# (BookHive Run-5 finding). Hooks reading Agent returns must handle both.
 payload() {
   local out='{}'
   for kv in "$@"; do
@@ -197,6 +201,8 @@ payload() {
         out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" --arg k "$k" '.tool_input = ((.tool_input // {}) + {($k): $v})') ;;
       response_text)
         out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" '.tool_response = ((.tool_response // {}) + {output: $v})') ;;
+      response_content)
+        out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" '.tool_response = ((.tool_response // {}) + {content: [{type: "text", text: $v}]})') ;;
       exit_code|stdout)
         local field="exitCode"; [ "$k" = "stdout" ] && field="stdout"
         out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" --arg f "$field" '.tool_response = ((.tool_response // {}) + {($f): $v})') ;;

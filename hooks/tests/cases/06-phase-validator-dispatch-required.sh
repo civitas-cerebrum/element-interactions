@@ -262,3 +262,145 @@ cat > "$REPO/tests/e2e/docs/coverage-expansion-state.json" <<EOF
 EOF
 assert_allow "$H" "$(payload tool_name=Agent hook_event_name=PreToolUse description='probe-j-a: bug-discovery flow' prompt='probe j-a phase 6' cwd="$REPO")" "probe-* with cov-state complete + Phase 5 greenlit → ALLOW (Phase 6 entry)"
 rm -rf "$REPO"
+
+section "phase-validator-dispatch-required: PostToolUse — payload-shape polyglot (BookHive Run-5 finding)"
+
+# S1: live-harness shape — tool_response.content as [{type,text}] array.
+# This is the shape the live claude-code harness emits for Agent returns.
+# Run 5 caught the regression where the hook only knew about
+# tool_response.output and silently exited on the .content shape, never
+# writing the ledger and stranding the entire onboarding pipeline at the
+# Phase-1 → Phase-2 validator-chain check.
+REPO=$(make_repo)
+GREEN_RETURN_S1='status: greenlight
+phase: 1
+sub-skill: inline
+exit-criteria-checked:
+  - criterion: package.json deps installed
+    satisfied: true
+    evidence: package.json
+  - criterion: scaffolded files present
+    satisfied: true
+    evidence: tests/fixtures/base.ts
+  - criterion: chromium installed
+    satisfied: true
+    evidence: ~/Library/Caches/ms-playwright/chromium-1222
+findings: []
+summary: Phase 1 verified via live-harness payload (.content shape).'
+run_hook "$H" "$(payload tool_name=Agent hook_event_name=PostToolUse description='phase-validator-1: cycle 1' response_content="$GREEN_RETURN_S1" cwd="$REPO")"
+
+TESTS_RUN=$((TESTS_RUN + 1))
+LEDGER_STATUS_S1=$(jq -r '.phases."1".status // empty' "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" 2>/dev/null || echo "")
+LEDGER_EVIDENCE_S1=$(jq -r '.phases."1".evidence | length' "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" 2>/dev/null || echo 0)
+if [ "$LEDGER_STATUS_S1" = "greenlight" ] && [ "$LEDGER_EVIDENCE_S1" -ge 3 ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} live-harness .content shape → ledger written (greenlight + 3 evidence pointers)"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=(".content-shape ledger write: status=$LEDGER_STATUS_S1, evidence_count=$LEDGER_EVIDENCE_S1 (expected greenlight + ≥3)")
+  echo "${CLR_FAIL}  ✗${CLR_RST} live-harness .content shape ledger write"
+fi
+rm -rf "$REPO"
+
+# S2: improvements-needed under .content shape — must increment cycle to 1
+# with status=in-progress (same path as the .output-shape T10 test).
+REPO=$(make_repo)
+IN_RETURN_S2='status: improvements-needed
+phase: 1
+sub-skill: inline
+exit-criteria-checked:
+  - criterion: scaffolded files present
+    satisfied: false
+    evidence: absent — playwright.config.ts missing
+findings:
+  - **pv-1-01** [must-fix] — playwright.config.ts missing
+    - criterion: scaffolded files present
+    - issue: playwright.config.ts not present at repo root
+    - fix: write playwright.config.ts per Phase 1 scaffold spec
+summary: 1 finding, Phase 1 not yet ready.'
+run_hook "$H" "$(payload tool_name=Agent hook_event_name=PostToolUse description='phase-validator-1: cycle 1' response_content="$IN_RETURN_S2" cwd="$REPO")"
+
+TESTS_RUN=$((TESTS_RUN + 1))
+LEDGER_STATUS_S2=$(jq -r '.phases."1".status // empty' "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" 2>/dev/null || echo "")
+LEDGER_CYCLE_S2=$(jq -r '.phases."1".cycle // empty' "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" 2>/dev/null || echo "")
+if [ "$LEDGER_STATUS_S2" = "in-progress" ] && [ "$LEDGER_CYCLE_S2" = "1" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} live-harness .content shape (improvements-needed) → status=in-progress, cycle=1"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=(".content-shape improvements-needed: status=$LEDGER_STATUS_S2, cycle=$LEDGER_CYCLE_S2 (expected in-progress + 1)")
+  echo "${CLR_FAIL}  ✗${CLR_RST} live-harness .content shape improvements-needed ledger write"
+fi
+rm -rf "$REPO"
+
+# S3: degenerate fallback — neither .content nor .output, only top-level
+# string. The fallback (tool_response | tostring) should still surface the
+# greenlight marker. This locks down the schema-guard-mirror fallback so a
+# future payload-shape change still writes the ledger via the catch-all.
+REPO=$(make_repo)
+GREEN_RETURN_S3='status: greenlight
+phase: 1
+sub-skill: inline
+exit-criteria-checked:
+  - criterion: c1
+    satisfied: true
+    evidence: e1
+findings: []
+summary: top-level string shape.'
+# Use jq directly to build a payload where tool_response IS the string (no
+# .content / .output / .result keys) — exercises the fallback path.
+TOPLEVEL_PAYLOAD=$(jq -nc \
+  --arg cwd "$REPO" \
+  --arg desc 'phase-validator-1: cycle 1' \
+  --arg resp "$GREEN_RETURN_S3" \
+  '{tool_name:"Agent", hook_event_name:"PostToolUse", cwd:$cwd, tool_input:{description:$desc}, tool_response:$resp}')
+run_hook "$H" "$TOPLEVEL_PAYLOAD"
+
+TESTS_RUN=$((TESTS_RUN + 1))
+LEDGER_STATUS_S3=$(jq -r '.phases."1".status // empty' "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" 2>/dev/null || echo "")
+if [ "$LEDGER_STATUS_S3" = "greenlight" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} top-level string shape → ledger written via top-level-string branch"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAIL_DETAILS+=("top-level-string ledger write: status=$LEDGER_STATUS_S3 (expected greenlight)")
+  echo "${CLR_FAIL}  ✗${CLR_RST} top-level string shape ledger write"
+fi
+rm -rf "$REPO"
+
+# S4: payload under unrecognised nested key (e.g., .tool_response.message)
+# — the whole-object stringify fallback CAN see the text but the JSON
+# encoding folds real newlines into literal `\n`, so the line-anchored
+# `status:` regex won't match. The hook must NOT crash and MUST NOT write
+# a malformed ledger entry; it simply silently exits (no ledger write).
+# This locks down the "do no harm" property: future harness shapes that
+# put text under unfamiliar keys degrade to silent allow rather than
+# corrupting the ledger.
+REPO=$(make_repo)
+GREEN_RETURN_S4='status: greenlight
+phase: 1
+sub-skill: inline
+exit-criteria-checked:
+  - criterion: c1
+    satisfied: true
+    evidence: e1
+findings: []
+summary: under-unrecognised-key payload.'
+NESTED_PAYLOAD=$(jq -nc \
+  --arg cwd "$REPO" \
+  --arg desc 'phase-validator-1: cycle 1' \
+  --arg resp "$GREEN_RETURN_S4" \
+  '{tool_name:"Agent", hook_event_name:"PostToolUse", cwd:$cwd, tool_input:{description:$desc}, tool_response:{message:$resp, status:"ok"}}')
+run_hook "$H" "$NESTED_PAYLOAD"
+
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ ! -f "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo "${CLR_PASS}  ✓${CLR_RST} unrecognised nested key → silent allow (no malformed ledger write)"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  ACTUAL=$(jq -r '.phases."1".status // empty' "$REPO/tests/e2e/docs/onboarding-phase-ledger.json" 2>/dev/null || echo "")
+  FAIL_DETAILS+=("nested-key payload should NOT write ledger (got status=$ACTUAL)")
+  echo "${CLR_FAIL}  ✗${CLR_RST} nested-key payload should silently exit"
+fi
+rm -rf "$REPO"
