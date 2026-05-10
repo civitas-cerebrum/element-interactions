@@ -291,6 +291,20 @@ A skipped inter-phase compact is not a hard error — it just leaves Phase N's l
 - **Hard gates between phases.** A phase that surfaces a malformed prerequisite (missing journey-map sentinel, missing tenant credentials, missing happy-path sentence, etc.) stops Onboarding with a clear `blocked-on-prerequisite` message — never silently proceeds.
 - **Front-load gate is the only user prompt.** Once the user authorises the run, Onboarding runs autonomously through Phase 7 — no further confirmation prompts. Mid-run scope-reduction without explicit user authorisation is forbidden (mirrors coverage-expansion §"Two valid exits"). "Honest" / "pragmatic" / "I want to surface this back upstream" framings are the same forbidden pattern with different words.
 
+#### Stage delivery contract — deliverables out, surgical findings back
+
+Every phase boundary is a delivery handoff: Phase N produces a fixed set of artifacts that Phase N+1 reads. When the handoff is clean, Onboarding advances. When it isn't, the orchestrator's recovery path must give the next dispatch **surgical** specifics — not a paraphrase, not a softened summary.
+
+Three rules govern this:
+
+1. **Forward delivery — known artifacts, known locations.** Each phase's deliverables are listed in `references/phases-walkthrough.md` per phase (e.g., Phase 3's "Mandatory Phase-3 deliverables (autonomous mode)" block, Phase 1's scaffold-files list). When Onboarding moves to phase N+1, it must verify those exact artifacts exist on disk first. Missing artifact → do not advance, treat as incomplete delivery from phase N (which means the prior phase-validator did not, in fact, greenlight, and the orchestrator should NOT be at this advance point — return to the phase-N validator loop).
+
+2. **Verbatim fix: text in every re-dispatch.** When `phase-validator-<N>` returns `improvements-needed`, every re-dispatch (sub-skill re-run, inline fix, commit landing) must quote the exact `criterion:`, `issue:`, and `fix:` sub-bullets from the validator's finding block. No paraphrasing, no compression, no "the validator said roughly that …". The same surgical-specificity rule that coverage-expansion's Stage A↔B retry loop enforces (`coverage-expansion/SKILL.md` §"Pass full findings through verbatim — Compressed findings lose the surgical specificity Stage A needs.") applies at the phase-validator boundary too — for the same reason: the validator already did the diagnostic work; collapsing it into a summary throws that work away and the next cycle re-derives it (or worse, fails again on the same underlying gap).
+
+3. **Surgical user message at cycle 10 / hard halt.** When Onboarding hits the cycle-10 cap on a phase-validator OR a `blocked-on-prerequisite` halt, the user-facing message must enumerate (a) the exact deliverables the upstream phase produced, (b) the exact deliverables it did NOT produce, (c) the verbatim findings still unresolved (with `pv-<N>-<nn>` IDs, criterion + issue + fix text), and (d) a one-sentence "what the user can do to break the loop". Vague phrases like "Phase N didn't fully deliver" or "validator kept failing" are forbidden — the user sees only what the orchestrator surfaces, so the surface text IS the user's diagnostic. If the orchestrator can't be specific, neither can the user.
+
+**Rationale.** The benchmark exists to surface stage-delivery gaps. The most expensive failure mode of the v0.3.4–v0.3.6 lineage was the orchestrator advancing on partial deliverables and the user finding out three phases later that a foundational artifact was missing. The mechanical guards (validator-chain rule, dispatch-required gate, ledger writer) catch the structural side of this; the surgical-findings rule catches the rhetorical side: even when the right gate fires, an orchestrator that paraphrases away the diagnostic still strands the next cycle. Both halves are required.
+
 ## Onboarding report (`tests/e2e/docs/onboarding-report.md`)
 
 Accumulated throughout the run, committed at Phase 7. Structure:

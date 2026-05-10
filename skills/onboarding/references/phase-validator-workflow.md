@@ -208,13 +208,25 @@ Inherited from §2.4: `nice-to-have`, `greenlight-with-notes`, top-level `notes:
 
 ### Improvements-needed
 
-1. Onboarding reads each `findings[]` entry.
+1. Onboarding reads each `findings[]` entry. **The full finding block — `pv-<N>-<nn>` ID, `[must-fix]` priority, title, AND every sub-bullet (criterion / issue / fix) — is the unit of currency, not a paraphrase of it.**
 2. For each finding, applies the `fix:` action:
    - **Sub-skill re-run**: if the failed criterion is "sub-skill didn't finish all its passes", re-invoke the sub-skill with the missing scope. (Phase 5 example: re-invoke coverage-expansion with the resume marker.)
    - **Inline fix**: if the failed criterion is "scaffolded file missing", write the file directly.
    - **Commit landing**: if the failed criterion is "phase-N commit didn't land", produce the commit.
 3. Increments cycle counter in the ledger.
-4. Re-dispatches `phase-validator-<N>:` with the same brief plus the cycle context update (previous findings list).
+4. Re-dispatches `phase-validator-<N>:` with the same brief plus the cycle context update — and the previous-findings list quoted **VERBATIM** under "Cycle context > Previous improvements-needed findings". The next cycle's validator must see the exact `criterion:` / `issue:` / `fix:` sub-bullets from the prior cycle so it can verify each one was addressed; a paraphrase strips the diagnostic specificity and the validator either re-derives it (wasted budget) or fails again on the same underlying gap.
+
+#### Surgical-findings rule (canonical)
+
+The `criterion:` / `issue:` / `fix:` triple inside each `pv-<N>-<nn>` block is the **surgical** form: criterion = what the contract requires, issue = what's actually present that violates the contract, fix = the concrete remediation. Onboarding's response handling MUST preserve all three sub-bullets verbatim in:
+
+- The next-cycle validator brief's "Cycle context" section (so the validator can verify the fix landed).
+- Any sub-skill re-dispatch brief that addresses the finding (so the sub-skill knows which artifact / which gap / which remediation).
+- The user-facing message at cycle-10 cap (so the user, not the agent, decides how to break the stall).
+
+This is the phase-validator analogue of `coverage-expansion/SKILL.md` §"Pass full findings through verbatim — Compressed findings lose the surgical specificity Stage A needs." Same rationale, same rule, lifted to the phase boundary.
+
+**Banned compressions.** "Validator wants the journey map fixed", "the spec needs more coverage", "scaffold file is broken", "Phase N had issues" — none of these are valid replacements for the verbatim finding block. Each finding has an ID; quote the ID and the three sub-bullets together. If a re-dispatch brief or user message does not contain the literal `pv-<N>-<nn>` finding-IDs from the validator's return, the orchestrator has compressed the finding and the rule is violated.
 
 ### Cycle cap
 

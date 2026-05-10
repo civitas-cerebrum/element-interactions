@@ -100,6 +100,17 @@ This is a pure-hygiene rule enforced at the skill-brief level — bare-basename 
 
 **Brief-validation check before dispatch.** Before the orchestrator sends any Phase-3/5/6 subagent brief, it must grep the brief for `screenshots/` and for the bare-basename ban string above. A brief that omits the rule is malformed — the orchestrator regenerates it before dispatching rather than sending a brief that lets the subagent pick its own path convention. This is a one-line self-check, not a new review stage.
 
+**Mandatory Phase-1 deliverables:**
+
+- `playwright.config.ts` at repo root with the canonical defaults documented above (baseURL from front-load gate, retries, video/trace on-first-retry).
+- `tests/fixtures/base.ts` containing the canonical `baseFixture` wiring AND all four `HELPER SLOT` markers AND the `HELPER SLOT: beforeEach` slot.
+- `page-repository.json` at repo root (or under `tests/e2e/`, following partial-scaffold convention if any exists) initialised to `{}`.
+- `tests/e2e/`, `tests/e2e/docs/`, and `screenshots/` directories created.
+- `.gitignore` updated with the per-run transient paths listed above (`screenshots/failures/`, `.playwright-cli/`, the `.phase4-cycle-state.json*` family).
+- For Level A: the three required deps installed (`@civitas-cerebrum/element-interactions`, `@civitas-cerebrum/element-repository`, `@playwright/test`) plus `npx playwright install chromium`.
+
+These are the artifacts the `phase-validator-1` workflow (`phase-validator-workflow.md` §3 row 1) verifies before greenlighting. A scaffold that produces only some of them is incomplete — Phase 1 is not complete until every line above is on disk.
+
 **Commit:** `chore: scaffold element-interactions framework`.
 
 ### Phase 2 — Groundwork discovery
@@ -107,6 +118,14 @@ This is a pure-hygiene rule enforced at the skill-brief level — bare-basename 
 **Delegate to:** `journey-mapping` with `args: "phase-1-only"`.
 
 The companion writes `tests/e2e/docs/app-context.md` and a sentinel-bearing `tests/e2e/docs/journey-map.md` whose body contains only the site map (Phase-2–4 sections are empty headings).
+
+**Mandatory Phase-2 deliverables:**
+
+- `tests/e2e/docs/app-context.md` with at minimum the `## Test Infrastructure` section populated (reset/seed endpoints probe — entry exists even if "none discovered"; mutation endpoints section non-empty or explicit "none observed during crawl").
+- `tests/e2e/docs/journey-map.md` whose **line 1** is `<!-- journey-mapping:generated -->` (the sentinel) and whose body contains the breadth-first-crawl site map. Phase-2/3/3.5/4 sections are headings only at this point — they are filled in by Phase 4's iterative cycles, not Phase 2.
+- The Phase-2 commit (`docs: initial app-context and site map`) lands.
+
+`phase-validator-2` (`phase-validator-workflow.md` §3 row 2) verifies these. Missing sentinel, empty Test-Infrastructure section, or absent commit → improvements-needed with surgical `pv-2-NN` findings.
 
 **Commit:** `docs: initial app-context and site map`.
 
@@ -132,6 +151,15 @@ The companion reads the existing sentinel-bearing Phase-1 map AND the Phase-3 di
 
 The single-subagent sequential walkthrough is forbidden in `phases-2-4` mode — `journey-mapping`'s kernel rule and the `journey-mapping-cycle-gate.sh` hook both reject it. Gated areas the cycle agents cannot self-credential into are recorded under `## Gated Areas (Not Mapped)` for `coverage-expansion` to handle later (when the user supplies credentials).
 
+**Mandatory Phase-4 deliverables:**
+
+- `tests/e2e/docs/journey-map.md` rewritten in place (sentinel preserved on line 1) with: (a) coverage-checkpoint signature present (Phase-5 marker), (b) non-empty roster matching discovered journeys, (c) sub-journey cross-references intact (no orphans, no undefined `sj-<slug>` refs, every `Used by:` reciprocal of every `Sub-journey refs:`), (d) `## Section → Journey Map` table well-formed with every returned section either named or under `## Gated Areas (Not Mapped)`, (e) frontmatter `**Mapping completeness:**` line consistent with the cycle state file's `convergence-status`.
+- `tests/e2e/docs/.phase4-cycle-state.json` with `convergence-status` ∈ {`converged`, `hard-cap-reached`}; ≥2 cycles ran; at least one cycle has `kind: "edge-probe"`; ≤5 cycles (or ≤10 with the extended-cycles authorisation sentinel); cycles contiguous 1..N; each cycle's `dispatched-sections[]` length matches `returned-sections[]`; `author-dispatched: true`; `author-attempts ≤ 3`.
+- No structural-smell anti-patterns in any journey block (per `phase-validator-workflow.md` §3 row 4(i)).
+- The Phase-4 commit (`docs: journey map — <N> journeys prioritized`) lands.
+
+`phase-validator-4` (`phase-validator-workflow.md` §3 row 4) verifies these. Each unmet criterion produces a surgical `pv-4-NN` finding with `criterion: / issue: / fix:` text the orchestrator must quote verbatim in any re-dispatch.
+
 **Commit:** `docs: journey map — <N> journeys prioritized`.
 
 ### Phase 5 — Coverage expansion (five passes, depth mode)
@@ -150,6 +178,17 @@ Between and after the five passes, `coverage-expansion` itself refreshes its vie
 
 **Dual-stage completion extension.** Phase 5 is complete only when every journey has a terminal `review_status` (`greenlight`, `blocked-cycle-stalled`, `blocked-cycle-exhausted`, or `blocked-dispatch-failure`) for every pass, not only when every journey has returned from Stage A. A pass where every journey's Stage A ran but some journeys have no `review_status` field in the state file is **incomplete**, per the extended no-skip contract. The onboarding-report's Phase-5 section must surface blocked-review-cycle and blocked-dispatch-failure journeys explicitly: `"Phase 5: Pass N/5 complete (44/44), 3 journeys blocked-cycle-stalled with unresolved review findings, 1 journey blocked-dispatch-failure (see state file for details)"`.
 
+**Mandatory Phase-5 deliverables:**
+
+- `tests/e2e/docs/coverage-expansion-state.json` with top-level `status: "complete"`. Any other status (`in-progress`, `mid-pass`, missing field) means Phase 5 has NOT delivered.
+- Every journey in the roster has a terminal `review_status` for every pass 1–5 (greenlight / blocked-cycle-stalled / blocked-cycle-exhausted / blocked-dispatch-failure) — Stage-A-only is insufficient.
+- `tests/e2e/docs/adversarial-findings.md` exists with both Pass-4 and Pass-5 sections per journey.
+- All five per-pass commits landed (`test: coverage expansion pass <N>/5 — <summary>`).
+- Cleanup commit (`docs(ledger): dedupe cross-cutting findings`) landed.
+- "Coverage expansion — new knowledge" section appended to `onboarding-report.md`.
+
+`phase-validator-5` (`phase-validator-workflow.md` §3 row 5) verifies these. The most common partial-delivery pattern is "Pass 1 complete, deferred 2–5 for budget" — that is honest reporting (commit what landed, write resume state), but it is NOT a Phase-5 greenlight. The validator returns `improvements-needed` with `pv-5-NN` findings naming the missing passes; the orchestrator's recovery is to re-invoke `coverage-expansion` with `mode: depth` (the state file's resume marker picks up at the missing pass).
+
 ### Phase 6 — Bug hunts (two passes)
 
 Two sequential invocations of `bug-discovery`:
@@ -162,6 +201,14 @@ Two sequential invocations of `bug-discovery`:
 Findings go to `tests/e2e/docs/onboarding-report.md` under "App bugs logged". The companion must NOT commit skipped tests for the findings; it logs them and continues.
 
 **Phase 6 is two dedicated bug-discovery passes (element-probing 1a, flow-probing 1b) — not "the bugs we happened to find during coverage."** Organic findings from earlier phases (happy path, coverage-expansion compositional passes, coverage-expansion adversarial passes 4/5) go in the onboarding-report's "App bugs logged" section; Phase 6's two dedicated passes run **in addition to** whatever organic discovery happened in earlier phases. Repackaging organic findings as "the Phase 6 output" is a loophole — the two dedicated passes either ran or they did not. If the orchestrator skips Phase 6's passes (budget, infra halt, explicit user instruction), the onboarding-report and the summary deck MUST say `"Phase 6 deferred — <reason>"` or `"Phase 6 partial — pass 1a only"`, never `"Phase 6 complete"`. Finding count alone is not evidence that Phase 6 ran.
+
+**Mandatory Phase-6 deliverables:**
+
+- Both probing passes ran — `bug-discovery args="phase: 1a-element-probing"` AND `bug-discovery args="phase: 1b-flow-probing"`. One pass alone does not satisfy Phase 6.
+- Findings appended to `tests/e2e/docs/onboarding-report.md` "App bugs logged" section (or to `tests/e2e/docs/adversarial-findings.md` if that is the canonical ledger location, per the bug-discovery skill's contract).
+- Both Phase-6 commits landed: `docs: bug-hunt 1/2 findings` AND `docs: bug-hunt 2/2 findings`.
+
+`phase-validator-6` (`phase-validator-workflow.md` §3 row 6) verifies the dedicated-pass contract. A partial Phase 6 (only 1a ran, only 1b ran, or only organic findings logged) returns `improvements-needed` with the missing-pass surgical fix.
 
 **Commits:** `docs: bug-hunt 1/2 findings` and `docs: bug-hunt 2/2 findings`.
 
