@@ -77,6 +77,23 @@ PROTECTED_PATHS=(
   ".claude/onboarding-stop-authorized"
   "tests/e2e/docs/.onboarding-stop-authorized"
   "tests/e2e/docs/onboarding-phase-ledger.json"
+  # BookHive Run-5 round-2 finding G5 — Stop-deny reads journey-map.md
+  # sentinel and coverage-expansion-state.json status as authoritative
+  # mid-pipeline signals. Without protection, the agent could clear
+  # both via direct Write/Edit and pass the Stop-deny gate.
+  "tests/e2e/docs/journey-map.md"
+  "tests/e2e/docs/coverage-expansion-state.json"
+)
+
+# Glob-shape protected paths (matched separately because the literal
+# array's case-pattern matching gets brittle with embedded `*`). Each
+# entry is a literal-prefix; `<prefix>*` is the implicit glob.
+# F2 — Stop-deny consecutive-block counter at /tmp/civitas-onboarding-stop-deny-${SESSION_ID}.
+# Pre-populating the counter to CAP value silences the next suspect
+# Stop. The counter is harness-only state and must not be agent-writable.
+PROTECTED_PATH_PREFIXES=(
+  "/tmp/civitas-onboarding-stop-deny-"
+  "/private/tmp/civitas-onboarding-stop-deny-"
 )
 
 # --- helpers ---
@@ -198,6 +215,12 @@ is_protected_target() {
       *"/$p")             return 0 ;;     # any absolute path ending in /<protected>
     esac
   done
+  # Glob-prefix matches (F2 — /tmp counter family).
+  for prefix in "${PROTECTED_PATH_PREFIXES[@]}"; do
+    case "$target" in
+      "${prefix}"*)        return 0 ;;
+    esac
+  done
   return 1
 }
 
@@ -219,10 +242,19 @@ is_commit_or_message_command() {
   # `gh pr create` and `gh issue create` — body text
   # `git tag -m` — tag message
   # `git notes add -m` — note message
+  #
+  # Use regex (not literal-substring globs) so `git -c <key>=<val> commit`,
+  # `git -c gpg.sign=false commit`, and similar flag-stuffing forms still
+  # match. The original literal-glob version `*"git commit"*` failed on
+  # `git -c commit.gpgsign=false commit` because the substring `git commit`
+  # is broken up by the -c arg. (BookHive Run-5 round-2 follow-up.)
+  if echo "$cmd" | grep -qE '(^|[[:space:];&|])git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'; then
+    return 0
+  fi
+  if echo "$cmd" | grep -qE '(^|[[:space:];&|])git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(tag|notes)[[:space:]]+[^|;&]*-m[[:space:]]'; then
+    return 0
+  fi
   case "$cmd" in
-    *"git commit"*)        return 0 ;;
-    *"git tag "*"-m "*)    return 0 ;;
-    *"git notes "*"-m "*)  return 0 ;;
     *"gh pr create"*)      return 0 ;;
     *"gh issue create"*)   return 0 ;;
     *"gh pr comment"*)     return 0 ;;
@@ -241,12 +273,41 @@ bash_touches_protected() {
     return 1
   fi
 
+  # Build a unified search list: literal protected paths + their
+  # basenames + glob-prefix families. For each, we check whether the
+  # command mentions it AND performs a write/delete/replace shape op
+  # against it.
+  local probes=()
   for p in "${PROTECTED_PATHS[@]}"; do
+    probes+=("$p")
+    # Also probe the basename — `find <root> -name <basename> -delete`
+    # mentions only the basename, not the full path. Without this
+    # secondary probe, find-delete attacks slip through the literal
+    # outer grep -qF check (BookHive Run-5 round-2 G4).
+    local basename
+    basename=$(printf '%s' "$p" | awk -F/ '{print $NF}')
+    if [ -n "$basename" ] && [ "$basename" != "$p" ]; then
+      probes+=("$basename")
+    fi
+  done
+  # Glob-prefix probes: any /tmp/<prefix>* mention is suspect by itself.
+  # The interpreter / write-shape detectors below catch the actual
+  # mutation; the prefix match just narrows which substrings to grep
+  # the command against.
+  local has_prefix_hit=0
+  for prefix in "${PROTECTED_PATH_PREFIXES[@]}"; do
+    if echo "$cmd" | grep -qF "$prefix"; then
+      has_prefix_hit=1
+      probes+=("$prefix")    # narrower-than-the-glob substring
+    fi
+  done
+
+  for p in "${probes[@]}"; do
     if echo "$cmd" | grep -qF "$p"; then
       # Write-shape detection: any of the standard file-creation / overwrite
-      # operators present in the command, AND the protected path as their
-      # immediate argument (path appears within a few non-pipe characters
-      # after the operator).
+      # / delete / replace operators present in the command, AND the
+      # protected path as their immediate argument (path appears within a
+      # few non-pipe characters after the operator).
       #
       #   touch <path>                                 — direct create
       #   > <path>  or  >> <path>                      — redirect-write
@@ -255,10 +316,25 @@ bash_touches_protected() {
       #   cp X <path>                                  — copy-into-target
       #   ln -s X <path>                               — symlink name
       #   dd of=<path>                                 — dd write
+      #   rm [-rf] <path>                              — delete (Run-5 G4 + F4)
+      #   unlink <path>                                — delete (Run-5 G4)
+      #   find ... <path> ... -delete                  — bulk delete (Run-5 G4)
+      #   <interpreter> -c|-e|eval "...open(<path>...)" — interpreter write (Run-5 G4)
+      #   git apply <patchfile>                        — patch-form write (Run-5 G4)
       local p_re
       p_re=$(printf '%s' "$p" | sed 's/[.[\*^$()+?{|/]/\\&/g')
+      # For glob-prefix probes (PROTECTED_PATH_PREFIXES entries that
+      # ended in `-` to indicate the suffix is a session-id), the
+      # delimiter check below would reject a path like
+      # `/tmp/civitas-onboarding-stop-deny-FAKESESSION` because `F`
+      # isn't a delimiter. Detect prefix probes by trailing `-` and
+      # accept any non-whitespace tail.
+      local trailing_re='([[:space:]]|$|;|&|\|)'
+      case "$p" in
+        *-)  trailing_re='[^[:space:]|;&]*([[:space:]]|$|;|&|\|)' ;;
+      esac
       # `>`/`>>` followed by path (with optional whitespace).
-      if echo "$cmd" | grep -qE '>>?[[:space:]]*'"$p_re"'([[:space:]]|$|;|&|\|)'; then
+      if echo "$cmd" | grep -qE '>>?[[:space:]]*'"$p_re$trailing_re"; then
         return 0
       fi
       # `touch` / `tee` followed by the path (allow shell flags in between).
@@ -271,6 +347,55 @@ bash_touches_protected() {
       fi
       # `dd of=PATH`
       if echo "$cmd" | grep -qE 'dd[[:space:]]+[^|;&]*of='"$p_re"'([[:space:]]|$|;|&|\|)'; then
+        return 0
+      fi
+      # `rm` / `unlink` against the protected path. Allow shell flags
+      # between the verb and the path (`-rf`, `-i`, etc.).
+      if echo "$cmd" | grep -qE '(^|[[:space:];&|])(rm|unlink)([[:space:]]+-[a-zA-Z]+)*[[:space:]]+[^|;&]*'"$p_re"'([[:space:]]|$|;|&|\|)'; then
+        return 0
+      fi
+      # `find <root> ... -delete` where the protected path is anywhere on
+      # the line (the command searches under <root> for a name matching
+      # the protected path's basename, then deletes — strong write-shape
+      # signal even though the path may not be the literal verb argument).
+      if echo "$cmd" | grep -qE '(^|[[:space:];&|])find[[:space:]]+[^|;&]*-delete[[:space:]]*([[:space:];&|]|$)'; then
+        return 0
+      fi
+      # Interpreter `-c` / `-e` / `eval` that mentions the protected path
+      # with an open-for-write or unlink shape inside the script string.
+      # We can't fully parse the language, so we conservatively deny when
+      # the interpreter command mentions the path AND any of:
+      #   - open(<path>, 'w'|'a'|'wb'|'r+')              python, ruby
+      #   - .write(  /  fs.writeFileSync(  /  fs.unlink   node
+      #   - unlink( / unlinkSync(                        node, perl
+      #   - print FH ... (perl write idiom is hard to detect; covered by
+      #     the conservative substring check below)
+      if echo "$cmd" | grep -qE '(^|[[:space:];&|])(python3?|perl|ruby|node|deno|bun|pwsh|powershell)[[:space:]]+(-[ec]|eval)[[:space:]]'; then
+        # Interpreter is invoked; protected-path mention is already
+        # confirmed (the outer `grep -qF "$p"` matched). Look for write
+        # primitives in the script body.
+        if echo "$cmd" | grep -qE "open\\([^)]*,[[:space:]]*['\"][wa+][bx+]?['\"]|write\\(|writeFileSync|writeFile|writeAllText|unlink|unlinkSync|truncate|fs\\.create|>>?[[:space:]]*['\"]"; then
+          return 0
+        fi
+        # Conservative deny for interpreter invocations whose script body
+        # mentions the protected path AT ALL — a false-positive here is
+        # cheap (agent wanted to read; switches to Read tool); a false-
+        # negative is the BookHive Run-5 G4 exploit.
+        if echo "$cmd" | grep -qE '(^|[[:space:];&|])(python3?|perl|ruby|node|deno|bun)[[:space:]]+-[ec][[:space:]]+[^|;&]*'"$p_re"; then
+          return 0
+        fi
+      fi
+      # `git apply` — patches against protected paths slip past the
+      # write-shape detectors above because the verb is `apply` and the
+      # target path lives inside the patch payload, not on the command
+      # line. A `git apply` command anywhere near a protected-path
+      # mention is suspect; the exploit surface is small enough that
+      # blanket deny when the path is referenced is fine.
+      if echo "$cmd" | grep -qE '(^|[[:space:];&|])git[[:space:]]+apply([[:space:]]|$)'; then
+        return 0
+      fi
+      # `patch` utility — same logic as git apply.
+      if echo "$cmd" | grep -qE '(^|[[:space:];&|])patch[[:space:]]+(-[a-zA-Z][^|;&]*[[:space:]])?[^|;&]*'"$p_re"; then
         return 0
       fi
     fi
@@ -293,6 +418,12 @@ if [ -n "$BASH_CMD" ]; then
     for p in "${PROTECTED_PATHS[@]}"; do
       if echo "$BASH_CMD" | grep -qF "$p"; then matched="$p"; break; fi
     done
+    if [ -z "$matched" ]; then
+      for prefix in "${PROTECTED_PATH_PREFIXES[@]}"; do
+        if echo "$BASH_CMD" | grep -qF "$prefix"; then matched="${prefix}<session-id>"; break; fi
+      done
+    fi
+    [ -z "$matched" ] && matched="(protected path family)"
     emit_deny "$(deny_body "$matched (via Bash command)")"
     exit 0
   fi

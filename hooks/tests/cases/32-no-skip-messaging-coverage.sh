@@ -401,6 +401,7 @@ coverage-expansion-orchestrator-cli-block.sh
 coverage-state-deferral-auth-guard.sh
 coverage-state-schema-guard.sh
 happy-path-discovery-draft-required.sh
+harness-trusted-state-write-guard.sh
 journey-mapping-cycle-gate.sh
 onboarding-pipeline-incomplete-stop-deny.sh
 onboarding-report-write-guard.sh

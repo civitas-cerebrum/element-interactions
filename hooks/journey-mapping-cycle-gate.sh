@@ -158,7 +158,12 @@ EVENT_NAME=$(echo "$INPUT" | "$JQ" -r '.hook_event_name // ""')
 TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
 [ "$TOOL_NAME" != "Agent" ] && exit 0
 
-DESCRIPTION=$(echo "$INPUT" | "$JQ" -r '.tool_input.description // ""')
+# Strip leading/trailing whitespace (G1) + case-insensitive matching
+# (G3) so `" phase4-cycle-N-section-..."` and `Phase4-Cycle-...`
+# don't slip past the cycle-state accounting. BookHive Run-5 round-2
+# findings.
+shopt -s nocasematch 2>/dev/null || true
+DESCRIPTION=$(echo "$INPUT" | "$JQ" -r '.tool_input.description // "" | gsub("^\\s+|\\s+$"; "") | ascii_downcase')
 
 # Resolve repo root.
 CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")

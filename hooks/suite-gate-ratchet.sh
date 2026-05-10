@@ -120,9 +120,32 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
     exit 0
   fi
 
+  # BookHive Run-5 round-2 finding G6 — exclude non-running invocations
+  # that exit 0 without actually executing tests. `playwright test --help`,
+  # `--list`, `--reporter=null`, `--show-trace`, `--version`, `--grep`
+  # against an empty match set, etc., all return success without
+  # exercising the suite — counting them as `passed` lets the agent fill
+  # the suite-gate window in seconds and clear the any-red ratchet.
+  if echo "$CMD" | grep -qE '(^|[[:space:]])(--help|--version|--list(-files|-tags)?|--show-trace|--show-config|--reporter=null)([[:space:]]|$)'; then
+    exit 0   # informational invocation — don't record
+  fi
+
   TOOL_RESPONSE=$(echo "$INPUT" | "$JQ" -r '.tool_response // {}')
   EXIT_CODE=$(echo "$TOOL_RESPONSE" | "$JQ" -r '.exitCode // .exit_code // .returncode // "unknown"')
   STDOUT=$(echo "$TOOL_RESPONSE" | "$JQ" -r '.stdout // .output // ""' 2>/dev/null || echo "")
+
+  # Require a positive Playwright reporter signal in stdout before
+  # recording `passed`. Acceptable signals:
+  #   - "[0-9]+ passed" (default + line/list reporters' summary)
+  #   - "Running [0-9]+ test" (reporter banner — covers the case
+  #     where a single test passes and the count line elides "passed")
+  # Without these, an exit-0 with no test output is `unknown` (don't
+  # record). This closes G6's `--grep zzz_no_match_zzz` and similar
+  # zero-test-but-exit-0 variants.
+  HAS_PASS_SIGNAL=0
+  if echo "$STDOUT" | grep -qE '[0-9]+[[:space:]]+passed|Running[[:space:]]+[0-9]+[[:space:]]+test'; then
+    HAS_PASS_SIGNAL=1
+  fi
 
   STATUS="passed"
   if [ "$EXIT_CODE" != "0" ] && [ "$EXIT_CODE" != "unknown" ]; then
@@ -130,6 +153,12 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
   fi
   if echo "$STDOUT" | grep -qE '[0-9]+ failed'; then
     STATUS="failed"
+  fi
+
+  # If exit was clean (0 or unknown) but there's no pass signal, this
+  # invocation didn't actually run tests — don't record.
+  if [ "$STATUS" = "passed" ] && [ "$HAS_PASS_SIGNAL" = "0" ]; then
+    exit 0
   fi
 
   TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)

@@ -102,7 +102,12 @@ INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
 [ "$TOOL_NAME" = "Agent" ] || exit 0
 
-DESCRIPTION=$(echo "$INPUT" | "$JQ" -r '.tool_input.description // ""')
+# Strip leading/trailing whitespace (G1) so a `" composer-..."` doesn't
+# evade the case-pattern globs below. Pair with `shopt -s nocasematch`
+# (G3) so `Composer-...` doesn't slip past either. BookHive Run-5
+# round-2 findings.
+shopt -s nocasematch 2>/dev/null || true
+DESCRIPTION=$(echo "$INPUT" | "$JQ" -r '.tool_input.description // "" | gsub("^\\s+|\\s+$"; "") | ascii_downcase')
 PROMPT=$(echo "$INPUT" | "$JQ" -r '.tool_input.prompt // ""')
 [ -z "$PROMPT" ] && [ -z "$DESCRIPTION" ] && exit 0
 

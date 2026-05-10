@@ -115,9 +115,16 @@ TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
 # Strip leading/trailing whitespace from the description before any
 # pattern-matching. A leading space (`" composer-..."`) would otherwise
 # evade the case-pattern globs below and slip past every dispatch guard
-# (BookHive Run-5 red-team finding F3). Mirror this trim in every
-# description-driven hook.
-DESCRIPTION=$(echo "$INPUT" | "$JQ" -r '.tool_input.description // "" | gsub("^\\s+|\\s+$"; "")')
+# (BookHive Run-5 round-1 finding F3). Mirror this trim in every
+# description-driven hook. Pair with `shopt -s nocasematch` (G3) so
+# `Composer-...`, `Phase-Validator-...`, and similar capital-prefix
+# variants don't slip past either.
+shopt -s nocasematch 2>/dev/null || true
+# Lowercase via jq's ascii_downcase so the sed-based phase-extraction
+# below (which is case-sensitive in BREs/EREs) treats `Phase-Validator-3:`
+# the same as `phase-validator-3:`. Pair with nocasematch above for the
+# case-pattern globs. Together these close G3 across the whole hook.
+DESCRIPTION=$(echo "$INPUT" | "$JQ" -r '.tool_input.description // "" | gsub("^\\s+|\\s+$"; "") | ascii_downcase')
 
 # Resolve repo root for state-file location.
 CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")

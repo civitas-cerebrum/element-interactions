@@ -53,7 +53,12 @@ section "dispatch-guard: edge cases"
 assert_allow "$H" "$(payload tool_name=Agent description='' prompt='just a generic sub-task')" "empty description + non-coverage prompt → silent allow"
 # Long description with role prefix at start
 assert_allow "$H" "$(payload tool_name=Agent description='composer-j-bookhive-marketplace-buy: cycle 1 of pass 2 retry attempt' prompt='cover j-marketplace-buy')" "long description with role prefix → ALLOW"
-# Description with leading whitespace before prefix → not a recognized prefix
-assert_deny "$H" "$(payload tool_name=Agent description='   composer-j-x:' prompt='coverage-expansion j-checkout j-cart')" "leading-whitespace prefix → falls to anti-pattern D" "Subagent dispatch missing role-prefixed description"
+# Description with leading whitespace before prefix → BookHive Run-5 G1
+# closed this gap: the hook now trims `$DESCRIPTION` after jq extraction,
+# so `'   composer-j-x:'` resolves to `composer-j-x:` (recognized prefix)
+# rather than falling to anti-pattern D. Allowed because the trimmed
+# prefix matches; the prompt's multi-journey hints don't escalate when
+# the dispatch's identity is a single-journey composer.
+assert_allow "$H" "$(payload tool_name=Agent description='   composer-j-x:' prompt='coverage-expansion j-checkout j-cart')" "leading-whitespace prefix → ALLOW (G1 trim)"
 # Word-boundary safety: prompt mentions obj-foo, subj-x, proj-bar but no actual j- IDs
 assert_allow "$H" "$(payload tool_name=Agent description='composer-j-x:' prompt='this is a coverage-expansion task. project subj-x has obj-foo and proj-bar')" "obj-/subj-/proj- substrings + role prefix → ALLOW (no false j- match)"

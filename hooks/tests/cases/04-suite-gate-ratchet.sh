@@ -74,7 +74,11 @@ rm -rf "$REPO"
 section "suite-gate: legacy single-object format auto-migrates"
 REPO=$(make_repo)
 echo '{"status":"passed","timestamp":"2026-05-01T19:00:00Z","exitCode":"0"}' > "$REPO/.claude/last-suite-result.json"
-run_hook "$H" "$(payload tool_name=Bash hook_event_name=PostToolUse command='npx playwright test' exit_code=0 stdout='All passed' cwd="$REPO")"
+# G6 fix requires a positive Playwright reporter signal in stdout
+# (`[0-9]+ passed` or `Running [0-9]+ test`) before counting `passed`.
+# Use `3 passed` so the hook records the run and migrates the legacy
+# shape in the same operation.
+run_hook "$H" "$(payload tool_name=Bash hook_event_name=PostToolUse command='npx playwright test' exit_code=0 stdout='3 passed' cwd="$REPO")"
 TESTS_RUN=$((TESTS_RUN + 1))
 SHAPE=$(jq -r 'if has("runs") then "array" else "legacy" end' "$REPO/.claude/last-suite-result.json")
 if [ "$SHAPE" = "array" ]; then
@@ -120,5 +124,84 @@ if [ ! -s "$REPO/.claude/last-suite-result.json" ]; then
   TESTS_PASSED=$((TESTS_PASSED + 1)); echo "${CLR_PASS}  ✓${CLR_RST} 'npm install' PostToolUse → no state mutation"
 else
   TESTS_FAILED=$((TESTS_FAILED + 1)); FAIL_DETAILS+=("Non-playwright command shouldn't mutate state"); echo "${CLR_FAIL}  ✗${CLR_RST} unexpected state mutation"
+fi
+rm -rf "$REPO"
+
+section "suite-gate: G6 — non-running playwright invocations don't count as passed (BookHive Run-5)"
+
+# G6.1: --help exit 0 → not recorded
+REPO=$(make_repo)
+run_hook "$H" "$(payload tool_name=Bash hook_event_name=PostToolUse command='npx playwright test --help' exit_code=0 stdout='Usage: playwright test ...' cwd="$REPO")"
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ ! -f "$REPO/.claude/last-suite-result.json" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1)); echo "${CLR_PASS}  ✓${CLR_RST} G6 — playwright test --help exit 0 → no record"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAIL_DETAILS+=("G6: --help wrote a record"); echo "${CLR_FAIL}  ✗${CLR_RST} G6 — --help should not record"
+fi
+rm -rf "$REPO"
+
+# G6.2: --version exit 0 → not recorded
+REPO=$(make_repo)
+run_hook "$H" "$(payload tool_name=Bash hook_event_name=PostToolUse command='npx playwright test --version' exit_code=0 stdout='Version 1.59.1' cwd="$REPO")"
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ ! -f "$REPO/.claude/last-suite-result.json" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1)); echo "${CLR_PASS}  ✓${CLR_RST} G6 — playwright test --version exit 0 → no record"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAIL_DETAILS+=("G6: --version wrote a record"); echo "${CLR_FAIL}  ✗${CLR_RST} G6 — --version should not record"
+fi
+rm -rf "$REPO"
+
+# G6.3: --list exit 0 → not recorded
+REPO=$(make_repo)
+run_hook "$H" "$(payload tool_name=Bash hook_event_name=PostToolUse command='npx playwright test --list' exit_code=0 stdout='Listing tests...' cwd="$REPO")"
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ ! -f "$REPO/.claude/last-suite-result.json" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1)); echo "${CLR_PASS}  ✓${CLR_RST} G6 — playwright test --list exit 0 → no record"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAIL_DETAILS+=("G6: --list wrote a record"); echo "${CLR_FAIL}  ✗${CLR_RST} G6 — --list should not record"
+fi
+rm -rf "$REPO"
+
+# G6.4: --reporter=null exit 0 → not recorded
+REPO=$(make_repo)
+run_hook "$H" "$(payload tool_name=Bash hook_event_name=PostToolUse command='npx playwright test --reporter=null' exit_code=0 stdout='' cwd="$REPO")"
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ ! -f "$REPO/.claude/last-suite-result.json" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1)); echo "${CLR_PASS}  ✓${CLR_RST} G6 — playwright test --reporter=null → no record"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAIL_DETAILS+=("G6: --reporter=null wrote a record"); echo "${CLR_FAIL}  ✗${CLR_RST} G6 — --reporter=null should not record"
+fi
+rm -rf "$REPO"
+
+# G6.5: exit 0 with no pass-signal stdout (e.g., --grep nomatch matched 0 tests) → not recorded
+REPO=$(make_repo)
+run_hook "$H" "$(payload tool_name=Bash hook_event_name=PostToolUse command='npx playwright test --grep zzz_no_match_zzz' exit_code=0 stdout='' cwd="$REPO")"
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ ! -f "$REPO/.claude/last-suite-result.json" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1)); echo "${CLR_PASS}  ✓${CLR_RST} G6 — exit 0 without any pass-signal → no record"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAIL_DETAILS+=("G6: empty-stdout exit 0 wrote a record"); echo "${CLR_FAIL}  ✗${CLR_RST} G6 — empty-stdout exit 0 should not record"
+fi
+rm -rf "$REPO"
+
+# G6 inverse: real test run with `[N] passed` does record.
+REPO=$(make_repo)
+run_hook "$H" "$(payload tool_name=Bash hook_event_name=PostToolUse command='npx playwright test' exit_code=0 stdout='12 passed (5.4s)' cwd="$REPO")"
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ -f "$REPO/.claude/last-suite-result.json" ] && [ "$(jq -r '.runs[0].status' "$REPO/.claude/last-suite-result.json")" = "passed" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1)); echo "${CLR_PASS}  ✓${CLR_RST} G6 inverse — real test run with N-passed signal → recorded as passed"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAIL_DETAILS+=("G6 inverse: real run not recorded"); echo "${CLR_FAIL}  ✗${CLR_RST} G6 inverse — real test run should record"
+fi
+rm -rf "$REPO"
+
+# G6 inverse: failed test (exit 1 + `1 failed`) records as failed regardless of pass-signal absence.
+REPO=$(make_repo)
+run_hook "$H" "$(payload tool_name=Bash hook_event_name=PostToolUse command='npx playwright test' exit_code=1 stdout='1 failed' cwd="$REPO")"
+TESTS_RUN=$((TESTS_RUN + 1))
+if [ -f "$REPO/.claude/last-suite-result.json" ] && [ "$(jq -r '.runs[0].status' "$REPO/.claude/last-suite-result.json")" = "failed" ]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1)); echo "${CLR_PASS}  ✓${CLR_RST} G6 inverse — real failed test → recorded as failed"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAIL_DETAILS+=("G6 inverse: failed run not recorded"); echo "${CLR_FAIL}  ✗${CLR_RST} G6 inverse — failed test should record"
 fi
 rm -rf "$REPO"

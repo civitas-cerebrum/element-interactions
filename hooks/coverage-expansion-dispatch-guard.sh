@@ -106,7 +106,11 @@ INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
 [ "$TOOL_NAME" != "Agent" ] && exit 0
 
-DESCRIPTION=$(echo "$INPUT" | "$JQ" -r '.tool_input.description // ""')
+# Strip leading/trailing whitespace (G1) + case-insensitive matching
+# (G3) so `" composer-..."` and `Composer-...` don't slip past the
+# leaf-prefix early-exit. BookHive Run-5 round-2 findings.
+shopt -s nocasematch 2>/dev/null || true
+DESCRIPTION=$(echo "$INPUT" | "$JQ" -r '.tool_input.description // "" | gsub("^\\s+|\\s+$"; "") | ascii_downcase')
 PROMPT=$(echo "$INPUT" | "$JQ" -r '.tool_input.prompt // ""')
 
 # Allowed description prefixes (single-journey scope, plus process-validator).
