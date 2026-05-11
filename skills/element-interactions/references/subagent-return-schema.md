@@ -169,7 +169,7 @@ Only valid when the subagent **inspected** the journey. Required evidence:
 
 If the table has one or more rows with `coverage: none`, the subagent has NOT covered exhaustively and MUST compose tests or escalate.
 
-**Orchestrator-written `gated_skip: true` state-file entries.** `covered-exhaustively` is also valid as a `result:` value in orchestrator-written `gated_skip: true` state-file entries (per `coverage-expansion/SKILL.md` §"Trigger-gated re-pass for Passes 2 & 3"). In that context, the per-expectation mapping table is replaced by the `triggers_checked` evidence object — the orchestrator's three checks ARE the audit trail. The mapping-table requirement above applies only to subagent-return bodies; orchestrator-written gated-skip entries instead carry `triggers_checked: { map_delta, sibling_ledger_update, must_fix_carry_over }` (all three booleans, all three `false`), validated by `hooks/coverage-state-schema-guard.sh`.
+**Orchestrator-written `gated_skip: true` state-file entries.** `covered-exhaustively` is also valid as a `result:` value in orchestrator-written `gated_skip: true` state-file entries (per `coverage-expansion/SKILL.md` §"Trigger-gated re-pass for Passes 2 & 3"). In that context, the per-expectation mapping table is replaced by the `triggers_checked` evidence object — the orchestrator's three checks ARE the audit trail. The mapping-table requirement above applies only to subagent-return bodies; orchestrator-written gated-skip entries instead carry `triggers_checked: { map_delta, sibling_ledger_update, must_fix_carry_over }` (all three booleans, all three `false`). Orchestrator-side enforcement of this shape now lives in achilles (`npx @civitas-cerebrum/achilles onboarding`).
 
 ### 2.2 `status: no-new-tests-by-rationalisation` — **not a valid return**
 
@@ -267,7 +267,7 @@ Per-verdict shape rules:
 - `status: greenlight` → body inlines only `journey` + `summary`. No `spill:`, no `findings:`.
 - `status: improvements-needed` → body inlines `journey` + `spill:` (path to the shared per-pass spill file) + `findings:` (list of finding-IDs only — no inline blocks; the full sub-bullets live in the spill file's `## <JOURNEY>` section per §2.6).
 
-Hard constraints (validated by the dispatch-guard / spillover-rewrite-gate when those hooks gain batch-reviewer awareness):
+Hard constraints (validated by the achilles orchestrator's spawn-validator boundary; `npx @civitas-cerebrum/achilles onboarding`):
 
 - `cycle: 1` only. A batch reviewer dispatched at cycle ≥ 2 is a contract violation.
 - `pass ∈ {1, 2, 3}` only. Adversarial Passes 4 and 5 always use `mode: per-journey`.
@@ -383,9 +383,7 @@ The spillover contract addresses this by moving the bulk content to disk while k
 | `process-validator-` | `block` | Per-violation block | `greenlight` |
 | `phase-validator-` | `improvements-needed` | `exit-criteria-checked:` array + `pv-<phase>-<nn>` finding blocks | `greenlight` (already requires `findings: []` literal) |
 
-**Enforcement is hard, not soft.** The compliance check is binary (spill file at canonical path exists or doesn't; body inlines forbidden shape or doesn't) — there is no fuzzy zone that needs calibration. WARN-only enforcement would be a porous fence: every non-compliant first return leaks the body into the orchestrator's transcript before any post-hoc check fires. Hard enforcement at `SubagentStop` closes that gap by intercepting BEFORE the parent sees anything. The subagent's stop is blocked, stderr feedback is injected, the subagent rewrites in-session, and the orchestrator's tool result is the FINAL compliant return. Empirical verification of the `SubagentStop` exit-2-with-stderr in-session-rewrite mechanism is captured in the implementation thread on #145.
-
-**Cap on rewrite attempts.** A subagent that genuinely cannot produce a compliant return (broken understanding, contradictory feedback, environment issue) would otherwise loop indefinitely. The hook caps rewrites at 3 per `agent_id`. After the cap, the hook exits 0 with a loud `[CAP-REACHED]` stderr WARN and the non-compliant return lands in the orchestrator's context as a last resort — visible failure beats silent loop. Manual review surfaces what the subagent could not produce.
+**Enforcement is the orchestrator's job.** The compliance check is binary (spill file at canonical path exists or doesn't; body inlines forbidden shape or doesn't) — there is no fuzzy zone that needs calibration. Element-interactions' `PostToolUse:Agent` return-schema guard (§4.2) WARNs when a return body omits the spill file at the canonical path; hard enforcement now lives in the achilles orchestrator (`npx @civitas-cerebrum/achilles onboarding`), which dispatches subagents and rejects non-compliant returns at its own spawn-validator boundary. Callers consuming this schema standalone should grep the return body per §4.1 and re-dispatch on shape violations.
 
 #### Spill file path conventions
 
@@ -600,16 +598,13 @@ These returns require no spill file because their bodies are already small:
 - **Process-validator** `greenlight` (`findings: []` + `summary:`).
 - **Phase-validator** `greenlight` (already requires `findings: []` literal — bodies are bounded by the per-phase completion-contract criteria count, kept small).
 
-For these statuses, the SubagentStop hook silent-allows; no spill file expected.
+For these statuses, no spill file is expected and the orchestrator silent-allows.
 
 #### Hook architecture
 
-Two hooks share the work, each at the right boundary:
+Element-interactions ships one hook on this surface: **Return-schema guard** (`PostToolUse:Agent`) — the **audit trail**. It validates body shape against §2.6 and WARNs when a spillover-triggering status omits the canonical spill file. Hard enforcement (intercepting at `SubagentStop` and forcing in-session rewrite) lives in the achilles orchestrator (`npx @civitas-cerebrum/achilles onboarding`), which spawns subagents and rejects non-compliant returns at its own spawn-validator boundary.
 
-1. **Spillover rewrite-gate** (`SubagentStop`) — the **enforcer**. Validates body shape against §2.6 for each spillover-triggering role + status; non-compliant returns are blocked at stop with role-specific feedback that names the exact spill-file path and index-only body shape, and the subagent rewrites in-session. A retry cap auto-releases after a small number of attempts.
-2. **Return-schema guard** (`PostToolUse:Agent`) — the **audit trail**. WARNs about absent spill files when the enforcer is mis-installed / mis-configured / cap-released. Catches the leak post-hoc.
-
-See [harness-hooks.md](harness-hooks.md) for the index entries; the hook source files are the canonical reference for cap counts, counter paths, and exit-code semantics.
+See [harness-hooks.md](harness-hooks.md) for the index entry; the hook source file is the canonical reference for exit-code semantics.
 
 #### Caller contract addition (per role)
 
@@ -675,17 +670,18 @@ spill: tests/e2e/docs/.subagent-returns/phase4-cycle-<N>-section-<id>.md
 summary: <one sentence — what was driven, how many flows, key oddities>
 ```
 
-**Two extraction paths for `new-sections-discovered`.** The hook
-(`journey-mapping-cycle-gate.sh` PostToolUse) parses both:
+**Two extraction paths for `new-sections-discovered`.** Orchestrator-side
+parsers (now living in achilles — `npx @civitas-cerebrum/achilles
+onboarding`) handle both:
 
 1. **JSON sub-block** (preferred — robust against indentation/comment drift):
-   `<!-- new-sections: ["a","b"] --> ` on its own line. The hook reads the
+   `<!-- new-sections: ["a","b"] --> ` on its own line. Read the
    JSON array directly. Empty array `[]` is valid (no new sections).
 2. **YAML-flavoured fallback**: the `new-sections-discovered:` block with
    `- id: <kebab-case>` entries. Brittle on indentation, comments, multi-
    line values — kept for human readability and as a fallback parser.
 
-Subagents SHOULD emit both. The hook unions them and dedups. Emitting only
+Subagents SHOULD emit both. Parsers union them and dedup. Emitting only
 the YAML is acceptable for human-readability, but emit the JSON sub-block
 when the section list is mechanically generated — it's the parse-clean
 form and won't drift if a future agent introduces formatting variants.
