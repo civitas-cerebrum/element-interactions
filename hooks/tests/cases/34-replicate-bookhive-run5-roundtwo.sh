@@ -35,19 +35,45 @@ make_repo() {
 
 section "BookHive Run-5 G5: journey-map.md + coverage-expansion-state.json now PROTECTED_PATHS"
 
+# Updated round-6: bootstrap exemption — the protection now requires the
+# file to ALREADY contain its sentinel before it engages. Seed the file
+# with the sentinel before testing DENY, so we're testing the
+# "established-file" protection class (which round-2 G5 added) and not
+# the "fresh-bootstrap" exemption (which round-2's test setup
+# accidentally relied on).
 REPO=$(make_repo)
-assert_deny "$H_TRUSTED" "$(payload tool_name=Write hook_event_name=PreToolUse file_path="$REPO/tests/e2e/docs/journey-map.md" content='no sentinel here' cwd="$REPO")" "G5 — Write to journey-map.md → DENY (clears Stop-deny signal)" "Harness-trusted state file"
+printf '<!-- journey-mapping:generated -->\n# Journey Map\n' > "$REPO/tests/e2e/docs/journey-map.md"
+assert_deny "$H_TRUSTED" "$(payload tool_name=Write hook_event_name=PreToolUse file_path="$REPO/tests/e2e/docs/journey-map.md" content='no sentinel here' cwd="$REPO")" "G5 — Write to existing-sentinel journey-map.md → DENY" "Harness-trusted state file"
 rm -rf "$REPO"
 
 REPO=$(make_repo)
-assert_deny "$H_TRUSTED" "$(payload tool_name=Write hook_event_name=PreToolUse file_path="$REPO/tests/e2e/docs/coverage-expansion-state.json" content='{"status":"complete"}' cwd="$REPO")" "G5 — Write to coverage-expansion-state.json → DENY (clears Stop-deny signal)" "Harness-trusted state file"
+echo '{"status":"complete","journeyRoster":["j-a"]}' > "$REPO/tests/e2e/docs/coverage-expansion-state.json"
+assert_deny "$H_TRUSTED" "$(payload tool_name=Write hook_event_name=PreToolUse file_path="$REPO/tests/e2e/docs/coverage-expansion-state.json" content='{"status":"complete"}' cwd="$REPO")" "G5 — Write to existing-state coverage-expansion-state.json → DENY" "Harness-trusted state file"
 rm -rf "$REPO"
 
 REPO=$(make_repo)
+printf '<!-- journey-mapping:generated -->\n# Journey Map\n' > "$REPO/tests/e2e/docs/journey-map.md"
 # The guard reads .tool_input.file_path, so an Edit payload with just
 # the file_path is sufficient to exercise the protection (the
 # old_string/new_string fields are not consulted by this guard).
-assert_deny "$H_TRUSTED" "$(payload tool_name=Edit hook_event_name=PreToolUse file_path="$REPO/tests/e2e/docs/journey-map.md" new_string='y' cwd="$REPO")" "G5 — Edit to journey-map.md → DENY" "Harness-trusted state file"
+assert_deny "$H_TRUSTED" "$(payload tool_name=Edit hook_event_name=PreToolUse file_path="$REPO/tests/e2e/docs/journey-map.md" new_string='y' cwd="$REPO")" "G5 — Edit to existing-sentinel journey-map.md → DENY" "Harness-trusted state file"
+rm -rf "$REPO"
+
+# Bootstrap exemption — Phase 2 / Phase 5 creating these files for the
+# first time MUST succeed. The protection only engages once the
+# sentinel is in place.
+REPO=$(make_repo)
+assert_allow "$H_TRUSTED" "$(payload tool_name=Write hook_event_name=PreToolUse file_path="$REPO/tests/e2e/docs/journey-map.md" content='<!-- journey-mapping:generated -->\n# Initial map' cwd="$REPO")" "G5 bootstrap — Write to absent journey-map.md → ALLOW (bootstrap)"
+rm -rf "$REPO"
+
+REPO=$(make_repo)
+# File exists but has no sentinel — still bootstrap.
+echo 'draft, no sentinel yet' > "$REPO/tests/e2e/docs/journey-map.md"
+assert_allow "$H_TRUSTED" "$(payload tool_name=Write hook_event_name=PreToolUse file_path="$REPO/tests/e2e/docs/journey-map.md" content='<!-- journey-mapping:generated -->\n# real map' cwd="$REPO")" "G5 bootstrap — Write to no-sentinel journey-map.md → ALLOW"
+rm -rf "$REPO"
+
+REPO=$(make_repo)
+assert_allow "$H_TRUSTED" "$(payload tool_name=Write hook_event_name=PreToolUse file_path="$REPO/tests/e2e/docs/coverage-expansion-state.json" content='{"status":"in-progress","journeyRoster":[]}' cwd="$REPO")" "G5 bootstrap — Write to absent coverage-state → ALLOW"
 rm -rf "$REPO"
 
 # Inverse: a non-protected file under tests/e2e/docs/ continues to be writable.

@@ -246,6 +246,43 @@ canonicalize_path() {
 # resolved paths (macOS /tmp → /private/tmp, /var → /private/var, etc.) —
 # the agent may pass an unresolved absolute path while git/realpath returns
 # the resolved form, so byte-for-byte equality misses.
+# Bootstrap exemption — some protected paths must be writable on first
+# creation (Phase 2 produces journey-map.md, Phase 5 produces
+# coverage-expansion-state.json). The protection's purpose is to prevent
+# the agent from CLEARING / FORGING an existing sentinel-bearing file,
+# not from creating a fresh one. Per-path, define a "sentinel signal"
+# that, when ABSENT from the target file on disk, allows the write
+# through. Once the sentinel is present, the protection re-engages.
+#
+# IMPORTANT: this exemption is per-path-list, not global. The ledger
+# (onboarding-phase-ledger.json) is NEVER bootstrap-exempt — only the
+# harness layer creates it, never the agent.
+#
+# Returns 0 (allowed via bootstrap exemption) if the target's current
+# on-disk content lacks the sentinel for its protected-path entry.
+# Returns 1 otherwise (continue with normal protection).
+target_bootstrap_exempt() {
+  local target="$1"
+  case "$target" in
+    *"/tests/e2e/docs/journey-map.md"|"tests/e2e/docs/journey-map.md"|"./tests/e2e/docs/journey-map.md")
+      # Sentinel: line 1 must start with `<!-- journey-mapping:generated -->`.
+      # Bootstrap-exempt when the file does not yet exist OR lacks the sentinel.
+      if [ ! -f "$target" ] || ! grep -q '<!-- journey-mapping:generated -->' "$target" 2>/dev/null; then
+        return 0
+      fi
+      ;;
+    *"/tests/e2e/docs/coverage-expansion-state.json"|"tests/e2e/docs/coverage-expansion-state.json"|"./tests/e2e/docs/coverage-expansion-state.json")
+      # Sentinel: file must be valid JSON with at least a `status` or
+      # `journeyRoster` key. Empty / non-existent / placeholder content
+      # bootstraps through.
+      if [ ! -f "$target" ] || ! "$JQ" -e 'has("status") or has("journeyRoster")' "$target" >/dev/null 2>&1; then
+        return 0
+      fi
+      ;;
+  esac
+  return 1
+}
+
 is_protected_target() {
   local raw_target="$1"
   # H4 — canonicalize `..`-traversal before suffix-match.
@@ -253,11 +290,19 @@ is_protected_target() {
   target=$(canonicalize_path "$raw_target")
   for p in "${PROTECTED_PATHS[@]}"; do
     case "$target" in
-      "$p"|"./$p")        return 0 ;;     # repo-relative form
-      *"/$p")             return 0 ;;     # any absolute path ending in /<protected>
+      "$p"|"./$p")
+        # Round-2 G5 + bootstrap exemption: allow first-time creation of
+        # sentinel-bearing files (journey-map.md, coverage-expansion-state.json).
+        if target_bootstrap_exempt "$target"; then return 1; fi
+        return 0 ;;     # repo-relative form
+      *"/$p")
+        if target_bootstrap_exempt "$target"; then return 1; fi
+        return 0 ;;     # any absolute path ending in /<protected>
     esac
   done
-  # Glob-prefix matches (F2 — /tmp counter family).
+  # Glob-prefix matches (F2 — /tmp counter family) — NO bootstrap exemption.
+  # The /tmp/civitas-onboarding-stop-deny-* counter is harness-owned and
+  # the agent never has legit reason to create it.
   for prefix in "${PROTECTED_PATH_PREFIXES[@]}"; do
     case "$target" in
       "${prefix}"*)        return 0 ;;
