@@ -165,6 +165,16 @@ const HOOK_MANIFEST = [
   // ln -s, dd of=). Out-of-band escape: HARNESS_TRUSTED_WRITE_GUARD=off.
   { file: 'harness-trusted-state-write-guard.sh', event: 'PreToolUse', matcher: 'Write|Edit|MultiEdit', timeout: 10 },
   { file: 'harness-trusted-state-write-guard.sh', event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
+  // bash-command-allowlist — sandbox the agent's Bash tool to a verb
+  // allowlist. BookHive Run-5 rounds 3-6 closed 22 specific bash exploit
+  // shapes (quoted redirects, FD-numbered redirects, process substitution,
+  // script-source bodies, hardlinks, $() inside commit messages, etc.).
+  // The structural cause is bash being Turing-complete — no regex set
+  // enumerates every exfil shape. This hook inverts the denylist: only
+  // allowlisted verbs (npm/npx/git/gh/playwright/ls/cat/...) are accepted;
+  // everything else denied. Runs alongside trusted-state-write-guard as
+  // defense-in-depth. Out-of-band escape: CIVITAS_BASH_ALLOWLIST=off.
+  { file: 'bash-command-allowlist.sh',            event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
 
   // PostToolUse — observers (record + warn)
   { file: 'suite-gate-ratchet.sh',                event: 'PostToolUse', matcher: 'Bash',       timeout: 10 },
