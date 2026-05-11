@@ -83,12 +83,84 @@ CMD=$(echo "$INPUT" | "$JQ" -r '.tool_input.command // ""')
 [ -z "$CMD" ] && exit 0
 
 # Allowlist of verbs.
-ALLOWED_VERBS_RE='^(npm|npx|bunx|pnpm|yarn|bun|playwright|git|gh|ls|cat|head|tail|wc|grep|egrep|fgrep|find|file|stat|du|df|tree|which|whereis|command|type|pwd|basename|dirname|realpath|readlink|echo|printf|sort|uniq|date|whoami|id|hostname|uname|env|true|false|test|\[|ps|jq|awk|sed|curl|wget|mkdir|touch|rm|cp|mv|ln|chmod|cd|pushd|popd|node|python|python3)$'
+# Round-7 L2: `command` removed from allowlist (it's a builtin-runner — `command bash -c evil` bypasses).
+# Use `which` or `type` for command introspection.
+ALLOWED_VERBS_RE='^(npm|npx|bunx|pnpm|yarn|bun|playwright|git|gh|ls|cat|head|tail|wc|grep|egrep|fgrep|find|file|stat|du|df|tree|which|whereis|type|pwd|basename|dirname|realpath|readlink|echo|printf|sort|uniq|date|whoami|id|hostname|uname|env|true|false|test|\[|ps|jq|awk|sed|curl|wget|mkdir|touch|rm|cp|mv|ln|chmod|cd|pushd|popd|node|python|python3)$'
+
+# Round-7 L4 — whole-command-level denylist: $() and backticks ARE
+# arbitrary code execution. The awk splitter doesn't track them; rather
+# than trying to, ban them outright. Legitimate use-cases (capturing
+# output) can use temp files or pipes through allowlisted commands.
+whole_cmd_denied() {
+  local cmd="$1"
+  # Command substitution `$(...)` — runs arbitrary code, output captured.
+  if echo "$cmd" | grep -qE '\$\('; then
+    echo "command substitution \$(...) not allowed (arbitrary code execution); use temp files + pipes via allowlisted verbs"
+    return 0
+  fi
+  # Backtick command substitution — same as `$()` but older syntax.
+  if echo "$cmd" | grep -q '`'; then
+    echo "backtick command substitution not allowed (arbitrary code execution); use temp files + pipes"
+    return 0
+  fi
+  # Process substitution `<(...)` and `>(...)` — also runs arbitrary
+  # code, though limited to one-shot read/write. Trusted-state-write-guard
+  # closed `>(...)` for protected paths (round-4 I3); ban the construct
+  # entirely here for the sandbox.
+  if echo "$cmd" | grep -qE '[<>]\('; then
+    echo "process substitution <(...) / >(...) not allowed; use named pipes or temp files"
+    return 0
+  fi
+  return 1
+}
 
 # Flag-level denylist by verb (regex against the full command segment).
 # These shapes were closed in rounds 3-6 but are easier to ban entirely.
 flag_denied() {
   local seg="$1"
+  # Round-7 L1 — `git config alias.X '!...'` runs the alias body through
+  # $SHELL, giving an unrestricted shell. Also reject `git -c alias.X=!...`
+  # one-shot variants and the trio of `core.sshCommand`/`core.editor`/
+  # `core.pager` which all execute shell.
+  if echo "$seg" | grep -qE 'git[[:space:]]+(-c[[:space:]]+[^[:space:]]+[[:space:]]+)*config[[:space:]]+([^|;&]+[[:space:]]+)*alias\.[^[:space:]]+[[:space:]]+["'"'"']?!'; then
+    echo "git alias with '!' prefix (shell-alias) not allowed; aliases must not invoke shell"
+    return 0
+  fi
+  if echo "$seg" | grep -qE 'git[[:space:]]+-c[[:space:]]+(alias\.[^=]+=!|core\.(sshCommand|editor|pager|hooksPath)=)'; then
+    echo "git -c with alias/core.sshCommand/core.editor/core.pager (shell-execution config) not allowed"
+    return 0
+  fi
+  # Round-7 L3 — `env <prog>` runs <prog> as a program. Restrict env to
+  # introspection-only (no positional command). Allowed: `env`, `env | grep
+  # X`, `env VAR=value` (no command after), `env -i`. Denied: `env <verb>`
+  # where <verb> is anything not VAR=value or a flag.
+  # Regex: env, optionally followed by flag-OR-assignment groups, then a
+  # required positional that looks like a program name (starts alpha/./_,
+  # contains no `=`). Positional starting with `-` is excluded so flags
+  # don't false-positive.
+  if echo "$seg" | grep -qE '(^|[[:space:];&|])env([[:space:]]+(-[a-zA-Z0-9]+|[A-Z_][A-Z0-9_]*=[^[:space:]]*))*[[:space:]]+[a-zA-Z./_][^=[:space:]]*([[:space:]]|$)'; then
+    echo "env invoking a program (env <prog>) not allowed; use the program directly via an allowlisted verb"
+    return 0
+  fi
+  # Round-7 L5 — `npx <url>` and `npm install <url|file>` download and
+  # execute arbitrary code. Restrict to registry package specs (bare
+  # names + optional version). Same for pnpm/yarn/bun.
+  if echo "$seg" | grep -qE '(^|[[:space:];&|])(npx|pnpm[[:space:]]+dlx|yarn[[:space:]]+dlx|bunx)[[:space:]]+(-[a-zA-Z][[:space:]]+|--[a-zA-Z-]+([[:space:]]+|=)[^[:space:]]+[[:space:]]+)*((https?:|file:|git\+|/|\./|\.\.\/))'; then
+    echo "npx/pnpm dlx with URL/path arg not allowed (downloads + executes arbitrary code); use registry package specs only"
+    return 0
+  fi
+  if echo "$seg" | grep -qE '(^|[[:space:];&|])(npm|pnpm|yarn|bun)[[:space:]]+(install|i|add)[[:space:]]+(-[a-zA-Z][[:space:]]+|--[a-zA-Z-]+([[:space:]]+|=)[^[:space:]]+[[:space:]]+)*((https?:|file:|git\+|/|\./|\.\.\/))'; then
+    echo "npm/pnpm/yarn install with URL/path arg not allowed; use registry package specs only"
+    return 0
+  fi
+  # Round-7 L6 — find -exec / -delete / -execdir / -fprint{,f} / -fls
+  # are arbitrary-action find primitives. The find verb itself is in the
+  # allowlist (legitimate read-only use is essential) but these flags
+  # must be denied.
+  if echo "$seg" | grep -qE '(^|[[:space:];&|])find[[:space:]]+[^|;&]*(-exec(dir)?|-delete|-fprint(f)?|-fls)([[:space:]]|$)'; then
+    echo "find -exec / -delete / -execdir / -fprint(f) / -fls not allowed; use allowlisted verbs instead"
+    return 0
+  fi
   # Interpreter -e/-c/-p eval shapes — closed in round-3 H7 but the
   # script-source scanner had to introspect script bodies. Easier to
   # deny inline eval entirely.
@@ -123,6 +195,28 @@ emit_deny() {
   }'
 }
 
+# Whole-command checks first — $() and backticks are arbitrary code
+# execution that the per-segment splitter would miss (the splitter only
+# tracks quotes; substitution is invisible to it). Reject these forms
+# outright before per-segment analysis.
+if reason=$(whole_cmd_denied "$CMD"); then
+  emit_deny "[BLOCKED] Bash command outside allowlist sandbox.
+
+The command contains a construct that bypasses sandbox analysis:
+
+  ${reason}
+
+These constructs evaluate arbitrary code in a way the per-segment
+allowlist cannot see. The fix is to restructure the command:
+  - For output capture: write to a temp file with an allowlisted verb,
+    then read it back.
+  - For conditional logic: use multiple Bash invocations, not one
+    chained command.
+
+(Round-7 L4 — \$() and backticks were the worst sandbox bypass class.)"
+  exit 0
+fi
+
 # Per-segment awk splitter (mirrors harness-trusted-state-write-guard's I1
 # splitter — respects single/double quotes, splits on &&/||/;/|/&).
 segments_lines=$(printf '%s' "$CMD" | awk '
@@ -156,10 +250,14 @@ while IFS= read -r seg; do
     seg="${seg#"${seg%%[![:space:]]*}"}"
   done
   # Strip leading env-var assignments (VAR=value pattern at the start).
-  # These are allowed (e.g., `CI=true npm test`). The verb is what follows.
-  while [[ "$seg" =~ ^[A-Za-z_][A-Za-z0-9_]*=([^[:space:]]*)?[[:space:]] ]]; do
+  # Round-7 L7: cap at THREE assignments. Unbounded chaining served no
+  # legit purpose and risked interaction with the (denied) `env <prog>`
+  # case. Three covers the common `KEY=val FLAG=1 OTHER=2 verb …` shape.
+  assigns=0
+  while [[ "$seg" =~ ^[A-Za-z_][A-Za-z0-9_]*=([^[:space:]]*)?[[:space:]] ]] && [ "$assigns" -lt 3 ]; do
     seg="${seg#${BASH_REMATCH[0]}}"
     seg="${seg#"${seg%%[![:space:]]*}"}"
+    assigns=$((assigns + 1))
   done
   # Extract first token (the verb).
   verb=$(echo "$seg" | awk '{print $1}')
