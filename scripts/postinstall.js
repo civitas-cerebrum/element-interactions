@@ -15,7 +15,11 @@ const skillsDir   = path.join(packageDir, 'skills');
 const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
 
 // Skip when running in the package's own repo (local dev `npm install`).
-if (!packageDir.includes('node_modules')) {
+// The guard only fires when this file is executed directly via `node
+// scripts/postinstall.js`. When require()'d (e.g. by scripts/sync-hooks.js
+// for an in-repo dev sync), the guard is bypassed and the installers are
+// exposed via module.exports for callers to invoke selectively.
+if (require.main === module && !packageDir.includes('node_modules')) {
   process.exit(0);
 }
 
@@ -57,28 +61,26 @@ function copyDirRecursive(src, dest) {
   }
 }
 
-const skills = discoverSkills(skillsDir);
-
-try {
-  const installedSkills = new Set();
-
-  for (const skillsDestBase of destinations) {
-    for (const skill of skills) {
-      const srcDir = path.join(skillsDir, skill);
-      const destDir = path.join(skillsDestBase, skill);
-
-      copyDirRecursive(srcDir, destDir);
-      installedSkills.add(skill);
+function installCivitasSkills() {
+  const skills = discoverSkills(skillsDir);
+  try {
+    const installedSkills = new Set();
+    for (const skillsDestBase of destinations) {
+      for (const skill of skills) {
+        const srcDir = path.join(skillsDir, skill);
+        const destDir = path.join(skillsDestBase, skill);
+        copyDirRecursive(srcDir, destDir);
+        installedSkills.add(skill);
+      }
     }
+    if (installedSkills.size > 0) {
+      console.log(`[@civitas-cerebrum/element-interactions] ✔ ${installedSkills.size} skill${installedSkills.size > 1 ? 's' : ''} installed to ${destinations.length} locations — restart Claude Code to pick it up.`);
+    } else {
+      console.warn('[@civitas-cerebrum/element-interactions] Skill files not found, skipping.');
+    }
+  } catch (err) {
+    console.warn(`[@civitas-cerebrum/element-interactions] Could not install Claude Code skill: ${err.message}`);
   }
-
-  if (installedSkills.size > 0) {
-    console.log(`[@civitas-cerebrum/element-interactions] ✔ ${installedSkills.size} skill${installedSkills.size > 1 ? 's' : ''} installed to ${destinations.length} locations — restart Claude Code to pick it up.`);
-  } else {
-    console.warn('[@civitas-cerebrum/element-interactions] Skill files not found, skipping.');
-  }
-} catch (err) {
-  console.warn(`[@civitas-cerebrum/element-interactions] Could not install Claude Code skill: ${err.message}`);
 }
 
 // Install the @civitas-cerebrum/element-interactions harness hooks into the
@@ -102,62 +104,27 @@ try {
 //
 // Opt-out: set CIVITAS_SKIP_HOOK_INSTALL=1 — useful for enterprise managed
 // settings where postinstall scripts must not modify ~/.claude/settings.json.
-const MCP_PLAYWRIGHT_BROWSER_TOOLS = [
-  'mcp__plugin_playwright_playwright__browser_click',
-  'mcp__plugin_playwright_playwright__browser_close',
-  'mcp__plugin_playwright_playwright__browser_console_messages',
-  'mcp__plugin_playwright_playwright__browser_drag',
-  'mcp__plugin_playwright_playwright__browser_drop',
-  'mcp__plugin_playwright_playwright__browser_evaluate',
-  'mcp__plugin_playwright_playwright__browser_file_upload',
-  'mcp__plugin_playwright_playwright__browser_fill_form',
-  'mcp__plugin_playwright_playwright__browser_handle_dialog',
-  'mcp__plugin_playwright_playwright__browser_hover',
-  'mcp__plugin_playwright_playwright__browser_navigate',
-  'mcp__plugin_playwright_playwright__browser_navigate_back',
-  'mcp__plugin_playwright_playwright__browser_network_request',
-  'mcp__plugin_playwright_playwright__browser_network_requests',
-  'mcp__plugin_playwright_playwright__browser_press_key',
-  'mcp__plugin_playwright_playwright__browser_resize',
-  'mcp__plugin_playwright_playwright__browser_run_code_unsafe',
-  'mcp__plugin_playwright_playwright__browser_select_option',
-  'mcp__plugin_playwright_playwright__browser_snapshot',
-  'mcp__plugin_playwright_playwright__browser_tabs',
-  'mcp__plugin_playwright_playwright__browser_take_screenshot',
-  'mcp__plugin_playwright_playwright__browser_type',
-  'mcp__plugin_playwright_playwright__browser_wait_for',
-].join('|');
-
+// The orchestrator-era hook surface (cascade-routing, phase-validator
+// dispatch, onboarding-stop deny, parent-only orchestrator block, etc.)
+// was retired when @civitas-cerebrum/achilles took ownership of the
+// autonomous onboarding pipeline. Achilles is a deterministic JS driver
+// that spawns per-role `claude -p` children with narrow allowlists — the
+// per-phase progression guards are no longer needed inside element-interactions.
+//
+// Survivors below are role-agnostic defense-in-depth: bash sandbox,
+// commit-message + attribution gates, playwright-cli isolation + cleanup,
+// trusted-state write guard, test-data discipline, version-bump
+// authorisation, subagent-return schema, and playwright-config defaults.
 const HOOK_MANIFEST = [
   // PreToolUse — guards (fail-closed)
-  { file: 'coverage-expansion-dispatch-guard.sh', event: 'PreToolUse', matcher: 'Agent',       timeout: 10 },
-  { file: 'parent-only-orchestrator-dispatch-block.sh', event: 'PreToolUse', matcher: 'Agent', timeout: 10 },
-  { file: 'phase-validator-dispatch-required.sh', event: 'PreToolUse', matcher: 'Agent',       timeout: 10 },
   { file: 'playwright-cli-isolation-guard.sh',    event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
-  { file: 'coverage-expansion-orchestrator-cli-block.sh', event: 'PreToolUse', matcher: 'Bash', timeout: 10 },
   { file: 'commit-message-gate.sh',               event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'commit-attribution-gate.sh',           event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
-  { file: 'version-bump-against-npm-guard.sh',    event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'version-bump-authorisation-guard.sh',  event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'commit-author-signature-guard.sh',     event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
-  { file: 'suite-gate-ratchet.sh',                event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
-  { file: 'journey-map-sentinel-guard.sh',        event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
-  { file: 'coverage-state-schema-guard.sh',       event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
-  { file: 'coverage-state-deferral-auth-guard.sh', event: 'PreToolUse', matcher: 'Write|Edit', timeout: 10 },
   { file: 'playwright-config-defaults-guard.sh',  event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
-  { file: 'failure-diagnosis-stage0-preread-guard.sh', event: 'PreToolUse', matcher: 'Write|Edit', timeout: 10 },
-  { file: 'contributing-skill-preread-guard.sh',  event: 'PreToolUse', matcher: 'Write|Edit|MultiEdit', timeout: 10 },
   { file: 'test-data-discipline-guard.sh',        event: 'PreToolUse', matcher: 'Write|Edit|MultiEdit', timeout: 10 },
-  { file: 'mcp-browser-tool-redirect.sh',         event: 'PreToolUse', matcher: MCP_PLAYWRIGHT_BROWSER_TOOLS, timeout: 10 },
-  { file: 'skill-subagent-only-guard.sh',         event: 'PreToolUse', matcher: 'Skill',       timeout: 10 },
-  { file: 'using-superpowers-carveout-guard.sh',  event: 'PreToolUse', matcher: 'Skill',       timeout: 10 },
-  { file: 'happy-path-discovery-draft-required.sh', event: 'PreToolUse', matcher: 'Agent',     timeout: 10 },
-  { file: 'journey-mapping-cycle-gate.sh',        event: 'PreToolUse', matcher: 'Agent',       timeout: 10 },
-  { file: 'phase4-concurrency-log-format.sh',     event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
-  { file: 'phase4-concurrency-log-format.sh',     event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
-  { file: 'benchmark-write-guard.sh',             event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
-  { file: 'onboarding-report-write-guard.sh',     event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
-  // harness-trusted-state-write-guard — closes the BookHive Run-4 self-authorisation
+  // harness-trusted-state-write-guard — closes the Run-4 self-authorisation
   // exploit chain (self-authored stop sentinel + self-written phase-validator ledger).
   // Denies agent writes to .claude/onboarding-stop-authorized,
   // tests/e2e/docs/.onboarding-stop-authorized, and tests/e2e/docs/onboarding-phase-ledger.json
@@ -166,7 +133,7 @@ const HOOK_MANIFEST = [
   { file: 'harness-trusted-state-write-guard.sh', event: 'PreToolUse', matcher: 'Write|Edit|MultiEdit', timeout: 10 },
   { file: 'harness-trusted-state-write-guard.sh', event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   // bash-command-allowlist — sandbox the agent's Bash tool to a verb
-  // allowlist. BookHive Run-5 rounds 3-6 closed 22 specific bash exploit
+  // allowlist. Run-5 rounds 3-6 closed 22 specific bash exploit
   // shapes (quoted redirects, FD-numbered redirects, process substitution,
   // script-source bodies, hardlinks, $() inside commit messages, etc.).
   // The structural cause is bash being Turing-complete — no regex set
@@ -177,21 +144,10 @@ const HOOK_MANIFEST = [
   { file: 'bash-command-allowlist.sh',            event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
 
   // PostToolUse — observers (record + warn)
-  { file: 'suite-gate-ratchet.sh',                event: 'PostToolUse', matcher: 'Bash',       timeout: 10 },
-  { file: 'task-update-phase-ledger-audit.sh',    event: 'PostToolUse', matcher: 'TodoWrite|TaskUpdate|TaskCreate|Task', timeout: 10 },
-  { file: 'raw-playwright-api-warning.sh',        event: 'PostToolUse', matcher: 'Write|Edit', timeout: 10 },
   { file: 'subagent-return-schema-guard.sh',      event: 'PostToolUse', matcher: 'Agent',      timeout: 10 },
-  { file: 'coverage-expansion-direct-compose-block.sh', event: 'PostToolUse', matcher: 'Write|Edit', timeout: 10 },
-  { file: 'phase-validator-dispatch-required.sh', event: 'PostToolUse', matcher: 'Agent',      timeout: 10 },
-  { file: 'happy-path-discovery-draft-required.sh', event: 'PostToolUse', matcher: 'Agent',    timeout: 10 },
-  { file: 'journey-mapping-cycle-gate.sh',        event: 'PostToolUse', matcher: 'Agent',      timeout: 10 },
 
-  // SubagentStop — enforcement (must run synchronously) + cleanup (async)
-  { file: 'subagent-spillover-rewrite-gate.sh',   event: 'SubagentStop', matcher: null,        timeout: 10 },
+  // SubagentStop — cleanup (async)
   { file: 'playwright-cli-cleanup-on-stop.sh',    event: 'SubagentStop', matcher: null,        timeout: 30, async: true },
-
-  // Stop — main-agent stop guards
-  { file: 'onboarding-pipeline-incomplete-stop-deny.sh', event: 'Stop',  matcher: null,        timeout: 10 },
 ];
 
 function copyHookFile(hookSrc, hookDest) {
@@ -482,24 +438,43 @@ function installChromium() {
   }
 }
 
-(async () => {
-  try {
-    await installBundledJq();
-  } catch (err) {
-    console.warn(`[civitas-cerebrum] Could not install bundled jq: ${err.message}`);
-    process.exitCode = 1;
-  }
+// Expose installers so scripts/sync-hooks.js (and any future dev tooling)
+// can run a subset without re-invoking the full postinstall flow.
+module.exports = {
+  installCivitasSkills,
+  installCivitasHooks,
+  installBundledJq,
+  installChromium,
+};
 
-  try {
-    installCivitasHooks();
-  } catch (err) {
-    console.warn(`[civitas-cerebrum] Could not install harness hooks: ${err.message}`);
-  }
+// Full postinstall runs only when this file is invoked directly. When
+// require()'d, the caller picks which installers to run.
+if (require.main === module) {
+  (async () => {
+    try {
+      installCivitasSkills();
+    } catch (err) {
+      console.warn(`[@civitas-cerebrum/element-interactions] Could not install skills: ${err.message}`);
+    }
 
-  try {
-    installChromium();
-  } catch (err) {
-    console.warn(`[@civitas-cerebrum/element-interactions] Could not install chromium: ${err.message}`);
-    process.exitCode = 1;
-  }
-})();
+    try {
+      await installBundledJq();
+    } catch (err) {
+      console.warn(`[civitas-cerebrum] Could not install bundled jq: ${err.message}`);
+      process.exitCode = 1;
+    }
+
+    try {
+      installCivitasHooks();
+    } catch (err) {
+      console.warn(`[civitas-cerebrum] Could not install harness hooks: ${err.message}`);
+    }
+
+    try {
+      installChromium();
+    } catch (err) {
+      console.warn(`[@civitas-cerebrum/element-interactions] Could not install chromium: ${err.message}`);
+      process.exitCode = 1;
+    }
+  })();
+}
