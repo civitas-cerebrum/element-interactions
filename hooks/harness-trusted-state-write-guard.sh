@@ -9,7 +9,7 @@
 #
 # What it closes
 # --------------
-# Surfaced in BookHive Run-4 follow-up review. Two-step exploit chain:
+# Surfaced in Run-4 follow-up review. Two-step exploit chain:
 #
 #   Exploit 1 — self-authored stop-authorization sentinel:
 #     `onboarding-pipeline-incomplete-stop-deny.sh` honors
@@ -77,12 +77,24 @@ PROTECTED_PATHS=(
   ".claude/onboarding-stop-authorized"
   "tests/e2e/docs/.onboarding-stop-authorized"
   "tests/e2e/docs/onboarding-phase-ledger.json"
-  # BookHive Run-5 round-2 finding G5 — Stop-deny reads journey-map.md
+  # Run-5 round-2 finding G5 — Stop-deny reads journey-map.md
   # sentinel and coverage-expansion-state.json status as authoritative
   # mid-pipeline signals. Without protection, the agent could clear
   # both via direct Write/Edit and pass the Stop-deny gate.
-  "tests/e2e/docs/journey-map.md"
-  "tests/e2e/docs/coverage-expansion-state.json"
+  # Removed 2026-05-11 — 0.3.6 BookHive benchmark Phase-4 author dispatch was
+  # hard-blocked here. journey-map.md is rewritten in place by
+  # phase4-prioritise-author per journey-mapping SKILL.md §"Author step";
+  # coverage-expansion-state.json is written by composer/reviewer/cleanup
+  # subagents per coverage-expansion SKILL.md. The G5 threat model
+  # (Stop-deny reads journey-map sentinel as authoritative mid-pipeline
+  # signal) is still covered by journey-map-sentinel-guard.sh which
+  # enforces line-1 sentinel preservation on every write — a sentinel-
+  # stripping forge remains impossible without disabling that separate
+  # hook too. Follow-up: add a role-prefix exemption (phase4-prioritise-
+  # author + composer-*/reviewer-*/probe-*/cleanup-*) so these paths can
+  # be re-protected against drive-by writes from other roles.
+  # "tests/e2e/docs/journey-map.md"
+  # "tests/e2e/docs/coverage-expansion-state.json"
 )
 # Note (round-4 I5/I8): we deliberately do NOT add app-context.md /
 # adversarial-findings.md / onboarding-report.md to PROTECTED_PATHS
@@ -149,7 +161,7 @@ Each was designed to be written EITHER by:
 
 The agent is NOT either of those. An agent-written sentinel or ledger
 entry is forgery — the agent masquerades as out-of-band authorisation
-it does not have. BookHive Run-4 surfaced this exact chain: the agent
+it does not have. Run-4 surfaced this exact chain: the agent
 self-authored the stop sentinel after the legitimate stop-deny hook
 fired, and self-wrote the phase-validator ledger when the PostToolUse
 extractor failed (Run-4 F1). Both unauthorised; both contract violations.
@@ -194,7 +206,6 @@ References:
   skills/onboarding/references/phase-validator-workflow.md §"6 Mechanical enforcement"
   hooks/onboarding-pipeline-incomplete-stop-deny.sh
   hooks/phase-validator-dispatch-required.sh
-  hooks/coverage-state-deferral-auth-guard.sh   (sibling — covers the silent-narrowing class)
 EOF
 }
 
@@ -222,7 +233,7 @@ REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || echo "$CWD")
 # Loops until no further reductions are possible (with a hard cap to
 # prevent runaway iteration on pathological input).
 #
-# BookHive Run-5 round-3 finding H4: `tests/e2e/docs/../docs/onboarding-
+# Run-5 round-3 finding H4: `tests/e2e/docs/../docs/onboarding-
 # phase-ledger.json` resolves to the protected path but does not match
 # byte-for-byte against the literal entries in PROTECTED_PATHS.
 canonicalize_path() {
@@ -334,7 +345,7 @@ is_commit_or_message_command() {
   # `git -c gpg.sign=false commit`, and similar flag-stuffing forms still
   # match. The original literal-glob version `*"git commit"*` failed on
   # `git -c commit.gpgsign=false commit` because the substring `git commit`
-  # is broken up by the -c arg. (BookHive Run-5 round-2 follow-up.)
+  # is broken up by the -c arg. (Run-5 round-2 follow-up.)
   if echo "$cmd" | grep -qE '(^|[[:space:];&|(])git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'; then
     return 0
   fi
