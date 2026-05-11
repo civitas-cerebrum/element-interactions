@@ -49,13 +49,22 @@
 
 set -euo pipefail
 
+# Resolve jq: prefer the binary bundled with the hook install, fall back to
+# system jq for in-repo testing before postinstall has run.
+JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
+[ -x "$JQ" ] || JQ="$(command -v jq || true)"
+if [ -z "$JQ" ]; then
+  echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: jq not found at \$HOOK_DIR/bin/jq nor on PATH. Reinstall the package or install jq manually." >&2
+  exit 1
+fi
+
 # Manual escape hatch.
 if [ "${FD_STAGE0_GUARD:-on}" = "off" ]; then
   exit 0
 fi
 
 emit_deny() {
-  jq -n --arg r "$1" '{
+  "$JQ" -n --arg r "$1" '{
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
       "permissionDecision": "deny",
@@ -101,19 +110,19 @@ EOF
 
 # --- input ---
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
+TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
 
 case "$TOOL_NAME" in
   Edit|Write) ;;
   *) exit 0 ;;
 esac
 
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""')
+FILE_PATH=$(echo "$INPUT" | "$JQ" -r '.tool_input.file_path // ""')
 [ -z "$FILE_PATH" ] && exit 0
 
-CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")
 REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || echo "$CWD")
-TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // ""' 2>/dev/null || echo "")
+TRANSCRIPT_PATH=$(echo "$INPUT" | "$JQ" -r '.transcript_path // ""' 2>/dev/null || echo "")
 
 # --- target classification --------------------------------------------------
 # Decide whether this edit belongs to the failure-diagnosis surface.
@@ -129,9 +138,9 @@ fi
 # Bug-report .md files: detected by content containing "Application Bug Report".
 if [ -z "$TARGET_KIND" ] && echo "$FILE_PATH" | grep -qE '\.md$'; then
   if [ "$TOOL_NAME" = "Write" ]; then
-    CONTENT=$(echo "$INPUT" | jq -r '.tool_input.content // ""')
+    CONTENT=$(echo "$INPUT" | "$JQ" -r '.tool_input.content // ""')
   else
-    CONTENT=$(echo "$INPUT" | jq -r '.tool_input.new_string // ""')
+    CONTENT=$(echo "$INPUT" | "$JQ" -r '.tool_input.new_string // ""')
   fi
   if echo "$CONTENT" | grep -qF "Application Bug Report"; then
     TARGET_KIND="bug-report"

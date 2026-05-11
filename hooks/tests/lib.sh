@@ -7,6 +7,15 @@
 
 set -uo pipefail   # not -e — individual cases are allowed to fail without aborting the runner
 
+# Resolve jq: prefer the binary bundled with the hook install, fall back to
+# system jq for in-repo testing before postinstall has run.
+JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
+[ -x "$JQ" ] || JQ="$(command -v jq || true)"
+if [ -z "$JQ" ]; then
+  echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: jq not found at \$HOOK_DIR/bin/jq nor on PATH. Reinstall the package or install jq manually." >&2
+  exit 1
+fi
+
 # Colour helpers (no-op if NO_COLOR is set or stdout is not a terminal).
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
   CLR_PASS=$'\033[32m'
@@ -61,7 +70,7 @@ assert_deny() {
   TESTS_RUN=$((TESTS_RUN + 1))
   run_hook "$hook" "$stdin"
   local decision
-  decision=$(echo "$HOOK_OUT" | jq -r '.hookSpecificOutput.permissionDecision // empty' 2>/dev/null)
+  decision=$(echo "$HOOK_OUT" | "$JQ" -r '.hookSpecificOutput.permissionDecision // empty' 2>/dev/null)
   if [ "$decision" != "deny" ]; then
     TESTS_FAILED=$((TESTS_FAILED + 1))
     FAIL_DETAILS+=("${name}: expected deny, got decision='${decision}' output=${HOOK_OUT:0:200}")
@@ -70,7 +79,7 @@ assert_deny() {
   fi
   if [ -n "$reason_substr" ]; then
     local reason
-    reason=$(echo "$HOOK_OUT" | jq -r '.hookSpecificOutput.permissionDecisionReason // empty' 2>/dev/null)
+    reason=$(echo "$HOOK_OUT" | "$JQ" -r '.hookSpecificOutput.permissionDecisionReason // empty' 2>/dev/null)
     if ! echo "$reason" | grep -qF -- "$reason_substr"; then
       TESTS_FAILED=$((TESTS_FAILED + 1))
       FAIL_DETAILS+=("${name}: deny reason missing substring '${reason_substr}'. reason=${reason:0:200}")
@@ -87,7 +96,7 @@ assert_warn() {
   TESTS_RUN=$((TESTS_RUN + 1))
   run_hook "$hook" "$stdin"
   local has_msg
-  has_msg=$(echo "$HOOK_OUT" | jq -r 'has("systemMessage") // false' 2>/dev/null)
+  has_msg=$(echo "$HOOK_OUT" | "$JQ" -r 'has("systemMessage") // false' 2>/dev/null)
   if [ "$has_msg" != "true" ]; then
     TESTS_FAILED=$((TESTS_FAILED + 1))
     FAIL_DETAILS+=("${name}: expected systemMessage, got output=${HOOK_OUT:0:200}")
@@ -96,7 +105,7 @@ assert_warn() {
   fi
   if [ -n "$message_substr" ]; then
     local msg
-    msg=$(echo "$HOOK_OUT" | jq -r '.systemMessage' 2>/dev/null)
+    msg=$(echo "$HOOK_OUT" | "$JQ" -r '.systemMessage' 2>/dev/null)
     if ! echo "$msg" | grep -qF -- "$message_substr"; then
       TESTS_FAILED=$((TESTS_FAILED + 1))
       FAIL_DETAILS+=("${name}: warning message missing substring '${message_substr}'. msg=${msg:0:200}")
@@ -145,7 +154,7 @@ assert_stop_block() {
   TESTS_RUN=$((TESTS_RUN + 1))
   run_hook "$hook" "$stdin"
   local decision
-  decision=$(echo "$HOOK_OUT" | jq -r '.decision // empty' 2>/dev/null)
+  decision=$(echo "$HOOK_OUT" | "$JQ" -r '.decision // empty' 2>/dev/null)
   if [ "$decision" != "block" ]; then
     TESTS_FAILED=$((TESTS_FAILED + 1))
     FAIL_DETAILS+=("${name}: expected stop block, got decision='${decision}' output=${HOOK_OUT:0:200}")
@@ -154,7 +163,7 @@ assert_stop_block() {
   fi
   if [ -n "$reason_substr" ]; then
     local reason
-    reason=$(echo "$HOOK_OUT" | jq -r '.reason // empty' 2>/dev/null)
+    reason=$(echo "$HOOK_OUT" | "$JQ" -r '.reason // empty' 2>/dev/null)
     if ! echo "$reason" | grep -qF -- "$reason_substr"; then
       TESTS_FAILED=$((TESTS_FAILED + 1))
       FAIL_DETAILS+=("${name}: stop-block reason missing substring '${reason_substr}'. reason=${reason:0:200}")
@@ -174,8 +183,8 @@ section() {
 
 # Helper: build a JSON payload from inline kv args. Each kv is "key=value".
 # Recognised keys: tool_name, description, prompt, command, file_path,
-# content, new_string, response_text, exit_code, stdout, cwd,
-# hook_event_name. response_text becomes tool_response.output.
+# content, old_string, new_string, skill, args, response_text, exit_code,
+# stdout, cwd, hook_event_name. response_text becomes tool_response.output.
 payload() {
   local out='{}'
   for kv in "$@"; do
@@ -183,20 +192,20 @@ payload() {
     local v="${kv#*=}"
     case "$k" in
       tool_name)
-        out=$(printf '%s' "$out" | jq -c --arg v "$v" '. + {tool_name: $v}') ;;
-      description|prompt|command|file_path|content|old_string|new_string)
-        out=$(printf '%s' "$out" | jq -c --arg v "$v" --arg k "$k" '.tool_input = ((.tool_input // {}) + {($k): $v})') ;;
+        out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" '. + {tool_name: $v}') ;;
+      description|prompt|command|file_path|content|old_string|new_string|skill|args)
+        out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" --arg k "$k" '.tool_input = ((.tool_input // {}) + {($k): $v})') ;;
       response_text)
-        out=$(printf '%s' "$out" | jq -c --arg v "$v" '.tool_response = ((.tool_response // {}) + {output: $v})') ;;
+        out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" '.tool_response = ((.tool_response // {}) + {output: $v})') ;;
       exit_code|stdout)
         local field="exitCode"; [ "$k" = "stdout" ] && field="stdout"
-        out=$(printf '%s' "$out" | jq -c --arg v "$v" --arg f "$field" '.tool_response = ((.tool_response // {}) + {($f): $v})') ;;
+        out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" --arg f "$field" '.tool_response = ((.tool_response // {}) + {($f): $v})') ;;
       cwd)
-        out=$(printf '%s' "$out" | jq -c --arg v "$v" '. + {cwd: $v}') ;;
+        out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" '. + {cwd: $v}') ;;
       hook_event_name)
-        out=$(printf '%s' "$out" | jq -c --arg v "$v" '. + {hook_event_name: $v}') ;;
-      last_assistant_message|agent_id|agent_type|session_id|transcript_path)
-        out=$(printf '%s' "$out" | jq -c --arg v "$v" --arg k "$k" '. + {($k): $v}') ;;
+        out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" '. + {hook_event_name: $v}') ;;
+      last_assistant_message|agent_id|agent_type|session_id|transcript_path|parent_tool_use_id)
+        out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" --arg k "$k" '. + {($k): $v}') ;;
       *) echo "payload: unknown key $k" >&2; return 1 ;;
     esac
   done

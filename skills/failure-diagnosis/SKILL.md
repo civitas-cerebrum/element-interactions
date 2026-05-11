@@ -1,13 +1,29 @@
 ---
 name: failure-diagnosis
 description: >
+  **Subagent-only.** Do not load in the orchestrator's transcript — the
+  diagnostic methodology + niche-edge-cases catalogue is heavy enough that
+  inlining it contaminates orchestrator context. The orchestrator detects
+  a failure and dispatches a subagent; the subagent loads this skill. The
+  `skill-subagent-only-guard.sh` hook denies orchestrator-context invocations.
+
   Diagnose failing Playwright tests through structured evidence-based triage.
-  Triggers when a test fails during any mode (authoring, maintenance, test-composer, bug-discovery),
-  when the user says "test is failing", "debug this", "why is this failing", "fix this test",
+  Activates inside subagent context (composer-/probe-/process-validator-/
+  cleanup- prefixes) when a test fails during any mode (authoring,
+  maintenance, test-composer, bug-discovery), or when the dispatching brief
+  says "test is failing", "debug this", "why is this failing", "fix this test",
   or when another companion skill encounters a test failure.
-  Guides the agent through screenshot analysis, DOM inspection, root cause hypothesis,
-  then fixes test issues autonomously or reports app bugs with evidence.
-trigger: always
+  Guides the agent through screenshot analysis, DOM inspection, root cause
+  hypothesis, then fixes test issues autonomously or reports app bugs with
+  evidence.
+
+  Auto-invoked via Skill tool from element-interactions Rule 7 (after
+  the orchestrator dispatches the subagent), test-composer's stabilization
+  loop, bug-discovery's adversarial probes, test-repair's per-cluster
+  diagnosis, and any subagent that runs tests and observes a failure —
+  those callers explicitly route to this skill rather than relying on
+  always-load.
+subagent-only: true
 ---
 
 # Singularity — Failure Diagnosis
@@ -28,7 +44,7 @@ A structured diagnostic protocol for failing Playwright tests. Every failure get
 
 Before collecting evidence on the failing test, read what the project already documents. Skipping this stage is how confidently-wrong "app bug" classifications get published — you compare the screenshot against your recollection of the page instead of against what the project already specifies.
 
-**Harness-enforced by `hooks/failure-diagnosis-stage0-preread-guard.sh`** (PreToolUse:Edit|Write). When `playwright-report/` or a `test-results/error-context*.md` is present, edits to test source files, `tests/data/page-repository.json`, or any new "Application Bug Report" markdown are denied unless the agent has Read the project's documented context files (`tests/e2e/docs/app-context.md`, `test-scenarios.md`, `journey-map.md`) earlier in the session. The deny message points back here. Escape hatch for confirmed non-failure-diagnosis edits: set `FD_STAGE0_GUARD=off` in the environment for that invocation.
+**Harness backstop.** A `PreToolUse:Edit|Write` guardrail (`hooks/failure-diagnosis-stage0-preread-guard.sh`) blocks failure-diagnosis edits and bug-report writes that skip the documented context pre-read, preventing confidently-wrong "app bug" classifications. Escape hatch available — see the hook header for specifics. (See [harness-hooks.md](../element-interactions/references/harness-hooks.md).)
 
 1. **`tests/e2e/docs/app-context.md`** — page structures, intended modal lifecycles, `data-qa` selectors, known UI quirks (configuration-dependent option subsets, redirect-vs-popup auth patterns, vendor-aliased payment / shipping methods, async-loaded modal placeholders, documented degradation banners, etc.). Read the section for the page the test was on at the moment of failure. This is where the failing element's intended behaviour is documented.
 2. **`tests/e2e/docs/test-scenarios.md`** — the regression / scenario matrix. Confirms whether the failing scenario is even supposed to run on this configuration in the first place.

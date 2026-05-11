@@ -75,9 +75,18 @@
 
 set -euo pipefail
 
+# Resolve jq: prefer the binary bundled with the hook install, fall back to
+# system jq for in-repo testing before postinstall has run.
+JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
+[ -x "$JQ" ] || JQ="$(command -v jq || true)"
+if [ -z "$JQ" ]; then
+  echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: jq not found at \$HOOK_DIR/bin/jq nor on PATH. Reinstall the package or install jq manually." >&2
+  exit 1
+fi
+
 # --- helpers ---
 emit_deny() {
-  jq -n --arg r "$1" '{
+  "$JQ" -n --arg r "$1" '{
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
       "permissionDecision": "deny",
@@ -88,14 +97,14 @@ emit_deny() {
 
 # --- input ---
 INPUT=$(cat)
-EVENT_NAME=$(echo "$INPUT" | jq -r '.hook_event_name // ""')
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
+EVENT_NAME=$(echo "$INPUT" | "$JQ" -r '.hook_event_name // ""')
+TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
 [ "$TOOL_NAME" != "Agent" ] && exit 0
 
-DESCRIPTION=$(echo "$INPUT" | jq -r '.tool_input.description // ""')
+DESCRIPTION=$(echo "$INPUT" | "$JQ" -r '.tool_input.description // ""')
 
 # Resolve repo root for state-file location.
-CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")
 REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || echo "$CWD")
 LEDGER="$REPO_ROOT/tests/e2e/docs/onboarding-phase-ledger.json"
 
@@ -169,7 +178,7 @@ References:
   fi
 
   # Ledger exists — check Phase N-1 entry.
-  PRIOR_STATUS=$(jq -r --arg p "$PRIOR_PHASE" '.phases[$p].status // empty' "$LEDGER" 2>/dev/null || echo "")
+  PRIOR_STATUS=$("$JQ" -r --arg p "$PRIOR_PHASE" '.phases[$p].status // empty' "$LEDGER" 2>/dev/null || echo "")
 
   case "$PRIOR_STATUS" in
     greenlight) exit 0 ;;  # ALL GOOD — advance allowed
@@ -184,7 +193,7 @@ The phase-validator-${PRIOR_PHASE} reached the 10-cycle cap with unresolved find
 
 Surface back to the user with the unresolved findings list:
 
-  cat ${LEDGER} | jq '.phases[\"${PRIOR_PHASE}\"].\"unresolved-findings\"'
+  cat ${LEDGER} | "$JQ" '.phases[\"${PRIOR_PHASE}\"].\"unresolved-findings\"'
 
 Onboarding must report the stalled state — do NOT continue silently.
 
@@ -201,7 +210,7 @@ References:
       ;;
     *)
       # Status is in-progress, missing entirely, or unknown.
-      CYCLE=$(jq -r --arg p "$PRIOR_PHASE" '.phases[$p].cycle // 0' "$LEDGER" 2>/dev/null || echo 0)
+      CYCLE=$("$JQ" -r --arg p "$PRIOR_PHASE" '.phases[$p].cycle // 0' "$LEDGER" 2>/dev/null || echo 0)
       emit_deny "[BLOCKED] Phase ${ENTERING_PHASE} dispatch attempted before phase-validator-${PRIOR_PHASE} greenlight.
 
 ──────────────────────────────────────────────────────────────────
@@ -258,7 +267,7 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
   # Extract the response text using the same defensive pattern as
   # subagent-return-schema-guard.sh.
   RESPONSE=$(
-    echo "$INPUT" | jq -r '
+    echo "$INPUT" | "$JQ" -r '
       [
         (.tool_response.output? | if type == "array" then map(.text? // (. | tostring)) | join("\n") elif type == "string" then . else (. | tostring) end),
         (.tool_response.result? // empty | tostring),
@@ -282,21 +291,21 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
 
   # Read existing ledger (or initialise empty).
   if [ -f "$LEDGER" ]; then
-    EXISTING=$(jq '.' "$LEDGER" 2>/dev/null || echo '{"phases":{}}')
+    EXISTING=$("$JQ" '.' "$LEDGER" 2>/dev/null || echo '{"phases":{}}')
   else
     EXISTING='{"phases":{}}'
   fi
 
   # Read current cycle count for this phase (default 0).
-  CURRENT_CYCLE=$(echo "$EXISTING" | jq -r --arg p "$PHASE" '.phases[$p].cycle // 0' 2>/dev/null || echo 0)
+  CURRENT_CYCLE=$(echo "$EXISTING" | "$JQ" -r --arg p "$PHASE" '.phases[$p].cycle // 0' 2>/dev/null || echo 0)
   NEW_CYCLE=$((CURRENT_CYCLE + 1))
 
   if [ "$STATUS" = "greenlight" ]; then
     # Extract evidence pointers (lines under exit-criteria-checked with `evidence:`).
-    EVIDENCE=$(echo "$RESPONSE" | grep -E '^[[:space:]]*evidence:' | sed -E 's/^[[:space:]]*evidence:[[:space:]]*//' | jq -R . | jq -s 'unique')
+    EVIDENCE=$(echo "$RESPONSE" | grep -E '^[[:space:]]*evidence:' | sed -E 's/^[[:space:]]*evidence:[[:space:]]*//' | "$JQ" -R . | "$JQ" -s 'unique')
     [ -z "$EVIDENCE" ] && EVIDENCE='[]'
 
-    UPDATED=$(echo "$EXISTING" | jq --arg p "$PHASE" \
+    UPDATED=$(echo "$EXISTING" | "$JQ" --arg p "$PHASE" \
       --arg s "greenlight" \
       --arg t "$TIMESTAMP" \
       --argjson c "$NEW_CYCLE" \
@@ -316,10 +325,10 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
   CAP=10
   if [ "$NEW_CYCLE" -ge "$CAP" ]; then
     STALLED_STATUS="blocked-phase-validator-stalled"
-    UNRESOLVED=$(echo "$RESPONSE" | grep -oE '\*\*pv-[1-7]-[0-9]+\*\*' | sed -E 's/^\*\*//;s/\*\*$//' | sort -u | jq -R . | jq -s '.')
+    UNRESOLVED=$(echo "$RESPONSE" | grep -oE '\*\*pv-[1-7]-[0-9]+\*\*' | sed -E 's/^\*\*//;s/\*\*$//' | sort -u | "$JQ" -R . | "$JQ" -s '.')
     [ -z "$UNRESOLVED" ] && UNRESOLVED='[]'
 
-    UPDATED=$(echo "$EXISTING" | jq --arg p "$PHASE" \
+    UPDATED=$(echo "$EXISTING" | "$JQ" --arg p "$PHASE" \
       --arg s "$STALLED_STATUS" \
       --arg t "$TIMESTAMP" \
       --argjson c "$NEW_CYCLE" \
@@ -336,7 +345,7 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
   fi
 
   # Normal improvements-needed (cycle < 10): record in-progress with cycle bumped.
-  UPDATED=$(echo "$EXISTING" | jq --arg p "$PHASE" \
+  UPDATED=$(echo "$EXISTING" | "$JQ" --arg p "$PHASE" \
     --arg s "in-progress" \
     --arg t "$TIMESTAMP" \
     --argjson c "$NEW_CYCLE" \

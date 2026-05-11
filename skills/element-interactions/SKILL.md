@@ -5,16 +5,15 @@ description: >
   Triggers on general testing intent: "test the app", "test this", "lets test", "write tests", "add tests", "run tests",
   "e2e tests", "end-to-end tests", "browser testing", "UI testing", "functional testing", "test automation",
   "automate tests", "test scenario", "test case", "happy path", "smoke test", "regression test", "test coverage",
-  "QA", "quality assurance".
-  Also triggers on framework-specific keywords: Playwright tests, @civitas-cerebrum/element-interactions,
-  @civitas-cerebrum/element-repository, Steps API, ElementRepository, ElementInteractions, baseFixture,
-  ContextStore, page-repository.json, or any request to write, fix, or add to a Playwright test in this project.
-  Also use when asked to add entries to a page-repository JSON file, use fixtures, select dropdowns, verify elements,
-  wait for states, or perform any browser interaction through this framework. Always consult this skill before
-  generating test code or locator JSON — do not guess API shapes or invent method signatures.
-  Stage 5 (Test Composer): Also triggers when asked to "increase test coverage", "cover the whole app",
-  "add more scenarios", "think like a QA", "expand the test suite", or any request for iterative,
-  comprehensive E2E test development.
+  "QA", "quality assurance". Also triggers on framework-specific keywords: Playwright tests,
+  @civitas-cerebrum/element-interactions, @civitas-cerebrum/element-repository, Steps API, ElementRepository,
+  ElementInteractions, baseFixture, ContextStore, page-repository.json, or any request to write, fix, or add to a
+  Playwright test in this project. Also use when asked to add entries to a page-repository JSON file, use fixtures,
+  select dropdowns, verify elements, wait for states, or perform any browser interaction through this framework.
+  Always consult this skill before generating test code or locator JSON — do not guess API shapes or invent method
+  signatures. This skill is the orchestrator (Stages 1-4 inline; Stages 5-7 dispatched). Coverage-expansion intent
+  ("increase test coverage", "cover the whole app", "expand the suite") routes to coverage-expansion via this
+  skill's routing block — those triggers are owned there, not here.
 ---
 
 # @civitas-cerebrum/element-interactions — Agent Skill
@@ -240,6 +239,28 @@ If the caller estimates the companion's full contract is more work than the sess
 Auto-mode does not satisfy "explicit scope reduction." Inferred user preference does not satisfy it. Session-length anxiety does not satisfy it. If the caller cannot fill in a verbatim user quote authorising a reduced scope, the caller dispatches the full contract — period. Calling a companion with a self-authorised "lighter" scope is the same contract violation as silently narrowing one's own scope, just one layer higher.
 
 This rule applies regardless of how reasonable the caller's estimate is. "16 journeys × 5 passes = many hours" is a true statement and not authorisation. Onboarding's front-load gate already disclosed "tens of minutes to several hours" to the user — that disclosure is the user's authorisation for the full pipeline, and the caller is bound by it.
+
+### 15. Test data discipline — secrets in `.env`, variables centralised
+
+Two rules govern how test data shows up in spec files. Both are enforced by `test-data-discipline-guard.sh` (PreToolUse:Edit|Write|MultiEdit on `*.spec.{ts,js,…}` and `*.test.{ts,js,…}`). See `references/harness-hooks.md` for the hook contract.
+
+- **Project secrets MUST live in `.env`** (gitignored) and load into specs via `process.env.<NAME>`. Hardcoded credential literals — `password`, `passwd`, `pwd`, `api_key` / `apiKey`, `secret`, `token`, `bearer`, `access_key` / `accessKey`, `auth` — assigned to a string literal in a spec file are **denied**. The escape on a single line is a `process.env.` reference: `const password = process.env.LOGIN_PASSWORD;`. The escape across the suite (legacy / migrating) is `TEST_DATA_DISCIPLINE_GUARD=warn` (downgrades to warn) or `=off` (silent allow).
+
+- **Test-data variables SHOULD be centralised in a single class / module** — e.g. `tests/fixtures/test-data.ts` exporting a `TestData` class or namespace. Scattered top-level `const NAME = "literal"` declarations across spec files (URLs, account names, magic strings) drift across files and resist refactor. The guard **warns** (does not deny) when it sees a top-level magic constant in a spec file that does NOT also import from a centralised data module (`test-data`, `testData`, `fixtures`, `fixture`, `constants`, `constant`). The recommended shape:
+
+  ```ts
+  // tests/fixtures/test-data.ts
+  export class TestData {
+    static readonly BASE_URL = process.env.BASE_URL ?? "https://staging.example.com";
+    static readonly ADMIN_EMAIL = "admin+e2e@example.com";
+  }
+
+  // tests/login.spec.ts
+  import { TestData } from "./fixtures/test-data";
+  // …use TestData.BASE_URL / TestData.ADMIN_EMAIL throughout the spec…
+  ```
+
+If you genuinely need a one-off literal in a spec (a hard-coded element label, a test-only string), put it inline in the assertion — the guard only flags top-level uppercase constant declarations, not inline literals inside `expect(...).toBe("literal")` or step calls.
 
 ### Workflow
 - **Run the tests** to validate your work. Do not skip this.

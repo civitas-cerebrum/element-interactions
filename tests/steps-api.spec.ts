@@ -216,12 +216,16 @@ test.describe('TC_046: verifyImages - Image Verification', () => {
       await steps.verifyUrlContains('/product-carousel');
     });
 
-    await test.step('verifyImages on the active carousel slide', async () => {
+    await test.step('verifyImages default path (no decode) passes for real images', async () => {
       await steps.verifyImages( 'firstCarouselImage','ProductCarouselPage');
     });
 
     await test.step('verifyImages on the product grid thumbnails', async () => {
       await steps.verifyImages( 'productThumbnails','ProductCarouselPage');
+    });
+
+    await test.step('verifyImages with verifyDecoded:true also passes for real images', async () => {
+      await steps.verifyImages( 'firstCarouselImage','ProductCarouselPage', true, { verifyDecoded: true });
     });
 
     log('TC_046 verifyImages — passed');

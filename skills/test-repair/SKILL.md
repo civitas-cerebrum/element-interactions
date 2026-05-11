@@ -6,11 +6,12 @@ description: >
   "the tests are broken", "the suite rotted", "triage the failures", "diagnose the whole suite",
   "my suite is flaky", "the app changed and now tests fail everywhere". Also auto-escalates from
   `failure-diagnosis`, `test-composer`, or `bug-discovery` when a single run produces many failures
-  or when failures repeat across diagnostic attempts — batch clustering finds shared root causes
-  faster than per-failure diagnosis at scale. Do NOT use for a single failing test — that stays with
-  `failure-diagnosis`. Do NOT use to find new bugs adversarially — that is `bug-discovery`. Do NOT
-  use to write new tests — that is `test-composer`.
-trigger: always
+  (≥5 failures or ≥30% of executed tests) or when failures repeat across diagnostic attempts — batch
+  clustering finds shared root causes faster than per-failure diagnosis at scale. Those callers
+  explicitly invoke this skill via the Skill tool when their own escalation criteria fire (no
+  always-load reliance). Do NOT use for a single failing test — that stays with `failure-diagnosis`.
+  Do NOT use to find new bugs adversarially — that is `bug-discovery`. Do NOT use to write new tests —
+  that is `test-composer`.
 ---
 
 # Singularity — Test Repair

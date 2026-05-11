@@ -45,12 +45,21 @@
 
 set -euo pipefail
 
+# Resolve jq: prefer the binary bundled with the hook install, fall back to
+# system jq for in-repo testing before postinstall has run.
+JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
+[ -x "$JQ" ] || JQ="$(command -v jq || true)"
+if [ -z "$JQ" ]; then
+  echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: jq not found at \$HOOK_DIR/bin/jq nor on PATH. Reinstall the package or install jq manually." >&2
+  exit 1
+fi
+
 if [ "${PWCONFIG_DEFAULTS_GUARD:-on}" = "off" ]; then
   exit 0
 fi
 
 emit_warn() {
-  jq -n --arg m "$1" '{
+  "$JQ" -n --arg m "$1" '{
     "systemMessage": $m,
     "suppressOutput": false
   }'
@@ -58,14 +67,14 @@ emit_warn() {
 
 # --- input ---
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
+TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
 
 case "$TOOL_NAME" in
   Edit|Write) ;;
   *) exit 0 ;;
 esac
 
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""')
+FILE_PATH=$(echo "$INPUT" | "$JQ" -r '.tool_input.file_path // ""')
 case "$FILE_PATH" in
   *playwright.config.ts|*playwright.config.js|*playwright.config.mjs|*playwright.config.cjs) ;;
   *) exit 0 ;;
@@ -76,9 +85,9 @@ esac
 # (the line being replaced is in old_string, the line being added is in
 # new_string).
 if [ "$TOOL_NAME" = "Write" ]; then
-  CONTENT=$(echo "$INPUT" | jq -r '.tool_input.content // ""')
+  CONTENT=$(echo "$INPUT" | "$JQ" -r '.tool_input.content // ""')
 else
-  CONTENT=$(echo "$INPUT" | jq -r '.tool_input.new_string // ""')
+  CONTENT=$(echo "$INPUT" | "$JQ" -r '.tool_input.new_string // ""')
 fi
 
 [ -z "$CONTENT" ] && exit 0

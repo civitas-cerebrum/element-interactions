@@ -121,7 +121,7 @@ Each finding follows a §4.1-style block:
 
 ## 4. Response shape
 
-The validator's return shape mirrors the Stage B reviewer return defined in `subagent-return-schema.md` §2.4, adapted for manifest-scope findings. The harness validator hook (`hooks/subagent-return-schema-guard.sh`) routes `process-validator-` returns through the same field-marker check.
+The validator's return shape mirrors the Stage B reviewer return defined in `subagent-return-schema.md` §2.4, adapted for manifest-scope findings. The harness return-schema guard routes `process-validator-` returns through the same field-marker check (see [harness-hooks.md](../../element-interactions/references/harness-hooks.md)).
 
 ### `greenlight` (no findings)
 
@@ -177,7 +177,7 @@ findings:
 
 The spill file starts with the sentinel `<!-- subagent-returns:process-validator:<scope>:cycle-<C> -->`. Per-violation blocks (with `manifest-row:` / `issue:` / `fix:` sub-bullets) go in the spill body, NOT inline in the return.
 
-The `SubagentStop` rewrite-gate (`hooks/subagent-spillover-rewrite-gate.sh`) enforces the contract — non-compliant returns are blocked at stop and the validator rewrites in-session. The orchestrator's tool result is the FINAL compliant return; the verbose violation blocks never reach the parent's transcript. `greenlight` returns are exempt (already index-only with `findings: []`).
+A `SubagentStop` rewrite-gate enforces the contract — non-compliant returns are blocked at stop and the validator rewrites in-session, so the verbose violation blocks never reach the parent's transcript. `greenlight` returns are exempt (already index-only).
 
 ### Banned tokens
 

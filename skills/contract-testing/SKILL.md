@@ -1,15 +1,24 @@
 ---
 name: contract-testing
 description: >
-  Use when the user asks to write, run, or review contract tests for a backend API — locking
-  status codes, headers, response schema, or error shape on HTTP endpoints rather than UI or
-  business flow. Triggers: "contract test", "contract testing", "API contract", "schema test",
-  "schema validation", "consumer-driven contract", "provider verification", "pact test",
-  "breaking change detection", "API compatibility", "spec conformance", "OpenAPI conformance",
-  "verify API shape", "lock API contract", "ensure API hasn't changed". Also activates when
-  the agent is about to write an API-only test with `steps.apiGet/Post/Put/Delete/Patch` that
-  asserts response shape or status. Not for: end-to-end UI flows, coverage expansion, bug
-  hunting, or failing-test diagnosis.
+  Use whenever a backend HTTP endpoint is being consumed in a test — write, run, review, or just
+  call. The skill owns the structured shape every API interaction should produce: status code
+  expectations, response-schema assertion, error-envelope validation, header coverage. It auto-
+  activates on the explicit-intent triggers (contract test, schema test, pact, OpenAPI conformance,
+  lock API contract, verify API shape, breaking change detection, consumer-driven contract,
+  provider verification, API compatibility, spec conformance, ensure API hasn't changed) AND on any
+  test or planned test that calls `steps.apiGet`, `steps.apiPost`, `steps.apiPut`, `steps.apiDelete`,
+  `steps.apiPatch`, `steps.apiHead`, `steps.verifyApiStatus`, or `steps.verifyApiHeader` — even
+  inside a UI-flow spec. The rationale: every backend call deserves at minimum a status-code +
+  error-envelope assertion; without those the test silently passes when the endpoint regresses.
+  Also activates on phrases that signal a backend interaction is about to land: "call the API in a
+  test", "test against the backend", "consume the API", "verify the response", "assert the JSON
+  shape", "validate the API response", "lock the backend's response", "endpoint should return", and
+  any mention of an HTTP verb against a project URL inside a spec context. The callers (test-composer,
+  bug-discovery's API-surface probes, coverage-expansion adversarial passes that touch APIs) invoke
+  this skill via the Skill tool whenever they emit `steps.api*` lines, rather than treating contract
+  shape as optional. Not for: pure UI flow assertions, coverage expansion at journey scope, bug
+  hunting at the page level, or failing-test diagnosis — those route to their own skills.
 ---
 
 # Contract Testing — API Surface Verification

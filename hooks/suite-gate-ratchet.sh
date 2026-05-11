@@ -53,16 +53,25 @@
 
 set -euo pipefail
 
+# Resolve jq: prefer the binary bundled with the hook install, fall back to
+# system jq for in-repo testing before postinstall has run.
+JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
+[ -x "$JQ" ] || JQ="$(command -v jq || true)"
+if [ -z "$JQ" ]; then
+  echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: jq not found at \$HOOK_DIR/bin/jq nor on PATH. Reinstall the package or install jq manually." >&2
+  exit 1
+fi
+
 INPUT=$(cat)
-EVENT_NAME=$(echo "$INPUT" | jq -r '.hook_event_name // ""')
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
+EVENT_NAME=$(echo "$INPUT" | "$JQ" -r '.hook_event_name // ""')
+TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
 
 [ "$TOOL_NAME" != "Bash" ] && exit 0
 
-CMD=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
+CMD=$(echo "$INPUT" | "$JQ" -r '.tool_input.command // ""')
 
 # Resolve repo root for state-file location.
-CWD=$(echo "$INPUT" | jq -r '.cwd // "."' 2>/dev/null || echo ".")
+CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")
 REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || echo "$CWD")
 STATE_FILE="$REPO_ROOT/.claude/last-suite-result.json"
 mkdir -p "$REPO_ROOT/.claude" 2>/dev/null || true
@@ -75,7 +84,7 @@ esac
 [ "$WINDOW_SIZE" -lt 1 ] && WINDOW_SIZE=1
 
 emit_deny() {
-  jq -n --arg r "$1" '{
+  "$JQ" -n --arg r "$1" '{
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
       "permissionDecision": "deny",
@@ -91,7 +100,7 @@ load_runs_array() {
     echo "[]"
     return
   fi
-  jq '
+  "$JQ" '
     if type == "object" and has("runs") and (.runs | type) == "array" then
       .runs
     elif type == "object" and has("status") then
@@ -111,9 +120,9 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
     exit 0
   fi
 
-  TOOL_RESPONSE=$(echo "$INPUT" | jq -r '.tool_response // {}')
-  EXIT_CODE=$(echo "$TOOL_RESPONSE" | jq -r '.exitCode // .exit_code // .returncode // "unknown"')
-  STDOUT=$(echo "$TOOL_RESPONSE" | jq -r '.stdout // .output // ""' 2>/dev/null || echo "")
+  TOOL_RESPONSE=$(echo "$INPUT" | "$JQ" -r '.tool_response // {}')
+  EXIT_CODE=$(echo "$TOOL_RESPONSE" | "$JQ" -r '.exitCode // .exit_code // .returncode // "unknown"')
+  STDOUT=$(echo "$TOOL_RESPONSE" | "$JQ" -r '.stdout // .output // ""' 2>/dev/null || echo "")
 
   STATUS="passed"
   if [ "$EXIT_CODE" != "0" ] && [ "$EXIT_CODE" != "unknown" ]; then
@@ -127,7 +136,7 @@ if [ "$EVENT_NAME" = "PostToolUse" ]; then
   CURRENT=$(load_runs_array)
 
   # Append + trim to last WINDOW_SIZE entries, then write the new shape.
-  jq -n \
+  "$JQ" -n \
     --argjson runs "$CURRENT" \
     --argjson size "$WINDOW_SIZE" \
     --arg     s    "$STATUS" \
@@ -169,7 +178,7 @@ Why: phase-progression commits without a stable green window produce a broken HE
   fi
 
   RUNS=$(load_runs_array)
-  RUN_COUNT=$(echo "$RUNS" | jq 'length')
+  RUN_COUNT=$(echo "$RUNS" | "$JQ" 'length')
 
   # Window not yet filled.
   if [ "$RUN_COUNT" -lt "$WINDOW_SIZE" ]; then
@@ -187,7 +196,7 @@ Why: the windowed ratchet needs ${WINDOW_SIZE} consecutive runs to gate. A flake
   fi
 
   # Any-red in window — collect failed-run timestamps for the deny message.
-  FAILED_TIMESTAMPS=$(echo "$RUNS" | jq -r '[.[] | select(.status == "failed") | .timestamp] | join(", ")')
+  FAILED_TIMESTAMPS=$(echo "$RUNS" | "$JQ" -r '[.[] | select(.status == "failed") | .timestamp] | join(", ")')
   if [ -n "$FAILED_TIMESTAMPS" ]; then
     emit_deny "[BLOCKED] Suite-gate window contains failed runs.
 
@@ -205,7 +214,7 @@ Why: a single passing re-run after a flake doesn't clear the window — by desig
 
   # All green in window — check staleness against the OLDEST run. If any run
   # has aged past 1h, the window is no longer reflective of current code.
-  OLDEST_TS=$(echo "$RUNS" | jq -r '.[0].timestamp // ""')
+  OLDEST_TS=$(echo "$RUNS" | "$JQ" -r '.[0].timestamp // ""')
   if [ -n "$OLDEST_TS" ]; then
     NOW_EPOCH=$(date -u +%s)
     THEN_EPOCH=$(date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$OLDEST_TS" +%s 2>/dev/null || date -u -d "$OLDEST_TS" +%s 2>/dev/null || echo "0")

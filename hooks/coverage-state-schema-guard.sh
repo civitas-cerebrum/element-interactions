@@ -40,9 +40,18 @@
 
 set -euo pipefail
 
+# Resolve jq: prefer the binary bundled with the hook install, fall back to
+# system jq for in-repo testing before postinstall has run.
+JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
+[ -x "$JQ" ] || JQ="$(command -v jq || true)"
+if [ -z "$JQ" ]; then
+  echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: jq not found at \$HOOK_DIR/bin/jq nor on PATH. Reinstall the package or install jq manually." >&2
+  exit 1
+fi
+
 # --- helpers ---
 emit_deny() {
-  jq -n --arg r "$1" '{
+  "$JQ" -n --arg r "$1" '{
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
       "permissionDecision": "deny",
@@ -53,14 +62,14 @@ emit_deny() {
 
 # --- input ---
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
+TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
 
 case "$TOOL_NAME" in
   Write|Edit) ;;
   *) exit 0 ;;
 esac
 
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""')
+FILE_PATH=$(echo "$INPUT" | "$JQ" -r '.tool_input.file_path // ""')
 case "$FILE_PATH" in
   *tests/e2e/docs/coverage-expansion-state.json) ;;
   *) exit 0 ;;
@@ -68,16 +77,16 @@ esac
 
 # Resolve target content: for Write, the new content. For Edit, simulate.
 if [ "$TOOL_NAME" = "Write" ]; then
-  TARGET=$(echo "$INPUT" | jq -r '.tool_input.content // ""')
+  TARGET=$(echo "$INPUT" | "$JQ" -r '.tool_input.content // ""')
 elif [ "$TOOL_NAME" = "Edit" ]; then
   # Edit-resolution is non-trivial; just validate that the new_string portion
   # doesn't introduce malformed JSON.
-  TARGET=$(echo "$INPUT" | jq -r '.tool_input.new_string // ""')
+  TARGET=$(echo "$INPUT" | "$JQ" -r '.tool_input.new_string // ""')
 fi
 
 # 1. Must be valid JSON (Write only — Edit's new_string may be a partial slice).
 if [ "$TOOL_NAME" = "Write" ]; then
-  if ! echo "$TARGET" | jq empty 2>/dev/null; then
+  if ! echo "$TARGET" | "$JQ" empty 2>/dev/null; then
     emit_deny "[BLOCKED] coverage-expansion-state.json must be valid JSON.
 
 File: $FILE_PATH
@@ -99,7 +108,7 @@ Schema (skills/coverage-expansion/SKILL.md §\"Authoritative state file\"):
 
   # 2. Required top-level keys.
   for KEY in status mode currentPass journeyRoster passes updatedAt; do
-    if ! echo "$TARGET" | jq -e ".$KEY" >/dev/null 2>&1; then
+    if ! echo "$TARGET" | "$JQ" -e ".$KEY" >/dev/null 2>&1; then
       emit_deny "[BLOCKED] coverage-expansion-state.json missing required key '$KEY'.
 
 File: $FILE_PATH
@@ -110,7 +119,7 @@ Fix: include all required top-level keys: status, mode, currentPass, journeyRost
   done
 
   # 3. journeyRoster must be a non-empty array.
-  ROSTER_LEN=$(echo "$TARGET" | jq -r '.journeyRoster | length' 2>/dev/null || echo 0)
+  ROSTER_LEN=$(echo "$TARGET" | "$JQ" -r '.journeyRoster | length' 2>/dev/null || echo 0)
   if [ "$ROSTER_LEN" -eq 0 ]; then
     emit_deny "[BLOCKED] coverage-expansion-state.json has empty journeyRoster.
 
@@ -121,7 +130,7 @@ Fix: populate journeyRoster from tests/e2e/docs/journey-map.md. An empty roster 
   fi
 
   # 4. currentPass must be an integer 0-5.
-  CP=$(echo "$TARGET" | jq -r '.currentPass' 2>/dev/null)
+  CP=$(echo "$TARGET" | "$JQ" -r '.currentPass' 2>/dev/null)
   if ! echo "$CP" | grep -qE '^[0-5]$'; then
     emit_deny "[BLOCKED] coverage-expansion-state.json currentPass invalid.
 
@@ -158,7 +167,7 @@ Fix: must be an integer 0-5 (0 = before pass 1, 1-3 = compositional, 4-5 = adver
     # true`, so they are naturally excluded from this count — declaring a
     # P3 adversarial opt-out is not, on its own, evidence of dispatched
     # work.
-    DISPATCH_COUNT=$(echo "$TARGET" | jq -r '[.. | objects | select(has("journey") and ((has("stage_a_cycles") or has("review_status")) or (.gated_skip == true and has("triggers_checked"))))] | length' 2>/dev/null || echo 0)
+    DISPATCH_COUNT=$(echo "$TARGET" | "$JQ" -r '[.. | objects | select(has("journey") and ((has("stage_a_cycles") or has("review_status")) or (.gated_skip == true and has("triggers_checked"))))] | length' 2>/dev/null || echo 0)
     if [ "$DISPATCH_COUNT" -eq 0 ]; then
       emit_deny "[BLOCKED] State-file write claims currentPass=${CP} with zero dispatches recorded.
 

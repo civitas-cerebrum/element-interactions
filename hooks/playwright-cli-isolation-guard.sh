@@ -62,11 +62,20 @@
 
 set -euo pipefail
 
+# Resolve jq: prefer the binary bundled with the hook install, fall back to
+# system jq for in-repo testing before postinstall has run.
+JQ="$(dirname "${BASH_SOURCE[0]}")/bin/jq"
+[ -x "$JQ" ] || JQ="$(command -v jq || true)"
+if [ -z "$JQ" ]; then
+  echo "[$(basename "${BASH_SOURCE[0]}")] FATAL: jq not found at \$HOOK_DIR/bin/jq nor on PATH. Reinstall the package or install jq manually." >&2
+  exit 1
+fi
+
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
+TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
 [ "$TOOL_NAME" != "Bash" ] && exit 0
 
-CMD=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
+CMD=$(echo "$INPUT" | "$JQ" -r '.tool_input.command // ""')
 
 # Filter: only fire when playwright-cli is actually being INVOKED as a command,
 # not just mentioned inside a string argument (echo, error message, JSON literal).
@@ -106,7 +115,7 @@ fi
 SLUG_PREFIX_REGEX='^(phase1|phase2|stage2|composer|reviewer|probe|cleanup|companion|fd)-[a-z0-9][a-z0-9-]*'
 
 emit_deny() {
-  jq -n --arg r "$1" '{
+  "$JQ" -n --arg r "$1" '{
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
       "permissionDecision": "deny",
