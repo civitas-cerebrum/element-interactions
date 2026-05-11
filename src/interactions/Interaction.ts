@@ -113,12 +113,14 @@ export class Interactions {
         await element.fill(text, { timeout: this.ELEMENT_TIMEOUT });
     }
 
+    /** Upload one or more files to a file input. Pass a `string[]` to populate a multi-file input. */
     async uploadFile(element: WebElement, filePath: string | string[], options?: ActionTimeoutOptions): Promise<void> {
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
         await this.utils.waitForState(element, 'attached', timeout);
         await element.setInputFiles(filePath, { timeout });
     }
 
+    /** Simulate dropping files onto a drop-zone element by dispatching `dragenter`, `dragover`, and `drop` events with a populated `DataTransfer`. Web-only. */
     async dropFiles(
         element: WebElement,
         filenames: string[],

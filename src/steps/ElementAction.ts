@@ -233,7 +233,7 @@ export class ElementAction {
         await this.interactions.interact.uploadFile(element, filePath, { timeout: this._timeout });
     }
 
-    /** Simulate dropping files onto a drop-zone element via DataTransfer drag events. */
+    /** Simulate dropping files onto a drop-zone element by dispatching `dragenter`, `dragover`, and `drop` events with a populated `DataTransfer`. */
     async dropFiles(filenames: string[], mimeType?: string): Promise<void> {
         const element = await this.resolve();
         await this.interactions.interact.dropFiles(element, filenames, { mimeType, timeout: this._timeout });
