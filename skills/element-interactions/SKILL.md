@@ -33,17 +33,16 @@ This file is the rules-and-pointers kernel. The heavy spec lives in `references/
 | [`references/stages-protocol.md`](references/stages-protocol.md) | Stages 1–4 protocol: scenario discovery, element inspection, write automation, post-stabilization review (4a + 4b). |
 | [`references/subagent-return-schema.md`](references/subagent-return-schema.md) | Canonical return + ledger schema for every dispatched subagent. §4.1 grep-based conformance check; §4.2 harness validator (issue #127). |
 | [`references/test-optimization.md`](references/test-optimization.md) | Stage 4a optimization checklist + the whole-suite re-run gate. |
-| [`references/cascade-detector.md`](references/cascade-detector.md) | Cascade detector — orchestrator that picks the right entry skill from project state. |
 | [`references/autonomous-mode-callers.md`](references/autonomous-mode-callers.md) | Per-caller `autonomousMode: true` contracts. |
 | [`references/skill-registry.md`](references/skill-registry.md) | Canonical skill name registry. |
 
 ## Autonomous-mode invocation cheat-sheet
 
-Companion skills (`onboarding`, `coverage-expansion`, `test-composer`, `companion-mode`) invoke this orchestrator with `autonomousMode: true` to disable the interactive hard gates. Each caller has its own required-args contract — they are NOT interchangeable.
+Callers (`@civitas-cerebrum/achilles` happy-path step, `coverage-expansion`, `test-composer`, `companion-mode`) invoke this orchestrator with `autonomousMode: true` to disable the interactive hard gates. Each caller has its own required-args contract — they are NOT interchangeable.
 
 | Caller | Required args | Optional args |
 |---|---|---|
-| `onboarding` Phase 3 | `autonomousMode: true`, `happyPathDescription: "<sentence>"` | `context: [...]` |
+| achilles happy-path step | `autonomousMode: true`, `happyPathDescription: "<sentence>"` | `context: [...]` |
 | `coverage-expansion` pass 1–3 | `autonomousMode: true`, `journey: "<j-id>"` | — |
 | `companion-mode` Phase-6 graduation | `autonomousMode: true`, `entry: "stage3"`, `bundlePath: "<absolute-path>"` | — |
 | user direct | — (no autonomous flags) | — (full Stage 1–4 interactive flow) |
@@ -64,7 +63,7 @@ This skill is the orchestrator for a group of testing skills. It handles Stages 
 | `agents-vs-agents` | App has AI features, or user mentions AI guardrails/red-teaming/bias testing | Adversarial AI testing with LLM-powered attacker + judge |
 | `contract-testing` | User mentions contract tests, API contract, schema test, pact, breaking-change detection, or spec conformance — OR before writing any pure-API test that asserts response shape/status | Structured contract-style verification against real endpoints (status / headers / schema / error shape) using `steps.apiGet/Post/Put/Delete/Patch` |
 | `test-catalogue` | User asks for a "test catalogue", "scenario report", "client-ready catalogue", or an inventory of what the suite runs — opt-in only, never mandatory | Parses spec files + journey map, groups scenarios by app section and priority, renders a stakeholder-facing A4-landscape PDF catalogue (plus source HTML) with dedicated regression and skipped-with-reason sections |
-| `companion-mode` | User asks for ad-hoc functional verification with evidence (screenshots, video, trace) — opt-in only, never mandatory | Single-task evidence-first verification: produces an immutable bundle at `tests/e2e/evidence/<slug>-<ts>/`, then on a passed run proactively offers durable-automation graduation back into this orchestrator (Stage 3) or into `onboarding` per the project's cascade-detector level. Full behaviour: `skills/companion-mode/SKILL.md`. |
+| `companion-mode` | User asks for ad-hoc functional verification with evidence (screenshots, video, trace) — opt-in only, never mandatory | Single-task evidence-first verification: produces an immutable bundle at `tests/e2e/evidence/<slug>-<ts>/`, then on a passed run proactively offers durable-automation graduation back into this orchestrator (Stage 3). For projects with no element-interactions scaffold, the user is pointed at `npx @civitas-cerebrum/achilles onboarding`. Full behaviour: `skills/companion-mode/SKILL.md`. |
 
 When any of these conditions are met, invoke the Skill tool with the companion skill name. Do not try to handle their workflows inline — they have their own staged processes.
 
@@ -192,7 +191,7 @@ Every time you navigate to a new page or discover a new component (via `playwrig
 
 ### 11. Browser automation goes through `@playwright/cli`
 
-Every skill in this suite that drives a live browser — `journey-mapping`, `coverage-expansion`, `test-composer`, `bug-discovery`, `failure-diagnosis`, `companion-mode`, this orchestrator's Stages 1–2, `onboarding`'s discovery phases — invokes `@playwright/cli` from the Bash tool. The protocol is documented in [`references/playwright-cli-protocol.md`](references/playwright-cli-protocol.md); read it before composing any browser-using subagent brief.
+Every skill in this suite that drives a live browser — `journey-mapping`, `coverage-expansion`, `test-composer`, `bug-discovery`, `failure-diagnosis`, `companion-mode`, this orchestrator's Stages 1–2, and the achilles driver's discovery + happy-path subagents — invokes `@playwright/cli` from the Bash tool. The protocol is documented in [`references/playwright-cli-protocol.md`](references/playwright-cli-protocol.md); read it before composing any browser-using subagent brief.
 
 **Why this rule exists.** Two parallel subagents sharing one browser fight over the active tab and corrupt each other's snapshots — discovery results become non-deterministic, tests compose against stale state, and the parent's own context fills with corrupted transcripts. The CLI's `-s=<name> open` primitive spawns an **isolated browser process per session** with its own user-data directory, so this corruption mode is impossible by construction. There is no isolation-prerequisite check; the OS provides isolation, not the orchestrator.
 
@@ -211,7 +210,7 @@ Every skill in this suite that drives a live browser — `journey-mapping`, `cov
 
 ### 12. Orchestrator context discipline
 
-Orchestrator skills (`coverage-expansion`, `onboarding`, this orchestrator) hold only **index-level state** in their own context:
+Orchestrator skills (`coverage-expansion`, this orchestrator) hold only **index-level state** in their own context:
 
 - Identifiers, names, priorities, page lists, counters, dispatch rosters.
 
@@ -229,7 +228,7 @@ If the skill contract says "dispatch per journey" or "run both phases," the orch
 
 ### 14. Companion-skill invocations run on the companion's contract, not the caller's estimate
 
-When this orchestrator (or `onboarding`, or any caller) invokes a companion skill — `journey-mapping`, `coverage-expansion`, `test-composer`, `bug-discovery`, `test-repair` — the companion's contract governs the run. The caller does NOT get to pre-emptively decide "I'll only run part of coverage-expansion because the full pipeline is too long," "I'll skip Pass 4–5 because adversarial probing is excessive for this app," or "I'll dispatch a subset of test-composer's variant set because the journey is small."
+When this orchestrator (or any caller, including the achilles driver) invokes a companion skill — `journey-mapping`, `coverage-expansion`, `test-composer`, `bug-discovery`, `test-repair` — the companion's contract governs the run. The caller does NOT get to pre-emptively decide "I'll only run part of coverage-expansion because the full pipeline is too long," "I'll skip Pass 4–5 because adversarial probing is excessive for this app," or "I'll dispatch a subset of test-composer's variant set because the journey is small."
 
 If the caller estimates the companion's full contract is more work than the session can absorb, the caller has exactly two options:
 - **Invoke the companion as designed.** The companion itself owns budget pressure: its own §"Auto-compaction" / resume-needed message handles mid-pipeline budget hits. The caller's job is to dispatch and let the companion run its own contract.
@@ -434,7 +433,7 @@ Only show the greeting menu if the user's message is vague or just says somethin
 
 ### Routing
 
-- **Onboarding intent** — phrases like "onboard this project", "set up element-interactions", "start from scratch", "automate this app from zero", OR a vague message on a project whose cascade detector (see below) reports a non-onboarded state → invoke the `onboarding` companion skill. Do not run Stages 1–4 inline.
+- **Onboarding intent** — see "Onboarding a new project" below. Onboarding is no longer invoked from inside Claude Code; it runs as an external CLI driver.
 - **Coverage expansion intent (deep)** — phrases like "increase coverage", "deeper coverage", "add more scenarios", "iterative test expansion", "expand tests", "deep coverage pass" → invoke `coverage-expansion` with default `mode: depth` (three passes, journey-by-journey, parallel where independent).
 - **Coverage expansion intent (breadth)** — phrases like "quick coverage", "fast coverage", "breadth coverage", "sweep coverage" → invoke `coverage-expansion` with `mode: breadth`.
 - **Compose tests for one journey** — phrases like "compose tests for journey X", "tests for j-<slug>", "test this journey" → invoke `test-composer` with `args: "journey=<j-id>"`.
@@ -443,24 +442,24 @@ Only show the greeting menu if the user's message is vague or just says somethin
 - **API question** — Answer directly from the API Reference section below. No stages needed.
 - **Fix or edit a test** — Skip to Stage 3 (Fix/Edit Mode).
 - **Scale existing project** — Read existing test files and `page-repository.json` first to understand current coverage, then proceed to Stage 1 with that context.
-- **Vague or no context** — Run the onboarding cascade detector (see the `onboarding` skill). If it returns Level A, B, or C, invoke `onboarding`. If everything is present, show the greeting menu and wait.
+- **Vague or no context** — Show the greeting menu and wait. If the project has no element-interactions scaffold, point the user at the achilles onboarding command (below).
 
-#### Onboarding cascade detector (quick reference)
+## Onboarding a new project
 
-The detector and its full caller-specific response matrix live in [`references/cascade-detector.md`](references/cascade-detector.md). This orchestrator's routing rule is summarised here for fast scanning:
+To onboard a new project from zero, run from the project root:
 
-| Level | Routing action |
-|---|---|
-| A — package not in `package.json` | Invoke `onboarding` |
-| B — package present but scaffold incomplete | Invoke `onboarding` |
-| C — scaffold complete but `journey-map.md` missing or unsanctioned | Invoke `onboarding` |
-| None — all checks pass | No routing action — greet as normal |
+    npx @civitas-cerebrum/achilles onboarding
+
+The achilles CLI handles cascade detection, scaffolding, and the full
+seven-step automation pipeline. This skill (element-interactions) is
+loaded by spawned subagents for Stages 1–4 of the happy-path step;
+end-users don't invoke onboarding through Claude Code anymore.
 
 ---
 
 ## Autonomous mode
 
-When the `onboarding` skill (or any other companion) invokes this orchestrator with `args` containing `autonomousMode: true`, the hard gates are disabled and Stages 1–4 run sequentially without prompts.
+When the achilles driver (or any other caller) invokes this orchestrator with `args` containing `autonomousMode: true`, the hard gates are disabled and Stages 1–4 run sequentially without prompts.
 
 Full per-entry-point contracts live in [`references/autonomous-mode-callers.md`](references/autonomous-mode-callers.md): required args, the `stage1` vs `stage3` split, the bundle-read schema for `entry: "stage3"`, malformed-bundle handling, gate suspension, commit discipline, and return shape. Read that file when implementing or reviewing a caller. The cheat-sheet at the top of this `SKILL.md` is the at-a-glance summary; the reference doc is the source of truth.
 
