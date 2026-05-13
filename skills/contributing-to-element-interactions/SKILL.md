@@ -324,11 +324,6 @@ for n in 156 157; do gh issue view $n --json author -q '.number, .author.login' 
 
 The Anthropic CLAUDE.md template appends `Co-Authored-By: borealis.local …` to every commit Claude generates — that is the single source of these trailers. The upstream fix is to remove the trailer instruction from your project `CLAUDE.md` or `~/.claude/CLAUDE.md` so it stops being suggested.
 
-**Enforced by `hooks/commit-author-signature-guard.sh`** (PreToolUse:Bash, filters to `git commit`). DENY by default. The hook only fires when an AI-sentinel pattern is present, so real-human commits never trigger it. Mode controls via `COMMIT_AUTHOR_SIGNATURE_GUARD`:
-- unset / `deny` / `on` → block the commit (default)
-- `warn` → systemMessage nudge, commit proceeds
-- `off` → silent allow (escape hatch for genuine edge cases — e.g. quoting a prior commit body inside a `git log` test fixture)
-
 ### No raw `locator.*()` in element-interactions src/
 
 Every `locator.click()`, `locator.fill()`, `locator.evaluate()`, etc. that creeps into `src/` is a regression. If you need a primitive Playwright doesn't expose through `Element`, **add it to the Element interface in element-repository first**.
