@@ -37,7 +37,6 @@
 # Canonical reference
 # -------------------
 # skills/onboarding/SKILL.md §"Hard rules — kernel-resident"
-# hooks/lib/framing-tokens.sh
 #
 # Usage
 # -----
@@ -79,7 +78,6 @@ The legitimate early-stop path:
   mkdir -p .claude && touch .claude/onboarding-stop-authorized
 
 Reference: skills/onboarding/SKILL.md §"Hard rules — kernel-resident"
-           hooks/lib/framing-tokens.sh (canonical token list)
 NO_SKIP_BLOCK_EOF
 }
 
