@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 — 2026-05-13
+## Unreleased
 
 **Public-dependency cleanup.** The package now ships as a generic test-automation framework with no project-specific contamination in shipped surface (hooks, skills, schemas, README, CHANGELOG, package.json).
 
