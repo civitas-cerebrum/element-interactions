@@ -1,7 +1,7 @@
 #!/bin/bash
 # run-tests.sh — regression smoke suite for the iterative-cycle hooks.
 #
-# Covers the behaviours the round-3 reviewer asked us to lock in:
+# Covers the behaviours the reviewer asked us to lock in:
 #   - Canonical vocabulary loaded from data/canonical-sections.txt with
 #     hardcoded fallback when the file is absent.
 #   - Cycle-state file is written on PostToolUse cycle dispatch and is
@@ -12,8 +12,8 @@
 #   - acquire_lock emits a systemMessage warn when it gives up (no
 #     silent stuck-lock).
 #   - phase4-concurrency-log-format.sh detects bypass redirects on Bash:
-#     `>`, `>>`, `&>`, `&>>`, `tee -a`. The `&>` form was the round-3
-#     Critical that motivated this suite.
+#     `>`, `>>`, `&>`, `&>>`, `tee -a`. The `&>` form was the Critical
+#     finding that motivated this suite.
 #   - phase4-concurrency-log-format.sh validates JSONL line bytes via
 #     `LC_ALL=C printf %s | wc -c` (PIPE_BUF byte-count, not char-count).
 #
@@ -206,7 +206,7 @@ case_concurrency_log_blocks_simple_redirect() {
 }
 
 case_concurrency_log_blocks_ampersand_redirect() {
-  # &> is shorthand for > file 2>&1 — the round-3 Critical bypass.
+  # &> is shorthand for > file 2>&1 — the Critical-severity bypass finding.
   arm_phase4_state
   local input out
   input=$(make_bash_pre 'echo "{}" &> tests/e2e/docs/.phase4-concurrency-log.jsonl')

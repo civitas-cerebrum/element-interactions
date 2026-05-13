@@ -16,7 +16,7 @@
 #      process-validator-, phase1-, phase2-, phase4-, stage2-, cleanup-,
 #      companion-, fd-).
 #      phase4-c<N>-s-<section-id> covers journey-mapping iterative-cycle
-#      section agents (added in 0.3.6 dogfood; cycle protocol per
+#      section agents (added in 0.3.6; cycle protocol per
 #      skills/journey-mapping/SKILL.md §"Iterative discovery cycles").
 #   2. Not match a collision-prone reserved word (default, test, session, …).
 #   3. Be 6–28 characters (the macOS UNIX-socket-path cap leaves ~28 chars

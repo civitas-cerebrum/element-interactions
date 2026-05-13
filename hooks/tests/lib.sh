@@ -188,7 +188,7 @@ section() {
 # legacy claude-code shape some test harnesses emit). response_content
 # becomes tool_response.content as a [{type:text,text:<v>}] array — the
 # shape the live claude-code harness actually emits for Agent returns
-# (Run-5 finding). Hooks reading Agent returns must handle both.
+# (confirmed by an earlier reviewer finding). Hooks reading Agent returns must handle both.
 payload() {
   local out='{}'
   for kv in "$@"; do

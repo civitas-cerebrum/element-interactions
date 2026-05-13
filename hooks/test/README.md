@@ -31,8 +31,8 @@ hooks in-place from `hooks/<name>.sh`. `jq` must be on PATH.
 
 - **Concurrency-log redirect-bypass closure** — Bash redirects targeting
   the `.phase4-concurrency-log.jsonl` file are blocked on every shape:
-  `>`, `>>`, `&>`, `&>>`, `tee -a`. (The `&>` form was the round-3
-  reviewer Critical that motivated this suite.) Redirects targeting
+  `>`, `>>`, `&>`, `&>>`, `tee -a`. (The `&>` form was the Critical
+  reviewer finding that motivated this suite.) Redirects targeting
   *other* files pass through without interference.
 
 - **Cleanup deferral** — `playwright-cli-cleanup-on-stop.sh` exits 0

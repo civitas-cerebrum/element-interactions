@@ -308,7 +308,7 @@ This skill does not read `autonomousMode: true`. It is never invoked by another 
 
 ## Registry
 
-When PR #110 (canonical skill registry) lands, add this row to `skills/element-interactions/references/skill-registry.md`:
+This skill is registered in `skills/element-interactions/references/skill-registry.md`:
 
 ```
 | `test-catalogue` | `test-catalogue` | — (user-invoked, on-demand) | "produce a test catalogue", "generate a scenario report", "catalogue the suite", "client-ready catalogue", "export the scenario inventory"; never auto-invoked by any other skill. |

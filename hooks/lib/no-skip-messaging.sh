@@ -11,7 +11,7 @@
 #
 # Rationale
 # ---------
-# The Run-2 bypass post-mortem identified that several
+# An earlier sandbox-bypass post-mortem identified that several
 # onboarding-pipeline hooks DENY/WARN payloads named the technical
 # violation (schema gap, missing field, unauthorised dispatch shape) but
 # didn't reference the no-skip contract that wraps the entire pipeline.
