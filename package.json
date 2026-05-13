@@ -18,7 +18,8 @@
     "test:coverage": "npx test-coverage",
     "test:with-coverage": "npx playwright test --grep-invert 'Email Integration Tests' && npx test-coverage --format github-plain",
     "test:hooks": "hooks/tests/run.sh",
-    "sync-hooks": "node scripts/sync-hooks.js"
+    "sync-hooks": "node scripts/sync-hooks.js",
+    "prepack": "npm run test:hooks"
   },
   "files": [
     "dist",
