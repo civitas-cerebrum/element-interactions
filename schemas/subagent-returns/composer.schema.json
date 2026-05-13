@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://civitas-cerebrum.github.io/element-interactions/schemas/subagent-returns/composer.schema.json",
+  "title": "Composer return",
+  "description": "Return shape for composer subagent dispatches (test-composer + onboarding Phase 3/5 happy-path and coverage passes).",
+  "type": "object",
+  "required": ["handover"],
+  "additionalProperties": false,
+  "properties": {
+    "handover": {
+      "allOf": [
+        { "$ref": "handover.schema.json" },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "new-tests-landed",
+                "covered-exhaustively",
+                "blocked",
+                "skipped"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "journey": { "type": "string", "pattern": "^j-[a-z0-9-]+$" },
+    "pass": { "type": "integer", "minimum": 1 },
+    "tests-added": { "type": "integer", "minimum": 0 },
+    "run-time": {
+      "type": "string",
+      "pattern": "^([0-9]+m)?([0-9]+s)?$",
+      "description": "Composer's self-reported run duration, e.g. 4m30s."
+    },
+    "summary": { "type": "string" },
+    "spill": {
+      "type": "string",
+      "description": "Path to spillover file when status requires spill."
+    },
+    "blocked-reason": { "type": "string" },
+    "skip-authorisation": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": { "type": "object", "properties": { "handover": { "type": "object", "properties": { "status": { "const": "blocked" } } } } },
+      "then": { "type": "object", "properties": { "blocked-reason": { "type": "string" } }, "required": ["blocked-reason"] }
+    },
+    {
+      "if": { "type": "object", "properties": { "handover": { "type": "object", "properties": { "status": { "const": "skipped" } } } } },
+      "then": { "type": "object", "properties": { "skip-authorisation": { "type": "string" } }, "required": ["skip-authorisation"] }
+    },
+    {
+      "if": { "type": "object", "properties": { "handover": { "type": "object", "properties": { "status": { "const": "new-tests-landed" } } } } },
+      "then": { "type": "object", "properties": { "tests-added": { "type": "integer" }, "summary": { "type": "string" } }, "required": ["tests-added", "summary"] }
+    }
+  ]
+}
