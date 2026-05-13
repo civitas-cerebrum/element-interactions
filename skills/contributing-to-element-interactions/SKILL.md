@@ -672,7 +672,7 @@ VERSION_BUMP_AUTHORISED=1 npm version patch --no-git-tag-version
 VERSION_BUMP_AUTHORISED=1 npm version 0.4.0
 ```
 
-The marker travels with the command — auditable in git log, copy-pasteable from the user's authorising message. Don't set the env var globally; inline it on the bump command only. Without the prefix, `hooks/version-bump-authorisation-guard.sh` (PreToolUse:Bash) denies the command.
+The marker travels with the command — auditable in git log, copy-pasteable from the user's authorising message. Don't set the env var globally; inline it on the bump command only.
 
 **Why.** Per-PR bumping causes version-number collisions when PRs merge out of order, reviewer cognitive cost from a version line in every diff, and rebase churn that has nothing to do with the actual change. Release-time bumping collapses every PR diff to "the actual change" and keeps release control with the maintainer.
 
@@ -1185,7 +1185,7 @@ Before opening a PR on element-interactions:
 - [ ] Tests pass: `npm run test` shows all tests passing
 - [ ] Coverage 100%: `npx test-coverage --format=github-plain` shows ✅
 - [ ] No raw Playwright leak: `grep -rn "locator\.\(click\|fill\|...\)" src/ --include="*.ts"` returns zero matches in non-`Element`-impl code
-- [ ] **No version bump in this PR** (Rule 15 — versioning is release-time, not per-PR). If the user has explicitly authorised a bump, the bash invocation is prefixed with `VERSION_BUMP_AUTHORISED=1` and `hooks/version-bump-authorisation-guard.sh` allows it; otherwise the hook denies the command.
+- [ ] **No version bump in this PR** (Rule 15 — versioning is release-time, not per-PR). If the user has explicitly authorised a bump, the bash invocation is prefixed with `VERSION_BUMP_AUTHORISED=1`.
 - [ ] API reference updated (`skills/element-interactions/references/api-reference.md`) — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] README updated under `🛠️ API Reference: Steps` — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] If adding a new method, it has a JSDoc block on the public-facing class

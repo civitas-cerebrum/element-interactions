@@ -12,7 +12,6 @@ Orchestrator-mode and cascade-routing concerns previously enforced by this packa
 
 - **[commit-message-gate](../../../hooks/commit-message-gate.sh)** — `PreToolUse:Bash` (`git commit` only). Denies coverage-expansion / journey-mapping commits that violate the conventions (wrong type, multi-journey, hook-bypass flags). [escape hatch: no]
 - **[playwright-cli-isolation-guard](../../../hooks/playwright-cli-isolation-guard.sh)** — `PreToolUse:Bash` (`playwright-cli`). Denies `playwright-cli` invocations missing the role-prefixed `-s=<slug>` isolation flag. [escape hatch: no]
-- **[version-bump-authorisation-guard](../../../hooks/version-bump-authorisation-guard.sh)** — `PreToolUse:Bash` (`npm version <X>`). Denies `npm version` invocations that lack the in-band `VERSION_BUMP_AUTHORISED=1` marker — release-time-only bumps must be explicitly authorised. [escape hatch: yes]
 
 ## PostToolUse
 
