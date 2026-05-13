@@ -244,6 +244,8 @@ function installCivitasHooks() {
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
   }
 
+  pruneRetiredHooks(userHooksDir);
+
   console.log(`[civitas-cerebrum] Harness hooks: ${copiedCount} script${copiedCount === 1 ? '' : 's'} copied, ${registeredCount} registration${registeredCount === 1 ? '' : 's'} added (others already present). Restart Claude Code to pick them up.`);
 }
 
@@ -435,6 +437,61 @@ function installChromium() {
   } else {
     console.warn(`[@civitas-cerebrum/element-interactions] chromium install exited with status ${browserInstall.status}. You may need to run \`npx playwright-cli install-browser chromium\` manually before driving a browser.`);
     process.exitCode = 1;
+  }
+}
+
+// Hooks this package previously shipped but no longer does. On upgrade,
+// remove them from the user's installed hook dir so they don't keep
+// firing against stale source. Only deletes files we know we previously
+// installed; never touches arbitrary user files.
+const LEGACY_EI_HOOKS = [
+  // Retired in the achilles handoff (pre-0.4.0)
+  'contribution-handover-gate.sh',
+  'coverage-expansion-direct-compose-block.sh',
+  'coverage-expansion-dispatch-guard.sh',
+  'coverage-expansion-orchestrator-cli-block.sh',
+  'coverage-state-deferral-auth-guard.sh',
+  'coverage-state-schema-guard.sh',
+  'contributing-skill-preread-guard.sh',
+  'failure-diagnosis-stage0-preread-guard.sh',
+  'journey-map-sentinel-guard.sh',
+  'mcp-browser-tool-redirect.sh',
+  'onboarding-pipeline-incomplete-stop-deny.sh',
+  'parent-only-orchestrator-dispatch-block.sh',
+  'phase-validator-dispatch-required.sh',
+  'phase4-concurrency-log-format.sh',
+  'raw-playwright-api-warning.sh',
+  'skill-subagent-only-guard.sh',
+  'subagent-spillover-rewrite-gate.sh',
+  'suite-gate-ratchet.sh',
+  'task-update-phase-ledger-audit.sh',
+  'using-superpowers-carveout-guard.sh',
+  'benchmark-write-guard.sh',
+  'onboarding-report-write-guard.sh',
+  'happy-path-discovery-draft-required.sh',
+  'journey-mapping-cycle-gate.sh',
+  // Retired in 0.4.0
+  'bash-command-allowlist.sh',
+  'commit-attribution-gate.sh',
+  'commit-author-signature-guard.sh',
+  'harness-trusted-state-write-guard.sh',
+  'playwright-config-defaults-guard.sh',
+  'test-data-discipline-guard.sh',
+  'version-bump-authorisation-guard.sh',
+  'version-bump-against-npm-guard.sh',
+];
+
+function pruneRetiredHooks(homeHooksDir) {
+  for (const name of LEGACY_EI_HOOKS) {
+    const p = path.join(homeHooksDir, name);
+    try {
+      fs.unlinkSync(p);
+      console.log('[ei-postinstall] pruned retired hook:', name);
+    } catch (e) {
+      if (e.code !== 'ENOENT') {
+        console.warn('[ei-postinstall] could not prune', name + ':', e.message);
+      }
+    }
   }
 }
 
