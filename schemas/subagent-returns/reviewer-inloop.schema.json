@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://civitas-cerebrum.github.io/element-interactions/schemas/subagent-returns/reviewer-inloop.schema.json",
+  "title": "In-loop reviewer (Stage B) return",
+  "description": "Return shape for the in-loop reviewer dispatch that follows each composer cycle.",
+  "type": "object",
+  "required": ["handover"],
+  "additionalProperties": false,
+  "properties": {
+    "handover": {
+      "allOf": [
+        { "$ref": "handover.schema.json" },
+        { "type": "object", "properties": { "status": { "enum": ["greenlight", "improvements-needed"] } } }
+      ]
+    },
+    "journey": { "type": "string", "pattern": "^j-[a-z0-9-]+$" },
+    "pass": { "type": "integer", "minimum": 1 },
+    "cycle": { "type": "integer", "minimum": 1 },
+    "missing-scenarios": { "type": "array", "items": { "$ref": "#/$defs/reviewerFinding" } },
+    "craft-issues": { "type": "array", "items": { "$ref": "#/$defs/reviewerFinding" } },
+    "verification-misses": { "type": "array", "items": { "$ref": "#/$defs/reviewerFinding" } },
+    "summary": { "type": "string" }
+  },
+  "$defs": {
+    "reviewerFinding": {
+      "type": "object",
+      "required": ["id", "title", "scope", "expected", "observed"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^j-[a-z0-9-]+-[0-9]+-[0-9]+-R-[0-9]{2}$" },
+        "priority": { "const": "must-fix" },
+        "title": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string" },
+        "expected": { "type": "string" },
+        "observed": { "type": "string" },
+        "coverage": { "type": "string" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": { "handover": { "type": "object", "properties": { "status": { "const": "improvements-needed" } } } }
+      },
+      "then": {
+        "type": "object",
+        "anyOf": [
+          { "type": "object", "required": ["missing-scenarios"], "properties": { "missing-scenarios": { "type": "array" } } },
+          { "type": "object", "required": ["craft-issues"], "properties": { "craft-issues": { "type": "array" } } },
+          { "type": "object", "required": ["verification-misses"], "properties": { "verification-misses": { "type": "array" } } }
+        ]
+      }
+    }
+  ]
+}
