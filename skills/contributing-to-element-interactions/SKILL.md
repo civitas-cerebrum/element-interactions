@@ -665,14 +665,12 @@ Every public method on `Steps` logs at one of: `tester:navigate`, `tester:intera
 
 **Don't run `npm version <X>`. Don't edit `package.json`'s `version` field. Don't push a tag.** Versioning is release-time, not per-PR. The user controls when bumps happen.
 
-A contributor (or an agent acting for one) may bump only when **the user has explicitly authorised that specific bump in the conversation**. The authorisation is an in-band marker inlined on the bash command:
+A contributor (or an agent acting for one) may bump only when **the user has explicitly authorised that specific bump in the conversation**. The authorisation must be visible in the conversation thread — auditable in context, copy-pasteable from the user's authorising message.
 
 ```bash
-VERSION_BUMP_AUTHORISED=1 npm version patch --no-git-tag-version
-VERSION_BUMP_AUTHORISED=1 npm version 0.4.0
+npm version patch --no-git-tag-version
+npm version 0.4.0
 ```
-
-The marker travels with the command — auditable in git log, copy-pasteable from the user's authorising message. Don't set the env var globally; inline it on the bump command only.
 
 **Why.** Per-PR bumping causes version-number collisions when PRs merge out of order, reviewer cognitive cost from a version line in every diff, and rebase churn that has nothing to do with the actual change. Release-time bumping collapses every PR diff to "the actual change" and keeps release control with the maintainer.
 
@@ -680,7 +678,7 @@ The marker travels with the command — auditable in git log, copy-pasteable fro
 
 When multiple PRs are open in parallel, every branch bumping `current+1` from its own diverged base produces version collisions on merge — two branches off the same base both bump to the same next version, the second to merge clobbers or duplicates the first's published version. Bumping against npm-latest collapses every open branch to a known monotonic ceiling: the first PR to merge sets the new published version, and subsequent PRs rebase + re-bump against the new ceiling. No collisions, no manual reconciliation in CI.
 
-**Edge case — `npm view` fails (no network, package not yet published).** Fall back to bumping against the current `package.json` value (the old recipe) and call out the deviation in the PR description so the reviewer can spot-check for collision against any other open PR. The version-bump guard silently allows when the lookup fails, so the bump itself isn't blocked.
+**Edge case — `npm view` fails (no network, package not yet published).** Fall back to bumping against the current `package.json` value (the old recipe) and call out the deviation in the PR description so the reviewer can spot-check for collision against any other open PR. Fall back to bumping against the current `package.json` value and call out the deviation in the PR description so the reviewer can spot-check for collision against any other open PR.
 
 For minor/major bumps, same rule: bump once, at the start, against `(npm-latest + 1 minor/major)`.
 
@@ -1185,7 +1183,7 @@ Before opening a PR on element-interactions:
 - [ ] Tests pass: `npm run test` shows all tests passing
 - [ ] Coverage 100%: `npx test-coverage --format=github-plain` shows ✅
 - [ ] No raw Playwright leak: `grep -rn "locator\.\(click\|fill\|...\)" src/ --include="*.ts"` returns zero matches in non-`Element`-impl code
-- [ ] **No version bump in this PR** (Rule 15 — versioning is release-time, not per-PR). If the user has explicitly authorised a bump, the bash invocation is prefixed with `VERSION_BUMP_AUTHORISED=1`.
+- [ ] **No version bump in this PR** (Rule 15 — versioning is release-time, not per-PR). Bump only when the user has explicitly authorised it in the conversation.
 - [ ] API reference updated (`skills/element-interactions/references/api-reference.md`) — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] README updated under `🛠️ API Reference: Steps` — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] If adding a new method, it has a JSDoc block on the public-facing class
