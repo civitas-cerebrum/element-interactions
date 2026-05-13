@@ -36,6 +36,40 @@ Every finding reported by this skill — whether returned directly to the user o
 
 Do not re-paste the schema when dispatching sub-flows of this skill — point at the reference file instead.
 
+### Return shape (probe)
+
+Full schema: `schemas/subagent-returns/probe.schema.json`.
+
+Every probe return **MUST** open with a `handover` envelope as its first key. The envelope has exactly four required fields:
+
+| Field | Rule |
+|---|---|
+| `role` | `probe` (standalone) or `probe-j-<slug>` (when dispatched per-journey by coverage-expansion). |
+| `cycle` | Integer ≥ 1. |
+| `status` | One of `clean`, `findings-emitted`, `blocked`. |
+| `next-action` | One-line directive for the orchestrator. |
+
+`summary` is a **top-level** field — it MUST NOT appear inside `handover`. Forbidden inside the envelope: `phase`, `from`, `to`.
+
+JSON is preferred over YAML. YAML's compact-mapping form silently breaks when a value contains `:`.
+
+**Worked example — `findings-emitted`:**
+
+```json
+{
+  "handover": {
+    "role": "probe",
+    "cycle": 1,
+    "status": "findings-emitted",
+    "next-action": "orchestrator to review adversarial-findings.md and continue to next pass"
+  },
+  "journey": "j-login-flow",
+  "findings-emitted": 2,
+  "tests-added": 2,
+  "summary": "Discovered CSRF bypass and session-fixation edge cases; two regression tests added."
+}
+```
+
 ---
 
 ## Prerequisites

@@ -220,7 +220,28 @@ Each cycle agent receives a focused brief and returns a structured section block
 4. For each link out of the section, classify the target's section-guess (using §"Section vocabulary"). If no canonical match, propose a new section-id with rationale.
 5. For gated routes the agent cannot self-credential into, mark them in `gated-deferred-to-coverage-expansion` rather than attempting to map them.
 
-**Return shape** — see `element-interactions/references/subagent-return-schema.md` §2.7. Index-level fields (section-id, cycle, routes-driven, new-sections-discovered, gated-deferred) inline; full flow descriptions and state-variation tables spill to `tests/e2e/docs/.subagent-returns/phase4-cycle-<N>-section-<id>.md`.
+**Return shape** — full schema: `schemas/subagent-returns/section-agent.schema.json`. Every section-agent return **MUST** open with a `handover` envelope (role, cycle, status, next-action — see §2.0 of `element-interactions/references/subagent-return-schema.md`). `status` is one of `section-complete`, `section-deferred`, `blocked`. Index-level fields (`section`, `cycle`, `routes-driven`, `new-sections-discovered`, `gated-deferred-to-coverage-expansion`) inline; full flow descriptions and state-variation tables spill to `tests/e2e/docs/.subagent-returns/phase4-cycle-<N>-section-<id>.md`. JSON is preferred over YAML.
+
+**Worked example — `section-complete`:**
+
+```json
+{
+  "handover": {
+    "role": "phase4-cycle-1-section-checkout",
+    "cycle": 1,
+    "status": "section-complete",
+    "next-action": "deregister; section ready for author"
+  },
+  "section": "checkout",
+  "cycle": 1,
+  "kind": "section",
+  "routes-driven": ["/checkout", "/checkout/payment"],
+  "flows-identified": 4,
+  "state-variations-recorded": 2,
+  "spill": "tests/e2e/docs/journey-map/sections/checkout.md",
+  "summary": "Four flows mapped including one error variant."
+}
+```
 
 ### Section vocabulary (canonical IDs)
 
@@ -339,6 +360,34 @@ When in doubt: ask "is this a distinct user goal that requires separate prioriti
 - No journey-blocks reference an undefined `sj-<slug>`.
 
 If any check fails, the author returns `status: blocked` so the orchestrator can re-dispatch with corrected input. The phase-validator-4 hook re-runs this cross-reference check post-write; mismatches cause `improvements-needed` (which forces the soft-blocked recovery path above).
+
+**Return shape (`phase4-prioritise-author`)** — full schema: `schemas/subagent-returns/phase4-prioritise-author.schema.json`.
+
+Every `phase4-prioritise-author:` return **MUST** open with a `handover` envelope (role, cycle, status, next-action — see §2.0 of `element-interactions/references/subagent-return-schema.md`). `status` is one of `journey-map-authored` or `blocked`. `summary` and `journey-map` are **top-level** fields — MUST NOT appear inside `handover`. JSON is preferred over YAML.
+
+**Worked example — `journey-map-authored`:**
+
+```json
+{
+  "handover": {
+    "role": "phase4-prioritise-author",
+    "cycle": 2,
+    "status": "journey-map-authored",
+    "next-action": "advance to phase 5"
+  },
+  "cycles-consumed": 2,
+  "convergence-status": "converged",
+  "journey-map": {
+    "path": "tests/e2e/docs/journey-map.md",
+    "pages-discovered": 12,
+    "flows-identified": 28,
+    "priority-breakdown": {"P0": 4, "P1": 8, "P2": 10, "P3": 6}
+  },
+  "gated-areas-not-mapped": 1,
+  "mapping-completeness-note": "Admin panel behind role-gate not mapped; deferred to coverage-expansion.",
+  "summary": "Journey map authored with 28 flows across 12 pages; 4 P0 journeys identified."
+}
+```
 
 ### Harness enforcement
 

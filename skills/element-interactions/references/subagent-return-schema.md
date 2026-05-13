@@ -54,6 +54,72 @@ No finding may escalate above `info` if it is not visible in a screenshot. That 
 
 ---
 
+## 2. Handover envelope + per-role return shapes
+
+### 2.0 Handover envelope (mandatory on every skill-loading subagent return)
+
+Full schema: `schemas/subagent-returns/handover.schema.json`.
+
+Every subagent that loads a skill via the `Skill` tool **MUST** include a `handover` object as the **first key** of its return. The envelope pairs the return with its in-flight registry entry and is the primary cleanup path for the harness leash.
+
+The envelope has exactly **four** required fields — no others are allowed inside it:
+
+| Field | Type | Rule |
+|---|---|---|
+| `role` | string | Kebab-case slug identifying the dispatched role (e.g. `composer-j-login-flow`, `reviewer-inloop`, `probe`, `phase-validator`, `section-agent`, `phase4-prioritise-author`). |
+| `cycle` | integer ≥ 1 | Cycle number within the role's dispatch loop. |
+| `status` | string | Role-specific terminal-or-continuation status. Constrained by the per-role schema. |
+| `next-action` | string (non-empty) | One-line directive for the orchestrator — what should happen after this return. |
+
+Fields that belong at the **top level** (never inside `handover`): `phase`, `summary`, `journey`, `pass`, `section`, `findings`, `exit-criteria-checked`, `spill`, and any other role payload field.
+
+JSON is preferred over YAML for all handover returns. YAML's compact-mapping form (`key: value: rest`) silently corrupts values that contain `:`, causing schema validation to fail without a clear error.
+
+### 2.5 Phase-validator return shape
+
+Full schema: `schemas/subagent-returns/phase-validator.schema.json`.
+
+The phase-validator is dispatched at the end of each pipeline phase to verify exit criteria before the orchestrator advances.
+
+**Status enum:** `greenlight` | `improvements-needed`
+
+**Required top-level fields on `greenlight`:** `handover`, `phase` (integer 1–7), `exit-criteria-checked` (array, ≥1 item), `summary`.
+
+**Required top-level fields on `improvements-needed`:** `handover`, `phase`, `findings` (array, ≥1 item), `summary`.
+
+Finding blocks (under `improvements-needed`) match `^ {2}- \*\*pv-[1-7]-\d{2,}\*\* \[must-fix\]` with sub-bullets `criterion:` / `issue:` / `fix:`.
+
+Banned tokens inherited from reviewer shape: `nice-to-have`, `greenlight-with-notes`, top-level `notes:`.
+
+**Worked example — `greenlight`:**
+
+```json
+{
+  "handover": {
+    "role": "phase-validator",
+    "cycle": 1,
+    "status": "greenlight",
+    "next-action": "orchestrator to advance to phase 3"
+  },
+  "phase": 2,
+  "exit-criteria-checked": [
+    {
+      "criterion": "app-context.md exists with a sentinel line",
+      "satisfied": true,
+      "evidence": "File present at tests/e2e/docs/app-context.md; sentinel found on line 1"
+    },
+    {
+      "criterion": "journey-map.md exists with at least one journey entry",
+      "satisfied": true,
+      "evidence": "File present at tests/e2e/docs/journey-map.md; 3 journey entries identified"
+    }
+  ],
+  "summary": "Phase 2 exit criteria fully satisfied; greenlighting advance to phase 3."
+}
+```
+
+---
+
 ## 3. Strict ledger schema — `tests/e2e/docs/adversarial-findings.md`
 
 The adversarial findings ledger is enforced, not conventional. Every subagent that appends to the ledger MUST validate its append against the schema below **before committing**. Schema violations are contract violations; the subagent corrects the append or re-emits.
@@ -184,8 +250,8 @@ Callers do not run a parser — they grep the return for a short, fixed list of 
 - **`covered-exhaustively` returns:** the literal string `status: covered-exhaustively`, a table header row `| Expectation | Covering spec | Test name |`, and at least one data row per `Test expectations:` entry in the journey block.
 - **Banned tokens:** the literal strings `no-new-tests-by-rationalisation`, `no-new-tests` (unqualified), `AF-`, `P4-`, `REG-` (legacy finding-ID prefixes — note: the `-R-` infix in reviewer IDs is NOT a prefix and is allowed), and any `[p0]` / `[blocker]` / `[no-impact]` severity bracket.
 - **Ledger append:** the `**Pass <N> — <kind> (YYYY-MM-DD)**` header line, the `Scope:` line, and the closing `**Pass <N> summary:** probes=…, boundaries=…, suspected-bugs=…` line, in that order, bracketing the finding blocks.
-- **Reviewer returns (§2.4):** the top-level `status:` is one of `greenlight` or `improvements-needed`. Finding blocks (when present under `missing-scenarios:`, `craft-issues:`, or `verification-misses:` sub-lists) match `^ {2}- \*\*[a-z0-9-]+-\d+-\d+-R-\d+\*\* \[must-fix\]`. **A `summary:` line is REQUIRED on `greenlight` returns** — a `greenlight` status without a `summary:` is a contract violation; treat as `improvements-needed` and re-dispatch. `greenlight` carries `summary:` and no finding blocks; `improvements-needed` has at least one `must-fix` finding and no `summary:` line. Returns containing the literal tokens `nice-to-have`, `greenlight-with-notes`, or a `notes:` sub-list are contract violations from a prior schema revision; reject and re-dispatch with a brief that quotes the banned token. The Stage A regex in the previous bullet does NOT apply to reviewer returns.
-- **Phase-validator returns (§2.5):** the top-level `status:` is one of `greenlight` or `improvements-needed`. `phase:` line carries an integer 1-7 (anchored on end-of-line / non-digit so `phase: 12`, `phase: 71`, `phase: 8a` fail). `exit-criteria-checked:` array has ≥1 `- criterion:` row (the array cannot be empty). **A `summary:` line is REQUIRED on both statuses.** **`findings: []` is REQUIRED on `greenlight`** (explicit empty array). On `improvements-needed`, finding blocks match `^ {2}- \*\*pv-[1-7]-\d{2,}\*\* \[must-fix\]` with sub-bullets `criterion:` / `issue:` / `fix:`. Banned tokens inherited from §2.4: `nice-to-have`, `greenlight-with-notes`, top-level `notes:`. The reviewer regex from the previous bullet does NOT apply to phase-validator returns.
+- **Reviewer returns (see `coverage-expansion/references/reviewer-subagent-contract.md` § "Return shape"):** the top-level `status:` is one of `greenlight` or `improvements-needed`. Finding blocks (when present under `missing-scenarios:`, `craft-issues:`, or `verification-misses:` sub-lists) match `^ {2}- \*\*[a-z0-9-]+-\d+-\d+-R-\d+\*\* \[must-fix\]`. **A `summary:` line is REQUIRED on `greenlight` returns** — a `greenlight` status without a `summary:` is a contract violation; treat as `improvements-needed` and re-dispatch. `greenlight` carries `summary:` and no finding blocks; `improvements-needed` has at least one `must-fix` finding and no `summary:` line. Returns containing the literal tokens `nice-to-have`, `greenlight-with-notes`, or a `notes:` sub-list are contract violations from a prior schema revision; reject and re-dispatch with a brief that quotes the banned token. The Stage A regex in the previous bullet does NOT apply to reviewer returns.
+- **Phase-validator returns (§2.5):** the top-level `status:` is one of `greenlight` or `improvements-needed`. `phase:` line carries an integer 1-7 (anchored on end-of-line / non-digit so `phase: 12`, `phase: 71`, `phase: 8a` fail). `exit-criteria-checked:` array has ≥1 `- criterion:` row (the array cannot be empty). **A `summary:` line is REQUIRED on both statuses.** On `improvements-needed`, finding blocks match `^ {2}- \*\*pv-[1-7]-\d{2,}\*\* \[must-fix\]` with sub-bullets `criterion:` / `issue:` / `fix:`. Banned tokens: `nice-to-have`, `greenlight-with-notes`, top-level `notes:`. The reviewer regex from the previous bullet does NOT apply to phase-validator returns.
 
 If any of the above is missing or a banned token is present, the caller re-dispatches with a brief that quotes the specific violation. The grep-based check is sufficient — no AST, no JSON, no parser.
 
@@ -205,4 +271,4 @@ Explicit deregistration via terminal-status handover is the primary cleanup path
 
 - A programmatic schema validator. This is prose + examples. Subagents read and conform.
 - Per-skill schema overrides. If a future skill needs a return shape this schema cannot express, the fix is to extend this file — not to fork it.
-- Transport format. Subagents return Markdown-in-text. JSON is not accepted; it breaks orchestrator parsing and mixes with `test-composer`'s legacy return block.
+- Transport format for finding blocks. The §1 finding-return format is prose/Markdown. The §2.x handover-envelope returns use JSON (preferred) or YAML — per-role schemas live in `schemas/subagent-returns/`.

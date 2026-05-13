@@ -273,7 +273,7 @@ Every finding reported in the return block (coverage gaps, app-bug flags, new-di
 
 ### Return states — covered-exhaustively vs rationalisation
 
-If this invocation produced **zero** new tests, pick one of the two states defined in the canonical schema's §2:
+If this invocation produced **zero** new tests, pick one of the states defined in `schemas/subagent-returns/composer.schema.json`:
 
 - **`status: covered-exhaustively`** — only valid when the subagent inspected the journey. Required evidence: a per-expectation mapping table (one row per item in the journey's `Test expectations:` list, each mapped to a spec file + test name). Every row must name concrete coverage — no `coverage: none` rows are tolerated under this status.
 - **`status: no-new-tests-by-rationalisation`** — **not a valid return** from any compositional pass. If the only justification is "tests would be redundant" without an inspection, perform the inspection. Orchestrators will reject this return and re-dispatch with a stricter brief.
@@ -289,64 +289,63 @@ When invoked by `coverage-expansion` as a re-pass subagent (Pass 2 or 3), the ma
 
 The four-trigger format is non-negotiable — the orchestrator's rejection check (§"Re-pass mode for compositional passes 2–3" in `coverage-expansion/SKILL.md`) greps for the literals "trigger 1" through "trigger 4" and re-dispatches any return missing one of them.
 
-### Return block format
+### Return shape (composer)
 
-```
-journey: j-<id>
-status: <in-progress|complete|covered-exhaustively>
-tests added:
-  - tests/<file>.spec.ts :: <describe> :: <test name>
-  - ...
-coverage:
-  steps: <covered>/<total>
-  branches: <covered>/<total>
-  state-variations: <covered>/<total>
-  justified gaps:
-    - **<FINDING-ID>** [<severity>] — <title>
-      - scope: <what was probed>
-      - expected: <what should happen>
-      - observed: <what happened>
-      - coverage: none
-new discoveries:
-  branches:
-    - <branch description, page, from-step>
-  sub-journeys:
-    - <potential sub-journey observed>
-  pages:
-    - <new url, why discovered>
-  elements:
-    - <new selector added to page-repository.json, page, role>
-api compliance: clean | <specific issue resolved>
-stabilization: <N runs> green
-stage_4a:
-  specs_reviewed: <count>
-  fixtures_modified: <count>
-  findings: <count by severity (fixed/review/gap-flagged/blocked)>
-  post_fix_run: passing | failing
-whole_suite_gate:
-  status: passed | whole-suite-gate-failed
-  specs_passed: <N>
-  specs_failed: <N>
-  skipped: <N>
+Full schema: `schemas/subagent-returns/composer.schema.json`.
+
+Every composer return **MUST** open with a `handover` envelope as its first key. The envelope has exactly four required fields:
+
+| Field | Rule |
+|---|---|
+| `role` | Kebab-case slug, e.g. `composer-j-login-flow`. |
+| `cycle` | Integer ≥ 1. The cycle number within this journey's dispatch loop. |
+| `status` | One of `new-tests-landed`, `covered-exhaustively`, `blocked`, `skipped`. |
+| `next-action` | One-line directive for the orchestrator. |
+
+`phase` and `summary` are **top-level** fields — they MUST NOT appear inside `handover`.
+
+JSON is preferred over YAML. YAML's compact-mapping form silently breaks when a value contains `:`, causing schema validation to fail.
+
+**Worked example — `new-tests-landed`:**
+
+```json
+{
+  "handover": {
+    "role": "composer-j-login-flow",
+    "cycle": 1,
+    "status": "new-tests-landed",
+    "next-action": "reviewer-inloop to review pass 1 cycle 1 for login-flow"
+  },
+  "journey": "j-login-flow",
+  "pass": 1,
+  "tests-added": 4,
+  "run-time": "2m15s",
+  "summary": "Added happy-path, mobile viewport, error-state, and data-lifecycle tests for login flow."
+}
 ```
 
-The `stage_4a` block summarizes the structured return from Step 6a. Full per-finding schema: see `../element-interactions/references/test-optimization.md` §8.
+For `status: covered-exhaustively`, the per-expectation mapping table moves to disk per the spillover contract below; the inline return inlines only index-level fields (see §"Spillover contract" below).
 
-The `whole_suite_gate` block records the result of the whole-suite re-run at Step 7 exit. Status `whole-suite-gate-failed` means this skill did NOT mark the journey complete and the caller must resolve before invoking another journey.
+The orchestrator uses the table to audit that the "no new tests" claim is supported by inspection, not rationalised.
 
-For `status: covered-exhaustively`, append the per-expectation mapping table documented in the canonical schema immediately after the return block. The orchestrator uses the table to audit that the "no new tests" claim is supported by inspection, not rationalised.
+### Spillover contract (`covered-exhaustively`)
 
-### Spillover contract (`covered-exhaustively`) — §2.6
+When the verdict is `covered-exhaustively`, the per-expectation mapping table moves to disk. The return body inlines only the index-level fields — `handover` envelope + `journey`, `pass`, `cycle`, `spill`, `tests-added: 0`, and `summary`. Example (JSON):
 
-When the verdict is `covered-exhaustively`, the per-expectation mapping table moves to disk per §2.6 of `../element-interactions/references/subagent-return-schema.md`. The return body inlines only the index-level fields:
-
-```
-status: covered-exhaustively
-journey: j-<slug>
-pass: <N>
-cycle: <cycle-number>
-spill: tests/e2e/docs/.subagent-returns/composer-<slug>-<pass>-c<cycle>.md
-expectations-mapped: <count>
+```json
+{
+  "handover": {
+    "role": "composer-j-login-flow",
+    "cycle": 1,
+    "status": "covered-exhaustively",
+    "next-action": "reviewer-inloop to verify exhaustive coverage for login-flow pass 1"
+  },
+  "journey": "j-login-flow",
+  "pass": 1,
+  "tests-added": 0,
+  "spill": "tests/e2e/docs/.subagent-returns/composer-login-flow-1-c1.md",
+  "summary": "All expectations already covered; per-expectation mapping table in spill file."
+}
 ```
 
 The spill file starts with the sentinel `<!-- subagent-returns:composer:<slug>:pass-<N>:cycle-<C> -->`. The full `| Expectation | Covering spec | Test name |` table (with one row per `Test expectations:` entry) goes in the spill body, NOT inline in the return.

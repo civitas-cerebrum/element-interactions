@@ -71,7 +71,49 @@ A **staff-level QA engineer**, dispatched fresh for each journey-and-cycle pair.
 
 ## Return shape
 
-See `skills/element-interactions/references/subagent-return-schema.md` §2.4. The schema is canonical; this contract does NOT re-paste it.
+Full schema: `schemas/subagent-returns/reviewer-inloop.schema.json`.
+
+Every reviewer return **MUST** open with a `handover` envelope as its first key. The envelope has exactly four required fields:
+
+| Field | Rule |
+|---|---|
+| `role` | `reviewer-inloop` (per-journey) or `reviewer-batch-pass-<N>` (batch mode). |
+| `cycle` | Integer ≥ 1. |
+| `status` | One of `greenlight`, `improvements-needed` (per-journey); `batch-complete` (batch mode). |
+| `next-action` | One-line directive for the orchestrator. |
+
+`phase` and `summary` are **top-level** fields — they MUST NOT appear inside `handover`. Banned tokens inside any reviewer return: `nice-to-have`, `greenlight-with-notes`, top-level `notes:`.
+
+JSON is preferred over YAML. YAML's compact-mapping form silently breaks when a value contains `:`.
+
+**Worked example — `improvements-needed`:**
+
+```json
+{
+  "handover": {
+    "role": "reviewer-inloop",
+    "cycle": 1,
+    "status": "improvements-needed",
+    "next-action": "composer to address missing-scenarios before next cycle"
+  },
+  "journey": "j-login-flow",
+  "pass": 1,
+  "cycle": 1,
+  "missing-scenarios": [
+    {
+      "id": "j-login-flow-1-1-R-01",
+      "priority": "must-fix",
+      "title": "No mobile viewport test for login form",
+      "scope": "login-flow happy-path",
+      "expected": "At least one test locks viewport to iphone-15 before submitting the login form",
+      "observed": "All existing tests run at default desktop viewport"
+    }
+  ],
+  "summary": "One missing-scenario finding; mobile viewport coverage absent for login-flow."
+}
+```
+
+A `greenlight` return carries `summary:` at the top level and no finding arrays. An `improvements-needed` return carries at least one of `missing-scenarios`, `craft-issues`, or `verification-misses` (per the schema) and no `summary:` line.
 
 ## Dispatch brief template (for the orchestrator to follow)
 
@@ -138,25 +180,22 @@ The cross-journey synthesis is a real upgrade, not just a cost optimisation: a s
    - The page-repo slice (selectors used in tests must exist in the page-repo).
    - Sibling spills (cross-journey consistency: pattern X surfaced in journey A but missed in journey B that shares the same page).
 3. **Apply the must-fix calibration** from §"Behavior" item 6 of the per-journey contract — same recording rules. The batch reviewer is judging the same shape of finding, just across many journeys at once.
-4. **Return per-journey verdicts** in a single structured return. The schema is the per-journey return schema (§2.4) wrapped in a top-level array:
+4. **Return per-journey verdicts** in a single structured return. The handover envelope follows the canonical shape (`schemas/subagent-returns/reviewer-inloop.schema.json`) with role `reviewer-batch-pass-<N>` and status `batch-complete`; per-journey verdicts are a top-level `verdicts` array (not inside the envelope):
 
-   ```yaml
-   handover:
-     role: reviewer-batch-pass-<N>
-     status: batch-complete
-     pass: <N>
-     cycle: 1
-     verdicts:
-       - journey: j-a
-         status: greenlight
-         summary: <one-line>
-       - journey: j-b
-         status: improvements-needed
-         spill: tests/e2e/docs/.subagent-returns/reviewer-batch-pass-<N>-c1.md
-         findings: [j-b-1-1-R-01, j-b-1-1-R-02]
-       - journey: j-c
-         status: greenlight
-         summary: <one-line>
+   ```json
+   {
+     "handover": {
+       "role": "reviewer-batch-pass-1",
+       "cycle": 1,
+       "status": "batch-complete",
+       "next-action": "orchestrator to process per-journey verdicts"
+     },
+     "verdicts": [
+       {"journey": "j-a", "status": "greenlight", "summary": "<one-line>"},
+       {"journey": "j-b", "status": "improvements-needed", "spill": "tests/e2e/docs/.subagent-returns/reviewer-batch-pass-1-c1.md", "findings": ["j-b-1-1-R-01", "j-b-1-1-R-02"]},
+       {"journey": "j-c", "status": "greenlight", "summary": "<one-line>"}
+     ]
+   }
    ```
 
    Greenlit journeys carry only a one-line `summary` — no spill file, no findings list. Flagged journeys carry the §2.6 spillover shape (`spill:` path + `findings:` list); the spill file is appended to the same `tests/e2e/docs/.subagent-returns/` directory but under a single filename naming the batch:
