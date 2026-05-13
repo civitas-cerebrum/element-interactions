@@ -20,9 +20,8 @@ assert_deny "$H" "$(payload tool_name=Bash command="git commit --no-gpg-sign -m 
 # Note: the hook fires only when the command starts with `git commit` adjacent
 # (the regex requires `git[[:space:]]+commit`). `git -c <k>=<v> commit` slips
 # past that gate and is therefore not denied here. Documented as a known
-# limitation; the harness-trusted-state-write-guard's per-segment commit
-# splitter handles the related forging surface, but the bypass-flag check
-# here is intentionally adjacent-only to keep false-positive risk low.
+# limitation; the bypass-flag check here is intentionally adjacent-only to
+# keep false-positive risk low.
 assert_allow "$H" "$(payload tool_name=Bash command="git -c commit.gpgsign=false commit -m 'test(j-x): fix'")" "git -c form bypass (known gap, not denied)"
 
 section "commit-message-gate: --no-verify inside message body is allowed"
