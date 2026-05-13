@@ -239,7 +239,7 @@ This rule applies regardless of how reasonable the caller's estimate is. "16 jou
 
 ### 15. Test data discipline — secrets in `.env`, variables centralised
 
-Two rules govern how test data shows up in spec files. Both are enforced by `test-data-discipline-guard.sh` (PreToolUse:Edit|Write|MultiEdit on `*.spec.{ts,js,…}` and `*.test.{ts,js,…}`). See `references/harness-hooks.md` for the hook contract.
+Two rules govern how test data shows up in spec files.
 
 - **Project secrets MUST live in `.env`** (gitignored) and load into specs via `process.env.<NAME>`. Hardcoded credential literals — `password`, `passwd`, `pwd`, `api_key` / `apiKey`, `secret`, `token`, `bearer`, `access_key` / `accessKey`, `auth` — assigned to a string literal in a spec file are **denied**. The escape on a single line is a `process.env.` reference: `const password = process.env.LOGIN_PASSWORD;`. The escape across the suite (legacy / migrating) is `TEST_DATA_DISCIPLINE_GUARD=warn` (downgrades to warn) or `=off` (silent allow).
 

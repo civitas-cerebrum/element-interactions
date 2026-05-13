@@ -14,10 +14,6 @@ Orchestrator-mode and cascade-routing concerns previously enforced by this packa
 - **[playwright-cli-isolation-guard](../../../hooks/playwright-cli-isolation-guard.sh)** — `PreToolUse:Bash` (`playwright-cli`). Denies `playwright-cli` invocations missing the role-prefixed `-s=<slug>` isolation flag. [escape hatch: no]
 - **[version-bump-authorisation-guard](../../../hooks/version-bump-authorisation-guard.sh)** — `PreToolUse:Bash` (`npm version <X>`). Denies `npm version` invocations that lack the in-band `VERSION_BUMP_AUTHORISED=1` marker — release-time-only bumps must be explicitly authorised. [escape hatch: yes]
 
-### Edit / Write
-
-- **[test-data-discipline-guard](../../../hooks/test-data-discipline-guard.sh)** — `PreToolUse:Edit|Write|MultiEdit` (`*.spec.{ts,js,…}` and `*.test.{ts,js,…}`). Denies hardcoded credentials (password / token / api_key / secret / bearer literals) in spec files unless the same line references `process.env.<NAME>`; warns on top-level magic constants outside a centralised test-data import. [escape hatch: yes (warn / off)]
-
 ## PostToolUse
 
 - **[subagent-return-schema-guard](../../../hooks/subagent-return-schema-guard.sh)** — `PostToolUse:Agent`. Validates subagent-return canonical shape and drives the in-flight registry leash via the §2.0 handover envelope. [escape hatch: no]
