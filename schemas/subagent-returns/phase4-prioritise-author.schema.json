@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://civitas-cerebrum.github.io/element-interactions/schemas/subagent-returns/phase4-prioritise-author.schema.json",
+  "title": "Phase-4 prioritise-author return",
+  "type": "object",
+  "required": ["handover"],
+  "additionalProperties": false,
+  "properties": {
+    "handover": {
+      "allOf": [
+        { "$ref": "handover.schema.json" },
+        { "type": "object", "properties": { "status": { "enum": ["journey-map-authored", "blocked"] } } }
+      ]
+    },
+    "cycles-consumed": { "type": "integer", "minimum": 1 },
+    "convergence-status": { "enum": ["converged", "cap-hit", "deferred"] },
+    "journey-map": {
+      "type": "object",
+      "required": ["path", "pages-discovered", "flows-identified", "priority-breakdown"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string" },
+        "pages-discovered": { "type": "integer", "minimum": 0 },
+        "flows-identified": { "type": "integer", "minimum": 0 },
+        "priority-breakdown": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "P0": { "type": "integer", "minimum": 0 },
+            "P1": { "type": "integer", "minimum": 0 },
+            "P2": { "type": "integer", "minimum": 0 },
+            "P3": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "gated-areas-not-mapped": { "type": "integer", "minimum": 0 },
+    "mapping-completeness-note": { "type": "string" },
+    "summary": { "type": "string" },
+    "blocked-reason": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": { "handover": { "type": "object", "properties": { "status": { "const": "journey-map-authored" } } } }
+      },
+      "then": {
+        "type": "object",
+        "required": ["journey-map", "cycles-consumed", "convergence-status"],
+        "properties": {
+          "journey-map": { "type": "object" },
+          "cycles-consumed": { "type": "integer" },
+          "convergence-status": { "type": "string" }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": { "handover": { "type": "object", "properties": { "status": { "const": "blocked" } } } }
+      },
+      "then": {
+        "type": "object",
+        "required": ["blocked-reason"],
+        "properties": { "blocked-reason": { "type": "string" } }
+      }
+    }
+  ]
+}
