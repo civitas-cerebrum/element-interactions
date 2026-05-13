@@ -10,7 +10,6 @@ Orchestrator-mode and cascade-routing concerns previously enforced by this packa
 
 ### Bash
 
-- **[bash-command-allowlist](../../../hooks/bash-command-allowlist.sh)** — `PreToolUse:Bash`. Inverts the per-shape Bash denylist to a verb allowlist; denies any command whose leading verb is not on the allowlist. [escape hatch: yes (`CIVITAS_BASH_EXTRA_VERBS=…`, `CIVITAS_BASH_ALLOWLIST=off`)]
 - **[commit-attribution-gate](../../../hooks/commit-attribution-gate.sh)** — `PreToolUse:Bash` (`git commit` only). Surfaces missing `Reported-by:` attribution when a commit references a GitHub issue. [escape hatch: yes]
 - **[commit-author-signature-guard](../../../hooks/commit-author-signature-guard.sh)** — `PreToolUse:Bash` (`git commit` only). Denies commits whose body carries an AI-assistant `Co-Authored-By:` trailer (Claude / Anthropic / borealis sentinels). [escape hatch: yes]
 - **[commit-message-gate](../../../hooks/commit-message-gate.sh)** — `PreToolUse:Bash` (`git commit` only). Denies coverage-expansion / journey-mapping commits that violate the conventions (wrong type, multi-journey, hook-bypass flags). [escape hatch: no]
