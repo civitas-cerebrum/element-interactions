@@ -7,7 +7,7 @@
 | Field | Value |
 |---|---|
 | Run date | 2026-05-09 |
-| Target app | `umutayb/book-hive-frontend` + `umutayb/book-hive-backend` (latest) |
+| Target app | `example/demo-app-frontend` + `example/demo-app-backend` (latest) |
 | Datastore | MongoDB 7 (per-run isolated container; mongo host port unmapped to avoid local-mongod conflict) |
 | Test framework | Playwright 1.59.1 |
 | **Element-interactions pkg** | **`@civitas-cerebrum/element-interactions ^0.3.6` (LOCAL tarball, rebuilt at run-start from the open PR branch)** |

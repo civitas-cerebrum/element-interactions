@@ -1,10 +1,10 @@
-# BookHive Onboarding Benchmark — Cumulative Log
+# the prior incident Onboarding Benchmark — Cumulative Log
 
 > Each run on a new `@civitas-cerebrum/element-interactions` version appends a section below. Aggregate metrics only — no bug specifics, no journey IDs, no selectors, no test code samples, no page-repository entries. The point is to compare runs against each other; specifics would prime the next run and contaminate the comparison.
 
 ## How to interpret this log
 
-Each "Run N" section captures one full onboarding pipeline against the same target app (`umutayb/book-hive` from Docker Hub) using the same stimulus prompt (in `RESTART.md`). The only intended variable across runs is the version of `@civitas-cerebrum/element-interactions` (and its peer packages).
+Each "Run N" section captures one full onboarding pipeline against the same target app (`example/demo-app` from Docker Hub) using the same stimulus prompt (in `RESTART.md`). The only intended variable across runs is the version of `@civitas-cerebrum/element-interactions` (and its peer packages).
 
 A run is **better than the prior run** if it covers more journeys / writes more tests / runs faster / surfaces more bugs / has fewer course corrections — at the same input. A run is **worse** if any of those move backward without compensating gains elsewhere.
 
@@ -24,7 +24,7 @@ After completing each run, the agent MUST:
 | Field | Value |
 |---|---|
 | Run date | 2026-05-02 |
-| Target app | `umutayb/book-hive-frontend:0.0.3` + `umutayb/book-hive-backend:0.0.3` |
+| Target app | `example/demo-app-frontend:0.0.3` + `example/demo-app-backend:0.0.3` |
 | Datastore | MongoDB 7 (per-run isolated container) |
 | Test framework | Playwright 1.59.1 |
 | **Element-interactions pkg** | **`@civitas-cerebrum/element-interactions ^0.3.4`** |
@@ -133,7 +133,7 @@ Aggregated count of agent course-corrections during the run — useful for measu
 | Field | Value |
 |---|---|
 | Run date | 2026-05-02 |
-| Target app | `umutayb/book-hive-frontend:latest` + `umutayb/book-hive-backend:latest` |
+| Target app | `example/demo-app-frontend:latest` + `example/demo-app-backend:latest` |
 | Datastore | MongoDB 7 (per-run isolated container) |
 | Test framework | Playwright 1.59.1 |
 | **Element-interactions pkg** | **`@civitas-cerebrum/element-interactions ^0.3.5`** |

@@ -9,10 +9,10 @@
 # Rationale
 # ---------
 # Several hooks need to detect the same family of "I'm narrowing scope but
-# framing it nicely" tokens that have surfaced across BookHive runs and
-# previous incident docs (#139, #154, #155, #156, and the latest BookHive
+# framing it nicely" tokens that have surfaced across prior runs and
+# previous incident docs (#139, #154, #155, #156, and the latest incident
 # Run-2 partial). Each hook used to maintain its own grep regex; the lists
-# diverged over time and bypasses surfaced (notably the BookHive Run-2
+# diverged over time and bypasses surfaced (notably the Run-2
 # partial slipping past `pragmatic Pass`-only matchers because the actual
 # framing was "context-budget exit #2" and "Pass 1 first wave only").
 #
@@ -42,7 +42,7 @@
 # negative cases miss; exits 1 otherwise.
 
 # Token catalogue. Each entry is an ERE pattern. Keep in sync with the
-# kernel rule's named framings + the BookHive Run-2 bypass list.
+# kernel rule's named framings + the Run-2 bypass list.
 #
 # Note: '\d' is NOT POSIX ERE — use '[0-9]' instead. We declare the array
 # below with that constraint already applied.
@@ -70,7 +70,7 @@ FRAMING_TOKEN_PATTERNS=(
   'defer[[:space:]]+the[[:space:]]+reviewer'
   'the[[:space:]]+dispatch[[:space:]]+failed[^\n]*context'
   'agent-chosen[[:space:]]+(deferral|scope[[:space:]]+reduction)'
-  # BookHive Run-2 verdict-prose framings (lifted byte-for-byte from the
+  # Run-2 verdict-prose framings (lifted byte-for-byte from the
   # bypass BENCHMARK Run-2 entry + onboarding-report.md). Each one is a
   # framing the orchestrator emitted to dress up the partial-pipeline
   # exit as something other than the no-skip violation it was. Catching

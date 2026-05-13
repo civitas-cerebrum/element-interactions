@@ -2,14 +2,14 @@ import { request as playwrightRequest } from '@playwright/test';
 import { test, expect } from './fixture/StepFixture';
 
 /**
- * 100% API Coverage — HTTP Steps against a real BookHive backend.
+ * 100% API Coverage — HTTP Steps against a real the demo-app backend.
  *
  * These tests exercise every `api*` / `verifyApi*` method on the Steps API
- * against the `umutayb/book-hive-backend:latest` image brought up by the
+ * against the `example/demo-app-backend:latest` image brought up by the
  * project's docker-compose. No mocks — behaviour is locked against the same
  * real artefact that downstream consumers use.
  *
- * Endpoints exercised (from book-hive/README.md → Backend API):
+ * Endpoints exercised (from demo-app/README.md → Backend API):
  *   GET    /api/health
  *   GET    /api/books, /api/books/{id}
  *   POST   /api/reset, /api/auth/login
@@ -23,25 +23,25 @@ import { test, expect } from './fixture/StepFixture';
  * without needing to thread a JWT through every test.
  */
 
-const BOOKHIVE_HEALTH_ATTEMPTS = 30;
-const BOOKHIVE_HEALTH_DELAY_MS = 1000;
+const APP_HEALTH_ATTEMPTS = 30;
+const APP_HEALTH_DELAY_MS = 1000;
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('TC_API_001: HTTP API Steps — BookHive integration', () => {
+test.describe('TC_API_001: HTTP API Steps — demo-app integration', () => {
     test.beforeAll(async () => {
         // Infrastructure pre-flight uses Playwright's own `request` (the Steps
         // API fixture depends on `page`, which Playwright disallows in `beforeAll`).
         // The actual coverage tests below exercise our API steps, not this setup.
-        const baseURL = process.env.BOOKHIVE_API_URL ?? 'http://localhost:8080';
+        const baseURL = process.env.APP_API_URL ?? 'http://localhost:8080';
         const ctx = await playwrightRequest.newContext({ baseURL });
         try {
-            for (let attempt = 0; attempt < BOOKHIVE_HEALTH_ATTEMPTS; attempt++) {
+            for (let attempt = 0; attempt < APP_HEALTH_ATTEMPTS; attempt++) {
                 try {
                     const res = await ctx.get('/api/health');
                     if (res.status() === 200) break;
                 } catch { /* not ready yet */ }
-                await new Promise((r) => setTimeout(r, BOOKHIVE_HEALTH_DELAY_MS));
+                await new Promise((r) => setTimeout(r, APP_HEALTH_DELAY_MS));
             }
             // Reset to known seed state (50 books + 2 test users).
             await ctx.post('/api/reset');
@@ -64,13 +64,13 @@ test.describe('TC_API_001: HTTP API Steps — BookHive integration', () => {
         expect(res.body.content.length).toBeGreaterThan(0);
     });
 
-    test('apiGet — named provider (bookhive)', async ({ steps }) => {
-        const res = await steps.apiGet<unknown>('bookhive', '/api/books/book-001');
+    test('apiGet — named provider (app)', async ({ steps }) => {
+        const res = await steps.apiGet<unknown>('app', '/api/books/book-001');
         await steps.verifyApiStatus(res, 200);
     });
 
     test('apiGet — named provider with query params', async ({ steps }) => {
-        const res = await steps.apiGet<unknown>('bookhive', '/api/books', {
+        const res = await steps.apiGet<unknown>('app', '/api/books', {
             query: { query: 'mockingbird' },
         });
         await steps.verifyApiStatus(res, 200);
@@ -83,7 +83,7 @@ test.describe('TC_API_001: HTTP API Steps — BookHive integration', () => {
 
     test('apiPost — with JSON body (login)', async ({ steps }) => {
         const res = await steps.apiPost<{ token: string }>('/api/auth/login', {
-            email: 'testuser1@bookhive.test',
+            email: 'testuser1@app.test',
             password: 'Test1234!',
         });
         await steps.verifyApiStatus(res, 200);
@@ -91,7 +91,7 @@ test.describe('TC_API_001: HTTP API Steps — BookHive integration', () => {
     });
 
     test('apiPost — named provider, no body', async ({ steps }) => {
-        const res = await steps.apiPost<{ status: string }>('bookhive', '/api/reset');
+        const res = await steps.apiPost<{ status: string }>('app', '/api/reset');
         await steps.verifyApiStatus(res, 200);
         expect(res.body.status).toBe('reset');
     });
@@ -102,7 +102,7 @@ test.describe('TC_API_001: HTTP API Steps — BookHive integration', () => {
     });
 
     test('apiPut — named provider', async ({ steps }) => {
-        const res = await steps.apiPut<unknown>('bookhive', '/api/cart/items/anything', {
+        const res = await steps.apiPut<unknown>('app', '/api/cart/items/anything', {
             quantity: 3,
         });
         expect([401, 403]).toContain(res.status);
@@ -114,18 +114,18 @@ test.describe('TC_API_001: HTTP API Steps — BookHive integration', () => {
     });
 
     test('apiDelete — named provider', async ({ steps }) => {
-        const res = await steps.apiDelete<unknown>('bookhive', '/api/cart/items/anything');
+        const res = await steps.apiDelete<unknown>('app', '/api/cart/items/anything');
         expect([401, 403]).toContain(res.status);
     });
 
     test('apiPatch — unmapped route returns 4xx', async ({ steps }) => {
         const res = await steps.apiPatch<unknown>('/api/books/book-001', { price: 1 });
-        // book-hive has no @PatchMapping; Spring returns 401/403/404/405 depending on filter chain.
+        // demo-app has no @PatchMapping; Spring returns 401/403/404/405 depending on filter chain.
         expect([401, 403, 404, 405]).toContain(res.status);
     });
 
     test('apiPatch — named provider', async ({ steps }) => {
-        const res = await steps.apiPatch<unknown>('bookhive', '/api/books/book-001', {
+        const res = await steps.apiPatch<unknown>('app', '/api/books/book-001', {
             price: 1,
         });
         expect([401, 403, 404, 405]).toContain(res.status);
@@ -138,7 +138,7 @@ test.describe('TC_API_001: HTTP API Steps — BookHive integration', () => {
     });
 
     test('apiHead — named provider', async ({ steps }) => {
-        const headers = await steps.apiHead('bookhive', '/api/books/book-001');
+        const headers = await steps.apiHead('app', '/api/books/book-001');
         expect(headers).toBeDefined();
     });
 

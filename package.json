@@ -16,7 +16,9 @@
     "postinstall": "node scripts/postinstall.js",
     "test:quiet": "TESTER_DEBUG=false npx playwright test",
     "test:coverage": "npx test-coverage",
-    "test:with-coverage": "npx playwright test --grep-invert 'Email Integration Tests' && npx test-coverage --format github-plain"
+    "test:with-coverage": "npx playwright test --grep-invert 'Email Integration Tests' && npx test-coverage --format github-plain",
+    "test:hooks": "hooks/tests/run.sh",
+    "sync-hooks": "node scripts/sync-hooks.js"
   },
   "files": [
     "dist",

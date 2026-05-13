@@ -7,7 +7,7 @@
 #
 # Why this exists
 # ---------------
-# BookHive Run-5 rounds 3-6 closed 22 specific bash write-shape exploits
+# Run-5 rounds 3-6 closed 22 specific bash write-shape exploits
 # (quoted redirects, FD-numbered redirects, process substitution, script-
 # source bodies, hardlinks, `$()` inside commit messages, etc.). Each
 # round followed the same loop: a red-team agent found a new bash shape,
@@ -30,6 +30,11 @@
 # Verbs the onboarding pipeline (and contributor workflows) need:
 #   npm npx bunx pnpm yarn bun           — node toolchain
 #   playwright                            — direct invocation form
+#   docker docker-compose                 — container runtime (used by the
+#                                           package's own integration fixture
+#                                           docker-compose.yml; agent + every
+#                                           subagent needs this to start /
+#                                           stop / reseed the test backend)
 #   git gh                                — version control + GitHub CLI
 #   ls cat head tail wc grep egrep fgrep
 #   find file stat du df tree which
@@ -58,9 +63,15 @@
 #
 # Escape
 # ------
-# CIVITAS_BASH_ALLOWLIST=off — out-of-band only. Use during contributor
-# debugging or when the user explicitly authorises a non-allowlisted
-# command.
+# CIVITAS_BASH_ALLOWLIST=off — out-of-band only. Total disable.
+# CIVITAS_BASH_EXTRA_VERBS=verb1,verb2,...
+#                             — additive: temporarily extend the allowlist
+#                               with verbs the user has explicitly approved
+#                               for this session (e.g. `kubectl,terraform`).
+#                               Honoured at start-of-process; subagents
+#                               inherit via env. Use when a session needs a
+#                               tool we don't ship in the baseline; prefer
+#                               this over the nuclear `=off` switch.
 
 set -uo pipefail
 
@@ -85,7 +96,19 @@ CMD=$(echo "$INPUT" | "$JQ" -r '.tool_input.command // ""')
 # Allowlist of verbs.
 # Round-7 L2: `command` removed from allowlist (it's a builtin-runner — `command bash -c evil` bypasses).
 # Use `which` or `type` for command introspection.
-ALLOWED_VERBS_RE='^(npm|npx|bunx|pnpm|yarn|bun|playwright|git|gh|ls|cat|head|tail|wc|grep|egrep|fgrep|find|file|stat|du|df|tree|which|whereis|type|pwd|basename|dirname|realpath|readlink|echo|printf|sort|uniq|date|whoami|id|hostname|uname|env|true|false|test|\[|ps|jq|awk|sed|curl|wget|mkdir|touch|rm|cp|mv|ln|chmod|cd|pushd|popd|node|python|python3)$'
+ALLOWED_VERBS_RE='^(npm|npx|bunx|pnpm|yarn|bun|playwright|docker|docker-compose|git|gh|ls|cat|head|tail|wc|grep|egrep|fgrep|find|file|stat|du|df|tree|which|whereis|type|pwd|basename|dirname|realpath|readlink|echo|printf|sort|uniq|date|whoami|id|hostname|uname|env|true|false|test|\[|ps|jq|awk|sed|curl|wget|mkdir|touch|rm|cp|mv|ln|chmod|cd|pushd|popd|node|python|python3)$'
+
+# Additive extension: comma-separated verbs the user has authorised
+# out-of-band for this session via CIVITAS_BASH_EXTRA_VERBS. Honoured
+# at start-of-process; subagents inherit via env. Each token is treated
+# as a literal verb (no metachars) — invalid tokens are dropped silently.
+if [ -n "${CIVITAS_BASH_EXTRA_VERBS:-}" ]; then
+  _extra_re=$(printf '%s' "$CIVITAS_BASH_EXTRA_VERBS" | tr ',' '|' | sed 's/[^A-Za-z0-9_|.+-]//g')
+  if [ -n "$_extra_re" ]; then
+    # Splice the extras into the alternation before the closing `)$`.
+    ALLOWED_VERBS_RE="${ALLOWED_VERBS_RE%)\$}|${_extra_re})\$"
+  fi
+fi
 
 # Round-7 L4 — whole-command-level denylist: $() and backticks ARE
 # arbitrary code execution. The awk splitter doesn't track them; rather
@@ -251,20 +274,37 @@ fi
 
 # Per-segment awk splitter (mirrors harness-trusted-state-write-guard's I1
 # splitter — respects single/double quotes, splits on &&/||/;/|/&).
+#
+# `&` is a statement separator (background job) ONLY when bare. In FD-
+# redirect forms `2>&1`, `1>&2`, `<&3`, `&>file`, `&>>file`, the `&` is
+# part of a redirect, not a separator. We check prev/next char to
+# distinguish — earlier versions split inside `2>&1` and produced a bogus
+# segment starting with `1`, denying legitimate `cmd 2>&1 | head` shapes.
 segments_lines=$(printf '%s' "$CMD" | awk '
   BEGIN { RS = "" }
   {
     n = length($0)
     buf = ""
     in_single = 0; in_double = 0
+    prev = ""
     for (i = 1; i <= n; i++) {
       c = substr($0, i, 1); c2 = substr($0, i, 2)
-      if (c == "\047" && !in_double) { in_single = !in_single; buf = buf c; continue }
-      if (c == "\"" && !in_single)   { in_double = !in_double; buf = buf c; continue }
-      if (in_single || in_double)    { buf = buf c; continue }
-      if (c2 == "&&" || c2 == "||")  { print buf; buf = ""; i++; continue }
-      if (c == ";" || c == "|" || c == "&") { print buf; buf = ""; continue }
+      if (c == "\047" && !in_double) { in_single = !in_single; buf = buf c; prev = c; continue }
+      if (c == "\"" && !in_single)   { in_double = !in_double; buf = buf c; prev = c; continue }
+      if (in_single || in_double)    { buf = buf c; prev = c; continue }
+      if (c2 == "&&" || c2 == "||")  { print buf; buf = ""; i++; prev = ""; continue }
+      if (c == ";" || c == "|")      { print buf; buf = ""; prev = ""; continue }
+      if (c == "&") {
+        next_c = substr($0, i+1, 1)
+        # FD redirect: `>&`, `<&`, `&>` — keep as part of buffer.
+        if (prev == ">" || prev == "<" || next_c == ">") {
+          buf = buf c; prev = c; continue
+        }
+        # Bare `&` — statement separator (background job).
+        print buf; buf = ""; prev = ""; continue
+      }
       buf = buf c
+      prev = c
     }
     if (buf != "") print buf
   }')
@@ -326,7 +366,7 @@ if [ "${#denied_segments[@]}" -gt 0 ]; then
   reasons=$(printf '  - %s\n' "${denied_segments[@]}")
   emit_deny "[BLOCKED] Bash command outside allowlist sandbox.
 
-The agent's Bash tool is sandboxed to a verb allowlist (BookHive Run-5 architectural fix; rounds 3-6 patched 22 specific bash exploit shapes — this hook closes the structural cause by inverting denylist to allowlist). Denied statements:
+The agent's Bash tool is sandboxed to a verb allowlist (Run-5 architectural fix; rounds 3-6 patched 22 specific bash exploit shapes — this hook closes the structural cause by inverting denylist to allowlist). Denied statements:
 
 ${reasons}
 
@@ -336,6 +376,7 @@ What to do instead:
 Use one of these allowed verbs at the start of your command:
 
   npm | npx | bunx | pnpm | yarn | bun | playwright       (node toolchain)
+  docker | docker-compose                                  (containers)
   git | gh                                                 (version control)
   ls | cat | head | tail | wc | grep | find | file | stat (read)
   echo | printf | sort | uniq | date | env                 (text + env)
@@ -355,11 +396,25 @@ Disallowed shapes (use a different tool instead):
 ──────────────────────────────────────────────────────────────────
 Escape (out-of-band only):
 ──────────────────────────────────────────────────────────────────
-CIVITAS_BASH_ALLOWLIST=off in the parent process. Env vars don't
-persist across hook invocations, so the agent CANNOT toggle this
-from in-session. If you genuinely need to run a non-allowlisted
-command, ask the user to set the env var out-of-band, or have them
-run the command themselves and paste the output."
+Two env vars, both set OUTSIDE this session (parent process before
+launching Claude Code — env vars don't persist across hook invocations,
+so the agent CANNOT toggle these from in-session):
+
+  CIVITAS_BASH_EXTRA_VERBS=verb1,verb2,…
+    Additive — adds the listed verbs to this hook's allowlist for the
+    session. Use when the user has explicitly approved a tool we don't
+    ship in the baseline (e.g. \`kubectl,terraform\`). Preferred over
+    the nuclear =off switch because every other defence stays armed.
+
+  CIVITAS_BASH_ALLOWLIST=off
+    Nuclear — disables this hook entirely. Use only for contributor
+    debugging or when the user has explicitly authorised arbitrary
+    shell for the session.
+
+If you genuinely need to run a non-allowlisted command and neither env
+var is set, ask the user to set one (CIVITAS_BASH_EXTRA_VERBS is the
+right choice for a specific tool), or have them run the command and
+paste the output."
   exit 0
 fi
 

@@ -42,7 +42,7 @@ run_match() {
   ( source "$LIB"; has_framing_token "$arg" )
 }
 
-# Positive cases — every named token from the kernel rule + new BookHive
+# Positive cases — every named token from the kernel rule + new the prior incident
 # Run-2 framings. has_framing_token must return 0.
 positive=(
   "stopping at the pragmatic Pass 1 boundary"

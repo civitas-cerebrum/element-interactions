@@ -1,7 +1,7 @@
 #!/bin/bash
 # 30-replicate-framing-token-coverage.sh — exploit-replication coverage
 # test for hooks/lib/framing-tokens.sh against the verbatim phrase set
-# from the BookHive Run-2 bypass.
+# from the Run-2 bypass.
 #
 # Iterates over EVERY phrase the bypass actually used (lifted from the
 # BENCHMARK Run-2 section, the bypass onboarding-report.md, and the bypass
@@ -114,7 +114,7 @@ section "exploit-replication 30c: full bypass artifacts pass framing detection"
 # Concatenate every bypass artifact and confirm has_framing_token matches
 # the combined blob. This is the integration check: a future hook that
 # greps the bypass artifacts on disk should always find a framing token.
-FIX="$HOOK_DIR/tests/fixtures/bookhive-bypass-artifacts"
+FIX="$HOOK_DIR/tests/fixtures/bypass-artifacts"
 COMBINED=$(cat "$FIX/BENCHMARK-run-2-bypass-section.md" \
               "$FIX/onboarding-report-bypass.md" \
               "$FIX/coverage-expansion-state-bypass.json" 2>/dev/null)

@@ -81,7 +81,7 @@ PROTECTED_PATHS=(
   # sentinel and coverage-expansion-state.json status as authoritative
   # mid-pipeline signals. Without protection, the agent could clear
   # both via direct Write/Edit and pass the Stop-deny gate.
-  # Removed 2026-05-11 — 0.3.6 BookHive benchmark Phase-4 author dispatch was
+  # Removed 2026-05-11 — 0.3.6 benchmark Phase-4 author dispatch was
   # hard-blocked here. journey-map.md is rewritten in place by
   # phase4-prioritise-author per journey-mapping SKILL.md §"Author step";
   # coverage-expansion-state.json is written by composer/reviewer/cleanup

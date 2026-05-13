@@ -1,8 +1,8 @@
-# Onboarding Report — BookHive
+# Onboarding Report — the prior incident
 
 **Date:** 2026-05-09
 **Detected level:** B (LOCAL @civitas-cerebrum/element-interactions 0.3.6 from `feat/iterative-discovery-cycles` PR branch already pinned; scaffold absent)
-**Happy path:** A user signs up for a new BookHive account, lists their own book for sale on the marketplace, and verifies the listing appears in the public marketplace.
+**Happy path:** A user signs up for a new the prior incident account, lists their own book for sale on the marketplace, and verifies the listing appears in the public marketplace.
 **Runtime:** ~5 h 20 m active (gate confirmation 2026-05-09T02:30Z → Run-N append in progress)
 
 ## Pipeline status
@@ -10,7 +10,7 @@
 | Phase | Status | Notes |
 | --- | --- | --- |
 | 1 — Scaffold | ✅ greenlight (cycle 1/10) | playwright.config.ts, fixtures/base.ts, page-repository.json, tsconfig.json, docker-compose.yml, .gitignore. Chromium installed. Stack up. |
-| 2 — Groundwork discovery | ✅ greenlight (cycle 1/10) | app-context.md (Test Infrastructure populated: auth via httpOnly `bookhive_token`, `POST /api/reset` + `POST /api/seed` discovered, mutation-endpoint inventory). journey-map.md sentinel + Site Map + pending headings. |
+| 2 — Groundwork discovery | ✅ greenlight (cycle 1/10) | app-context.md (Test Infrastructure populated: auth via httpOnly `app_token`, `POST /api/reset` + `POST /api/seed` discovered, mutation-endpoint inventory). journey-map.md sentinel + Site Map + pending headings. |
 | 3 — Happy path | ✅ greenlight (cycle 1/10) | tests/e2e/happy-path.spec.ts 3× green (1.6-2.1s). Stages 1, 2, 3, 4a, 4b all ran. .discovery-draft.json with 6 cycle-1-targets. globalSetup-once seed wired (resetState slot intentionally empty under `global-reset:cross-test-race`). |
 | 4 — Full journey mapping | ✅ greenlight (cycle 2/10) | 22 journeys (6 P0 / 9 P1 / 2 P2 / 5 P3) + 4 cross-referenced sub-journeys. 2 cycles (1 discovery + 1 edge-probe). Section→Journey table well-formed; no structural smells. |
 | 5 — Coverage expansion (depth) | ⚠️ **partial** — Pass 1 first wave only | 6 P0 journeys composed (43 tests, all 3× green; whole-suite 44/44 green). Stage B per-journey reviewers, Passes 2-5, and cleanup ledger dedup deferred — see "Resume needed" below. |
@@ -59,8 +59,8 @@ The following were surfaced by section cycle agents (Phase 4) and composers (Pha
 ## Knowledge gained per pass
 
 **Phase 1 / Phase 2 / Phase 3 — discovery and groundwork**
-- BookHive runs on a 3-container docker stack (frontend nginx → static SPA, backend Spring Boot on `:8080`, mongo). Frontend SPA hardcodes `localhost:8080` for backend calls → host port-mapping must be exact.
-- Auth model: JWT in httpOnly cookie `bookhive_token`. `POST /api/auth/signup` is open (no email verification, no captcha, no MFA). `POST /api/reset` is unauthenticated and clears DB to empty. `POST /api/seed` repopulates a stable ~49-book catalog (idempotent).
+- prior runs on a 3-container docker stack (frontend nginx → static SPA, backend Spring Boot on `:8080`, mongo). Frontend SPA hardcodes `localhost:8080` for backend calls → host port-mapping must be exact.
+- Auth model: JWT in httpOnly cookie `app_token`. `POST /api/auth/signup` is open (no email verification, no captcha, no MFA). `POST /api/reset` is unauthenticated and clears DB to empty. `POST /api/seed` repopulates a stable ~49-book catalog (idempotent).
 - Constraint tags identified: `global-reset:cross-test-race`, `global-seed:idempotent-catalog`, `single-tenant-global-state`, `auth-cookie-httponly`. Stage 4a §1 inverts under `global-reset:cross-test-race` — `beforeEach(reset)` is forbidden; per-test throwaway-user pattern with `globalSetup`-once seed is the canonical isolation strategy.
 
 **Phase 4 — journey mapping cycles**
