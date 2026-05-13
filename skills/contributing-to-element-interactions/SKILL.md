@@ -300,7 +300,7 @@ The contract:
   Reported-by: @<github-handle>
   ```
 
-  Multi-reporter is fine: `Reported-by: @umutayb, @Emmdb`.
+  Multi-reporter is fine: `Reported-by: @contributor-a, @contributor-b`.
 
 - The PR description repeats the same attribution near the top, before the rest of the summary.
 
