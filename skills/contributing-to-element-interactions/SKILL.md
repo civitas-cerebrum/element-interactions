@@ -1195,7 +1195,6 @@ Before opening a PR on element-interactions:
 - [ ] README updated under `🛠️ API Reference: Steps` — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] If adding a new method, it has a JSDoc block on the public-facing class
 - [ ] `.contribution-handover.json` populated against `schemas/contribution-handover.schema.json` — every boolean set; every `false` / `"n/a"` paired with a specific `*Reason` field (verified by `hooks/contribution-handover-gate.sh`)
-- [ ] If this PR closes a GitHub issue, the commit body and the PR description both include `Reported-by: @<github-handle>` crediting the issue author (Hard rule §"Attribute issue reporters", verified by `hooks/commit-attribution-gate.sh`)
 - [ ] **If this PR adds, modifies, or strengthens any `skills/*/SKILL.md` rule, workflow, phase, gate, invariant, or contract, it ALSO ships a hook under `hooks/` that enforces the rule programmatically (Hard rule §"Methodology improvements ship as programmatic hooks"). When mechanical enforcement is genuinely impossible, the PR description includes a paragraph explaining why and the rule is tagged `markdown-only` in `coverage-expansion/references/anti-rationalizations.md`.**
 
 If you're adding to element-repository first:
