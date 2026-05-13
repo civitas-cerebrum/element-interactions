@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://civitas-cerebrum.github.io/element-interactions/schemas/subagent-returns/section-agent.schema.json",
+  "title": "Section-agent return",
+  "type": "object",
+  "required": ["handover", "section"],
+  "additionalProperties": false,
+  "properties": {
+    "handover": {
+      "allOf": [
+        { "$ref": "handover.schema.json" },
+        { "type": "object", "properties": { "status": { "enum": ["section-complete", "section-deferred", "blocked"] } } }
+      ]
+    },
+    "section": { "type": "string" },
+    "cycle": { "type": "integer", "minimum": 1 },
+    "kind": { "enum": ["section", "edge-probe"] },
+    "routes-driven": { "type": "array", "items": { "type": "string" } },
+    "routes-suggested": { "type": "array", "items": { "type": "string" } },
+    "flows-identified": { "type": "integer", "minimum": 0 },
+    "state-variations-recorded": { "type": "integer", "minimum": 0 },
+    "new-sections-discovered": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": { "id": { "type": "string" }, "rationale": { "type": "string" } }
+      }
+    },
+    "edge-findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "summary"],
+        "properties": { "id": { "type": "string" }, "summary": { "type": "string" } }
+      }
+    },
+    "gated-deferred-to-coverage-expansion": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["section"],
+        "properties": { "section": { "type": "string" }, "reason": { "type": "string" } }
+      }
+    },
+    "spill": { "type": "string" },
+    "summary": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": { "kind": { "const": "edge-probe" } }
+      },
+      "then": {
+        "type": "object",
+        "required": ["edge-findings"],
+        "properties": { "edge-findings": { "type": "array" } }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": { "handover": { "type": "object", "properties": { "status": { "const": "section-complete" } } } }
+      },
+      "then": {
+        "type": "object",
+        "required": ["spill"],
+        "properties": { "spill": { "type": "string", "minLength": 1 } }
+      }
+    }
+  ]
+}
