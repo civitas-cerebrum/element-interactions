@@ -1,7 +1,7 @@
 ---
 name: work-summary-deck
 description: >
-  Generate a branded Civitas Cerebrum HTML presentation deck that summarizes QA work done in the current project.
+  Generate a branded HTML presentation deck that summarizes QA work done in the current project.
   Use this skill when asked to "generate a report", "export a deck", "summarize work", "create a presentation",
   "work summary", "show what we've done", "QA report", "achievement report", "progress deck", "export summary",
   or any request to produce a visual summary of test automation work. Also triggers on requests to document
@@ -38,7 +38,7 @@ Read these sources in parallel:
 | **App context** | `**/app-context.md`, `tests/e2e/docs/app-context.md` | Pages discovered, features documented, known issues |
 | **Git history** | `git log --oneline` | Timeline of work, commit count, contributors |
 | **Test results** | `playwright-report/`, `test-results/` | Pass/fail rates, last run date |
-| **Package.json** | `package.json` | Which @civitas-cerebrum packages are installed, versions |
+| **Package.json** | `package.json` | Which test framework packages are installed, versions |
 | **Coverage data** | Coverage reports if they exist | Line/branch/statement coverage |
 | **Bug reports** | `**/bug-report.md`, `**/bug-discovery-report.md` | Bugs found, severity, reproduction status |
 
@@ -53,7 +53,7 @@ From the collected data, compute:
 - **Platform count** — unique `platform` values in page-repository entries (web, android, ios, etc.)
 - **Commit count** — number of commits related to test automation
 - **Bug count** — bugs discovered (if bug-discovery was run)
-- **Package versions** — versions of installed @civitas-cerebrum packages
+- **Package versions** — versions of installed test framework packages
 
 If a data source doesn't exist, skip that metric — don't fabricate numbers.
 
@@ -62,7 +62,7 @@ If a data source doesn't exist, skip that metric — don't fabricate numbers.
 Detect which framework the project uses:
 
 - **If `@civitas-cerebrum/singularity` or `@civitas-cerebrum/singularity-engine` is installed**: This is a Singularity project (cross-platform)
-- **If `@civitas-cerebrum/element-interactions` is installed without singularity**: This is an Element Interactions project (Playwright-only)
+- **If `@civitas-cerebrum/element-interactions` is installed without Singularity**: This is an Element Interactions project (Playwright-only)
 - **If both are installed**: Mention both, lead with Singularity
 
 This determines the language used in the deck (e.g., "platform-agnostic" vs "Playwright-focused").
@@ -75,11 +75,11 @@ Generate a self-contained HTML file with these slides. Each slide should have re
 
 ### Required Slides
 
-1. **Title Slide** — Project name, framework used, date, Civitas Cerebrum branding
+1. **Title Slide** — Project name, framework used, date
 2. **Project Overview** — What app is being tested, which framework, which packages installed (with versions)
 3. **Test Coverage Summary** — Key metrics: test count, page coverage, element count, platform count
 4. **Pages & Scenarios** — Which pages/screens are covered, with scenario summaries
-5. **Closing** — npm package badges, links to civitas-cerebrum GitHub
+5. **Closing** — npm package badges, links to the project repository
 
 ### Optional Slides (include when data exists)
 
@@ -93,35 +93,21 @@ Aim for 5-10 slides total. Fewer is better — each slide should earn its place 
 
 ---
 
-## Branding
+## Styling
 
-The deck MUST use Civitas Cerebrum's visual identity. Read the template at `assets/template.html` (relative to this skill file) for the complete CSS and HTML structure.
+The deck is unbranded by default. Read the template at `assets/template.html` (relative to this skill file) for the complete CSS and HTML structure. Consumers may layer their own brand identity on top (colors, logo, wordmark) by overriding the CSS custom properties defined in the template.
 
-### Brand Reference
+### Default Color Reference
 
 | Element | Value |
 |---------|-------|
 | **Background** | `#0d1117` (primary), `#161b22` (secondary), `#21262d` (cards) |
 | **Text** | `#e6edf3` (bright), `#7d8590` (muted), `#484f58` (faint) |
-| **Accent green** | `#3fb950` — primary brand color, used for highlights, stats, badges |
+| **Accent green** | `#3fb950` — primary accent, used for highlights, stats, badges |
 | **Accent blue** | `#58a6ff` — secondary accent |
 | **Accent purple** | `#bc8cff` — tertiary accent |
 | **Border** | `#30363d` |
 | **Font** | `Inter` via Google Fonts, fallback to system `-apple-system` stack |
-| **Logo** | Two interlocking circle rings — white (#e6edf3) and green (#3fb950) — representing the two C's of Civitas Cerebrum |
-
-### Logo SVG
-
-Use this SVG for the logo on every slide:
-
-```svg
-<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="85" cy="100" r="50" fill="none" stroke="#e6edf3" stroke-width="4"/>
-  <circle cx="115" cy="100" r="50" fill="none" stroke="#3fb950" stroke-width="4"/>
-</svg>
-```
-
-For the brand mark (top-left of each slide), use the rings at 28x28px alongside "CIVITAS CEREBRUM" in 12px uppercase with letter-spacing 3px.
 
 ### NPM Badges
 
