@@ -16,7 +16,6 @@ Orchestrator-mode and cascade-routing concerns previously enforced by this packa
 
 ### Edit / Write
 
-- **[playwright-config-defaults-guard](../../../hooks/playwright-config-defaults-guard.sh)** — `PreToolUse:Edit|Write` (`playwright.config.{ts,js,mjs,cjs}`). Warns when a config write strips documented `retries` / `video` / `trace` defaults. [escape hatch: yes]
 - **[test-data-discipline-guard](../../../hooks/test-data-discipline-guard.sh)** — `PreToolUse:Edit|Write|MultiEdit` (`*.spec.{ts,js,…}` and `*.test.{ts,js,…}`). Denies hardcoded credentials (password / token / api_key / secret / bearer literals) in spec files unless the same line references `process.env.<NAME>`; warns on top-level magic constants outside a centralised test-data import. [escape hatch: yes (warn / off)]
 
 ## PostToolUse
