@@ -241,9 +241,9 @@ This rule applies regardless of how reasonable the caller's estimate is. "16 jou
 
 Two rules govern how test data shows up in spec files.
 
-- **Project secrets MUST live in `.env`** (gitignored) and load into specs via `process.env.<NAME>`. Hardcoded credential literals — `password`, `passwd`, `pwd`, `api_key` / `apiKey`, `secret`, `token`, `bearer`, `access_key` / `accessKey`, `auth` — assigned to a string literal in a spec file are **denied**. The escape on a single line is a `process.env.` reference: `const password = process.env.LOGIN_PASSWORD;`. The escape across the suite (legacy / migrating) is `TEST_DATA_DISCIPLINE_GUARD=warn` (downgrades to warn) or `=off` (silent allow).
+- **Project secrets MUST live in `.env`** (gitignored) and load into specs via `process.env.<NAME>`. Hardcoded credential literals — `password`, `passwd`, `pwd`, `api_key` / `apiKey`, `secret`, `token`, `bearer`, `access_key` / `accessKey`, `auth` — MUST NOT be assigned to a string literal in a spec file. Use a `process.env.` reference instead: `const password = process.env.LOGIN_PASSWORD;`.
 
-- **Test-data variables SHOULD be centralised in a single class / module** — e.g. `tests/fixtures/test-data.ts` exporting a `TestData` class or namespace. Scattered top-level `const NAME = "literal"` declarations across spec files (URLs, account names, magic strings) drift across files and resist refactor. The guard **warns** (does not deny) when it sees a top-level magic constant in a spec file that does NOT also import from a centralised data module (`test-data`, `testData`, `fixtures`, `fixture`, `constants`, `constant`). The recommended shape:
+- **Test-data variables SHOULD be centralised in a single class / module** — e.g. `tests/fixtures/test-data.ts` exporting a `TestData` class or namespace. Scattered top-level `const NAME = "literal"` declarations across spec files (URLs, account names, magic strings) drift across files and resist refactor. The recommended shape:
 
   ```ts
   // tests/fixtures/test-data.ts
