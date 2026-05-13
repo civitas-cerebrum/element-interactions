@@ -111,37 +111,17 @@ function installCivitasSkills() {
 // that spawns per-role `claude -p` children with narrow allowlists — the
 // per-phase progression guards are no longer needed inside element-interactions.
 //
-// Survivors below are role-agnostic defense-in-depth: bash sandbox,
-// commit-message + attribution gates, playwright-cli isolation + cleanup,
-// trusted-state write guard, test-data discipline, version-bump
-// authorisation, subagent-return schema, and playwright-config defaults.
+// Surviving hooks (role-agnostic defense-in-depth): playwright-cli isolation
+// + cleanup, commit-message gate, subagent-return schema validation. The
+// BookHive-era hardening hooks (bash allowlist, commit attribution / author
+// signature, harness trusted-state, playwright-config defaults, test-data
+// discipline, version-bump authorisation) were retired as part of the
+// public-dependency cleanup — they encoded project-specific policy
+// inappropriate for a generic test-automation framework.
 const HOOK_MANIFEST = [
   // PreToolUse — guards (fail-closed)
   { file: 'playwright-cli-isolation-guard.sh',    event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'commit-message-gate.sh',               event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
-  { file: 'commit-attribution-gate.sh',           event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
-  { file: 'version-bump-authorisation-guard.sh',  event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
-  { file: 'commit-author-signature-guard.sh',     event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
-  { file: 'playwright-config-defaults-guard.sh',  event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 10 },
-  { file: 'test-data-discipline-guard.sh',        event: 'PreToolUse', matcher: 'Write|Edit|MultiEdit', timeout: 10 },
-  // harness-trusted-state-write-guard — closes the Run-4 self-authorisation
-  // exploit chain (self-authored stop sentinel + self-written phase-validator ledger).
-  // Denies agent writes to .claude/onboarding-stop-authorized,
-  // tests/e2e/docs/.onboarding-stop-authorized, and tests/e2e/docs/onboarding-phase-ledger.json
-  // via Write/Edit/MultiEdit AND via Bash file-creation operators (touch, > , tee, mv, cp,
-  // ln -s, dd of=). Out-of-band escape: HARNESS_TRUSTED_WRITE_GUARD=off.
-  { file: 'harness-trusted-state-write-guard.sh', event: 'PreToolUse', matcher: 'Write|Edit|MultiEdit', timeout: 10 },
-  { file: 'harness-trusted-state-write-guard.sh', event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
-  // bash-command-allowlist — sandbox the agent's Bash tool to a verb
-  // allowlist. Run-5 rounds 3-6 closed 22 specific bash exploit
-  // shapes (quoted redirects, FD-numbered redirects, process substitution,
-  // script-source bodies, hardlinks, $() inside commit messages, etc.).
-  // The structural cause is bash being Turing-complete — no regex set
-  // enumerates every exfil shape. This hook inverts the denylist: only
-  // allowlisted verbs (npm/npx/git/gh/playwright/ls/cat/...) are accepted;
-  // everything else denied. Runs alongside trusted-state-write-guard as
-  // defense-in-depth. Out-of-band escape: CIVITAS_BASH_ALLOWLIST=off.
-  { file: 'bash-command-allowlist.sh',            event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
 
   // PostToolUse — observers (record + warn)
   { file: 'subagent-return-schema-guard.sh',      event: 'PostToolUse', matcher: 'Agent',      timeout: 10 },
