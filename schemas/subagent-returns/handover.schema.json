@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://civitas-cerebrum.github.io/element-interactions/schemas/subagent-returns/handover.schema.json",
+  "title": "Subagent handover envelope",
+  "description": "Mandatory envelope at the top of every skill-loading subagent return. Pairs the return with its in-flight registry entry.",
+  "type": "object",
+  "required": ["role", "cycle", "status", "next-action"],
+  "additionalProperties": false,
+  "properties": {
+    "role": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "Role slug, kebab-case. May include a journey suffix (e.g. composer-j-<slug>)."
+    },
+    "cycle": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Cycle number within the role's dispatch loop."
+    },
+    "status": {
+      "type": "string",
+      "description": "Role-specific terminal-or-continuation status. Constrained by each role's schema."
+    },
+    "next-action": {
+      "type": "string",
+      "minLength": 1,
+      "description": "One-line directive for the orchestrator."
+    }
+  }
+}
