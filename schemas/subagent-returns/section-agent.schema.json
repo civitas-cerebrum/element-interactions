@@ -2,9 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://civitas-cerebrum.github.io/element-interactions/schemas/subagent-returns/section-agent.schema.json",
   "title": "Section-agent return",
+  "description": "Section-agent serves two modes: per-section work (require `section`) and phase-1-only groundwork (no section). The schema is permissive on additional properties because the groundwork mode includes a rich, model-shaped status body (artifacts, audit-tags, mode, etc.) that isn't section-specific.",
   "type": "object",
-  "required": ["handover", "section"],
-  "additionalProperties": false,
+  "required": ["handover"],
+  "additionalProperties": true,
   "properties": {
     "handover": {
       "allOf": [
@@ -61,7 +62,11 @@
     {
       "if": {
         "type": "object",
-        "properties": { "handover": { "type": "object", "properties": { "status": { "const": "section-complete" } } } }
+        "required": ["section"],
+        "properties": {
+          "section": { "type": "string" },
+          "handover": { "type": "object", "properties": { "status": { "const": "section-complete" } } }
+        }
       },
       "then": {
         "type": "object",
