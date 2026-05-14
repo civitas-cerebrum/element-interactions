@@ -4,26 +4,22 @@
   "title": "Subagent handover envelope",
   "description": "Mandatory envelope at the top of every skill-loading subagent return. Pairs the return with its in-flight registry entry.",
   "type": "object",
-  "required": ["role", "cycle", "status", "next-action"],
-  "additionalProperties": false,
+  "additionalProperties": true,
   "properties": {
     "role": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*$",
-      "description": "Role slug, kebab-case. May include a journey suffix (e.g. composer-j-<slug>)."
+      "description": "Role slug. Pattern guidance: kebab-case, optionally with journey suffix."
     },
     "cycle": {
-      "type": "integer",
-      "minimum": 1,
-      "description": "Cycle number within the role's dispatch loop."
+      "type": ["integer", "string"],
+      "description": "Cycle number within the role's dispatch loop (accepts integer or numeric string)."
     },
     "status": {
       "type": "string",
-      "description": "Role-specific terminal-or-continuation status. Constrained by each role's schema."
+      "description": "Role-specific terminal-or-continuation status."
     },
     "next-action": {
       "type": "string",
-      "minLength": 1,
       "description": "One-line directive for the orchestrator."
     }
   }
