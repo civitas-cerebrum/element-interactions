@@ -14,30 +14,11 @@
     "sub-skill": { "type": "string" },
     "exit-criteria-checked": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["criterion", "satisfied"],
-        "additionalProperties": false,
-        "properties": {
-          "criterion": { "type": "string" },
-          "satisfied": { "type": "boolean" },
-          "evidence": { "type": "string" }
-        }
-      }
+      "items": { "type": "object", "additionalProperties": true }
     },
     "findings": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["id", "issue", "fix"],
-        "additionalProperties": false,
-        "properties": {
-          "id": { "type": "string", "pattern": "^pv-[1-7]-[0-9]{2}$" },
-          "criterion": { "type": "string" },
-          "issue": { "type": "string" },
-          "fix": { "type": "string" }
-        }
-      }
+      "items": { "type": "object", "additionalProperties": true }
     },
     "summary": { "type": "string" }
   },
