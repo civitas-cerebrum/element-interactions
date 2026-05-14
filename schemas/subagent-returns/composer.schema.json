@@ -4,8 +4,7 @@
   "title": "Composer return",
   "description": "Return shape for composer subagent dispatches (test-composer + onboarding Phase 3/5 happy-path and coverage passes).",
   "type": "object",
-  "required": ["handover"],
-  "additionalProperties": false,
+  "additionalProperties": true,
   "properties": {
     "handover": {
       "allOf": [

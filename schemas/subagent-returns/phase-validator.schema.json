@@ -3,8 +3,7 @@
   "$id": "https://civitas-cerebrum.github.io/element-interactions/schemas/subagent-returns/phase-validator.schema.json",
   "title": "Phase-validator return",
   "type": "object",
-  "required": ["handover", "phase"],
-  "additionalProperties": false,
+  "additionalProperties": true,
   "properties": {
     "handover": {
       "allOf": [

@@ -3,8 +3,7 @@
   "$id": "https://civitas-cerebrum.github.io/element-interactions/schemas/subagent-returns/phase4-prioritise-author.schema.json",
   "title": "Phase-4 prioritise-author return",
   "type": "object",
-  "required": ["handover"],
-  "additionalProperties": false,
+  "additionalProperties": true,
   "properties": {
     "handover": {
       "allOf": [

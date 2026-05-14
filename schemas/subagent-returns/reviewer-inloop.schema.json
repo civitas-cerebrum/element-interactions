@@ -4,8 +4,7 @@
   "title": "In-loop reviewer (Stage B) return",
   "description": "Return shape for the in-loop reviewer dispatch that follows each composer cycle.",
   "type": "object",
-  "required": ["handover"],
-  "additionalProperties": false,
+  "additionalProperties": true,
   "properties": {
     "handover": {
       "allOf": [
