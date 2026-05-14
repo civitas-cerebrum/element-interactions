@@ -9,8 +9,7 @@
   "properties": {
     "handover": {
       "allOf": [
-        { "$ref": "handover.schema.json" },
-        { "type": "object", "properties": { "status": { "enum": ["section-complete", "section-deferred", "blocked"] } } }
+        { "$ref": "handover.schema.json" }
       ]
     },
     "section": { "type": "string" },

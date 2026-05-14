@@ -7,8 +7,7 @@
   "properties": {
     "handover": {
       "allOf": [
-        { "$ref": "handover.schema.json" },
-        { "type": "object", "properties": { "status": { "enum": ["journey-map-authored", "blocked"] } } }
+        { "$ref": "handover.schema.json" }
       ]
     },
     "cycles-consumed": { "type": "integer", "minimum": 1 },

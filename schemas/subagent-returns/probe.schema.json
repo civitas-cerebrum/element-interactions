@@ -7,8 +7,7 @@
   "properties": {
     "handover": {
       "allOf": [
-        { "$ref": "handover.schema.json" },
-        { "type": "object", "properties": { "status": { "enum": ["clean", "findings-emitted", "blocked"] } } }
+        { "$ref": "handover.schema.json" }
       ]
     },
     "journey": { "type": "string", "pattern": "^j-[a-z0-9-]+$" },

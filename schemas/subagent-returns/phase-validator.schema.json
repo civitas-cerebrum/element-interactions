@@ -7,8 +7,7 @@
   "properties": {
     "handover": {
       "allOf": [
-        { "$ref": "handover.schema.json" },
-        { "type": "object", "properties": { "status": { "enum": ["greenlight", "improvements-needed"] } } }
+        { "$ref": "handover.schema.json" }
       ]
     },
     "phase": { "type": "integer", "minimum": 1, "maximum": 7 },
