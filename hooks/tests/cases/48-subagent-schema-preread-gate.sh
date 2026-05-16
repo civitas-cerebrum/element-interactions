@@ -8,6 +8,11 @@ section "schema-preread-gate: tool-name filtering"
 assert_allow "$H" "$(payload tool_name=Bash command='ls')" "Bash → silent allow"
 assert_allow "$H" "$(payload tool_name=Read file_path='/tmp/x')" "Read → silent allow"
 
+section "schema-preread-gate: malformed / missing input silent-allows (input-tolerant by design)"
+assert_allow "$H" '{"tool_name":"Agent"}' "Agent with no tool_input → silent allow"
+assert_allow "$H" '{"tool_name":"Agent","tool_input":null}' "Agent with null tool_input → silent allow"
+assert_allow "$H" '{"tool_name":"Agent","tool_input":{}}' "Agent with empty tool_input → silent allow"
+
 section "schema-preread-gate: free-form / no-schema prefixes silent-allow regardless of citation"
 assert_allow "$H" "$(payload tool_name=Agent description='phase1-scaffold' prompt='Lay down the playwright.config.ts file.')" "phase1- prefix → silent allow"
 assert_allow "$H" "$(payload tool_name=Agent description='stage2-cart' prompt='Capture cart-page selectors.')" "stage2- prefix → silent allow"

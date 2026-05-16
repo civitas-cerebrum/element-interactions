@@ -26,6 +26,18 @@
 # full path "schemas/subagent-returns/<role>.schema.json" also satisfies
 # (it contains the bare filename as a suffix).
 #
+# Syntactic vs semantic — known tradeoff
+# --------------------------------------
+# Substring match is intentionally syntactic, not semantic. A brief that
+# says "DO NOT use <role>.schema.json; use the other one" satisfies the
+# gate; so does a stale "in the old contract we used <role>.schema.json"
+# reference that no longer reflects what the subagent should follow. The
+# gate is a "forgot to cite the schema at all" check, not a semantic
+# enforcement — semantic checks would require NLP-grade negation
+# detection, which is well outside scope for a public-package hook. If
+# the brief is wrong, the PostToolUse return-schema-guard catches the
+# resulting return-shape drift downstream.
+#
 # Why
 # ---
 # PostToolUse:Agent validation (subagent-return-schema-guard.sh) catches
@@ -57,6 +69,13 @@
 # ----------------
 # Missing citation → DENY with remediation hint naming the schema path.
 
+# Intentional: `set -uo pipefail` without `-e`. The hook is input-tolerant
+# by design — malformed stdin, missing tool_input, or jq extraction
+# failures should silent-allow the dispatch rather than crash the
+# PreToolUse pipeline. Sibling hooks use `-euo pipefail` because they
+# operate on commands where any extraction failure indicates a violation;
+# this gate is checking *whether* a violation exists, so absence of
+# extractable data is itself an "allow" signal.
 set -uo pipefail
 
 # Resolve jq (matches the resolution pattern used by sibling hooks).
