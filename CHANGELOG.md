@@ -38,6 +38,7 @@ This release is a hook + schema cleanup, not a workflow regression.
 - **`probe` schema status enum closed.** `probe.schema.json` now constrains `handover.status` to `{clean, findings-emitted, blocked}` — the same set the `subagent-return-schema-guard.sh` registry-deregister logic recognises. Removes a drift hole between the schema and the hook.
 - **Removed stale `hooks/test/` directory.** The 0.3.5-era regression-smoke suite referenced retired hooks (`journey-mapping-cycle-gate.sh`, `phase4-concurrency-log-format.sh`) and was no longer runnable. The active hook test suite under `hooks/tests/` is unaffected.
 - **`hooks/data/canonical-sections.txt` header updated** to drop the retired-hook reference; the file remains the authoritative section vocabulary mirrored by `skills/journey-mapping/SKILL.md`.
+- **New hook `subagent-schema-preread-gate.sh`** (PreToolUse:Agent, DENY) — for schema-validated role prefixes (composer-, reviewer-, probe-, phase-validator-), the dispatching brief must reference the corresponding `<role>.schema.json` file. Closes the pre-dispatch half of the schema-discipline loop: a brief that doesn't tell the subagent what shape to produce is now rejected at dispatch time with a remediation pointer. Pairs with the existing PostToolUse `subagent-return-schema-guard.sh`. Important specifically for interactive Claude Code use without an orchestrator harness — where the human parent reading WARN messages was previously the only feedback channel.
 
 **Migration for consumers:**
 
