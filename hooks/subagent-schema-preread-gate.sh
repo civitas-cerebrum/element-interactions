@@ -86,6 +86,13 @@ if [ -z "$JQ" ]; then
   exit 1
 fi
 
+# Shared role-mapping. Single source of truth — same file is sourced by
+# the PostToolUse half of the contract (subagent-return-schema-guard.sh).
+# shellcheck source=lib/schema-role-map.sh
+HOOK_LIB_DIR="$(dirname "${BASH_SOURCE[0]}")/lib"
+# shellcheck disable=SC1091
+. "$HOOK_LIB_DIR/schema-role-map.sh"
+
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty' 2>/dev/null || echo "")
 
@@ -95,17 +102,17 @@ TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty' 2>/dev/null || echo "
 DESCRIPTION=$(echo "$INPUT" | "$JQ" -r '.tool_input.description // ""' 2>/dev/null || echo "")
 PROMPT=$(echo "$INPUT" | "$JQ" -r '.tool_input.prompt // ""' 2>/dev/null || echo "")
 
-# Map description prefix → schema role. MUST match subagent-return-schema-guard.sh
-# exactly so the pre-dispatch gate and the post-dispatch validator agree on
-# which dispatches are schema-validated.
-SCHEMA_ROLE=""
-case "$DESCRIPTION" in
-  composer-*)         SCHEMA_ROLE="composer" ;;
-  reviewer-*)         SCHEMA_ROLE="reviewer-inloop" ;;
-  probe-*)            SCHEMA_ROLE="probe" ;;
-  phase-validator-*)  SCHEMA_ROLE="phase-validator" ;;
-  *)                  exit 0 ;;  # silent allow — free-form / no-schema role
-esac
+# Resolve description-prefix → schema role via the shared map.
+# Unknown prefix → silent allow (out of scope).
+# Known prefix with no schema (process-validator-*) → silent allow
+#   (nothing to cite, so nothing to enforce).
+# Schema-validated prefix → fall through to the citation check below.
+if ! SCHEMA_ROLE=$(resolve_schema_role "$DESCRIPTION"); then
+  exit 0
+fi
+if [ -z "$SCHEMA_ROLE" ]; then
+  exit 0
+fi
 
 SCHEMA_FILENAME="${SCHEMA_ROLE}.schema.json"
 SCHEMA_PATH="schemas/subagent-returns/${SCHEMA_FILENAME}"

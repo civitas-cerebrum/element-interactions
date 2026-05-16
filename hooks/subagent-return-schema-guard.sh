@@ -87,17 +87,18 @@ TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty')
 
 DESCRIPTION=$(echo "$INPUT" | "$JQ" -r '.tool_input.description // ""')
 
-# Map description prefix to schema role name.
-# Roles without a schema get silent allow (no schema = no structural contract).
-SCHEMA_ROLE=""
-case "$DESCRIPTION" in
-  composer-*)         SCHEMA_ROLE="composer" ;;
-  reviewer-*)         SCHEMA_ROLE="reviewer-inloop" ;;
-  probe-*)            SCHEMA_ROLE="probe" ;;
-  phase-validator-*)  SCHEMA_ROLE="phase-validator" ;;
-  process-validator-*) SCHEMA_ROLE="" ;;  # no schema yet; handled by separate lint below
-  *)                  exit 0 ;;  # silent allow — unknown/free-form role
-esac
+# Shared role-mapping. Single source of truth — same file is sourced by
+# the PreToolUse half of the contract (subagent-schema-preread-gate.sh).
+# Unknown prefix → silent allow (out of scope). Known prefix with no
+# schema (process-validator-*) → empty SCHEMA_ROLE, continues to
+# handover-envelope leash + warn path below; Ajv step is skipped via
+# the `if [ -n "$SCHEMA_ROLE" ]` guard.
+# shellcheck source=lib/schema-role-map.sh
+# shellcheck disable=SC1091
+. "$HOOK_LIB_DIR/schema-role-map.sh"
+if ! SCHEMA_ROLE=$(resolve_schema_role "$DESCRIPTION"); then
+  exit 0
+fi
 
 # Extract the subagent's textual return.
 # PostToolUse:Agent payloads carry the return in a few shapes.
