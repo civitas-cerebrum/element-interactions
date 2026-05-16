@@ -175,17 +175,22 @@ the changes.
 ## Return shape
 
 This skill's subagent returns conform to the `composer` schema (see
-`schemas/subagent-returns/composer.schema.json`). The relevant statuses:
+`schemas/subagent-returns/composer.schema.json`). The schema's status
+enum is `{blocked, skipped, new-tests-landed, covered-exhaustively}`:
 
 - `new-tests-landed` — when `tests-added > 0` because a regression
   fixture was authored as part of the sweep.
-- `covered-exhaustively` — when no new tests were needed and the sweep
-  completed cleanly.
-- `improvements-needed` — when candidates were found but you could not
-  extract them (e.g. a literal lives in app source). List the
-  un-extracted findings in `summary`.
-- `blocked` — only when the project structure is unrecognisable (no
-  `tests/e2e/` directory, no `package.json`, etc.).
+- `covered-exhaustively` — the typical happy path: literals were
+  extracted, env files written, the suite still passes, no new specs
+  needed.
+- `skipped` — when there is nothing to extract (suite was already
+  clean). Provide a `skip-authorisation` line explaining how you
+  verified.
+- `blocked` — when the project structure is unrecognisable (no
+  `tests/e2e/` directory, no `package.json`, etc.) or a literal lives
+  in *application source* (which is out of scope for this skill);
+  `blocked-reason` MUST name the un-extracted findings so the human
+  can route them.
 
 `summary` must include the env var names you defined and the count of
 files modified.

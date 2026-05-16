@@ -31,14 +31,14 @@ through Claude Code's normal tool surface.
 
 | # | Phase | What it produces | Skill |
 |---|---|---|---|
-| 1 | Scaffold | `playwright.config.ts`, `tests/e2e/` tree, shared fixtures, `.gitignore` additions | `element-interactions` (Stage 1) |
+| 1 | Scaffold | `playwright.config.ts`, `tests/e2e/{fixtures,docs}/`, `.gitignore` additions | `element-interactions` (Stage 1) |
 | 2 | Groundwork | `app-context.md`, `page-repository.json`, runtime self-credentialing fixture | `element-interactions` (Stage 2) |
-| 3 | Happy-path | One spec per primary user flow that exercises sign-in + the critical action | `element-interactions` (Stages 3–4), `test-composer` |
+| 3 | Happy-path | One `tests/e2e/<journey>.spec.ts` per primary user flow that exercises sign-in + the critical action | `element-interactions` (Stages 3–4), `test-composer` |
 | 4 | Journey mapping | `tests/e2e/docs/journey-map.md`, `tests/e2e/docs/journey-map-coverage.md` | `journey-mapping` |
-| 5 | Coverage expansion | One spec per priority-2/3 journey, grouped passes 2–5 with cleanup dedup | `coverage-expansion`, `test-composer` |
+| 5 | Coverage expansion | One `tests/e2e/<journey>.spec.ts` per priority-2/3 journey, grouped passes 2–5 with cleanup dedup | `coverage-expansion`, `test-composer` |
 | 6 | Bug discovery | Adversarial findings + regression specs that lock the failure modes | `bug-discovery` |
 | 7 | Secrets sweep | Credentials/keys/PII/URLs extracted to `.env`; `.env.example` committed | `secrets-sweep` |
-| 8 | Report | `tests/e2e/docs/onboarding-report.md` work summary deck | `work-summary-deck` |
+| 8 | Report | `qa-summary-deck.html` + `qa-summary-deck.pdf` at the project root | `work-summary-deck` |
 
 A phase only advances once its **exit criteria** (below) are satisfied. A
 human or an automated phase-validator checks the criteria; ambiguity blocks
@@ -75,7 +75,9 @@ augmentation.
 1. Create `playwright.config.ts` with the project's dev-server URL,
    the standard reporters (`html` + `json`), and a `webServer` block if
    the suite should launch the dev server itself.
-2. Create `tests/e2e/{specs,fixtures,docs}/` and `tests/e2e/playwright.setup.ts`.
+2. Create `tests/e2e/fixtures/`, `tests/e2e/docs/`, and `tests/e2e/playwright.setup.ts`.
+   Spec files themselves live at `tests/e2e/<journey>.spec.ts` (root of
+   `tests/e2e/`, no `specs/` subdirectory).
 3. Add `tests/e2e/.gitignore` entries for `playwright-report/`,
    `test-results/`, `.last-run.json`.
 4. Commit as `chore: scaffold e2e suite`.
@@ -121,13 +123,16 @@ the self-credentialing pattern.
 **Steps.**
 
 1. Identify the *primary* journeys from `app-context.md` (typically 2–5).
-2. For each, dispatch (or run yourself) the `test-composer` skill with a
-   brief naming the journey, its prerequisites, and the critical
-   assertion. Composer writes the spec, lands tests, and self-verifies
-   with `npx playwright test`.
-3. Reviewer pass: `reviewer-inloop` skill checks each spec for craft
-   issues, missing scenarios, and stale assertions. Revise until
-   greenlight.
+2. For each, load the `test-composer` skill with a brief that names the
+   journey, its prerequisites, and the critical assertion. Composer
+   writes the spec at `tests/e2e/<journey>.spec.ts`, lands tests, and
+   self-verifies with `npx playwright test`.
+3. The composer skill internally runs an in-loop reviewer pass that
+   catches craft issues, missing scenarios, and stale assertions
+   before declaring the cycle done — its return shape is the
+   `reviewer-inloop` schema (see `schemas/subagent-returns/`). You
+   don't load this reviewer as a separate skill; it is part of the
+   composer's cycle.
 4. Commit each spec individually: `test(j-<journey>): happy path`.
 
 **Exit criteria.**
@@ -135,8 +140,9 @@ the self-credentialing pattern.
 - `tests/e2e/docs/.discovery-draft.json` has been written by the
   Stage-3 happy-path pass (used as input by Phase 4).
 
-Load `test-composer` and `reviewer-inloop` for the dispatch contract and
-return shapes.
+Load `test-composer` for the dispatch contract; consult
+`schemas/subagent-returns/composer.schema.json` and
+`reviewer-inloop.schema.json` for return shapes.
 
 ---
 
@@ -256,14 +262,16 @@ the suite covers without reading every spec.
 
 **Steps.**
 
-1. Load `work-summary-deck`. The skill renders a markdown deck at
-   `tests/e2e/docs/onboarding-report.md`.
+1. Load `work-summary-deck`. The skill writes `qa-summary-deck.html` at
+   the project root and automatically renders `qa-summary-deck.pdf`
+   next to it.
 2. The deck includes: total specs, journeys covered (priority-tiered),
    adversarial findings landed as regressions, open `app-bug` flags,
    and the suite's runtime envelope.
 
 **Exit criteria.**
-- `tests/e2e/docs/onboarding-report.md` exists.
+- `qa-summary-deck.html` and `qa-summary-deck.pdf` exist at the project
+  root.
 - The deck reflects the actual state of the suite (no stale numbers).
 
 ---

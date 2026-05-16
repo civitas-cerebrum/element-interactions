@@ -27,7 +27,8 @@
     "skills",
     "hooks",
     "schemas",
-    "scripts/postinstall.js"
+    "scripts/postinstall.js",
+    "CHANGELOG.md"
   ],
   "peerDependencies": {
     "@playwright/test": ">=1.0.0"

@@ -1,9 +1,10 @@
-# Canonical section vocabulary for journey-mapping iterative-cycle protocol.
-# Single source of truth — both the journey-mapping-cycle-gate.sh hook
-# and the journey-mapping/SKILL.md §"Section vocabulary" table read from
-# (or mirror) this file. When adding/removing/renaming an entry, update
-# THIS file first and run scripts/check-canonical-sections-sync.sh in
-# CI to verify the SKILL.md table matches.
+# Canonical section vocabulary for the journey-mapping iterative-cycle
+# protocol. Authoritative source for the §"Section vocabulary" table in
+# skills/journey-mapping/SKILL.md, which mirrors this list. When
+# adding/removing/renaming an entry, update THIS file first and update
+# the SKILL.md table to match. (The cycle-gate hook that previously
+# also consumed this file was retired in the 0.3.6 cleanup; the file
+# remains the authoritative vocabulary for the skill prose.)
 #
 # One ID per line. Lowercase kebab-case. Hyphens permitted (e.g. payment-
 # methods). Comments start with `#`; blank lines ignored.

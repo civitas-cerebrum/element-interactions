@@ -34,6 +34,10 @@ This release is a hook + schema cleanup, not a workflow regression.
 - **Schema integrity** — `handover` is now `required` at the top level of every role schema (composer, reviewer-inloop, probe, phase-validator, section-agent, phase4-prioritise-author); composer's `status` is a closed enum of `{blocked, skipped, new-tests-landed, covered-exhaustively}`. Reverses an over-relaxation that had let envelope-less returns and arbitrary statuses pass.
 - **Ajv configuration** — `hooks/lib/validate-against-schema.mjs` and `scripts/validate-schema-fixtures.mjs` now run Ajv with `allowUnionTypes: true` + `strictSchema: false` so the handover envelope's deliberate `cycle: integer | string` union compiles. Previously the validator threw on first use.
 - **LICENSE** — added MIT `LICENSE` file at repo root (was declared in `package.json` but file was absent).
+- **CHANGELOG ships with the tarball.** `CHANGELOG.md` added to `package.json` `files` so consumers reading from the npm tarball can see the release notes.
+- **`probe` schema status enum closed.** `probe.schema.json` now constrains `handover.status` to `{clean, findings-emitted, blocked}` — the same set the `subagent-return-schema-guard.sh` registry-deregister logic recognises. Removes a drift hole between the schema and the hook.
+- **Removed stale `hooks/test/` directory.** The 0.3.5-era regression-smoke suite referenced retired hooks (`journey-mapping-cycle-gate.sh`, `phase4-concurrency-log-format.sh`) and was no longer runnable. The active hook test suite under `hooks/tests/` is unaffected.
+- **`hooks/data/canonical-sections.txt` header updated** to drop the retired-hook reference; the file remains the authoritative section vocabulary mirrored by `skills/journey-mapping/SKILL.md`.
 
 **Migration for consumers:**
 
