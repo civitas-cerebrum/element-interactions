@@ -92,7 +92,7 @@ The cycle protocol consumes `tests/e2e/docs/.discovery-draft.json` produced by `
 - **Cycle-1 section roster** — the union of `sections-inferred[].id` and `unvisited-but-linked[].section-guess` from the draft.
 - **Credentials policy** — `handover-to-phase4.credentials-discovered` tells cycle agents whether they can self-credential to drive gated areas.
 
-If the draft is missing or malformed (no sentinel, empty `cycle-1-targets`), `phases-2-4` mode stops immediately with `blocked-on-prerequisite: discovery-draft-missing` — `journey-mapping` does not synthesise a draft from scratch. The harness `happy-path-discovery-draft-required.sh` hook denies cycle dispatches when the draft is absent (defense in depth).
+If the draft is missing or malformed (no sentinel, empty `cycle-1-targets`), `phases-2-4` mode stops immediately with `blocked-on-prerequisite: discovery-draft-missing` — `journey-mapping` does not synthesise a draft from scratch. (The harness hook that previously denied cycle dispatches when the draft was absent was retired in the 0.3.6 cleanup; the rule still applies.)
 
 ### Cycle protocol
 
@@ -151,10 +151,10 @@ orchestrator-loop (cycle N from 1 to 5):
      cycles.N.dispatched-sections appears in cycles.N.returned-sections.
      Background dispatches do NOT count as completed until their PostToolUse
      records the return; "all 7 cycle-N agents launched" is not the same as
-     "cycle N is done". The harness `journey-mapping-cycle-gate.sh` enforces
-     this mechanically: dispatched-sections is written by PreToolUse,
-     returned-sections by PostToolUse, and any cycle-N+1 dispatch with a
-     non-empty in-flight set (dispatched \ returned) is denied.
+     "cycle N is done". (Methodology rule — dispatched-sections must equal
+     returned-sections before cycle-N+1 dispatch. The harness cycle-gate
+     hook that previously enforced this mechanically was retired in the
+     0.3.6 cleanup; the rule still applies.)
   4. Per-cycle dedup:
        - apply canonical section-id normalization (see §"Section vocabulary")
        - drop new-sections-discovered already present in cycles 1..N
@@ -348,7 +348,7 @@ The author does NOT drive `playwright-cli` itself — all live observation happe
 
 When in doubt: ask "is this a distinct user goal that requires separate prioritisation and test depth, OR is this a state/viewport variation on an existing journey?" If the latter, fold it in.
 
-**Retry semantics.** If the author returns `status: blocked` (corrupt cycle state, malformed spill files, unresolvable input, OR the author's own internal-consistency check failed), the orchestrator may re-dispatch `phase4-prioritise-author:` up to 3 times. The harness `journey-mapping-cycle-gate.sh` hook tracks `author-attempts` in the state file and denies the 4th attempt. After 3 failures, surface to the user with the most recent author return — manual review of the cycle data is needed before proceeding.
+**Retry semantics.** If the author returns `status: blocked` (corrupt cycle state, malformed spill files, unresolvable input, OR the author's own internal-consistency check failed), the orchestrator may re-dispatch `phase4-prioritise-author:` up to 3 times. (Methodology rule — `author-attempts` is tracked in the state file and the 4th attempt is forbidden. The harness cycle-gate hook that previously denied the 4th attempt was retired in the 0.3.6 cleanup; the rule still applies.) After 3 failures, surface to the user with the most recent author return — manual review of the cycle data is needed before proceeding.
 
 **Soft-blocked path: malformed-but-written.** A subtle failure mode: the author returns `journey-map-authored` (success), the hook flips `author-dispatched: true` and closes the retry path, but the file is malformed (missing sentinel, missing required sections, structural smells). Phase-validator-4 catches this later as `improvements-needed`. The orchestrator's recovery: delete `journey-map.md`, delete `.phase4-cycle-state.json`, and re-run from cycle 1. The author retry path is closed by design — successful-write commits the run; a malformed write is a re-run, not a re-author.
 
@@ -389,19 +389,17 @@ Every `phase4-prioritise-author:` return **MUST** open with a `handover` envelop
 }
 ```
 
-### Harness enforcement
+### Methodology rules (no longer harness-enforced)
 
-Two hooks gate the protocol mechanically:
+Two harness hooks previously gated the protocol mechanically; both were retired in the 0.3.6 cleanup for public-dep cleanliness. The rules themselves still apply:
 
-- **`hooks/happy-path-discovery-draft-required.sh`** (PreToolUse:Agent) — denies any `phase4-cycle-*-section-*:` or `phase4-prioritise-author:` dispatch when `tests/e2e/docs/.discovery-draft.json` is missing, lacks the version sentinel, or has empty `cycle-1-targets`.
-- **`hooks/journey-mapping-cycle-gate.sh`** (PreToolUse:Agent + PostToolUse:Agent) — reads `.phase4-cycle-state.json`. Denies:
+- **Discovery-draft prerequisite** — any `phase4-cycle-*-section-*:` or `phase4-prioritise-author:` dispatch is forbidden when `tests/e2e/docs/.discovery-draft.json` is missing, lacks the version sentinel, or has empty `cycle-1-targets`.
+- **Cycle gate** — reads `.phase4-cycle-state.json` and forbids:
   - cycle-N section dispatches whose section-id is not in cycle-N's target list (per §"Cycle protocol")
   - cycle-N+1 dispatches before cycle-N has at least one return
   - `phase4-prioritise-author:` dispatches before either convergence or the 5-cycle hard cap
   - cycle-6+ dispatches outright (the 5-cycle hard cap is enforced).
-  PostToolUse on cycle-section returns appends to `returned-sections` and `new-sections-discovered`.
-
-Per the project-wide hook contract, escape hatches exist (`JOURNEY_MAPPING_CYCLE_GATE=off`) but defeat the contract — markdown-only enforcement re-opens the silent-sequential loophole.
+  PostToolUse-style bookkeeping previously appended cycle-section returns to `returned-sections` and `new-sections-discovered`; the orchestrator now maintains these fields itself.
 
 ### Concurrency coordination (race-only)
 

@@ -25,7 +25,7 @@ If the scan output file already exists from a prior run on the same project, the
 
 ## Dispatch shape
 
-Description prefix: `probe-app-wide:`. Single subagent, dedicated `playwright-cli` session, isolated context. Recognised by `hooks/coverage-expansion-dispatch-guard.sh` as a leaf-shape probe (the `probe-` family).
+Description prefix: `probe-app-wide:`. Single subagent, dedicated `playwright-cli` session, isolated context. The `probe-` family role-prefix is the conventional leaf-shape probe marker. (The harness dispatch-guard hook that previously recognised the prefix was retired in 0.3.6; the convention still applies.)
 
 ```
 description: "probe-app-wide: pass 4 — establish pattern catalogue"

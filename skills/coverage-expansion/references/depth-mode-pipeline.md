@@ -254,7 +254,7 @@ A pass MAY use both paths in the same wave (one or more `[P3-batch]` dispatches 
 
 **Quality safeguard.** The cap-7 group size and per-journey Stage B are the safeguards against the documented attention-rationing failure mode (every Stage B returns `improvements-needed` because the batched composer skipped Test-expectations bullets). If a group's cycle-1 reviews trend toward `improvements-needed` (≥3 of 7 in one group, or the same pattern across multiple groups in a pass), the orchestrator stops grouping for the remainder of that pass and falls back to per-journey dispatch.
 
-**Role-prefix and harness.** The dispatch description is `[group] composer-j-<a>,composer-j-<b>,...:` (cap 7 enforced via comma count by `coverage-expansion-dispatch-guard.sh`). Items must be role-explicit `composer-` slugs (compositional passes). The same `[group]` marker is also accepted for `probe-j-` items by `bug-discovery` Phase 6 — see `bug-discovery/SKILL.md`. Returns are per-journey concatenated under one Agent return.
+**Role-prefix.** The dispatch description is `[group] composer-j-<a>,composer-j-<b>,...:`. Cap-7 rule, enforced by methodology (the comma count in the description tells you whether you're at the cap). The harness dispatch-guard hook that previously enforced the cap mechanically was retired in the 0.3.6 cleanup; the rule still applies. Items must be role-explicit `composer-` slugs (compositional passes). The same `[group]` marker is also accepted for `probe-j-` items by `bug-discovery` Phase 6 — see `bug-discovery/SKILL.md`. Returns are per-journey concatenated under one Agent return.
 
 **Rationalizations to reject (relevance-group path):**
 

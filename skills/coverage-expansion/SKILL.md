@@ -45,7 +45,7 @@ There is no third exit. Any framing that implies "partial run, but reasonable" �
 - `reason` starts with one of the allowed structural prefixes — `blocked-on-app-bug:<id>`, `test-data-prerequisite:<thing>`, `user-authorised:<verbatim quote>`. These are subagent-returned or environment-attested reasons that need no further authorisation.
 - The entry carries an `authorizer` field whose value is a non-empty string interpreted as a verbatim quote of in-conversation authorisation by the user.
 
-`hooks/coverage-state-deferral-auth-guard.sh` denies writes where any deferral satisfies neither — catching the silent-narrowing pattern observed in #155 (25 deferred entries with `reason: budget-cap`). Self-imposed reasons like `budget-cap`, `session-length`, `mode-deviation`, `inferred-pref`, `auto-mode-stop` are all DENY without an `authorizer:` field. Escape hatch: `DEFERRAL_AUTH_GUARD=off` (not recommended; defeats the contract).
+Methodology rule — writes where any deferral satisfies neither form (no allowed structural prefix and no `authorizer:` field) are silent scope narrowing of the kind observed in #155 (25 deferred entries with `reason: budget-cap`). Self-imposed reasons like `budget-cap`, `session-length`, `mode-deviation`, `inferred-pref`, `auto-mode-stop` are invalid without an `authorizer:` field. (The harness deferral-auth guard that previously denied such writes was retired in the 0.3.6 cleanup for public-dep cleanliness; the rule itself still applies.)
 
 If you are about to dispatch fewer passes than the mode requires, or fewer journeys than the map contains, you must EITHER (a) have explicit user authorisation in this conversation naming the reduction, OR (b) take exit #2 above (which requires at least one dispatch already in flight). Self-authorisation is not authorisation. Auto-mode is not authorisation. Inferred user preference is not authorisation. Estimated session length is not authorisation.
 
@@ -83,6 +83,8 @@ If you find yourself writing one Agent dispatch that owns multiple journeys with
 The symptom of getting batching wrong: every Stage B reviewer for a batched-Stage-A journey returns `improvements-needed` because the batched composer rationed attention across siblings and skipped Test-expectations bullets (mobile, error states, edge cases) on each. The volume of `improvements-needed` returns is the diagnostic. The cap-7 group size and Stage-B-per-journey within a group are the safeguards against this; if a group's cycle-1 reviews trend toward `improvements-needed`, drop the group and split that wave into per-journey dispatches.
 
 See §"Relevance grouping for compositional passes" and §"Batched dispatch for P3 peripheral journeys" for the two documented batching exceptions.
+
+**Schema validation and `[group]` / `[P3-batch]` dispatches.** Grouped dispatches are intentionally **not** schema-validated by `subagent-return-schema-guard.sh` or `subagent-schema-preread-gate.sh`. The wrapper return contains per-item returns which the parent splits and validates individually. The schema-guards only fire on individual `composer-`/`probe-`/`reviewer-`/`phase-validator-` prefixed dispatches.
 
 **Harness backstop.** A `PreToolUse:Agent` guardrail denies batched dispatches disguised as single-journey calls and bare role-ambiguous prefixes — markdown rules can be rationalised away mid-run, the hook cannot. Install-time skip available for enterprise-managed environments; doing so falls back to markdown-only enforcement and re-opens the loophole. See [`../element-interactions/references/harness-hooks.md`](../element-interactions/references/harness-hooks.md).
 
@@ -219,7 +221,7 @@ Subagents in this environment **cannot** dispatch their own sub-subagents. The A
 
 **Anti-pattern:** a brief that asks a subagent to "dispatch N parallel subagents", "spawn workers", "fan out", or "use the Agent tool to coordinate". The harness dispatch-guard blocks these explicitly because the subagent cannot satisfy them.
 
-**Harness-enforced by `hooks/parent-only-orchestrator-dispatch-block.sh`** (PreToolUse:Agent). Any dispatch whose prompt asks the subagent to *be* the `coverage-expansion` orchestrator (mode: depth/breadth, "fan out per journey", "you are the coverage-expansion orchestrator", "five passes") — without a leaf role-prefix on the description — is denied at the dispatch boundary so the wasted-subagent failure mode never fires. Same applies to `onboarding` (pipeline orchestration) and `bug-discovery` at app-wide scope. Escape hatch: `POO_DISPATCH_BLOCK=off`.
+**Methodology rule.** Any dispatch whose prompt asks the subagent to *be* the `coverage-expansion` orchestrator (mode: depth/breadth, "fan out per journey", "you are the coverage-expansion orchestrator", "five passes") — without a leaf role-prefix on the description — is forbidden, because the wasted-subagent failure mode is otherwise unavoidable. Same applies to `onboarding` (pipeline orchestration) and `bug-discovery` at app-wide scope. (The harness dispatch-block hook that previously denied these dispatches at the boundary was retired in the 0.3.6 cleanup; the rule still applies.)
 
 **Process-validator role** (proactive Stage B for the orchestrator's plan): before fanning out a wave of N composer / reviewer / probe subagents, the parent dispatches a `process-validator-<scope>:` subagent with the relevant skill loaded. The validator reviews the planned dispatch manifest against the skill's contract — slug convention, role-prefix consistency, journey coverage, brief minimalism — and returns `greenlight` or `improvements-needed`. Only on `greenlight` does the parent fan out the wave. Same shape as Stage B reviewer, applied one level up.
 
@@ -428,7 +430,7 @@ Pass 2 and Pass 3 are **conditional** on per-journey triggers checked at the orc
 **If ANY trigger fires → dispatch test-composer normally**, with the trigger evidence in the brief (the relevant journey-map diff, the sibling finding-IDs, the carry-over must-fix list). The dispatched subagent runs the full re-pass discipline per `references/depth-mode-pipeline.md` §"Re-pass mode for compositional passes 2–3".
 
 **Contract:**
-- The orchestrator MUST record `triggers_checked` with all three booleans for every gated-skip entry. A skip without that evidence is silent scope narrowing — `hooks/coverage-state-schema-guard.sh` denies it.
+- The orchestrator MUST record `triggers_checked` with all three booleans for every gated-skip entry. A skip without that evidence is silent scope narrowing. (The harness schema guard that previously denied such writes was retired in the 0.3.6 cleanup; the rule still applies.)
 - A gated-skip entry with any trigger == true is a contract violation (the orchestrator should have dispatched).
 - Gated-skip entries count as "work done" for the §"Two valid exits" pre-emptive-stop check — a Pass 2 with all 30 journeys gated-skipped is legitimately complete.
 - This rule applies to **Passes 2 and 3 only**. Pass 1 dispatches every journey unconditionally; Passes 4 and 5 remain dispatch-driven (the adversarial discipline is empirically valuable, not redundant).

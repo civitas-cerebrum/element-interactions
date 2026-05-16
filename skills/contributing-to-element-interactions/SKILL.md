@@ -5,8 +5,10 @@ description: >
   **Subagent-only.** The full contribution methodology is too heavy to keep
   in the orchestrator's transcript every cycle. The orchestrator detects
   contribution intent and dispatches a `contribution-handover-` subagent;
-  the subagent loads this skill. The `skill-subagent-only-guard.sh` hook
-  denies orchestrator-context invocations.
+  the subagent loads this skill. Loading this skill into orchestrator
+  context is a methodology violation (the skill is heavy enough to
+  contaminate orchestrator context). The previous harness-side guard was
+  retired in 0.3.6; respect the convention by dispatching a subagent.
 
   Use this skill when contributing to the @civitas-cerebrum/element-interactions
   package or its skill suite — and, just as importantly, when a consumer hits
@@ -206,10 +208,7 @@ If none of the above fit, **stop and discuss** before writing code. There's prob
 
 **Rule.** Any agent preparing to modify files inside this package's contribution surface — `src/`, `hooks/`, `skills/`, `scripts/`, `package.json`, `tsconfig*.json`, `.github/` — MUST first load this skill (`skills/contributing-to-element-interactions/SKILL.md`) in the current session. Either invoke it via the `Skill` tool or `Read` the file directly. The skill encodes the architecture, the API-vs-structural-gap distinction, the hard rules, and the design invariants every contribution must respect; an agent that hasn't loaded it is editing blind.
 
-**Enforced by `hooks/contributing-skill-preread-guard.sh`** (PreToolUse:Edit|Write|MultiEdit). The hook only activates when CWD is this package's own repo (detected via `package.json` name), so consumer projects that have the package as a dependency are not affected. DENY by default. Mode controls via `CONTRIBUTING_SKILL_PREREAD_GUARD`:
-- unset / `deny` / `on` → block the edit until the skill is loaded (default)
-- `warn` → systemMessage nudge, edit proceeds
-- `off` → silent allow
+**Methodology rule** — any agent preparing to modify the package's contribution surface MUST first load this skill in the current session. The previous harness pre-read guard (which DENY'd edits when CWD was this package's repo and the skill hadn't been loaded) was retired in the 0.3.6 cleanup for public-dep cleanliness; the rule itself still applies.
 
 Editing this SKILL.md itself is exempt — the edit IS the read.
 
@@ -817,7 +816,7 @@ References:
 - *If <motivation>* — the empathy line. Anticipates the most common reason a contributor hit this gate ("you ticked the box without updating the file") and routes them to the right fix path. Skip this section if there's no common motivation worth naming.
 - *References* — the canonical docs for the rule. Always include the SKILL.md section that defines the rule, plus the schema / config file the contributor will edit. Two to four lines.
 
-The `contribution-handover-gate.sh` hook is the canonical implementation — copy its `build_message` helper when writing a new hook.
+The `commit-message-gate.sh` hook is the canonical implementation — copy its `build_message` helper (or equivalent rich-error-context pattern) when writing a new hook.
 
 ---
 
@@ -883,8 +882,10 @@ cp .contribution-handover.template.json .contribution-handover.json
 # fill in every boolean; pair every false / "n/a" with a *Reason field
 
 # 7. Commit + push + open PR
-#    The contribution-handover-gate.sh hook (PreToolUse:Bash) will refuse
-#    `git push origin` and `gh pr create` until the handover is valid.
+#    (Methodology rule: do not push or open a PR until the
+#    `.contribution-handover.json` is valid. The harness gate
+#    that previously refused `git push` / `gh pr create` was
+#    retired in 0.3.6; the rule still applies.)
 git add -A
 git commit -m "feat: add steps.<method> for <use case>"
 git push -u origin feat/your-feature
@@ -960,7 +961,7 @@ Every hook starts with a structured comment block. Readers should be able to sca
 # - Anything else                                     → silent allow
 ```
 
-This pattern is followed by every hook in `hooks/`. Adding a new hook with a different shape regresses scannability — match the existing template. Examples to read first: `hooks/coverage-expansion-dispatch-guard.sh` (DENY + WARN), `hooks/raw-playwright-api-warning.sh` (WARN-only), `hooks/suite-gate-ratchet.sh` (RECORD + DENY across two events).
+This pattern is followed by every hook in `hooks/`. Adding a new hook with a different shape regresses scannability — match the existing template. Examples to read first: `hooks/playwright-cli-isolation-guard.sh` (DENY with multi-case classification), `hooks/commit-message-gate.sh` (DENY with rich error context), `hooks/subagent-return-schema-guard.sh` (PostToolUse observer + state-file deregister).
 
 #### 2. Helper functions — consistent shape
 
@@ -1032,7 +1033,7 @@ Why this shape:
 - **Underlying concern + upstream fix.** When a violation is driven by a real concern (e.g., parallel dispatch felt unsafe due to shared-DB races), acknowledge the concern and point at the upstream fix (per-test-user pattern in test-optimization §1.A) — NOT the symptom-level workaround. Otherwise the agent re-violates as soon as the same concern recurs.
 - **References last.** Two to four canonical doc paths. Don't bury them in prose; list them.
 
-Examples to read: `hooks/coverage-state-schema-guard.sh` (pre-emptive-stop deny — Option A / Option B layout) and `hooks/coverage-expansion-direct-compose-block.sh` (concrete Agent template substituted with the journey slug from the file path; gated on the `.in-flight-composers.json` registry written by `hooks/coverage-expansion-dispatch-guard.sh` to distinguish legitimate composer-subagent writes from orchestrator-direct composition without a harness `is_subagent` field).
+Examples to read: `hooks/subagent-schema-preread-gate.sh` (PreToolUse gate citing a schema) and `hooks/commit-message-gate.sh` (DENY with rich error context; Option A / Option B layout). The earlier reference implementations of the in-flight-composer registry pattern (a dispatch-guard registrar paired with a direct-compose-block consumer) were removed in the 0.3.6 cleanup; the pattern itself is documented here for future contributors.
 
 ### Hook checklist
 
@@ -1059,7 +1060,7 @@ When a hook needs to distinguish "was this tool call made by a legitimately-disp
 3. **TTL / cleanup as a failsafe**: the registry uses a rolling 30-min TTL — entries that aren't deregistered explicitly (see point 4) expire on the next dispatch-guard run, so stale registrations don't accumulate when a subagent crashes or is abandoned mid-flight.
 4. **Explicit deregistration on terminal handover (the primary cleanup path).** Each subagent return is prefaced with a `handover:` envelope (`role`, `cycle`, `status`, `next-action` — schema in [`../element-interactions/references/subagent-return-schema.md`](../element-interactions/references/subagent-return-schema.md) §2.0). The PostToolUse return-schema guard parses the envelope, cycle-matches against the registry entry, and **deregisters the slot immediately on terminal status** instead of waiting for TTL. Cycle-mismatch (envelope claims a different cycle than the registered dispatch) refuses to deregister and asks the orchestrator to redispatch under the correct cycle. This shorter leash matters because the orchestrator's redispatch under the same slug can race with stale handovers from a slow / auto-compacted prior cycle — the cycle-match contract pins the deregistration to one specific dispatch.
 
-The reference implementation is `hooks/coverage-expansion-dispatch-guard.sh` (registers `composer-j-*` / `composer-sj-*` / `probe-j-*` / `probe-sj-*` dispatches with a `cycle` field) paired with `hooks/coverage-expansion-direct-compose-block.sh` (gates `tests/e2e/{j,sj}-*.spec.ts` writes against the registry) and `hooks/subagent-return-schema-guard.sh` (parses the handover envelope, cycle-matches, deregisters terminal handovers). The pattern avoids false positives that would otherwise force a WARN — the gate runs as a hard DENY because the registry mechanically distinguishes legitimate from violation, and the leash is bounded by the explicit handover instead of the looser 30-min window.
+The reference implementation paired a dispatch-guard registrar (registering `composer-j-*` / `composer-sj-*` / `probe-j-*` / `probe-sj-*` dispatches with a `cycle` field) with a direct-compose-block consumer (gating `tests/e2e/{j,sj}-*.spec.ts` writes against the registry) and `hooks/subagent-return-schema-guard.sh` (parses the handover envelope, cycle-matches, deregisters terminal handovers). The first two components were removed in the 0.3.6 cleanup; `subagent-return-schema-guard.sh` survives as the canonical deregister-on-handover example. The pattern avoids false positives that would otherwise force a WARN — the gate runs as a hard DENY because the registry mechanically distinguishes legitimate from violation, and the leash is bounded by the explicit handover instead of the looser 30-min window. (Reference implementation removed in 0.3.6; pattern documented here for future contributors.)
 
 When you ship a new harness pattern that needs the same distinction, register at the dispatch boundary, gate at the produced-tool-call boundary, deregister on the canonical handover envelope, and keep the TTL as a failsafe. Use a hidden state file under `tests/e2e/docs/.<topic>-<scope>.json` to keep the registry alongside other coverage-expansion state.
 
@@ -1187,7 +1188,7 @@ Before opening a PR on element-interactions:
 - [ ] API reference updated (`skills/element-interactions/references/api-reference.md`) — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] README updated under `🛠️ API Reference: Steps` — mandatory for any new public method on Steps / ElementAction / matcher tree (Rule 19)
 - [ ] If adding a new method, it has a JSDoc block on the public-facing class
-- [ ] `.contribution-handover.json` populated against `schemas/contribution-handover.schema.json` — every boolean set; every `false` / `"n/a"` paired with a specific `*Reason` field (verified by `hooks/contribution-handover-gate.sh`)
+- [ ] `.contribution-handover.json` populated against `schemas/contribution-handover.schema.json` — every boolean set; every `false` / `"n/a"` paired with a specific `*Reason` field (methodology rule — the harness gate that previously verified this on push / PR-create was retired in 0.3.6 for public-dep cleanliness)
 - [ ] **If this PR adds, modifies, or strengthens any `skills/*/SKILL.md` rule, workflow, phase, gate, invariant, or contract, it ALSO ships a hook under `hooks/` that enforces the rule programmatically (Hard rule §"Methodology improvements ship as programmatic hooks"). When mechanical enforcement is genuinely impossible, the PR description includes a paragraph explaining why and the rule is tagged `markdown-only` in `coverage-expansion/references/anti-rationalizations.md`.**
 
 If you're adding to element-repository first:

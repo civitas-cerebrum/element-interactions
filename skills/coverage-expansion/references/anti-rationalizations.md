@@ -26,7 +26,7 @@ The orchestrator decides — before dispatching — that running fewer than the 
 **Reality:** Budget pressure is not scope authorisation. Tone does not change the contract: a "transparent" scope reduction is still a scope reduction. The valid mid-run response to actual budget pressure is exit #2 (commit + state-file + stop), NOT pre-emptive reduction. **Exit #2 requires at least one dispatch in flight** — invoking it before any subagent has been dispatched is not exit #2, it is refusing to start. Onboarding's Phase 3 (happy path) is not a Phase 5 (coverage-expansion) dispatch — they're different phases, different subagents, different work; covering one journey via the happy-path scaffold does not satisfy Pass 1's "every journey, every pass" contract.
 
 **Hooks that catch this:**
-- `coverage-state-schema-guard.sh` (extended for this pattern) — denies state-file writes where `currentPass >= 1` and zero dispatches are recorded across all passes. Mechanically blocks the "write state-file then stop" form.
+- State-file schema rule (extended for this pattern): state-file writes where `currentPass >= 1` and zero dispatches are recorded across all passes are silent scope narrowing — the "write state-file then stop" form. (The harness schema guard that previously denied such writes was retired in 0.3.6; the rule still applies.)
 - `commit-message-gate.sh` (PR #125) — blocks commits with phase-progression messages on pre-emptively-reduced runs.
 - (markdown-only for novel framings) — the registry's symptom list grows reactively as new framings appear; the failure-mode category is what the orchestrator must recognise.
 
@@ -47,7 +47,7 @@ The orchestrator decides — before dispatching — to batch P0/P1/P2 journeys i
 **Reality:** Stage A is one composer per journey, in parallel up to host max — never N composer agents each covering N/k journeys sequentially. The only batching exception is P3 peripheral journeys, capped at 7 per brief, with cycle-1 split-out semantics. P0/P1/P2 NEVER batch. The diagnostic for getting this wrong: every Stage B reviewer for batched journeys returns `improvements-needed` because the batched composer rationed attention across siblings.
 
 **Hooks that catch this:**
-- `coverage-expansion-dispatch-guard.sh` (PR #125, issue #126) — denies dispatches whose prompt references 2+ distinct `j-<slug>` IDs without a `[P3-batch]` description prefix.
+- Dispatch-discipline rule (introduced in PR #125, issue #126): dispatches whose prompt references 2+ distinct `j-<slug>` IDs require a `[P3-batch]` description prefix. (The harness-enforcement hook was retired in 0.3.6; the rule remains.)
 
 **Origin:** PR #105 (no-skip contract) + issue #126 (role-prefix tightening). Reinforced by issue #132 (brief-cleanup BLOCK promotion).
 
@@ -122,7 +122,7 @@ The orchestrator infers from earlier-in-the-run telemetry that a given pass / jo
 **Reality:** Re-read the state file at every pass boundary. The orchestrator must not reason about "where did we leave off" from chat history. Memory is diagnostic, not authoritative.
 
 **Hooks that catch this:**
-- `coverage-state-schema-guard.sh` (PR #125) — validates state-file shape on every Write/Edit, catching stale-state writes.
+- State-file schema rule (introduced in PR #125): the state-file shape must be valid on every Write/Edit, catching stale-state writes. (The harness schema guard that previously enforced this was retired in 0.3.6; the rule still applies.)
 
 **Origin:** PR #105 + auto-compaction design (issue #122 era).
 
@@ -140,7 +140,7 @@ A subagent reaches for an MCP browser tool surfaced by the harness, on the impli
 **Reality:** The harness surfaces tools the consumer's environment has registered, not tools the skill suite sanctions. The MCP browser tools are explicitly forbidden — `playwright-cli` is the only sanctioned channel. A subagent that reaches for an MCP browser tool has a malformed dispatch brief, not a permitted alternative.
 
 **Hooks that catch this:**
-- `mcp-browser-tool-redirect.sh` (PR #125) — denies the MCP browser tool calls and emits the playwright-cli equivalent in the redirect message.
+- MCP-browser-redirect rule (introduced in PR #125): MCP browser tool calls are forbidden; use the `playwright-cli` equivalent instead. (The harness redirect hook that previously denied MCP browser calls was retired in 0.3.6; the rule still applies.)
 
 **Origin:** PR #122 (MCP→playwright-cli migration). Reinforced by issue #126.
 
@@ -159,7 +159,7 @@ A subagent's brief asks it to "dispatch N parallel subagents", "spawn workers", 
 **Reality:** Two valid patterns: (a) parent dispatches the wave directly (default for composer / reviewer / probe waves); (b) sub-orchestrator returns a manifest (the parent reads the manifest and dispatches). The sub-orchestrator NEVER tries to fire its own children — see `process-validator-workflow.md`.
 
 **Hooks that catch this:**
-- `coverage-expansion-dispatch-guard.sh` (PR #125, issue #126) — anti-pattern A: blocks subagent briefs whose body contains "dispatch N parallel subagents", "fan out", "use the Agent tool to dispatch".
+- Subagent-fan-out rule (introduced in PR #125, issue #126; anti-pattern A): subagent briefs whose body contains "dispatch N parallel subagents", "fan out", "use the Agent tool to dispatch" are forbidden. (The harness dispatch-guard hook that previously denied these briefs was retired in 0.3.6; the rule still applies.)
 
 **Origin:** Environment constraint surfaced during PR #122 era. Codified as the recursive-dispatch impossibility in `coverage-expansion/SKILL.md` §"Recursive dispatch is impossible".
 
@@ -203,7 +203,7 @@ The orchestrator decides a journey is "trivial enough" to skip its cycle-1 Stage
 **Reality:** Self-certifying greenlights without a reviewer dispatch is the failure mode the dual-stage design exists to close. The fast path for trivial journeys is the cycle-1 Stage B sonnet-confirmation exception (`references/depth-mode-pipeline.md` §"Model selection") — NOT skipping the dispatch.
 
 **Hooks that catch this:**
-- `coverage-state-schema-guard.sh` — flags `review_status: greenlight` entries with `stage_b_cycles: 0` (the minimum for an actually-dispatched Stage B is 1).
+- State-file schema rule: `review_status: greenlight` entries with `stage_b_cycles: 0` are invalid (the minimum for an actually-dispatched Stage B is 1). (The harness schema guard that previously flagged this was retired in 0.3.6; the rule still applies.)
 
 **Origin:** Dual-stage no-skip extension (issue #122 era).
 
@@ -221,7 +221,7 @@ When the 7-cycle Stage A↔B retry loop reaches cycle 7 without greenlight, the 
 **Reality:** `blocked-cycle-exhausted` is the correct terminal state. Marking exhausted journeys greenlit corrupts the state file, lies to telemetry, and breaks the next pass's trigger-4 input (which depends on the unresolved must-fix list being faithfully recorded).
 
 **Hooks that catch this:**
-- `coverage-state-schema-guard.sh` — flags malformed `review_status` values; the four valid values are `greenlight | blocked-cycle-stalled | blocked-cycle-exhausted | blocked-dispatch-failure`.
+- State-file schema rule: malformed `review_status` values are invalid; the four valid values are `greenlight | blocked-cycle-stalled | blocked-cycle-exhausted | blocked-dispatch-failure`. (The harness schema guard that previously flagged malformed values was retired in 0.3.6; the rule still applies.)
 
 **Origin:** Dual-stage retry-loop design.
 
@@ -258,7 +258,7 @@ The parent orchestrator's brief to a subagent contains pipeline meta-content (de
 **Reality:** A composer / reviewer / probe brief only needs: journey block + must-fix list + slug + return-shape pointer. The pipeline structure belongs to the parent orchestrator's context, not the subagent's.
 
 **Hooks that catch this:**
-- `coverage-expansion-dispatch-guard.sh` anti-pattern B (PR #125) + issue #132 — promoted from WARN to BLOCK for `composer-`, `reviewer-`, `probe-` prefixes; soft WARN preserved for `cleanup-`/`phase1-`/`phase2-`/`stage2-`.
+- Brief-cleanup rule (introduced in PR #125 as anti-pattern B, hardened by issue #132): pipeline meta-content in subagent briefs is forbidden for `composer-`, `reviewer-`, `probe-` prefixes; soft WARN preserved for `cleanup-`/`phase1-`/`phase2-`/`stage2-`. (The harness dispatch-guard hook that previously enforced the BLOCK/WARN promotion was retired in 0.3.6; the rule still applies.)
 
 **Origin:** PR #125, hardened by issue #132.
 
@@ -304,7 +304,7 @@ The cost the orchestrator pays for the dodge:
 - Stage B disappears: direct composition has no reviewer pass, so the dual-stage no-skip contract is silently broken.
 
 **Hooks that catch this:**
-- `coverage-expansion-direct-compose-block.sh` — PostToolUse:Write|Edit on `tests/e2e/j-*.spec.ts` / `tests/e2e/sj-*.spec.ts` (incl. `-regression`) when `coverage-expansion-state.json` exists. **Hard DENY** unless the slug is registered in `tests/e2e/docs/.in-flight-composers.json` — the in-flight-composer registry maintained by the dispatch-guard hook with a 30-min TTL. Legitimate composer-subagent writes pass (slug is in-flight from a recent `composer-j-<slug>:` / `probe-j-<slug>:` Agent dispatch); orchestrator-direct writes fail at the boundary. Deny message includes the redirect template + pointer to `test-optimization.md` §1.A (per-test-user pattern) for the upstream parallelism fix.
+- Direct-compose-block rule: PostToolUse:Write|Edit on `tests/e2e/j-*.spec.ts` / `tests/e2e/sj-*.spec.ts` (incl. `-regression`) when `coverage-expansion-state.json` exists is a **hard violation** unless the writer is a legitimate composer subagent (slug in-flight from a recent `composer-j-<slug>:` / `probe-j-<slug>:` Agent dispatch). Orchestrator-direct writes break the dual-stage contract — see `test-optimization.md` §1.A (per-test-user pattern) for the upstream parallelism fix. (The harness in-flight-composer-registry hooks that previously enforced this were retired in 0.3.6; the rule still applies.)
 
 **Origin:** v0.3.4 onboarding test surfaced this as a follow-on consequence of "Pre-emptive scope reduction" — the agent identified parallelism risk correctly, then absorbed the work to avoid the risk instead of fixing the risk's upstream cause. Hook + Stage 4a §1.A added in v0.3.5.
 
@@ -312,10 +312,10 @@ The cost the orchestrator pays for the dodge:
 
 ## Pattern: `markdown-only` deferral — batch-reviewer mode (cycle-1 compositional)
 
-The "Batch reviewer mode" rule lives in `skills/coverage-expansion/references/reviewer-subagent-contract.md` §"Batch reviewer mode (cycle-1 compositional only)" (introduced in PR #177, closes #164.2). The structural backstop — extending `subagent-spillover-rewrite-gate.sh` and `subagent-return-schema-guard.sh` to recognise the `reviewer-batch-pass-<N>:` role-prefix and the `verdicts:` array shape — is **deferred** to land coherently with the mechanical-checks-first PR.
+The "Batch reviewer mode" rule lives in `skills/coverage-expansion/references/reviewer-subagent-contract.md` §"Batch reviewer mode (cycle-1 compositional only)" (introduced in PR #177, closes #164.2). The structural backstop — extending the surviving `subagent-return-schema-guard.sh` to recognise the `reviewer-batch-pass-<N>:` role-prefix and the `verdicts:` array shape — remains deferred. (The companion spillover-rewrite-gate hook that would have paired with it was retired in 0.3.6 along with the broader hook cleanup.)
 
 **Tag:** `markdown-only`.
-**Deferred hook:** `subagent-spillover-rewrite-gate.sh` + `subagent-return-schema-guard.sh` extension for `reviewer-batch-pass-<N>:` / `verdicts:`.
+**Deferred hook:** `subagent-return-schema-guard.sh` extension for `reviewer-batch-pass-<N>:` / `verdicts:`.
 **Follow-up:** #164.7 / Wave 3I.3b.
 
 ---
@@ -325,7 +325,7 @@ The "Batch reviewer mode" rule lives in `skills/coverage-expansion/references/re
 The "Pass-4 prelude — app-wide pattern scan" rule lives in `skills/coverage-expansion/SKILL.md` §"Hard rules — kernel-resident" + `references/app-wide-scan.md` + `adversarial-subagent-contract.md` §"Inputs" #9 (introduced in PR #178, closes #164.3). The output file `tests/e2e/docs/app-wide-patterns.md` carries the sentinel `<!-- app-wide-scan:generated -->`, but no hook validates that writes preserve the sentinel or that new entries follow the per-pattern catalogue schema (`<pattern-id>` + `Cite as: coverage: app-wide:<pattern-id>` line).
 
 **Tag:** `markdown-only`.
-**Deferred hook:** sentinel-validation hook for `tests/e2e/docs/app-wide-patterns.md`, behaviour analogous to `journey-map-sentinel-guard.sh`.
+**Deferred hook:** sentinel-validation hook for `tests/e2e/docs/app-wide-patterns.md` (the analogous sentinel-guard hook for `journey-map.md` was retired in 0.3.6; if revived, this pattern would mirror its sentinel-and-citation contract).
 **Follow-up:** #180.
 
 ---

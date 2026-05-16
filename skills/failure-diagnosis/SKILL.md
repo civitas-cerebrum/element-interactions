@@ -4,8 +4,11 @@ description: >
   **Subagent-only.** Do not load in the orchestrator's transcript — the
   diagnostic methodology + niche-edge-cases catalogue is heavy enough that
   inlining it contaminates orchestrator context. The orchestrator detects
-  a failure and dispatches a subagent; the subagent loads this skill. The
-  `skill-subagent-only-guard.sh` hook denies orchestrator-context invocations.
+  a failure and dispatches a subagent; the subagent loads this skill.
+  Loading this skill into orchestrator context is a methodology violation
+  (the skill is heavy enough to contaminate orchestrator context). The
+  previous harness-side guard was retired in 0.3.6; respect the convention
+  by dispatching a subagent.
 
   Diagnose failing Playwright tests through structured evidence-based triage.
   Activates inside subagent context (composer-/probe-/process-validator-/
@@ -44,7 +47,7 @@ A structured diagnostic protocol for failing Playwright tests. Every failure get
 
 Before collecting evidence on the failing test, read what the project already documents. Skipping this stage is how confidently-wrong "app bug" classifications get published — you compare the screenshot against your recollection of the page instead of against what the project already specifies.
 
-**Harness backstop.** A `PreToolUse:Edit|Write` guardrail (`hooks/failure-diagnosis-stage0-preread-guard.sh`) blocks failure-diagnosis edits and bug-report writes that skip the documented context pre-read, preventing confidently-wrong "app bug" classifications. Escape hatch available — see the hook header for specifics. (See [harness-hooks.md](../element-interactions/references/harness-hooks.md).)
+**Methodology rule.** Failure-diagnosis edits and bug-report writes that skip the documented context pre-read produce confidently-wrong "app bug" classifications. The previous harness backstop that blocked these writes was retired in the 0.3.6 cleanup; the pre-read remains mandatory.
 
 1. **`tests/e2e/docs/app-context.md`** — page structures, intended modal lifecycles, `data-qa` selectors, known UI quirks (configuration-dependent option subsets, redirect-vs-popup auth patterns, vendor-aliased payment / shipping methods, async-loaded modal placeholders, documented degradation banners, etc.). Read the section for the page the test was on at the moment of failure. This is where the failing element's intended behaviour is documented.
 2. **`tests/e2e/docs/test-scenarios.md`** — the regression / scenario matrix. Confirms whether the failing scenario is even supposed to run on this configuration in the first place.
