@@ -4,6 +4,7 @@
   "title": "Probe (bug-discovery) return",
   "type": "object",
   "additionalProperties": true,
+  "required": ["handover"],
   "properties": {
     "handover": {
       "allOf": [

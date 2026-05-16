@@ -5,6 +5,7 @@
   "description": "Return shape for the in-loop reviewer dispatch that follows each composer cycle.",
   "type": "object",
   "additionalProperties": true,
+  "required": ["handover"],
   "properties": {
     "handover": {
       "allOf": [

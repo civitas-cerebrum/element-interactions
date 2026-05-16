@@ -4,6 +4,7 @@
   "title": "Phase-4 prioritise-author return",
   "type": "object",
   "additionalProperties": true,
+  "required": ["handover"],
   "properties": {
     "handover": {
       "allOf": [

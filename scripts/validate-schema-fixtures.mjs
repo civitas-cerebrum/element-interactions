@@ -12,7 +12,16 @@ import addFormats from 'ajv-formats';
 
 const dir = 'schemas/subagent-returns';
 const fixturesDir = join(dir, 'fixtures');
-const ajv = new Ajv({ strict: true, allErrors: true, loadSchema: false });
+// `allowUnionTypes` accommodates the handover envelope's `cycle` union
+// (integer | string), which the spec deliberately permits. `strictSchema:
+// false` keeps Ajv tolerant of vendor keywords.
+const ajv = new Ajv({
+  strict: true,
+  allErrors: true,
+  loadSchema: false,
+  allowUnionTypes: true,
+  strictSchema: false,
+});
 addFormats(ajv);
 
 const handover = JSON.parse(readFileSync(join(dir, 'handover.schema.json'), 'utf8'));

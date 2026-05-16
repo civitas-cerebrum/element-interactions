@@ -29,6 +29,11 @@ This release is a hook + schema cleanup, not a workflow regression.
 - New schema-fixture validator (`scripts/validate-schema-fixtures.mjs`) exercises every role's valid and invalid fixtures.
 - Postinstall prunes hooks retired in this and earlier releases from the user's `~/.claude/hooks/` on upgrade.
 - `work-summary-deck` skill no longer hardcodes Civitas Cerebrum brand identity; output is unbranded by default.
+- **New skill `secrets-sweep/`** — Phase-7 methodology for extracting credentials / API keys / PII / app URLs from the test suite into `.env`. Closes the prior pedagogical gap (Phase 7 was hardcoded in achilles but had no public skill).
+- **Onboarding skill expanded** — `skills/onboarding/SKILL.md` is no longer a redirect; it is the umbrella eight-phase methodology document, usable from an interactive Claude Code session without the achilles harness. The phase map cross-links to each role-scoped skill.
+- **Schema integrity** — `handover` is now `required` at the top level of every role schema (composer, reviewer-inloop, probe, phase-validator, section-agent, phase4-prioritise-author); composer's `status` is a closed enum of `{blocked, skipped, new-tests-landed, covered-exhaustively}`. Reverses an over-relaxation that had let envelope-less returns and arbitrary statuses pass.
+- **Ajv configuration** — `hooks/lib/validate-against-schema.mjs` and `scripts/validate-schema-fixtures.mjs` now run Ajv with `allowUnionTypes: true` + `strictSchema: false` so the handover envelope's deliberate `cycle: integer | string` union compiles. Previously the validator threw on first use.
+- **LICENSE** — added MIT `LICENSE` file at repo root (was declared in `package.json` but file was absent).
 
 **Migration for consumers:**
 

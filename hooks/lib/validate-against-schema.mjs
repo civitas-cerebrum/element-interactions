@@ -27,7 +27,17 @@ if (!existsSync(schemaPath)) {
   process.exit(2);
 }
 
-const ajv = new Ajv({ strict: true, allErrors: true });
+// `allowUnionTypes` accommodates pragmatic schema relaxations (e.g. the
+// handover envelope's `cycle` accepts integer-or-string because subagents
+// emit both shapes in practice). Strict mode otherwise refuses to compile
+// union types. `strictSchema: false` keeps Ajv tolerant of vendor keywords
+// (e.g. `$comment` blocks, descriptive metadata) without crashing.
+const ajv = new Ajv({
+  strict: true,
+  allErrors: true,
+  allowUnionTypes: true,
+  strictSchema: false,
+});
 addFormats(ajv);
 const handover = JSON.parse(readFileSync(join(schemasDir, 'handover.schema.json'), 'utf8'));
 ajv.addSchema(handover);

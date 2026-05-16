@@ -5,10 +5,19 @@
   "description": "Return shape for composer subagent dispatches (test-composer + onboarding Phase 3/5 happy-path and coverage passes).",
   "type": "object",
   "additionalProperties": true,
+  "required": ["handover"],
   "properties": {
     "handover": {
       "allOf": [
-        { "$ref": "handover.schema.json" }
+        { "$ref": "handover.schema.json" },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": ["blocked", "skipped", "new-tests-landed", "covered-exhaustively"]
+            }
+          }
+        }
       ]
     },
     "journey": { "type": "string", "pattern": "^j-[a-z0-9-]+$" },
