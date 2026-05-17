@@ -236,7 +236,7 @@ The re-pass mode's contribution is **disciplined justification**, not speed. Eve
 
 **Relationship to P3-batch.** Two distinct batching paths coexist:
 - **P3-batch** (cap 7): narrow, P3-only, shared Playwright project, no gap flags. See §"Batched dispatch for P3 peripheral journeys" below — its criteria are unchanged.
-- **Relevance group** (cap 5): broader, any priority once the >5 threshold is crossed, compositional passes only.
+- **Relevance group** (cap 7): broader, any priority once the >5 threshold is crossed, compositional passes only.
 
 A pass MAY use both paths in the same wave (one or more `[P3-batch]` dispatches alongside one or more `[group]` dispatches), but a single dispatch belongs to exactly one path. Priorities below P3 fall under the relevance-group path; the P3-batch path remains the right shape for shared-project P3 sweeps.
 
