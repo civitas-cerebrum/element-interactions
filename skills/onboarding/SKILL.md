@@ -46,6 +46,62 @@ the phase, not the run.
 
 ---
 
+## Status ledger + workflow reviewer (state-machine enforcement)
+
+The pipeline runs on top of a structured status ledger at
+`tests/e2e/docs/onboarding-status.json` (gitignored — same pattern as
+`tests/e2e/docs/.phase4-cycle-state.json` and
+`tests/e2e/docs/coverage-expansion-state.json`). The orchestrator
+(interactive) or the achilles CLI driver (automated) **MUST** update
+this ledger after every phase / pass / cycle completion. Every
+transition (phase N → phase N+1, pass N → pass N+1 inside Phase 5,
+cycle N → cycle N+1 inside Phase 4) is gated by a
+`workflow-reviewer-*` subagent. The reviewer reads the ledger row +
+the closing subagent's handover envelope + the canonical methodology
+section, returns `verdict: approve | reject | escalate`, and the
+orchestrator only advances when the verdict is `approve`.
+
+The contract is harness-enforced:
+
+- `onboarding-ledger-gate.sh` (PreToolUse:Agent, DENY) — denies any
+  non-reviewer Agent dispatch at a transition point until the matching
+  `workflow-reviewer-*` has approved; also denies out-of-order phase
+  / pass / cycle dispatches (e.g. `phase4-*` while `currentPhase=2`).
+- `onboarding-ledger-write-gate.sh` (PreToolUse:Write|Edit, DENY) —
+  validates every ledger write against
+  `schemas/onboarding-status.schema.json` and denies phase-skip
+  transitions that lack a `status: skipped` row + an
+  `approvedDeviations[]` entry carrying a verbatim `authorizer`.
+
+**Skip / early-stop authorisation.** A phase can be skipped (or the
+pipeline stopped early) **only** when the workflow-reviewer for the
+prior phase approves the deviation, with the `authorizer` field on the
+reviewer return carrying either a verbatim user quote OR a documented
+structural exception. Self-imposed reasons (`session-length`,
+`budget-cap`, `auto-mode`, `inferred-pref`) are not authorisation —
+the harness rejects ledger writes that lack a proper authorizer.
+
+**3-cycle reject cap.** A workflow-reviewer that rejects three
+consecutive times returns `verdict: escalate`, and the orchestrator
+surfaces all three returns to the user for manual triage. The ledger
+row's `status` becomes `blocked`. This mirrors the existing
+3-cycle process-validator pattern.
+
+**Canonical references:**
+- `schemas/onboarding-status.schema.json` — ledger shape (v1)
+- `schemas/subagent-returns/workflow-reviewer.schema.json` — reviewer return shape
+- `skills/workflow-reviewer/SKILL.md` — reviewer methodology
+- `skills/element-interactions/references/harness-hooks.md` — both new hooks indexed
+
+The ledger + reviewer layer was added because empirical observation (a
+21-journey benchmark, Run 5) demonstrated that markdown-text contract
+enforcement alone permits silent scope compression: orchestrators
+could skip phases entirely, stop early, or accept subagent "complete"
+returns whose deliverables were missing. The state-machine layer
+makes those failure modes harness-denied rather than instruction-only.
+
+---
+
 ## Front-load gate (before Phase 1)
 
 Before any scaffolding, two things happen in order: (0) run-mode
