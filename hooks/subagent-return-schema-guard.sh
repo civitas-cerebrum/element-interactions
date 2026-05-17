@@ -45,6 +45,11 @@
 #                                `findings: []` literal on greenlight |
 #                                ≥1 `pv-<phase>-<nn>` must-fix on
 #                                improvements-needed
+#   selector-development-<scope>: Selector-development (§4.5) — `status:` enum
+#                                (ok | skipped | blocked) + `mode:` (jit | audit)
+#                                + `guardrails:` (7-sub-status block) +
+#                                `skipped_reason:` (when status=skipped) +
+#                                `blocked_artifact:` (when status=blocked)
 #   phase1- / stage2- / cleanup- / bare j- / bare sj- → silent allow
 #   (phase1/stage2 returns are free-form site-map / page-repository entries;
 #    cleanup is unstructured; bare j-/sj- are blocked upstream by
@@ -140,12 +145,13 @@ DESCRIPTION=$(echo "$INPUT" | "$JQ" -r '.tool_input.description // ""')
 # "free-form" or "unstructured" and would generate noise if validated.
 ROLE=""
 case "$DESCRIPTION" in
-  composer-*)         ROLE="composer" ;;
-  reviewer-*)         ROLE="reviewer" ;;
-  probe-*)            ROLE="probe" ;;
-  process-validator-*) ROLE="process-validator" ;;
-  phase-validator-*)  ROLE="phase-validator" ;;
-  *)                  exit 0 ;;  # silent allow — no schema for this role
+  composer-*)              ROLE="composer" ;;
+  reviewer-*)              ROLE="reviewer" ;;
+  probe-*)                 ROLE="probe" ;;
+  process-validator-*)     ROLE="process-validator" ;;
+  phase-validator-*)       ROLE="phase-validator" ;;
+  selector-development-*)  ROLE="selector-development" ;;
+  *)                       exit 0 ;;  # silent allow — no schema for this role
 esac
 
 # Extract the subagent's textual return. PostToolUse:Agent payloads have
@@ -560,6 +566,36 @@ if [ "$ROLE" = "phase-validator" ]; then
   fi
 fi
 
+# === Selector-development schema (§4.5) =====================================
+if [ "$ROLE" = "selector-development" ]; then
+  # Top-level status enum: ok | skipped | blocked.
+  if ! echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*(ok|skipped|blocked)'; then
+    MISSING+=('status: <ok|skipped|blocked>')
+  fi
+
+  # mode: jit | audit — always required.
+  if ! echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*mode:[[:space:]]*(jit|audit)'; then
+    MISSING+=('mode: <jit|audit>')
+  fi
+
+  # guardrails: block — must be present (the 7-sub-status object).
+  check_marker '(^|\n)[[:space:]]*guardrails:' 'guardrails: <7-sub-status block> (required on all statuses)'
+
+  # Status-specific evidence.
+  if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*skipped'; then
+    # skipped_reason must be one of the enum values.
+    if ! echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*skipped_reason:[[:space:]]*(no-inert-option|not-frontend-project|selector-already-stable)'; then
+      MISSING+=('skipped_reason: <no-inert-option|not-frontend-project|selector-already-stable>  (required when status=skipped)')
+    fi
+  fi
+  if echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*status:[[:space:]]*blocked'; then
+    # blocked_artifact must be present and non-null.
+    if ! echo "$RESPONSE" | grep -qE '(^|\n)[[:space:]]*blocked_artifact:[[:space:]]*[^[:space:]]'; then
+      MISSING+=('blocked_artifact: <path>  (required when status=blocked — must be a non-null path)')
+    fi
+  fi
+fi
+
 # Nothing missing, banned, or envelope-warned — silent allow.
 if [ ${#MISSING[@]} -eq 0 ] && [ ${#BANNED[@]} -eq 0 ] && [ ${#HANDOVER_WARNS[@]} -eq 0 ]; then
   exit 0
@@ -614,6 +650,7 @@ The canonical return schema is documented in:
     §3   — adversarial-findings ledger schema
     §4.1 — minimal grep-based conformance check
     §4.3 — handover-envelope leash + deregistration (this hook)
+    §4.5 — selector-development return schema
 
 Re-dispatch the subagent with a brief that quotes the missing markers verbatim and re-grep the return on its way back. This warning is non-blocking; a follow-up release will promote it to BLOCK once the false-positive rate is calibrated."
 
