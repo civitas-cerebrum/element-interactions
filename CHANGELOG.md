@@ -2,7 +2,35 @@
 
 ## Unreleased
 
-**Public-dependency cleanup.** The package now ships as a generic test-automation framework with no project-specific contamination in shipped surface (hooks, skills, schemas, README, CHANGELOG, package.json).
+**Methodology — strict first-pass / first-cycle, relaxed subsequent.** The `coverage-expansion` and `journey-mapping` skills now codify the empirically-observed rule that strict-parallel-per-X dispatch pays off most on the first pass / first cycle (baseline fidelity), while subsequent passes / cycles benefit from grouping (incremental refinement). The contract:
+
+- **`coverage-expansion`:**
+  - Rename `mode: depth` → `mode: standard`. `mode: depth` is preserved as a backward-compat alias — same pipeline, same defaults.
+  - **Pass 1 is strict per-journey parallel.** `[group]` and `[P3-batch]` markers are FORBIDDEN on Pass 1. Hook-denied (see new `standard-mode-first-pass-guard.sh`).
+  - **Passes 2-5 may use grouping** per the documented batching paths (`[group]` cap-7 for compositional Passes 2-3 with tier >5, `[P3-batch]` cap-7 for P3 peripherals).
+  - **Adversarial Passes 4-5 may now use `[group]`** by default (the prior "no-batch-for-adversarial" rule is relaxed — adversarial findings cluster by app-wide pattern, so per-journey isolation is less load-bearing once the catalogue exists). Per-journey strictness becomes an opt-in via `args: "strict-adversarial: true"`.
+  - `mode: breadth` is unchanged.
+- **`journey-mapping`:**
+  - **Cycle 1 (discovery) is strict per-section parallel in EVERY mode** (`full` and `phases-2-4`). Previously `full` mode was under-specified, allowing a single subagent to collapse the whole phase. Hook-denied for: (a) `phase4-prioritise-author:` before ≥ 2 cycle-1 sections; (b) single-subagent walkthroughs naming ≥ 3 canonical section IDs.
+  - **Cycle 2+ (edge-probe, additional discovery) may be single-subagent sequential** when the orchestrator chooses. The hook does NOT block single-subagent cycle-2+ dispatches.
+  - Phase 1 entry-crawl + post-crawl test-infra subagent contract unchanged.
+
+**New handover envelope fields (additive).** `schemas/subagent-returns/handover.schema.json` gains two OPTIONAL fields:
+
+- `dispatch-mode`: enum `["per-journey", "per-section", "grouped", "single-agent-collapsed"]`. Required on cycle-1 (journey-mapping) and Pass-1 (coverage-expansion) returns. The harness validator rejects cycle-1 / pass-1 returns with `dispatch-mode == grouped` or `single-agent-collapsed`.
+- `parallel-wave-size`: integer ≥ 1. On cycle-1 / pass-1, wave-size 1 is rejected unless the roster genuinely contains only one item.
+
+Both fields are additive — existing returns continue to validate (handover already had `additionalProperties: true`).
+
+**New hook `standard-mode-first-pass-guard.sh`** (PreToolUse:Agent, DENY) — first-pass / first-cycle strict-dispatch backstop. Three deny rules: (1) Pass-1 `[group]` / `[P3-batch]`; (2) `phase4-prioritise-author:` before ≥ 2 cycle-1 sections; (3) single-subagent walkthroughs of journey-mapping cycle 1 (≥ 3 canonical section IDs in one description with no prior cycle-1 dispatches). Pass-2+ and cycle-2+ are silent-allowed. Wired through `HOOK_MANIFEST` in `scripts/postinstall.js` so consumers register the hook automatically on install / `npm run sync-hooks`. 23-case test suite at `hooks/tests/cases/49-standard-mode-first-pass-guard.sh`.
+
+**Empirical origin.** A benchmark onboarding run on a 21-journey app surfaced two patterns the methodology change addresses: (a) `full`-mode journey-mapping collapsed to a single subagent and produced shallow per-section coverage; (b) the strict-per-journey contract on every coverage-expansion pass + cycle was expensive (high-teens / low-twenties dispatch count for a 21-journey app), with most Pass 2/3 dispatches gated-skipping and Pass 4/5 per-journey work producing minimal incremental value over grouped probes once the app-wide-pattern catalogue existed. The first-pass-strict / subsequent-pass-relaxed rule captures the fidelity moment where it pays without burning context on incremental refinement that would have grouped naturally anyway.
+
+---
+
+## Public-dependency cleanup
+
+The package now ships as a generic test-automation framework with no project-specific contamination in shipped surface (hooks, skills, schemas, README, CHANGELOG, package.json).
 
 **Breaking changes:**
 
