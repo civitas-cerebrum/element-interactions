@@ -135,10 +135,19 @@ const HOOK_MANIFEST = [
   // dispatches so the ledger-write-gate can verify approval transitions
   // come from a registered approver context (separation of duties).
   { file: 'workflow-approver-registry.sh',        event: 'PreToolUse', matcher: 'Agent',       timeout: 5 },
+  // Reviewer brief integrity: deny workflow-reviewer-* dispatches whose
+  // brief doesn't cite the ledger + a verification verb + isn't trivially
+  // short. Closes the orchestrator → reviewer brief-injection surface.
+  { file: 'workflow-reviewer-brief-gate.sh',      event: 'PreToolUse', matcher: 'Agent',       timeout: 5 },
   { file: 'onboarding-ledger-write-gate.sh',      event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 3 },
 
   // PostToolUse — observers (record + warn)
   { file: 'subagent-return-schema-guard.sh',      event: 'PostToolUse', matcher: 'Agent',      timeout: 10 },
+  // Reviewer attestation integrity: WARN when a workflow-reviewer-*
+  // approves without citing real on-disk file paths. PostToolUse can't
+  // reverse the return, but the WARN ensures the audit trail captures
+  // ungrounded approvals.
+  { file: 'workflow-reviewer-attestation-gate.sh', event: 'PostToolUse', matcher: 'Agent',     timeout: 5 },
 
   // SubagentStop — cleanup (async)
   { file: 'playwright-cli-cleanup-on-stop.sh',    event: 'SubagentStop', matcher: null,        timeout: 30, async: true },
