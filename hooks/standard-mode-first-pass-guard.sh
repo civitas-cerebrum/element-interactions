@@ -6,18 +6,42 @@
 # Hook    : PreToolUse:Agent
 # Mode    : DENY (blocks the dispatch before the subagent starts)
 # State   : reads
-#             tests/e2e/docs/coverage-expansion-state.json   (Pass-1 detection)
-#             tests/e2e/docs/.phase4-cycle-state.json        (cycle-1 detection)
+#             tests/e2e/docs/coverage-expansion-state.json   (Pass-1 detection,
+#                                                             runMode marker)
+#             tests/e2e/docs/.phase4-cycle-state.json        (cycle-1 detection,
+#                                                             cycleStrictness)
 # Env     : none
+#
+# Mode awareness
+# --------------
+# Two state-file fields control whether the strict contract relaxes after the
+# first pass / cycle (default behaviour under `runMode: standard`) or holds
+# across every pass / cycle (`runMode: depth`).
+#
+#   coverage-expansion-state.json
+#     - `runMode: "standard" | "depth"` (optional; default "standard" when
+#       absent). Under "standard", `[group]` / `[P3-batch]` are denied on
+#       Pass 1 only; under "depth", they are denied on every pass.
+#
+#   .phase4-cycle-state.json
+#     - `cycleStrictness: "standard" | "depth"` (optional; default "standard"
+#       when absent). Under "standard", single-agent cycle-2+ dispatches are
+#       allowed; under "depth", single-agent cycle-N dispatches are denied
+#       for ANY cycle, not just cycle 1.
 #
 # Rules
 # -----
-# 1. Pass-1 grouping forbidden.
-#    If the Agent description starts with `[group]` or `[P3-batch]` AND the
-#    coverage-expansion state file either doesn't exist OR has
-#    `currentPass == 1`, DENY. Pass 1 of `mode: standard` (formerly
-#    `mode: depth`) is strict per-journey by contract — `[group]` and
-#    `[P3-batch]` are only permitted on Passes 2-5.
+# 1. Grouping forbidden (Pass-1 under standard, every pass under depth).
+#    If the Agent description starts with `[group]` or `[P3-batch]` AND
+#    EITHER:
+#      (a) the coverage-expansion state file doesn't exist (implicit Pass 1
+#          → DENY always), OR
+#      (b) `currentPass == 1` (DENY always), OR
+#      (c) `runMode == "depth"` (DENY regardless of currentPass)
+#    DENY. Pass 1 of `mode: standard` (formerly `mode: depth`) is strict
+#    per-journey by contract — `[group]` and `[P3-batch]` are only permitted
+#    on Passes 2-5. Under `mode: depth` (first-class strict-everywhere) those
+#    markers are forbidden on every pass.
 #
 # 2. Author-without-≥2-cycle-1-sections forbidden.
 #    If the description starts with `phase4-prioritise-author:` AND
@@ -25,18 +49,23 @@
 #    fewer than 2 distinct dispatched sections, DENY. The author may only
 #    run after the strict per-section cycle-1 wave has produced its baseline.
 #
-# 3. Cycle-1 single-agent-collapse forbidden.
-#    If the description appears to be a single subagent attempting to do all
-#    of cycle 1 sequentially (heuristic: description mentions ≥3 canonical
-#    section IDs joined with commas or "and"), AND `.phase4-cycle-state.json`
-#    either doesn't exist OR cycle 1 has zero dispatched sections, DENY. This
-#    catches the failure mode where a single agent "walks" the whole app and
-#    hides the parallelism the protocol was designed for.
+# 3. Single-agent-collapse forbidden (cycle-1 under standard, every cycle
+#    under depth).
+#    If the description appears to be a single subagent attempting to walk
+#    multiple sections sequentially (heuristic: description mentions ≥3
+#    canonical section IDs joined with commas or "and"), AND EITHER:
+#      (a) `.phase4-cycle-state.json` doesn't exist OR cycle 1 has zero
+#          dispatched sections (cycle-1 collapse → DENY always), OR
+#      (b) `cycleStrictness == "depth"` (DENY for ANY cycle — including
+#          cycle 2+, even after cycle 1 has dispatched sections recorded)
+#    DENY. This catches the failure mode where a single agent "walks" the
+#    whole app and hides the parallelism the protocol was designed for.
 #
-# All three rules apply only to the FIRST pass / FIRST cycle. Once the state
-# file shows currentPass ≥ 2 (coverage-expansion) or cycle 1 has been
-# established (journey-mapping), the strict contract relaxes and this hook
-# silent-allows.
+# Under `runMode: standard` and `cycleStrictness: standard` (the defaults),
+# rules 1 and 3 silent-allow once the strict contract relaxes (currentPass ≥ 2
+# for coverage-expansion; cycle 1 dispatched-sections recorded for
+# journey-mapping). Under `runMode: depth` / `cycleStrictness: depth`, the
+# strict contract holds across all passes / cycles.
 #
 # Empirical origin
 # ----------------
@@ -102,17 +131,47 @@ emit_deny() {
 }
 
 # ---------------------------------------------------------------------------
-# Rule 1: Pass-1 [group] / [P3-batch] forbidden
+# Rule 1: Grouping forbidden (Pass-1 under standard, every pass under depth)
 # ---------------------------------------------------------------------------
 # Description starts with `[group]` or `[P3-batch]` (allowing whitespace).
 if echo "$DESCRIPTION" | grep -qE '^[[:space:]]*\[(group|P3-batch)\]'; then
-  # Determine current pass. If state file is absent, this is implicitly Pass 1
-  # (no Pass 1 dispatch has been recorded yet). If present, read currentPass.
+  # Determine current pass + run mode. If state file is absent, this is
+  # implicitly Pass 1 (no Pass 1 dispatch has been recorded yet) AND the
+  # mode defaults to "standard". If present, read both fields.
   CURRENT_PASS=""
+  RUN_MODE="standard"
   if [ -f "$COV_STATE" ]; then
     CURRENT_PASS=$("$JQ" -r '.currentPass // empty' "$COV_STATE" 2>/dev/null || echo "")
+    RUN_MODE_RAW=$("$JQ" -r '.runMode // "standard"' "$COV_STATE" 2>/dev/null || echo "standard")
+    # Defensive: only accept the known enum values.
+    case "$RUN_MODE_RAW" in
+      depth) RUN_MODE="depth" ;;
+      *)     RUN_MODE="standard" ;;
+    esac
   fi
-  # currentPass empty OR == 1 → Pass 1 → DENY.
+  # Under depth: DENY on any pass.
+  # Under standard: DENY when currentPass empty OR == 1.
+  if [ "$RUN_MODE" = "depth" ]; then
+    emit_deny "[BLOCKED] Grouping forbidden on every pass under \`mode: depth\`.
+
+Description: \"${DESCRIPTION}\"
+
+\`mode: depth\` is the first-class strict-parallel-everywhere mode —
+\`[group]\` and \`[P3-batch]\` markers are FORBIDDEN on every pass
+(Passes 1, 2, 3, 4, AND 5), not just Pass 1. Under depth the cost is
+explicit (up to ~20× more dispatches than \`mode: standard\`) and the
+contract is exhaustive per-unit fidelity.
+
+Fix: split this dispatch into N parallel single-journey dispatches in
+one message (one \`composer-j-<slug>:\` or \`probe-j-<slug>:\` Agent
+per journey, all sent in the same parallel wave). If grouping is
+genuinely needed on this run, the operator must re-enter the onboarding
+front-load gate and select \`runMode: standard\` instead.
+
+See: skills/coverage-expansion/SKILL.md §\"Depth mode —
+strict-parallel-everywhere\"."
+    exit 0
+  fi
   if [ -z "$CURRENT_PASS" ] || [ "$CURRENT_PASS" = "1" ]; then
     emit_deny "[BLOCKED] Pass-1 grouping forbidden under \`mode: standard\`.
 
@@ -210,10 +269,9 @@ for sec in $CANONICAL_SECTIONS; do
 done
 
 if [ "$HIT_COUNT" -ge 3 ]; then
-  # Only DENY if no prior cycle-1 dispatches exist. If the state file shows
-  # cycle 1 is already in flight or complete, this dispatch is likely a
-  # follow-up (e.g., the prioritise-author, which is caught by Rule 2).
+  # Read cycle state: dispatched-sections count + cycleStrictness.
   CYCLE_1_DISPATCHED=0
+  CYCLE_STRICTNESS="standard"
   if [ -f "$CYCLE_STATE" ]; then
     CYCLE_1_DISPATCHED=$("$JQ" -r '
       (.cycles["1"]["dispatched-sections"] // []) | length
@@ -221,14 +279,47 @@ if [ "$HIT_COUNT" -ge 3 ]; then
     case "$CYCLE_1_DISPATCHED" in
       ''|*[!0-9]*) CYCLE_1_DISPATCHED=0 ;;
     esac
+    CYCLE_STRICTNESS_RAW=$("$JQ" -r '.cycleStrictness // "standard"' "$CYCLE_STATE" 2>/dev/null || echo "standard")
+    case "$CYCLE_STRICTNESS_RAW" in
+      depth) CYCLE_STRICTNESS="depth" ;;
+      *)     CYCLE_STRICTNESS="standard" ;;
+    esac
   fi
-  # Only fire on actual cycle-1 walkthrough attempts, not legitimate author /
+  # Only fire on actual walkthrough attempts, not legitimate author /
   # validator dispatches that reference multiple sections in their brief.
   # Heuristic: skip the rule when the role prefix is one of the legitimate
   # multi-section consumers.
   case "$DESCRIPTION" in
     phase4-prioritise-author:*|phase-validator-*|process-validator-*|cleanup-*) ;;
     *)
+      # Under cycleStrictness: depth, DENY for ANY cycle (including cycle 2+
+      # after cycle 1 has dispatched-sections recorded). Under standard,
+      # DENY only when no cycle-1 dispatches exist yet.
+      if [ "$CYCLE_STRICTNESS" = "depth" ]; then
+        emit_deny "[BLOCKED] Single-subagent walkthrough forbidden on every cycle under \`cycleStrictness: depth\`.
+
+Description: \"${DESCRIPTION}\"
+
+Detected canonical section IDs in the brief: ${HIT_NAMES}(${HIT_COUNT})
+
+Under \`cycleStrictness: depth\` (selected via onboarding's
+\`runMode: depth\` front-load gate), every cycle — cycle 1 AND every
+later cycle (edge-probe and any additional discovery cycles) — is
+strict per-section parallel. A single subagent attempting to walk ≥ 3
+sections in one dispatch is the failure mode the protocol exists to
+prevent, and the strict contract does not relax after cycle 1 under
+depth.
+
+Fix: split this dispatch into N parallel
+\`phase4-cycle-<N>-section-<id>:\` subagents in one message (one Agent
+per target section). If single-agent cycle-2+ dispatches are genuinely
+acceptable for this run, the operator must re-enter the onboarding
+front-load gate and select \`runMode: standard\` instead.
+
+See: skills/journey-mapping/SKILL.md §\"First-cycle strict /
+later-cycle relaxed\" — every-cycle-strict counterpart under depth."
+        exit 0
+      fi
       if [ "$CYCLE_1_DISPATCHED" -eq 0 ]; then
         emit_deny "[BLOCKED] Single-subagent walkthrough of journey-mapping cycle 1 forbidden.
 
@@ -246,7 +337,9 @@ Fix: split this dispatch into N parallel \`phase4-cycle-1-section-<id>:\`
 subagents in one message (one Agent per target section). After the
 strict cycle-1 wave returns, cycle 2+ (edge-probe / additional
 discovery) may use a single subagent if the orchestrator chooses —
-the strict contract relaxes from cycle 2 onward.
+the strict contract relaxes from cycle 2 onward (under
+\`cycleStrictness: standard\`; depth keeps the strict contract on every
+cycle).
 
 See: skills/journey-mapping/SKILL.md §\"Iterative discovery cycles\"."
         exit 0

@@ -106,3 +106,57 @@ assert_allow "$H" "$(payload tool_name=Agent description='cycle-2-walkthrough: r
 
 clear_cycle_state
 clear_cov_state
+
+# ============================================================================
+# Depth-mode tests — runMode + cycleStrictness depth keep the strict contract
+# on every pass / cycle, not just the first.
+# ============================================================================
+
+section "first-pass-guard: Rule 1 — runMode=depth DENIES [group] on ANY pass"
+write_cov_state '{"currentPass":2,"runMode":"depth","completedJourneys":["j-cart"],"journeyRoster":["j-cart","j-checkout"]}'
+assert_deny "$H" "$(payload tool_name=Agent description='[group] composer-j-cart,composer-j-checkout:' prompt='Compose.' cwd="$TMP_REPO")" \
+  "[group] with currentPass=2 + runMode=depth → DENY" "depth"
+write_cov_state '{"currentPass":3,"runMode":"depth","completedJourneys":["j-cart","j-checkout"],"journeyRoster":["j-cart","j-checkout"]}'
+assert_deny "$H" "$(payload tool_name=Agent description='[P3-batch] composer-j-logout,composer-j-role:' prompt='Compose.' cwd="$TMP_REPO")" \
+  "[P3-batch] with currentPass=3 + runMode=depth → DENY" "depth"
+write_cov_state '{"currentPass":4,"runMode":"depth","completedJourneys":[],"journeyRoster":["j-cart"]}'
+assert_deny "$H" "$(payload tool_name=Agent description='[group] probe-j-cart,probe-j-checkout:' prompt='Probe.' cwd="$TMP_REPO")" \
+  "[group] adversarial Pass 4 with runMode=depth → DENY" "depth"
+write_cov_state '{"currentPass":5,"runMode":"depth","completedJourneys":[],"journeyRoster":["j-cart"]}'
+assert_deny "$H" "$(payload tool_name=Agent description='[group] probe-j-a,probe-j-b,probe-j-c:' prompt='Probe.' cwd="$TMP_REPO")" \
+  "[group] adversarial Pass 5 with runMode=depth → DENY" "depth"
+
+section "first-pass-guard: Rule 1 — runMode=standard preserves existing Pass-2+ ALLOW path"
+write_cov_state '{"currentPass":2,"runMode":"standard","completedJourneys":["j-cart"],"journeyRoster":["j-cart","j-checkout"]}'
+assert_allow "$H" "$(payload tool_name=Agent description='[group] composer-j-cart,composer-j-checkout:' prompt='Compose.' cwd="$TMP_REPO")" \
+  "[group] with currentPass=2 + runMode=standard → ALLOW"
+
+section "first-pass-guard: Rule 1 — runMode absent defaults to standard"
+write_cov_state '{"currentPass":2,"completedJourneys":["j-cart"],"journeyRoster":["j-cart","j-checkout"]}'
+assert_allow "$H" "$(payload tool_name=Agent description='[group] composer-j-cart,composer-j-checkout:' prompt='Compose.' cwd="$TMP_REPO")" \
+  "[group] with currentPass=2 + runMode absent → ALLOW (default standard)"
+
+clear_cov_state
+
+section "first-pass-guard: Rule 3 — cycleStrictness=depth DENIES single-agent cycle-2+ walkthroughs"
+write_cycle_state '{"cycleStrictness":"depth","cycles":{"1":{"dispatched-sections":["auth","catalog","cart"]}}}'
+assert_deny "$H" "$(payload tool_name=Agent description='cycle-2-walkthrough: revisit auth catalog cart' prompt='Edge-probe.' cwd="$TMP_REPO")" \
+  "multi-section cycle-2 walkthrough with cycleStrictness=depth → DENY" "depth"
+write_cycle_state '{"cycleStrictness":"depth","cycles":{"1":{"dispatched-sections":["auth","catalog","cart","order"]},"2":{"dispatched-sections":["auth","catalog","cart","order"]}}}'
+assert_deny "$H" "$(payload tool_name=Agent description='cycle-3: cover auth, catalog, and cart' prompt='Walk.' cwd="$TMP_REPO")" \
+  "multi-section cycle-3 walkthrough with cycleStrictness=depth → DENY" "depth"
+
+section "first-pass-guard: Rule 3 — cycleStrictness=standard preserves cycle-2+ ALLOW path"
+write_cycle_state '{"cycleStrictness":"standard","cycles":{"1":{"dispatched-sections":["auth","catalog","cart"]}}}'
+assert_allow "$H" "$(payload tool_name=Agent description='cycle-2-walkthrough: revisit auth catalog cart' prompt='Edge-probe.' cwd="$TMP_REPO")" \
+  "multi-section cycle-2 walkthrough with cycleStrictness=standard → ALLOW"
+
+section "first-pass-guard: Rule 3 — cycleStrictness=depth still exempts legitimate multi-section roles"
+write_cycle_state '{"cycleStrictness":"depth","cycles":{"1":{"dispatched-sections":["auth","catalog","cart","order"]}}}'
+assert_allow "$H" "$(payload tool_name=Agent description='phase-validator-4: review auth catalog cart order' prompt='Validate. phase-validator.schema.json.' cwd="$TMP_REPO")" \
+  "phase-validator naming multiple sections under depth → ALLOW (exempted role)"
+assert_allow "$H" "$(payload tool_name=Agent description='cleanup-cross-cycle: dedupe auth catalog cart findings' prompt='Cleanup.' cwd="$TMP_REPO")" \
+  "cleanup-<scope> naming multiple sections under depth → ALLOW (exempted role)"
+
+clear_cycle_state
+clear_cov_state
