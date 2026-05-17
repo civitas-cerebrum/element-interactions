@@ -6,6 +6,11 @@
 For Phase 4 (Journey Map document) and Phase 5 (Coverage Checkpoint), see `journey-mapping/SKILL.md` directly — those phases' outputs are tightly coupled to the SKILL.md's signature-marker and hard-gate rules.
 For the canonical browser-automation primitive used in Phase 1 discovery, see `../element-interactions/references/playwright-cli-protocol.md`.
 
+**Cycle strictness note.** The iterative discovery cycle protocol that drives Phases 2 / 3 / 3.5 (in both `full` and `phases-2-4` modes) honours an optional `cycle-strictness` parameter:
+- `cycle-strictness: standard` (default) — cycle 1 strict per-section parallel; cycle 2+ may be single-subagent sequential when the orchestrator chooses.
+- `cycle-strictness: depth` — every cycle (including edge-probe and any additional discovery cycles) is strict per-section parallel; single-subagent walkthroughs are forbidden in every cycle. The state-file field `cycleStrictness: "depth"` in `.phase4-cycle-state.json` records the selection so the `standard-mode-first-pass-guard.sh` hook can enforce the every-cycle-strict semantics. Selected via `onboarding`'s `runMode: depth` front-load gate.
+The Phase 1 parallel-discovery model below is unaffected — Phase 1 already mandates parallel dispatch per entry point and does not relax across runs.
+
 ---
 
 ## Phase 1: Page Discovery
