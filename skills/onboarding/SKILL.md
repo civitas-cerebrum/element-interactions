@@ -48,7 +48,55 @@ the phase, not the run.
 
 ## Front-load gate (before Phase 1)
 
-Before any scaffolding, confirm three preconditions:
+Before any scaffolding, two things happen in order: (0) run-mode
+selection, then (1–3) the three preconditions.
+
+### Step 0 — Mode selection (ask the user first)
+
+Before the precondition checks, present the run-mode choice to the user
+verbatim:
+
+> "Before starting, choose the run mode:
+>
+> - **standard** (default, recommended) — first-pass / first-cycle is
+>   strict parallel; subsequent passes / cycles may use grouping or
+>   single-agent dispatches for efficiency. Best for everyday onboarding
+>   runs.
+> - **depth** — strict parallel per-journey on every compositional pass
+>   and strict parallel per-section on every discovery cycle. Up to ~20×
+>   more subagent dispatches and token spend than standard. Best for
+>   high-stakes audits, package-quality benchmarks, and first-time
+>   onboarding of business-critical apps where you want exhaustive
+>   per-unit fidelity."
+>
+> "Which mode?"
+
+Capture the user's answer as `runMode ∈ {standard, depth}` (default
+`standard` if the user passes through without picking). The value
+propagates through the rest of the onboarding pipeline as follows:
+
+| Phase / dispatch | `runMode: standard` | `runMode: depth` |
+|---|---|---|
+| **Phase 4 — `journey-mapping`** | `args: "phases: full"` (default cycle-1 strict, cycle-2+ relaxed — the existing rule already coded into `journey-mapping/SKILL.md` §"First-cycle strict / later-cycle relaxed") | `args: "phases: full, cycle-strictness: depth"` — strict per-section parallel on every cycle (including edge-probe and any additional discovery cycles); single-subagent walkthroughs forbidden in every cycle |
+| **Phase 5 — `coverage-expansion`** | `args: "mode: standard"` (Pass 1 strict, Passes 2-5 may group; adversarial grouping permitted; `strict-adversarial: true` is opt-in) | `args: "mode: depth"` — strict per-journey parallel on every pass (no `[group]`, no `[P3-batch]` on any of Passes 1-5); adversarial Passes 4-5 are strict-per-journey by default (the `strict-adversarial: true` opt-in is implicit under depth) |
+| **State files** | Phase-5 `coverage-expansion-state.json` is written with `runMode: "standard"` on the first write; Phase-4 `.phase4-cycle-state.json` is written with `cycleStrictness: "standard"`. | Phase-5 `coverage-expansion-state.json` is written with `runMode: "depth"` on the first write; Phase-4 `.phase4-cycle-state.json` is written with `cycleStrictness: "depth"`. The `standard-mode-first-pass-guard.sh` hook reads these fields and enforces the depth-mode strict-everywhere semantics. |
+
+The orchestrator emits one declaration line at the start of each phase
+that consumes the mode:
+`[onboarding] runMode: depth — Phase 5 strict-per-journey on every pass`
+or `[onboarding] runMode: standard — Phase 5 first-pass strict, later
+relaxed`.
+
+The `mode: depth` invocation of `coverage-expansion` is no longer a
+backward-compat alias — under `runMode: depth` it is the first-class
+strict-parallel-everywhere mode. Cost: up to ~20× more subagent
+dispatches and token spend than `mode: standard`. Confirm with the user
+before defaulting to depth on any run that is not explicitly a
+high-stakes audit or benchmark.
+
+### Steps 1–3 — Preconditions
+
+Once the run mode is captured, confirm three preconditions:
 
 1. **Dev server runs locally.** You can launch the app and reach its
    landing page in a browser. Phase 2's groundwork depends on this.
@@ -153,7 +201,11 @@ prioritised P1 / P2 / P3.
 
 **Steps.**
 
-1. Load `journey-mapping`. The skill enforces an *iterative cycle*
+1. Load `journey-mapping` with `args: "phases: full"` under `runMode:
+   standard` (cycle 1 strict per-section, cycle 2+ relaxed) or
+   `args: "phases: full, cycle-strictness: depth"` under `runMode:
+   depth` (every cycle strict per-section, single-subagent walkthroughs
+   forbidden in every cycle). The skill enforces an *iterative cycle*
    protocol: at least one discovery cycle plus exactly one edge-probe
    cycle. Shallow single-pass exploration is not accepted.
 2. Produce `tests/e2e/docs/journey-map.md` (priority-grouped) and
@@ -179,8 +231,18 @@ covered, plus per-pass dedup.
 
 **Steps.**
 
-1. Load `coverage-expansion`. The skill defines compositional passes
-   (1–5) plus an adversarial pass and a cleanup/dedup pass.
+1. Load `coverage-expansion` with `args: "mode: standard"` under
+   `runMode: standard` (Pass 1 strict per-journey, Passes 2-5 may
+   group; adversarial grouping is default and `strict-adversarial:
+   true` is opt-in) or `args: "mode: depth"` under `runMode: depth`
+   (strict per-journey on every pass — `[group]` and `[P3-batch]`
+   forbidden across all 5 passes; adversarial Passes 4-5 are
+   strict-per-journey by default). The skill defines compositional
+   passes (1–5) plus an adversarial pass and a cleanup/dedup pass.
+   The orchestrator writes `runMode` into
+   `tests/e2e/docs/coverage-expansion-state.json` on the first
+   state-file write so the `standard-mode-first-pass-guard.sh` hook
+   can enforce the depth-mode strict-everywhere semantics.
 2. **Relevance grouping.** When a priority tier holds more than five
    journeys, group them by feature area and cap each group at seven.
    Project-agnostic clustering vocabulary: browse / transact / account
