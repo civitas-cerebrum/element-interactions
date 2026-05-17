@@ -7,17 +7,17 @@ description: >
   between passes. Calls the test-composer skill per journey for compositional
   passes and invokes bug-discovery per journey for adversarial passes; does not
   compose tests itself. Runs in two modes: `breadth` (one horizontal sweep,
-  fast) or `depth` (three compositional passes + two adversarial passes +
-  ledger dedup, journey-by-journey, default). Triggers on "increase coverage",
-  "expand tests", "iterative coverage", "deep coverage pass", and when invoked
-  by the onboarding skill as its Phase 5.
+  fast) or `standard` (three compositional passes + two adversarial passes +
+  ledger dedup, journey-by-journey, default; `depth` is a backward-compat alias).
+  Triggers on "increase coverage", "expand tests", "iterative coverage",
+  "deep coverage pass", and when invoked by the onboarding skill as its Phase 5.
 ---
 
 # Coverage Expansion — Iterative Journey-by-Journey Test Growth
 
 > **Skill names: see `../element-interactions/references/skill-registry.md`.** Copy skill names from the registry verbatim. Never reconstruct a skill name from memory or recase it.
 
-The orchestrator for coverage growth. Iterates the user journey map, dispatches `test-composer` per journey for compositional passes, dispatches adversarial-probe subagents per journey for adversarial passes, and merges map discoveries between journeys. Depth mode runs 3 compositional passes + 2 adversarial passes + one cleanup/dedup step. Breadth mode runs one sweep.
+The orchestrator for coverage growth. Iterates the user journey map, dispatches `test-composer` per journey for compositional passes, dispatches adversarial-probe subagents per journey for adversarial passes, and merges map discoveries between journeys. Standard mode runs 3 compositional passes + 2 adversarial passes + one cleanup/dedup step. Breadth mode runs one sweep. (`mode: depth` is preserved as a backward-compat alias for `mode: standard` — same pipeline, same defaults.)
 
 **Context discipline:** this skill holds only the map index (IDs, names, priorities, `Pages touched`), the independence graph, and the pass counter. All journey-level reasoning happens inside dispatched subagents with isolated context windows.
 
@@ -33,10 +33,10 @@ The orchestrator for coverage growth. Iterates the user journey map, dispatches 
 
 There are exactly two ways for a coverage-expansion run to terminate:
 
-1. **All 5 passes + cleanup complete** for `mode: depth` (or the one breadth sweep complete for `mode: breadth`), with every journey dispatched in every pass.
+1. **All 5 passes + cleanup complete** for `mode: standard` (alias `mode: depth`) (or the one breadth sweep complete for `mode: breadth`), with every journey dispatched in every pass.
 2. **Commit-what-landed + write `coverage-expansion-state.json` + stop with an explicit "resume needed" message** naming the completed passes, the in-flight pass, and the pending journeys.
 
-There is no third exit. Any framing that implies "partial run, but reasonable" — *"pragmatic Pass 1"*, *"honest Pass 1 only"*, *"most of the work done"*, *"deferred Passes 2–5 to a follow-up"*, *"reduced scope given session constraints"*, *"the realistic depth-mode contract for this app is an evening-or-overnight wall-clock run"*, *"the honest stopping point right now is to write state and resume in a fresh conversation"* — is the contract violation this skill exists to prevent. Tone does not change the contract: a "transparent" scope reduction is still a scope reduction, and silent scope reduction dressed in candid language is still silent scope reduction.
+There is no third exit. Any framing that implies "partial run, but reasonable" — *"pragmatic Pass 1"*, *"honest Pass 1 only"*, *"most of the work done"*, *"deferred Passes 2–5 to a follow-up"*, *"reduced scope given session constraints"*, *"the realistic standard-mode contract for this app is an evening-or-overnight wall-clock run"*, *"the honest stopping point right now is to write state and resume in a fresh conversation"* — is the contract violation this skill exists to prevent. Tone does not change the contract: a "transparent" scope reduction is still a scope reduction, and silent scope reduction dressed in candid language is still silent scope reduction.
 
 **Exit #2 is for budget-driven mid-pipeline stops, not for refusing to start.** Exit #2 requires AT LEAST ONE DISPATCH IN FLIGHT before it is invocable. A `coverage-expansion-state.json` written with `currentPass: 1` and zero recorded dispatches is not exit #2 — it is the pre-emptive-stop anti-pattern. The state file is a post-action ledger reflecting work that actually happened, not a pre-action plan. Harness-enforced: a `Write|Edit` schema guard denies pre-emptive state-file writes (see [`../element-interactions/references/harness-hooks.md`](../element-interactions/references/harness-hooks.md)).
 
@@ -49,7 +49,7 @@ Methodology rule — writes where any deferral satisfies neither form (no allowe
 
 If you are about to dispatch fewer passes than the mode requires, or fewer journeys than the map contains, you must EITHER (a) have explicit user authorisation in this conversation naming the reduction, OR (b) take exit #2 above (which requires at least one dispatch already in flight). Self-authorisation is not authorisation. Auto-mode is not authorisation. Inferred user preference is not authorisation. Estimated session length is not authorisation.
 
-**Onboarding-pipeline contract**: when invoked from `onboarding` Phase 5 (autonomous mode), the front-load gate has already authorised the full pipeline ("tens of minutes to several hours"). The orchestrator may not stop pre-emptively in autonomous mode — the only valid mid-run stop is exit #2 *after at least one wave has returned*. "Mostly done with Phase 3 happy-path, surfacing back to user" is not a valid Phase 5 exit.
+**Onboarding-pipeline contract**: when invoked from `onboarding` Phase 5 (autonomous mode), the front-load gate has already authorised the full pipeline ("tens of minutes to several hours"). The orchestrator may not stop pre-emptively in autonomous mode — the only valid mid-run stop is exit #2 *after at least one wave has returned*. "Mostly done with Phase 3 happy-path, surfacing back to user" is not a valid Phase 5 exit. (The onboarding contract holds identically under `mode: standard` and the `mode: depth` alias.)
 
 ### Reviewer parallelism is non-negotiable (and one optional batch step)
 
@@ -70,12 +70,16 @@ See §"Parallelism — Intra-group pipelining (dual-stage)" for the full pipelin
 
 ### Stage A per-journey dispatch is non-negotiable
 
-Stage A composers also run **one subagent per journey, in parallel up to host max**. A pass with 16 journeys dispatches up to 16 Stage A subagents in one parallel wave. Stage A is **not** "4 group agents each covering 4 journeys sequentially" — that is batched grouping, not per-journey dispatch, and it is forbidden for P0/P1/P2.
+Stage A composers run **one subagent per journey, in parallel up to host max** by default. A pass with 16 journeys dispatches up to 16 Stage A subagents in one parallel wave. Stage A is **not** "4 group agents each covering 4 journeys sequentially" by default — that is batched grouping, not per-journey dispatch.
+
+**First-pass strict / subsequent-pass relaxed.** Pass 1 of `mode: standard` is **strict per-journey parallel** — `[group]` and `[P3-batch]` markers are FORBIDDEN on Pass 1. The first pass establishes the test foundation at maximum fidelity; that quality propagates through every later pass. Passes 2-5 MAY use grouping (`[group]` cap-7 for tiers with >5 journeys, `[P3-batch]` cap-7 for P3 peripherals) when the trigger conditions in §"Relevance grouping for compositional passes" / §"Batched dispatch for P3 peripheral journeys" / §"Adversarial grouping for Passes 4 and 5" hold. The strict-per-journey contract on Passes 4 and 5 becomes an **opt-in** via `args: "strict-adversarial: true"`. Empirical rationale: adversarial findings cluster by app-wide pattern (see app-wide-patterns.md prelude) so per-journey isolation is less load-bearing once the catalogue exists; the strict-on-first-pass rule captures the fidelity moment where it pays. Harness-enforced: the `standard-mode-first-pass-guard.sh` hook denies any `[group]` or `[P3-batch]` Pass-1 dispatch.
 
 The contract:
 - **Per-journey**: each Stage A subagent owns ONE journey's brief, ONE journey's `playwright-cli` session slug, and produces ONE journey's commit(s). The journey block + its referenced sub-journeys are the brief; sibling journeys are not in scope for that subagent.
-- **P3 batching**: documented in §"Batched dispatch for P3 peripheral journeys" — P3 only, max 7 per brief, with cycle-1 split-out semantics.
-- **Relevance grouping** (compositional passes, > 5 journeys at a priority tier): documented in §"Relevance grouping for compositional passes" — same-priority + same-section grouping, max 7 journeys per group, applies to ALL priorities (P0/P1/P2/P3) including P0 once the >5 threshold is crossed. Stage B remains per-journey within a group. The same `[group]` marker is also used by `bug-discovery` Phase 6 element / flow probing — same trigger, same cap, same priority-pure rule, items use `probe-j-` prefix instead of `composer-j-`.
+- **Pass 1 strict — no grouping.** `[group]` and `[P3-batch]` are forbidden on Pass 1. Hook-denied.
+- **P3 batching** (Passes 2-5 only): documented in §"Batched dispatch for P3 peripheral journeys" — P3 only, max 7 per brief, with cycle-1 split-out semantics.
+- **Relevance grouping** (compositional Passes 2-3, > 5 journeys at a priority tier): documented in §"Relevance grouping for compositional passes" — same-priority + same-section grouping, max 7 journeys per group, applies to ALL priorities (P0/P1/P2/P3) once the >5 threshold is crossed. Stage B remains per-journey within a group.
+- **Adversarial grouping** (Passes 4-5, opt-out path): documented in §"Adversarial grouping for Passes 4 and 5" — `[group]` cap-7 permitted by default; opt back into per-journey strictness with `args: "strict-adversarial: true"`. The same `[group]` marker is also used by `bug-discovery` Phase 6 element / flow probing — same trigger, same cap, same priority-pure rule, items use `probe-j-` prefix instead of `composer-j-`.
 - **Across journeys**: dispatched in parallel up to the host-max cap, sharing the same in-flight pool with Stage B reviewers (per §"Parallel cap — lifted and jointly applied").
 
 If you find yourself writing one Agent dispatch that owns multiple journeys without an explicit `[P3-batch]` or `[group]` marker prefix, stop. That is unmarked batching. Groups must declare themselves via the role-prefix marker so the harness dispatch-guard can validate the cap and so reviewers know to expect cross-journey context. The fix is either (a) split into N parallel single-journey dispatches in one message, or (b) re-issue under the `[group]` marker if the group conditions in §"Relevance grouping" hold.
@@ -142,7 +146,7 @@ When a kernel-resident rule changes, the editor updates BOTH the kernel block he
 ## Reading order for new contributors
 
 1. **This file** — orchestrator-side kernel: two valid exits, role prefixes, no-skip contract, mandatory intent declaration, modes table.
-2. **`references/depth-mode-pipeline.md`** — the bulk of how depth-mode actually runs.
+2. **`references/depth-mode-pipeline.md`** — the bulk of how standard-mode actually runs (filename preserved for historical continuity).
 3. **`references/dual-stage-retry-loop.md`** — the per-journey retry-loop semantics that the per-pass pipeline drives.
 4. **`references/reviewer-subagent-contract.md`** — Stage B specifics.
 5. **`references/adversarial-subagent-contract.md`** — Stage A specifics for passes 4–5.
@@ -194,11 +198,11 @@ Do NOT use this for:
 
 ---
 
-## Non-negotiables for depth mode
+## Non-negotiables for standard mode
 
-Read these as hard rules, not guidance. They prevent the most common shortcut path — running Pass 1, silently deferring passes 2–5 + cleanup "for budget", and reporting depth mode complete anyway.
+Read these as hard rules, not guidance. They prevent the most common shortcut path — running Pass 1, silently deferring passes 2–5 + cleanup "for budget", and reporting standard mode complete anyway.
 
-- When invoked with `mode: depth` (or with no args, since depth is the default), the orchestrator **MUST complete 3 compositional passes + 2 adversarial passes + ledger dedup, in order**. No exceptions. "Only Pass 1 ran" is never a valid completion state for depth mode.
+- When invoked with `mode: standard` (or `mode: depth` as the backward-compat alias, or with no args, since standard is the default), the orchestrator **MUST complete 3 compositional passes + 2 adversarial passes + ledger dedup, in order**. No exceptions. "Only Pass 1 ran" is never a valid completion state for standard mode.
 - **Pass 1 alone is NOT coverage-expansion — it is one-fifth of the pipeline.** Any progress line, summary, or upstream report that conflates "ran Pass 1" with "ran coverage-expansion" is wrong and must be corrected before returning to the caller. The same goes for "ran passes 1–3 (compositional only)" — that is three-fifths of the pipeline; the adversarial passes + cleanup are part of the contract, not optional.
 - **If context budget threatens completion mid-pipeline**, the orchestrator MUST:
   1. Commit whatever the most recent pass produced (do not lose subagent work).
@@ -221,7 +225,7 @@ Subagents in this environment **cannot** dispatch their own sub-subagents. The A
 
 **Anti-pattern:** a brief that asks a subagent to "dispatch N parallel subagents", "spawn workers", "fan out", or "use the Agent tool to coordinate". The harness dispatch-guard blocks these explicitly because the subagent cannot satisfy them.
 
-**Methodology rule.** Any dispatch whose prompt asks the subagent to *be* the `coverage-expansion` orchestrator (mode: depth/breadth, "fan out per journey", "you are the coverage-expansion orchestrator", "five passes") — without a leaf role-prefix on the description — is forbidden, because the wasted-subagent failure mode is otherwise unavoidable. Same applies to `onboarding` (pipeline orchestration) and `bug-discovery` at app-wide scope. (The harness dispatch-block hook that previously denied these dispatches at the boundary was retired in the 0.3.6 cleanup; the rule still applies.)
+**Methodology rule.** Any dispatch whose prompt asks the subagent to *be* the `coverage-expansion` orchestrator (mode: standard/depth/breadth, "fan out per journey", "you are the coverage-expansion orchestrator", "five passes") — without a leaf role-prefix on the description — is forbidden, because the wasted-subagent failure mode is otherwise unavoidable. Same applies to `onboarding` (pipeline orchestration) and `bug-discovery` at app-wide scope. (The harness dispatch-block hook that previously denied these dispatches at the boundary was retired in the 0.3.6 cleanup; the rule still applies.)
 
 **Process-validator role** (proactive Stage B for the orchestrator's plan): before fanning out a wave of N composer / reviewer / probe subagents, the parent dispatches a `process-validator-<scope>:` subagent with the relevant skill loaded. The validator reviews the planned dispatch manifest against the skill's contract — slug convention, role-prefix consistency, journey coverage, brief minimalism — and returns `greenlight` or `improvements-needed`. Only on `greenlight` does the parent fan out the wave. Same shape as Stage B reviewer, applied one level up.
 
@@ -233,13 +237,13 @@ Subagents in this environment **cannot** dispatch their own sub-subagents. The A
 
 ## No-skip contract
 
-This contract closes the "scope-to-gap-journeys" loophole — an orchestrator dispatching only the journeys it judges interesting and marking the pass complete by leaving the rest unrun. It stacks on top of §"Non-negotiables for depth mode" — that section ensures all 5 passes + cleanup run; this contract ensures every pass covers every journey. Both sets of rules are hard rules, not guidance.
+This contract closes the "scope-to-gap-journeys" loophole — an orchestrator dispatching only the journeys it judges interesting and marking the pass complete by leaving the rest unrun. It stacks on top of §"Non-negotiables for standard mode" — that section ensures all 5 passes + cleanup run; this contract ensures every pass covers every journey. Both sets of rules are hard rules, not guidance.
 
 1. **Every journey in the map gets a dispatch every compositional pass.** Pass 2 and Pass 3's wording "re-attempt any journey where pass 1 deferred stabilization or returned coverage gaps" names ONE legitimate reason to prioritise; it does NOT authorise skipping un-gapped journeys. Scoping the dispatch to only "interesting" journeys is a shortcut and constitutes partial-pass-completion.
 2. **Every journey in the map gets a dispatch every adversarial pass.** Pass 4 and Pass 5 run bug-discovery per journey — 0 journeys × Pass 4 is not Pass 4. A journey whose adversarial subagent returns "no meaningful boundaries found" must still be recorded in the ledger section with that result — the dispatch happened.
 
    **Pass-4 prelude — app-wide pattern scan.** Before the per-journey Pass-4 dispatches start, the orchestrator dispatches **one** `probe-app-wide:` subagent that establishes the app-wide pattern catalogue at `tests/e2e/docs/app-wide-patterns.md`. The catalogue documents recurring patterns (CSRF tamper status, autocomplete attrs, sort-unknown-field handling, response headers, error envelope shapes, asset disclosure, rate limiting, session-cookie flags) that ~80% of per-journey `info`-severity findings empirically duplicate. After the scan, every per-journey Pass-4 / Pass-5 dispatch receives the catalogue file as input and cites patterns via `coverage: app-wide:<pattern-id>` rather than re-deriving them. Full spec: [`references/app-wide-scan.md`](references/app-wide-scan.md). The scan does NOT run in `mode: breadth`.
-3. **Every dispatch returns a structured result.** Options are `new-tests-landed`, `no-new-tests (exhaustively covered)`, `blocked (reason)`, or `skipped (reason + who-authorized)`. `blocked` is **subagent-returned** and does not need orchestrator or user approval — it is the subagent saying "I dispatched but cannot complete because of tenant data / environment / credential gaps" (e.g., admin seed user missing in demo tenant). `skipped` is **orchestrator-proposed** and is only valid when the orchestrator has the user's explicit in-conversation authorisation to skip that specific journey; an LLM orchestrator may not authorise itself, and the budget-pressure clause in §"Non-negotiables for depth mode" is NOT such authorisation. If the orchestrator cannot tell whether a journey should be blocked or skipped, it dispatches and lets the subagent decide — that is always the correct default.
+3. **Every dispatch returns a structured result.** Options are `new-tests-landed`, `no-new-tests (exhaustively covered)`, `blocked (reason)`, or `skipped (reason + who-authorized)`. `blocked` is **subagent-returned** and does not need orchestrator or user approval — it is the subagent saying "I dispatched but cannot complete because of tenant data / environment / credential gaps" (e.g., admin seed user missing in demo tenant). `skipped` is **orchestrator-proposed** and is only valid when the orchestrator has the user's explicit in-conversation authorisation to skip that specific journey; an LLM orchestrator may not authorise itself, and the budget-pressure clause in §"Non-negotiables for standard mode" is NOT such authorisation. If the orchestrator cannot tell whether a journey should be blocked or skipped, it dispatches and lets the subagent decide — that is always the correct default.
 4. **Scope compression is a caller-facing decision.** If the orchestrator determines before dispatching that a journey's Pass-N work is likely no-op, it still dispatches; if it wants to formally skip, it RETURNS TO THE CALLER with a scope-compression proposal and waits for the caller to approve. Silent scope compression is a contract violation.
 5. **No-op dispatches are cheap by design.** A well-behaved test-composer subagent, given an already-exhaustive journey, returns `no-new-tests` in seconds with no test-run — there is no budget justification for scope-compression on that basis.
 6. **Pass 2 and Pass 3** may record `gated_skip: true` entries in lieu of dispatch when all three orchestrator triggers are false — see §"Trigger-gated re-pass for Passes 2 & 3". Gated-skips count as `result: covered-exhaustively` for the no-skip contract; the harness validates the trigger evidence.
@@ -255,7 +259,7 @@ A state file without the `dispatches` array for every pass that has run is incom
 
 ### Applies to both modes
 
-This contract applies to **both** `mode: depth` and `mode: breadth`. Breadth mode runs one horizontal sweep across all journeys — the same no-skip rule applies per tier. An orchestrator running breadth mode that scopes Tier-1 to "only journeys with P0 priority and recent commits" is committing the same loophole; breadth mode's single sweep must still dispatch for every journey in the map, returning one of the four structured results for each.
+This contract applies to **both** `mode: standard` (including the `mode: depth` alias) and `mode: breadth`. Breadth mode runs one horizontal sweep across all journeys — the same no-skip rule applies per tier. An orchestrator running breadth mode that scopes Tier-1 to "only journeys with P0 priority and recent commits" is committing the same loophole; breadth mode's single sweep must still dispatch for every journey in the map, returning one of the four structured results for each.
 
 ```
 ❌ WRONG (compositional): "Pass 2 Wave 1 covered the 3 journeys with Pass-1 gaps; the
@@ -277,7 +281,7 @@ This contract applies to **both** `mode: depth` and `mode: breadth`. Breadth mod
 
 ### Per-pass completion criteria — no silent compression
 
-This subsection extends §"Per-pass completion criteria" (see below). A pass's completion criteria are NOT satisfied by covering the journeys the orchestrator judged interesting. The criteria are satisfied by covering every journey in the map, with each covered journey returning one of the four structured results above. An orchestrator that writes "41 journeys had no gaps — no-op dispatches not run" in a state file is not writing a state file, it is writing a rationalisation; the state file should say either "pass complete, N/N journeys dispatched" or "pass incomplete, N/M journeys dispatched, waiting to resume" — using the exact same wording as §"Non-negotiables for depth mode" so resume logic can key off a single shared string.
+This subsection extends §"Per-pass completion criteria" (see below). A pass's completion criteria are NOT satisfied by covering the journeys the orchestrator judged interesting. The criteria are satisfied by covering every journey in the map, with each covered journey returning one of the four structured results above. An orchestrator that writes "41 journeys had no gaps — no-op dispatches not run" in a state file is not writing a state file, it is writing a rationalisation; the state file should say either "pass complete, N/N journeys dispatched" or "pass incomplete, N/M journeys dispatched, waiting to resume" — using the exact same wording as §"Non-negotiables for standard mode" so resume logic can key off a single shared string.
 
 ---
 
@@ -308,9 +312,11 @@ After the state-file read (next section) and before any subagent dispatch, the o
 
 ```
 [coverage-expansion] Pre-flight intent declaration
-  Mode: <depth | breadth>
+  Mode: <standard | breadth>   (depth → standard alias accepted; print "(alias)" suffix if used)
+  Strict-adversarial: <true | false>   (default false; opt-in via args: "strict-adversarial: true")
   Plan: dispatch every journey in `tests/e2e/docs/journey-map.md` for every required pass
-        (depth = 3 compositional + 2 adversarial + cleanup; breadth = 1 sweep).
+        (standard = 3 compositional + 2 adversarial + cleanup; breadth = 1 sweep).
+        Pass 1 strict per-journey (no [group]/[P3-batch]); Passes 2-5 may group.
   Authorisation: <full-pipeline | user-authorised-scope>
   If "user-authorised-scope":
     Scope reduction: <description, e.g. "Pass 1 only across all journeys">
@@ -348,18 +354,21 @@ The skill's first action on entry is to read `tests/e2e/docs/coverage-expansion-
 
 | Mode | Invocation | Behaviour |
 |---|---|---|
-| `mode: depth` (default) | `args: "mode: depth"` or no args | Five passes + cleanup, journey-by-journey in priority order, parallel where independent. Passes 1–3 are compositional; passes 4–5 are adversarial. Final cleanup dedupes the adversarial findings ledger. |
-| `mode: breadth` | `args: "mode: breadth"` | One horizontal sweep: priority × depth tiers across all journeys. Fast fallback for quick coverage growth. Adversarial passes do NOT run in breadth mode. |
+| `mode: standard` (default) | `args: "mode: standard"` or no args | Five passes + cleanup, journey-by-journey in priority order, parallel where independent. Passes 1–3 are compositional; passes 4–5 are adversarial. Final cleanup dedupes the adversarial findings ledger. **Pass 1 is strict per-journey parallel** (no `[group]`, no `[P3-batch]`); Passes 2-5 may use grouping per the documented batching paths. The strict-per-journey contract on Passes 4 and 5 becomes an opt-in via `args: "strict-adversarial: true"`. |
+| `mode: depth` (alias) | `args: "mode: depth"` | Backward-compat alias — parses to `mode: standard` with the same defaults. Existing invocations continue to work; the orchestrator emits one `[coverage-expansion] mode: depth → standard (alias)` line for visibility. |
+| `mode: breadth` | `args: "mode: breadth"` | One horizontal sweep: priority × depth tiers across all journeys. Fast fallback for quick coverage growth. Adversarial passes do NOT run in breadth mode. Unchanged. |
 
 ---
 
-## Depth mode — five-pass pipeline (3 compositional + 2 adversarial) + cleanup
+## Standard mode — five-pass pipeline (3 compositional + 2 adversarial) + cleanup
 
-The full per-pass pipeline (steps 1–8), pass differences, commit-message conventions, per-pass completion criteria, the whole-suite re-run gate (incl. issue #131's harness-enforced windowed ratchet), the parallelism model, model selection (hybrid; opus where it pays), auto-compaction between passes, re-pass mode for compositional passes 2–3, batched dispatch for P3 peripheral journeys, and the post-pass-5 ledger dedup are specified in [`references/depth-mode-pipeline.md`](references/depth-mode-pipeline.md). Read it before authoring or modifying any depth-mode pass.
+(Previously named `depth` mode. `mode: depth` is preserved as a parsing alias — same pipeline, same defaults; the rename clarifies that this is the default mode for non-quick-pass coverage growth, with Pass 1 fidelity preserved by the strict-first-pass rule and Pass 2-5 efficiency preserved by relaxed grouping.)
+
+The full per-pass pipeline (steps 1–8), pass differences, commit-message conventions, per-pass completion criteria, the whole-suite re-run gate (incl. issue #131's harness-enforced windowed ratchet), the parallelism model, model selection (hybrid; opus where it pays), auto-compaction between passes, re-pass mode for compositional passes 2–3, batched dispatch for P3 peripheral journeys, adversarial grouping for Passes 4-5, and the post-pass-5 ledger dedup are specified in [`references/depth-mode-pipeline.md`](references/depth-mode-pipeline.md). Read it before authoring or modifying any standard-mode pass.
 
 ### Hard rules — kernel-resident
 
-- **Five passes + per-pass dedup + cross-pass cleanup, in order, every run.** Three compositional (1–3) + two adversarial (4–5). Each pass ends with a single per-pass dedup subagent (test dedup for compositional, findings dedup for adversarial). After pass 5, one additional cross-pass cleanup subagent runs to synthesise cross-cutting findings. "Pass 1 only" is one-fifth of the pipeline, never a valid completion state for `mode: depth`. A pass is incomplete until its per-pass dedup commit lands (with empty diff + a "no consolidation" log entry if nothing was merged — silent skipping is forbidden).
+- **Five passes + per-pass dedup + cross-pass cleanup, in order, every run.** Three compositional (1–3) + two adversarial (4–5). Each pass ends with a single per-pass dedup subagent (test dedup for compositional, findings dedup for adversarial). After pass 5, one additional cross-pass cleanup subagent runs to synthesise cross-cutting findings. "Pass 1 only" is one-fifth of the pipeline, never a valid completion state for `mode: standard` (or the `mode: depth` alias). A pass is incomplete until its per-pass dedup commit lands (with empty diff + a "no consolidation" log entry if nothing was merged — silent skipping is forbidden).
 - **Every journey, every pass.** Pass N is complete only when every journey in the map has been dispatched AND returned. Not "enough journeys", not "the P0/P1 tier", not "the journeys that fit the budget" — every journey. Pass 4 with 0 journeys is not Pass 4.
 - **One journey per commit, per pass kind.** Commit-message templates are fixed per pass (`test(<j-slug>)`, `docs(ledger): <j-slug> — …`, `test(<j-slug>-regression)`, `docs(ledger): dedupe cross-cutting findings`). Agents MUST NOT reinvent the format — the git log has to be filterable by `<j-slug>` and pass kind.
 - **Stage B never commits.** Reviewer judgements live in the state file's `review_status` and `final_must_fix` fields, never as commits. `review(j-…)` and any review-tagged commit form is forbidden.
@@ -386,11 +395,12 @@ The full per-pass pipeline (steps 1–8), pass differences, commit-message conve
   The orchestrator passes the model hint via `model: <opus|sonnet|haiku>` in the dispatch brief. Subagents honour the hint when constructing their `subagent_type` — `general-purpose-sonnet` / `general-purpose-opus` etc., or whatever the harness exposes.
 
   **Override paths:**
-  - The user may request Opus for everything (e.g. `mode: depth, model: opus-all`) for a high-stakes audit; document the override in the front-load gate.
+  - The user may request Opus for everything (e.g. `mode: standard, model: opus-all`) for a high-stakes audit; document the override in the front-load gate.
   - A pass with `final_must_fix` carry-overs from the prior pass forces that journey's next Stage A composer onto Opus regardless of the table (the must-fix is hard; a mechanical Sonnet re-pass won't resolve it). Note this override is now scoped to Pass 2/3 Stage A composers — Stage B reviewers (per-journey and batch) are Opus by default, so no review-side override is required.
 
   This section supersedes the prior "cost-blind, opus-default" rule. The change is empirically grounded for execution-side dispatches: the Pass 2 and Pass 3 re-pass composers drop to Sonnet because the work is mechanical (the majority of journeys return `covered-exhaustively`). Pass 4 stays on Opus despite the observed Sonnet/Opus parity on adversarial probes — the parity covered the probe categories surfaced in that one cycle, and Pass 4's findings are the input to Pass 5's regression layer; probe-depth quality at that boundary determines what gets locked in. Review judgement stays on Opus across all passes — per-journey while batching ramps, and at the batch reviewer once batching is in steady state.
-- **Stage A always per-journey except two documented exceptions: (a) the P3-batch ≤7 path for shared-project P3 peripherals (`[P3-batch]` marker); (b) the relevance-group ≤7 path for compositional passes when a priority tier has >5 journeys (`[group]` marker, all priorities eligible). Stage B per-journey except the documented compositional-cycle-1 batch-reviewer exception (one reviewer per pass; never adversarial; never cycle-2+).** P0/P1/P2 NEVER use the P3-batch Stage A exception — P3-only path, capped at 7 per brief; sharing pages with P3 siblings is not authorisation for the P3-batch path, priority is load-bearing. The relevance-group path applies to ALL priorities (P0/P1/P2/P3) once the >5 threshold is crossed for that tier; groups must be priority-pure (no mixing of tiers) and capped at 7. Adversarial Passes 4-5 NEVER batch via either path (per-journey live-app probe + matrix coverage check is structurally per-journey). Cycle-2+ ALWAYS uses per-journey reviewers regardless of pass — by cycle 2 the orchestrator already knows which journeys need attention.
+- **Pass 1 strict per-journey, no grouping.** `[group]` and `[P3-batch]` markers are FORBIDDEN on Pass 1 of `mode: standard`. Hook-denied. The strict-on-first-pass rule captures the fidelity moment where it pays the most; once Pass 1 has landed the baseline at maximum quality, Passes 2-5 may relax.
+- **Stage A always per-journey on Pass 1; Passes 2-5 may use grouping per the documented batching paths: (a) the P3-batch ≤7 path for shared-project P3 peripherals (`[P3-batch]` marker); (b) the relevance-group ≤7 path for compositional Passes 2-3 when a priority tier has >5 journeys (`[group]` marker, all priorities eligible); (c) the adversarial-group ≤7 path for Passes 4-5 (`[group]` marker, all priorities eligible). Stage B per-journey except the documented compositional-cycle-1 batch-reviewer exception (one reviewer per pass; never adversarial; never cycle-2+).** P0/P1/P2 NEVER use the P3-batch Stage A exception — P3-only path, capped at 7 per brief; sharing pages with P3 siblings is not authorisation for the P3-batch path, priority is load-bearing. The relevance-group + adversarial-group paths apply to ALL priorities (P0/P1/P2/P3) once their trigger conditions hold; groups must be priority-pure (no mixing of tiers) and capped at 7. Adversarial Passes 4-5 grouping is the default for `mode: standard`; the per-journey contract becomes an opt-in via `args: "strict-adversarial: true"`. Cycle-2+ ALWAYS uses per-journey reviewers regardless of pass — by cycle 2 the orchestrator already knows which journeys need attention.
 - **P3 small-surface journeys may opt OUT of adversarial passes (Passes 4 & 5).** P3 logout / role-chooser / modal-only journeys empirically produce 0–2 unique adversarial findings each — their entire adversarial surface is already covered via app-wide pattern citations from larger journeys. The skip is **opt-in per project**, declared up-front in the state file's `adversarialSkippedJourneys: []` field with rationale per entry. Default is "include all" — the orchestrator never silently skips a P3 from adversarial work; the operator opts the journey out by name. Compositional passes (1–3) ALWAYS run on every journey including P3. **Exclusion criteria** (must hold for a journey to qualify for opt-out):
   - Priority is P3.
   - The journey's `Pages touched` list is a subset of pages already adversarial-probed by a larger journey AND covered by a app-wide pattern entry.
@@ -438,9 +448,25 @@ Pass 2 and Pass 3 are **conditional** on per-journey triggers checked at the orc
 
 The §"Re-pass mode for compositional passes 2–3" reference (depth-mode-pipeline.md) describes the dispatched-path's brief contents and rejection rules. Trigger-gating sits ABOVE that — only when at least one trigger fires does the dispatched-path apply.
 
+### Adversarial grouping for Passes 4 and 5
+
+**Default for `mode: standard`: `[group]` cap-7 permitted for adversarial Passes 4 and 5.** The prior "adversarial passes never batch" rule is relaxed. Empirical rationale: adversarial findings cluster by app-wide pattern (see `references/app-wide-scan.md`'s catalogue). Once the Pass-4 prelude has emitted `tests/e2e/docs/app-wide-patterns.md`, ~80% of per-journey `info`-severity findings duplicate the catalogue entries — per-journey isolation over-pays for that majority. Grouped probes share the catalogue brief and surface per-journey unique findings against it.
+
+**Opt-in strictness.** A caller that needs per-journey isolation on the adversarial layer (regulated audit, high-risk domain, baseline-quality establishment) opts back into the per-journey contract via `args: "strict-adversarial: true"`. When set, `[group]` is forbidden on Passes 4 and 5 just as it is on Pass 1; the orchestrator emits a `[coverage-expansion] strict-adversarial: true — Pass 4/5 per-journey` declaration line. The `standard-mode-first-pass-guard.sh` hook does NOT deny adversarial `[group]` dispatches by default — that gate is Pass-1-only.
+
+**Group composition rules** (same shape as compositional `[group]`, with the priority-pure relaxation for adversarial probes):
+- **Cap 7.** Maximum 7 journeys per group. A tier of 28 journeys becomes ⌈28/7⌉ = 4 groups.
+- **All priorities eligible.** P0/P1/P2/P3 all qualify once any tier crosses the >5 threshold.
+- **Same-section preferred.** Group by section or overlapping `Pages touched`; cross-section grouping is allowed when section clusters are sparse.
+- **`adversarialSkippedJourneys[]` honoured.** Opted-out P3 journeys (per §"Hard rules — kernel-resident" on P3 small-surface opt-out) are excluded from group composition.
+- **Role-prefix:** `[group] probe-j-<a>,probe-j-<b>,...:`. Items use `probe-j-` (not `composer-j-`) — adversarial probes return Stage A finding shape + ledger appends per `references/adversarial-subagent-contract.md`.
+- **Stage B remains per-journey** within a Pass-4/5 group — the cycle-1 batch-reviewer exception is compositional-only and does NOT extend to adversarial passes.
+
+**Quality safeguard.** Same attention-rationing trend trigger as the compositional `[group]`: if ≥3 of 7 per-journey Stage B reviews in one adversarial group return `improvements-needed` for missed adversarial categories, the orchestrator stops grouping for the remainder of that pass and falls back to per-journey adversarial dispatch. Persistent rationing across multiple groups within a pass forces strict-adversarial mode for the next pass.
+
 ## Breadth mode — one horizontal sweep
 
-For the quick-pass use case, run one invocation per priority tier. No journey-by-journey iteration; no parallel dispatch per journey (the sweep itself is serial). Deep mode remains the default.
+For the quick-pass use case, run one invocation per priority tier. No journey-by-journey iteration; no parallel dispatch per journey (the sweep itself is serial). Standard mode (formerly `depth`) remains the default.
 
 Sweep order (one commit per tier):
 
@@ -533,7 +559,7 @@ If orchestrator context approaches a budget boundary, follow the auto-compaction
 - **`test-composer`** — called once per journey per compositional pass (1–3) with `args: "journey=<j-id>"`. Owns compose, stabilize, API compliance, coverage verification. NOT called during adversarial passes.
 - **`bug-discovery`** — invoked from **inside** each adversarial-pass subagent, scoped to one journey. No change to the skill itself; it accepts a scoped invocation. Subagents decide probe-category selection autonomously based on live observation.
 - **`failure-diagnosis`** — invoked inside any subagent (compositional or adversarial) when stabilization fails. The orchestrator does not call it directly.
-- **`onboarding`** — calls this skill as its Phase 5 with `mode: depth`. Phase 5 now produces adversarial-findings as a side effect. Onboarding's Phase 6 (standalone `bug-discovery`) remains in place as a wider, cross-app adversarial sweep; per-journey adversarial coverage is handled earlier inside Phase 5.
+- **`onboarding`** — calls this skill as its Phase 5 with `mode: standard` (the `mode: depth` alias is equivalent). Phase 5 now produces adversarial-findings as a side effect. Onboarding's Phase 6 (standalone `bug-discovery`) remains in place as a wider, cross-app adversarial sweep; per-journey adversarial coverage is handled earlier inside Phase 5.
 
 ---
 
@@ -542,7 +568,7 @@ If orchestrator context approaches a budget boundary, follow the auto-compaction
 - Mapping new journeys from scratch — that's `journey-mapping`.
 - Composing a single journey's tests — that's `test-composer`.
 - Cross-application coverage — one invocation covers one app.
-- Running adversarial probing in breadth mode. Breadth stays one horizontal sweep; users who want adversarial coverage explicitly want depth.
+- Running adversarial probing in breadth mode. Breadth stays one horizontal sweep; users who want adversarial coverage explicitly want standard (formerly `depth`) mode.
 - Writing regression tests for findings classified as `Suspected bugs` or `Ambiguous`. Never lock buggy behavior into a passing suite. Never use `test.fail()` markers — they rot into permanent CI noise.
 - Growing the journey map during adversarial passes. Map growth is for compositional passes only.
 - Broad cross-app adversarial sweeps — that's still the job of the standalone `bug-discovery` skill. This skill's adversarial passes are strictly per-journey.

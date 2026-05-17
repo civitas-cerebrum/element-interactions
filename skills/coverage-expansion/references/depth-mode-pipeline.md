@@ -232,7 +232,7 @@ The re-pass mode's contribution is **disciplined justification**, not speed. Eve
 
 ### Relevance grouping for compositional passes
 
-**Trigger.** A priority tier in scope for a compositional pass (1, 2, or 3) has **more than 5 journeys**. When the trigger fires, the orchestrator MAY group those journeys for Stage A dispatch instead of dispatching one subagent per journey. Grouping is allowed regardless of priority (P0/P1/P2/P3 all eligible once the >5 threshold is crossed for that tier). Grouping is forbidden for adversarial passes 4 and 5 — the per-journey live-app probe + matrix coverage check is structurally per-journey.
+**Trigger.** A priority tier in scope for a compositional pass (**2 or 3** — Pass 1 is strict per-journey under `mode: standard`, no grouping; see `coverage-expansion/SKILL.md` §"Stage A per-journey dispatch is non-negotiable" for the first-pass strict rule) has **more than 5 journeys**. When the trigger fires, the orchestrator MAY group those journeys for Stage A dispatch instead of dispatching one subagent per journey. Grouping is allowed regardless of priority (P0/P1/P2/P3 all eligible once the >5 threshold is crossed for that tier). Adversarial Passes 4 and 5 have their own grouping path (`coverage-expansion/SKILL.md` §"Adversarial grouping for Passes 4 and 5") — default `[group]` cap-7, opt back into per-journey with `args: "strict-adversarial: true"`.
 
 **Relationship to P3-batch.** Two distinct batching paths coexist:
 - **P3-batch** (cap 7): narrow, P3-only, shared Playwright project, no gap flags. See §"Batched dispatch for P3 peripheral journeys" below — its criteria are unchanged.
@@ -265,7 +265,7 @@ A pass MAY use both paths in the same wave (one or more `[P3-batch]` dispatches 
 | "Two journeys are P1 and three are P2, but they share pages — group them" | Same priority is required. Mixing erases the priority signal the orchestrator relies on for pass-level decisions. |
 | "Journey X has a coverage-gap flag, but the gap is small — keep it in the group" | Any of the three re-pass triggers kicks the journey out into per-journey dispatch. Same rule as P3-batch. The flag's verdict is the subagent's, after reading prior-pass returns — which a grouped brief cannot do. |
 | "Group cycle-1 had 4 of 7 return improvements-needed — keep grouping next pass anyway, the saving is too good" | The pattern is the rationing failure mode. Stop grouping for the rest of this pass and the next; revisit only if the pass-level review spread improves. |
-| "Adversarial Pass 4 has 8 journeys — group them too" | Adversarial passes never group. Per-journey live-app probe + matrix coverage is structurally per-journey. |
+| "Adversarial Pass 4 has 8 journeys — group them too" | Permitted under `mode: standard` default. See `coverage-expansion/SKILL.md` §"Adversarial grouping for Passes 4 and 5" — `[group]` cap-7 is the default; opt back into per-journey with `args: "strict-adversarial: true"`. (Prior versions of this row forbade adversarial grouping outright; that rule was relaxed once the app-wide-pattern catalogue made per-journey isolation less load-bearing on the adversarial layer.) |
 
 ### Batched dispatch for P3 peripheral journeys
 
