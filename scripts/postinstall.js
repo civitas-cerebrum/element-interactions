@@ -124,6 +124,14 @@ const HOOK_MANIFEST = [
   { file: 'commit-message-gate.sh',               event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'subagent-schema-preread-gate.sh',      event: 'PreToolUse', matcher: 'Agent',       timeout: 10 },
   { file: 'standard-mode-first-pass-guard.sh',    event: 'PreToolUse', matcher: 'Agent',       timeout: 10 },
+  // Pipeline-state machine: gates Agent dispatches and Write|Edit writes
+  // against the onboarding-status ledger. Together these enforce every
+  // phase / pass / cycle transition through a workflow-reviewer-*
+  // subagent. 10s timeout for the Agent gate (may shell out to git +
+  // jq); 3s timeout for the write gate (read-only-ish — Ajv compile
+  // plus a JSON parse).
+  { file: 'onboarding-ledger-gate.sh',            event: 'PreToolUse', matcher: 'Agent',       timeout: 10 },
+  { file: 'onboarding-ledger-write-gate.sh',      event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 3 },
 
   // PostToolUse — observers (record + warn)
   { file: 'subagent-return-schema-guard.sh',      event: 'PostToolUse', matcher: 'Agent',      timeout: 10 },
