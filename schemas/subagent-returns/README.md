@@ -14,6 +14,17 @@ shape that validates against the JSON Schema for its role.
 
 All schemas reference the shared `handover.schema.json` envelope via `$ref`.
 
+### Handover envelope optional fields
+
+The handover envelope defines two optional fields that the harness validator inspects on first-cycle (journey-mapping) and first-pass (coverage-expansion) returns:
+
+| Field | Type | Description |
+|---|---|---|
+| `dispatch-mode` | enum (`per-journey`, `per-section`, `grouped`, `single-agent-collapsed`) | How the dispatch was structured. **Required** on cycle-1 (journey-mapping) and Pass-1 (coverage-expansion) returns. The harness rejects cycle-1 / Pass-1 returns with `dispatch-mode == grouped` or `single-agent-collapsed` — those first cycles/passes are strict-per-X by contract (see `coverage-expansion/SKILL.md` §"Stage A per-journey dispatch is non-negotiable" and `journey-mapping/SKILL.md` §"Iterative discovery cycles"). |
+| `parallel-wave-size` | integer ≥ 1 | Size of the parallel wave this dispatch was part of. On cycle-1 / Pass-1, `parallel-wave-size == 1` is rejected UNLESS the roster genuinely contains only one item (in which case `dispatch-mode: per-journey` with wave-size 1 is the correct shape). |
+
+Cycle-2+ returns (journey-mapping) and Pass-2-onward returns (coverage-expansion) may omit both fields or carry any enum value — the strict contract relaxes after the first cycle/pass.
+
 ## Format
 
 - JSON Schema draft 2020-12.
