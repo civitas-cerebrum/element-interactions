@@ -130,6 +130,7 @@ Compose variants in this order so selectors build up cleanly and each variant in
 4. **Mobile variant** (P0/P1 only). The happy path at mobile viewport (375x812).
 5. **Negative flows.** Permission-denied, unauthorized access, out-of-order step execution.
 6. **Data-lifecycle variants** (where `Test expectations:` lists them): create → read → update → delete across sessions, draft persistence, bulk operations.
+7. **Visual-regression variants — when the surface is design-locked.** For pages or components whose visual layout the team treats as a contract (marketing landing pages, settled design-system components, dashboard layouts in a stable product), add one `verifyVisualMatch` test. Reference dynamic regions (clocks, generated ids, live counters, "updated N minutes ago" badges, user avatars, charts that re-render) by `{ elementName, pageName }` in the `mask` option so the pixel diff stays stable across runs. **Skip this variant for surfaces still under active design churn** — visual regression on a moving target is pure noise, and the right call there is to come back to it after the design settles. See `element-interactions/SKILL.md` §16 (visual regression — `verifyVisualMatch` with masks, not animation-freezing hacks) for the full policy.
 
 Each variant is its own `test(...)` inside one describe block for the journey — or split into a small cluster of describe blocks if the file grows beyond ~200 lines.
 

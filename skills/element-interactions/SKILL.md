@@ -260,6 +260,33 @@ Two rules govern how test data shows up in spec files.
 
 If you genuinely need a one-off literal in a spec (a hard-coded element label, a test-only string), put it inline in the assertion — the guard only flags top-level uppercase constant declarations, not inline literals inside `expect(...).toBe("literal")` or step calls.
 
+### 16. Visual regression — `verifyVisualMatch` with masks, not animation-freezing hacks
+
+The framework exposes `steps.verifyVisualMatch` for snapshot-based visual regression. It is a thin facade over Playwright's `toHaveScreenshot` with a higher-level mask shape that resolves `{ elementName, pageName }` entries through the ElementRepository — the same locator vocabulary every other step uses.
+
+**When to add a visual-regression variant.** A page or component is a candidate when its visual layout is treated as a contract by the team — marketing landing pages, settled design-system components, dashboard layouts in a stable product. The composer skill's variant-order list (item 7) names this rule from the composition side.
+
+**When to skip it.** Surfaces still under active design churn. Visual regression on a moving target generates pure noise. Revisit after the design settles.
+
+**The masking discipline (the one thing tests actually need to get right).** Visual regression breaks the moment a snapshot region contains dynamic data — a clock that ticks, a generated transaction id, a "updated N minutes ago" badge. Pass those regions in the `mask` option and Playwright paints a solid box over them BEFORE the pixel diff, so the rest of the page stays comparable. The framework's mask shape lets you reference those regions by repository name:
+
+```ts
+await steps.verifyVisualMatch('dashboard.png', {
+  mask: [
+    { elementName: 'currentTime',   pageName: 'DashboardPage' },
+    { elementName: 'transactionId', pageName: 'DashboardPage' },
+  ],
+});
+```
+
+Element-scoped variant + raw-selector escape hatch are documented in `references/api-reference.md` §"Visual regression".
+
+**What you don't have to do.** CSS animations are disabled by default during the snapshot (Playwright's own `animations: 'disabled'`). Don't reach for animation-freezing CSS hacks. Mask is only for **content-level dynamism** (text changing between runs), not motion.
+
+**Baselines.** First run writes the baseline; subsequent runs diff. Use `npx playwright test --update-snapshots` to refresh baselines intentionally. Playwright fingerprints baselines per OS / browser channel — generate them in the same environment your CI runs.
+
+**Rough mental shape for a typical journey.** One `verifyVisualMatch` per design-locked page or component, masking the dynamic-data regions, lives alongside the journey's other variants in the same describe block. Don't add visual-match assertions to every test — they're overhead for non-visual scenarios. Use them where the layout itself is the assertion.
+
 ### Workflow
 - **Run the tests** to validate your work. Do not skip this.
 - **Commit** after every confirmed success. Do not batch.
