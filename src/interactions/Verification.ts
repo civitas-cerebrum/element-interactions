@@ -1,6 +1,23 @@
 import { Page, expect, Locator } from '@playwright/test';
 type LocatorAssertions = ReturnType<typeof expect<Locator>>;
 import { CountVerifyOptions, TextVerifyOptions } from '../enum/Options';
+
+/**
+ * Internal shape that `Verifications.visuallyMatches` consumes. The
+ * high-level step layer (`steps.verifyVisualMatch`) resolves
+ * {@link import('../enum/Options').VisualMaskTarget} entries to
+ * Playwright Locators before calling in; this interface is therefore
+ * already-resolved.
+ */
+export interface VisualMatchPrimitiveOptions {
+    mask?: Locator[];
+    maskColor?: string;
+    fullPage?: boolean;
+    maxDiffPixelRatio?: number;
+    maxDiffPixels?: number;
+    timeout?: number;
+    errorMessage?: string;
+}
 import { Element, WebElement } from '@civitas-cerebrum/element-repository';
 
 /** Shared options every Verifications method accepts. */
@@ -751,5 +768,82 @@ export class Verifications {
                 (options.lessThanOrEqual === undefined || actualCount <= options.lessThanOrEqual);
             return verifyOptions?.negated ? !passes : passes;
         }, { timeout, message: `Expected count ${describe}${negatedSuffix}` }).toBe(true);
+    }
+
+    // ==========================================
+    // Visual Regression
+    // ==========================================
+    //
+    // Thin facade over Playwright's `toHaveScreenshot` matcher with two
+    // additions:
+    //   1. A `mask` shape that accepts ElementRepository entries
+    //      ({ elementName, pageName }) alongside raw selectors, so tests
+    //      keep using the framework's locator vocabulary instead of
+    //      dropping into raw Playwright locators.
+    //   2. A page-level vs element-level path under one method —
+    //      target = the Page instance for page screenshots, or a
+    //      WebElement for element screenshots.
+    //
+    // Behaviour notes Playwright already gives you (and we inherit):
+    //   - Animations are disabled by default (`animations: 'disabled'`).
+    //     No need to freeze CSS yourself.
+    //   - The first run writes the baseline; subsequent runs diff.
+    //   - `mask` regions are painted with a solid colour (pink default)
+    //     BEFORE the pixel diff, so dynamic data in those regions
+    //     doesn't fail the comparison.
+
+    /**
+     * Assert that the current page or a specific element matches its
+     * stored baseline screenshot, optionally masking regions of dynamic
+     * data.
+     *
+     * @param target           — pass the framework's `WebElement` for an
+     *                           element snapshot, or the framework's
+     *                           page object via `this.page` semantics
+     *                           (handled by the higher-level step).
+     * @param snapshotName     — file name for the baseline (e.g.
+     *                           `dashboard.png`). Playwright derives
+     *                           OS- / browser-specific directories
+     *                           automatically.
+     * @param options          — see {@link VisualMatchOptions}. Use
+     *                           `mask` for any region whose content
+     *                           changes between runs (clocks, ids,
+     *                           live counters, "updated N minutes ago"
+     *                           badges, user avatars, etc.).
+     */
+    async visuallyMatches(
+        target: WebElement | Page,
+        snapshotName?: string,
+        options?: VisualMatchPrimitiveOptions,
+    ): Promise<void> {
+        const targetForMatcher = this.isPage(target)
+            ? target
+            : resolveLocator(target);
+
+        const base = options?.errorMessage
+            ? expect(targetForMatcher, options.errorMessage)
+            : expect(targetForMatcher);
+
+        const shotOptions: Record<string, unknown> = {
+            timeout: options?.timeout ?? this.ELEMENT_TIMEOUT,
+        };
+        if (options?.mask && options.mask.length > 0) shotOptions.mask = options.mask;
+        if (options?.maskColor !== undefined) shotOptions.maskColor = options.maskColor;
+        if (options?.maxDiffPixelRatio !== undefined) shotOptions.maxDiffPixelRatio = options.maxDiffPixelRatio;
+        if (options?.maxDiffPixels !== undefined) shotOptions.maxDiffPixels = options.maxDiffPixels;
+        if (options?.fullPage !== undefined && this.isPage(target)) {
+            shotOptions.fullPage = options.fullPage;
+        }
+
+        if (snapshotName) {
+            await base.toHaveScreenshot(snapshotName, shotOptions);
+        } else {
+            await base.toHaveScreenshot(shotOptions);
+        }
+    }
+
+    /** Type guard — distinguishes a Playwright Page from a framework WebElement. */
+    private isPage(target: WebElement | Page): target is Page {
+        return typeof (target as Page).goto === 'function';
     }
 }

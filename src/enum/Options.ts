@@ -239,6 +239,60 @@ export interface ScreenshotOptions {
 }
 
 /**
+ * Reference shapes accepted by the visual-match `mask` option. Each
+ * entry is resolved to a Playwright `Locator` before being passed to
+ * `toHaveScreenshot`'s `mask` argument; the masked region is painted
+ * with a solid box (default pink) before pixel comparison so the rest
+ * of the page stays stable across runs.
+ *
+ * - `{ elementName, pageName }` — look up the element in the
+ *   ElementRepository (the canonical, page-aware path).
+ * - `{ selector }` — raw CSS / role / testid selector; useful when the
+ *   masked region is a literal that doesn't warrant a repo entry.
+ */
+export type VisualMaskTarget =
+    | { elementName: string; pageName: string }
+    | { selector: string };
+
+/**
+ * Options for the `verifyVisualMatch` step / `Verifications.visuallyMatches`
+ * assertion. Thin facade over Playwright's `toHaveScreenshot`, with a
+ * higher-level mask shape (see {@link VisualMaskTarget}) that resolves
+ * ElementRepository entries the same way other steps do.
+ *
+ * Why this exists
+ * ---------------
+ * Visual regression breaks the moment a snapshot region contains
+ * dynamic data (clocks, generated ids, "updated N minutes ago"
+ * badges). Playwright's `mask` option paints over those regions before
+ * the pixel diff runs, so the surrounding UI stays comparable. This
+ * facade keeps mask references in the same `{ elementName, pageName }`
+ * shape as the rest of the framework, instead of forcing tests to
+ * drop into raw Playwright locators.
+ */
+export interface VisualMatchOptions {
+    /**
+     * Element regions to cover with a solid-color box before the
+     * snapshot is taken. Anything inside the box is excluded from the
+     * pixel diff. Use for dynamic data (timestamps, generated ids,
+     * live counters, etc.).
+     */
+    mask?: VisualMaskTarget[];
+    /** Override the mask box colour. Defaults to Playwright's pink (`#FF00FF`). */
+    maskColor?: string;
+    /** For page-level snapshots, capture the full scrollable page instead of just the viewport. */
+    fullPage?: boolean;
+    /** Allowable proportion of mismatching pixels (0 to 1). Forwarded to `toHaveScreenshot`. */
+    maxDiffPixelRatio?: number;
+    /** Allowable absolute count of mismatching pixels. Forwarded to `toHaveScreenshot`. */
+    maxDiffPixels?: number;
+    /** Override the assertion timeout (the snapshot polling window). */
+    timeout?: number;
+    /** Custom failure message prepended to Playwright's error on a mismatch. */
+    errorMessage?: string;
+}
+
+/**
  * Options for the `isVisible` probe method.
  */
 export interface IsVisibleOptions {
