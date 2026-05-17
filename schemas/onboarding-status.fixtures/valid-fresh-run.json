@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "pipelineVersion": "0.4.0",
+  "runMode": "standard",
+  "startedAt": "2026-05-17T09:00:00Z",
+  "currentPhase": 1,
+  "currentSubStage": null,
+  "status": "in-progress",
+  "phases": [
+    {
+      "id": 1,
+      "name": "Scaffold",
+      "startedAt": "2026-05-17T09:00:00Z",
+      "finishedAt": null,
+      "status": "in-progress",
+      "handoverEnvelope": null,
+      "reviewerVerdict": "pending",
+      "reviewerCycles": 0,
+      "reviewerFindings": [],
+      "deliverables": []
+    },
+    { "id": 2, "name": "Groundwork",         "status": "pending", "reviewerVerdict": "pending", "reviewerCycles": 0, "deliverables": [] },
+    { "id": 3, "name": "Happy-path",         "status": "pending", "reviewerVerdict": "pending", "reviewerCycles": 0, "deliverables": [] },
+    { "id": 4, "name": "Journey-mapping",    "status": "pending", "reviewerVerdict": "pending", "reviewerCycles": 0, "deliverables": [], "subStages": [] },
+    { "id": 5, "name": "Coverage-expansion", "status": "pending", "reviewerVerdict": "pending", "reviewerCycles": 0, "deliverables": [], "subStages": [] },
+    { "id": 6, "name": "Bug-discovery",      "status": "pending", "reviewerVerdict": "pending", "reviewerCycles": 0, "deliverables": [] },
+    { "id": 7, "name": "Secrets-sweep",      "status": "pending", "reviewerVerdict": "pending", "reviewerCycles": 0, "deliverables": [] },
+    { "id": 8, "name": "Report",             "status": "pending", "reviewerVerdict": "pending", "reviewerCycles": 0, "deliverables": [] }
+  ],
+  "approvedDeviations": []
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "pipelineVersion": "0.4.0",
+  "runMode": "yolo",
+  "startedAt": "2026-05-17T09:00:00Z",
+  "currentPhase": 1,
+  "currentSubStage": null,
+  "status": "in-progress",
+  "phases": [
+    { "id": 1, "name": "Scaffold",         "status": "in-progress", "deliverables": [] },
+    { "id": 2, "name": "Groundwork",       "status": "pending",     "deliverables": [] },
+    { "id": 3, "name": "Happy-path",       "status": "pending",     "deliverables": [] },
+    { "id": 4, "name": "Journey-mapping",  "status": "pending",     "deliverables": [] },
+    { "id": 5, "name": "Coverage-expansion", "status": "pending",   "deliverables": [] },
+    { "id": 6, "name": "Bug-discovery",    "status": "pending",     "deliverables": [] },
+    { "id": 7, "name": "Secrets-sweep",    "status": "pending",     "deliverables": [] },
+    { "id": 8, "name": "Report",           "status": "pending",     "deliverables": [] }
+  ]
+}
