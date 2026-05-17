@@ -19,7 +19,7 @@
     "test:with-coverage": "npx playwright test --grep-invert 'Email Integration Tests' && npx test-coverage --format github-plain",
     "test:hooks": "hooks/tests/run.sh",
     "sync-hooks": "node scripts/sync-hooks.js",
-    "schemas:lint": "ajv compile --strict=true --all-errors -s 'schemas/subagent-returns/*.schema.json' && node scripts/validate-schema-fixtures.mjs",
+    "schemas:lint": "node scripts/compile-schemas.mjs && node scripts/validate-schema-fixtures.mjs",
     "prepack": "npm run test:hooks"
   },
   "files": [
@@ -38,7 +38,6 @@
     "@playwright/test": "^1.59.1",
     "@types/debug": "^4.1.13",
     "@types/node": "^20.0.0",
-    "ajv-cli": "^5.0.0",
     "typescript": "^5.0.0"
   },
   "keywords": [
