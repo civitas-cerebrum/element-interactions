@@ -29,11 +29,19 @@
 # 3. **No reviewerVerdict: approved without a handoverEnvelope.** A phase
 #    cannot be approved unless the closing subagent's handover envelope
 #    is captured in the same record.
-# 4. **Silent-allow for non-ledger writes.** Only files whose path ends
+# 4. **Actor-identity on approval transitions.** Any write that
+#    transitions a phase's `reviewerVerdict` from non-approved to
+#    `approved` MUST come from a registered approver subagent context.
+#    Orchestrator-direct writes that approve a phase are denied — only
+#    `workflow-reviewer-*` / `phase-validator-*` dispatches (tracked by
+#    workflow-approver-registry.sh) can record approvals. This is the
+#    separation-of-duties gate: the orchestrator does the work, an
+#    approver subagent records the verdict.
+# 5. **Silent-allow for non-ledger writes.** Only files whose path ends
 #    with `tests/e2e/docs/onboarding-status.json` are gated.
-# 5. **Silent-allow when the file is missing AND the write is the
-#    create.** A fresh-run ledger init has no prior state to validate
-#    against — only the schema check applies.
+# 6. **Silent-allow when the file is missing AND the write has no
+#    approvals.** A fresh-run ledger init with all phases pending has
+#    no actor-identity check (nothing is being approved).
 #
 # Canonical reference
 # -------------------
@@ -273,6 +281,154 @@ for the shape) before re-issuing the write.
 
 See: schemas/onboarding-status.schema.json
      schemas/subagent-returns/handover.schema.json"
+    exit 0
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# Actor-identity check on approval transitions (separation of duties).
+# Any phase whose reviewerVerdict transitions from non-approved to
+# `approved` requires the write to originate from a registered approver
+# subagent context. Without this check the orchestrator can self-approve.
+# ---------------------------------------------------------------------------
+# Compute the set of phase ids that are NEWLY approved in this write.
+if [ -f "$FILE_PATH" ]; then
+  PRIOR_APPROVED=$("$JQ" -c '[.phases[]? | select(.reviewerVerdict == "approved") | .id]' "$FILE_PATH" 2>/dev/null || echo "[]")
+else
+  PRIOR_APPROVED="[]"
+fi
+NEW_APPROVED=$("$JQ" -c '[.phases[]? | select(.reviewerVerdict == "approved") | .id]' "$TMP_PROPOSED" 2>/dev/null || echo "[]")
+
+NEW_APPROVAL_IDS=$("$JQ" -nc \
+  --argjson prior "$PRIOR_APPROVED" \
+  --argjson new "$NEW_APPROVED" \
+  '[$new[] | select(. as $n | $prior | index($n) | not)]' 2>/dev/null || echo "[]")
+
+# Carve-out: user-authorised skips. A phase whose `status == "skipped"`
+# AND has a matching `approvedDeviations[]` entry with a non-empty
+# `authorizer` field is approved via the user-authorization channel,
+# not via a reviewer subagent. The authorizer's verbatim quote is the
+# attestation. Remove these phase ids from the approval-set so the
+# actor-identity check below doesn't fire on them.
+SKIP_AUTHORISED_IDS=$("$JQ" -c '
+  [ .phases[]? as $p
+    | select($p.status == "skipped" and $p.reviewerVerdict == "approved")
+    | $p.id as $pid
+    | select(
+        (.approvedDeviations // [])
+        | any(.phase == $pid and ((.authorizer // "") | length) > 0)
+      )
+    | $pid
+  ]
+' "$TMP_PROPOSED" 2>/dev/null || echo "[]")
+
+NEW_APPROVAL_IDS=$("$JQ" -nc \
+  --argjson all "$NEW_APPROVAL_IDS" \
+  --argjson skip "$SKIP_AUTHORISED_IDS" \
+  '[$all[] | select(. as $n | $skip | index($n) | not)]' 2>/dev/null || echo "[]")
+
+# Same check at sub-stage level (Phase-4 cycles, Phase-5 passes). We
+# expose the substage approvals as `<phase-id>.<substage-id>` strings.
+if [ -f "$FILE_PATH" ]; then
+  PRIOR_SUBSTAGE_APPROVED=$("$JQ" -c '
+    [ .phases[]? as $p | $p.subStages[]? | select(.reviewerVerdict == "approved")
+      | "\($p.id).\(.id)" ]
+  ' "$FILE_PATH" 2>/dev/null || echo "[]")
+else
+  PRIOR_SUBSTAGE_APPROVED="[]"
+fi
+NEW_SUBSTAGE_APPROVED=$("$JQ" -c '
+  [ .phases[]? as $p | $p.subStages[]? | select(.reviewerVerdict == "approved")
+    | "\($p.id).\(.id)" ]
+' "$TMP_PROPOSED" 2>/dev/null || echo "[]")
+NEW_SUBSTAGE_APPROVAL_IDS=$("$JQ" -nc \
+  --argjson prior "$PRIOR_SUBSTAGE_APPROVED" \
+  --argjson new "$NEW_SUBSTAGE_APPROVED" \
+  '[$new[] | select(. as $n | $prior | index($n) | not)]' 2>/dev/null || echo "[]")
+
+# Are there any new approvals at all?
+HAS_NEW_PHASE_APPROVAL=$([ "$NEW_APPROVAL_IDS" = "[]" ] && echo "no" || echo "yes")
+HAS_NEW_SUBSTAGE_APPROVAL=$([ "$NEW_SUBSTAGE_APPROVAL_IDS" = "[]" ] && echo "no" || echo "yes")
+
+if [ "$HAS_NEW_PHASE_APPROVAL" = "yes" ] || [ "$HAS_NEW_SUBSTAGE_APPROVAL" = "yes" ]; then
+  PARENT_ID=$(echo "$INPUT" | "$JQ" -r '.parent_tool_use_id // empty' 2>/dev/null || echo "")
+  APPROVAL_SUMMARY="phase ids: $NEW_APPROVAL_IDS, substage ids: $NEW_SUBSTAGE_APPROVAL_IDS"
+
+  if [ -z "$PARENT_ID" ]; then
+    emit_deny "[BLOCKED] Ledger write transitions ${APPROVAL_SUMMARY} to reviewerVerdict: \"approved\" but the write is coming directly from the orchestrator context (no parent_tool_use_id).
+
+File: ${FILE_PATH}
+
+This is the separation-of-duties gate: the orchestrator does the work, an
+approver subagent records the verdict. Only writes originating inside a
+\`workflow-reviewer-*\` or \`phase-validator-*\` subagent are permitted to
+transition a reviewerVerdict to approved.
+
+Fix: dispatch the matching approver subagent (e.g. \`workflow-reviewer-phase1:\`
+or \`phase-validator-1:\`) and let it author this write. The orchestrator's
+job ends at dispatch; the approver owns the verdict record.
+
+See:
+  - hooks/workflow-approver-registry.sh (PreToolUse:Agent — records approvers)
+  - skills/onboarding/SKILL.md §\"Status ledger + workflow reviewer\"
+  - schemas/subagent-returns/workflow-reviewer.schema.json"
+    exit 0
+  fi
+
+  # Subagent context — verify the parent is in the approver registry.
+  REGISTRY_FILE="$(dirname "$FILE_PATH")/.workflow-approvers.json"
+  if [ ! -f "$REGISTRY_FILE" ]; then
+    emit_deny "[BLOCKED] Ledger write transitions ${APPROVAL_SUMMARY} to approved from a subagent context, but no approver registry exists at:
+
+  ${REGISTRY_FILE}
+
+The registry is written by hooks/workflow-approver-registry.sh when a
+\`workflow-reviewer-*\` or \`phase-validator-*\` Agent dispatch fires.
+Its absence means the dispatching Agent did NOT have an approver-role
+description prefix.
+
+Fix: ensure the approving subagent is dispatched with description
+prefix \`workflow-reviewer-<scope>:\` or \`phase-validator-<N>:\`. Other
+prefixes (composer-, probe-, cleanup-) do the work but cannot record
+verdicts."
+    exit 0
+  fi
+
+  ENTRY=$("$JQ" -c --arg id "$PARENT_ID" '.[$id] // empty' "$REGISTRY_FILE" 2>/dev/null || echo "")
+  if [ -z "$ENTRY" ]; then
+    emit_deny "[BLOCKED] Ledger write transitions ${APPROVAL_SUMMARY} to approved but the dispatching subagent (parent_tool_use_id=${PARENT_ID}) is NOT in the approver registry.
+
+File: ${FILE_PATH}
+Registry: ${REGISTRY_FILE}
+
+Only subagents dispatched with one of these description prefixes can
+record approvals:
+
+  workflow-reviewer-<scope>:   the workflow reviewer / inspector skill
+  phase-validator-<N>:         per-phase greenlight emitter
+
+The current parent dispatch likely used a different prefix (composer-,
+probe-, cleanup-, etc.). Those roles do the work but do not record
+verdicts.
+
+Fix: dispatch a \`workflow-reviewer-*\` or \`phase-validator-*\` with this
+write in its scope."
+    exit 0
+  fi
+
+  # TTL check — 30 minutes from registration.
+  NOW=$(date +%s)
+  TTL=1800
+  ENTRY_TS=$(echo "$ENTRY" | "$JQ" -r '.ts // 0' 2>/dev/null || echo "0")
+  ENTRY_AGE=$((NOW - ENTRY_TS))
+  if [ "$ENTRY_AGE" -gt "$TTL" ]; then
+    emit_deny "[BLOCKED] Ledger write transitions ${APPROVAL_SUMMARY} to approved from an approver whose registry entry has expired (age ${ENTRY_AGE}s, TTL ${TTL}s).
+
+Registry entries live for 30 minutes from dispatch. If the approver
+subagent has been running longer than that, re-dispatch a fresh
+\`workflow-reviewer-*\` to land the verdict.
+
+Fix: re-dispatch the approver."
     exit 0
   fi
 fi

@@ -131,6 +131,10 @@ const HOOK_MANIFEST = [
   // jq); 3s timeout for the write gate (read-only-ish — Ajv compile
   // plus a JSON parse).
   { file: 'onboarding-ledger-gate.sh',            event: 'PreToolUse', matcher: 'Agent',       timeout: 10 },
+  // Approver registry: records workflow-reviewer-* / phase-validator-*
+  // dispatches so the ledger-write-gate can verify approval transitions
+  // come from a registered approver context (separation of duties).
+  { file: 'workflow-approver-registry.sh',        event: 'PreToolUse', matcher: 'Agent',       timeout: 5 },
   { file: 'onboarding-ledger-write-gate.sh',      event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 3 },
 
   // PostToolUse — observers (record + warn)
