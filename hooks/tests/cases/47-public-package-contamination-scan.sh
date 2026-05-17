@@ -20,7 +20,10 @@ ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 BANNED='bookhive|book.hive|cookbook|chefnova|petfinder|j.administer.medication|achilles'
 
 # Surface to scan: everything npm publishes (per package.json `files`),
-# plus root files that are implicitly published.
+# plus root files that are implicitly published. docker-compose.yml is
+# omitted — it is a dev-only test-infrastructure file (not in `files`),
+# and its `image:` references necessarily name the real Docker Hub
+# repositories used by the in-repo integration tests.
 TARGETS=(hooks skills schemas package.json README.md CHANGELOG.md)
 
 # Filter out test fixtures that intentionally contain banned tokens

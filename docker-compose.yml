@@ -18,7 +18,7 @@ services:
       - app-mongo-data:/data/db
 
   app-backend:
-    image: example/demo-app-backend:latest
+    image: umutayb/book-hive-backend:latest
     restart: always
     ports:
       - "8080:8080"
