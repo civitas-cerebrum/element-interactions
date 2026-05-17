@@ -27,6 +27,7 @@ State file shape (minimum fields):
 ```json
 {
   "status": "in-progress",
+  "runMode": "standard",
   "currentPass": 3,
   "journeyRoster": ["j-...", ...],
   "completedJourneys": ["j-...", ...],
@@ -53,6 +54,8 @@ State file shape (minimum fields):
   "updatedAt": "2026-04-24T..."
 }
 ```
+
+**`runMode` field** — enum `{"standard", "depth"}`. Default `"standard"` when absent (back-compat: state files written before depth mode landed as a first-class option do not carry the field and are interpreted as standard). The orchestrator MUST write the field on the first state-file write of the run, sourced from the `mode:` arg parsed at entry: `mode: standard` → `runMode: "standard"`, `mode: depth` → `runMode: "depth"`, `mode: breadth` → field omitted (breadth mode is a separate pipeline shape, not a strictness flag). The `standard-mode-first-pass-guard.sh` hook reads this field to decide grouping-denial scope: under `"standard"` it denies `[group]` / `[P3-batch]` on Pass 1 only; under `"depth"` it denies them on every pass.
 
 **Per-journey dispatch entry fields (dual-stage).** Each entry in `dispatches[]` carries:
 
