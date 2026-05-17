@@ -2,10 +2,34 @@
 # selector-development-inertness-guard.sh — diff-shape validator.
 #
 # Hook    : PreToolUse:Edit|Write
-# Mode    : DENY (when frontend file change is not a single-attribute additive edit)
-# State   : reads tests/e2e/.selector-development/.detected-convention if present
+# Mode    : DENY (when a selector-development scope is in flight AND
+#                 the frontend file change is not a single-attribute
+#                 additive edit — the inertness contract for the
+#                 pipeline)
+# Mode    : silent allow (when no .current-scope sentinel exists —
+#                 frontend edits outside the selector-development
+#                 pipeline have no inertness contract to enforce)
+# State   : reads tests/e2e/.selector-development/.current-scope (sentinel)
+#           and tests/e2e/.selector-development/.detected-convention if present
 # Env     : CONVENTION_OVERRIDE (overrides the cached convention; for tests)
 #           WORKSPACE_ROOT (defaults to git toplevel of cwd)
+#           CIVITAS_DISABLE_SELECTOR_DEVELOPMENT=1 disables the hook
+#           (kill-switch for consumers who never use this workflow)
+#
+# Why the sentinel gate
+# ---------------------
+# The inertness contract — "the only allowed edit is appending one
+# attribute to one opening tag" — applies during the pipeline-stepper's
+# patch step, where the selector-development scope is in flight. Outside
+# the pipeline, frontend edits are arbitrary refactor / feature work
+# the consumer is doing through Claude Code; gating those would be a
+# hostile default for any consumer who hasn't opted into selector-
+# development.
+#
+# So we only enforce the contract when the pipeline says "I'm running
+# right now" via the .current-scope sentinel file. Pairs with
+# selector-development-pipeline-stepper.sh, which writes/clears the
+# sentinel.
 
 set -euo pipefail
 
@@ -20,6 +44,11 @@ file_path=$(echo "$input" | jq -r '.tool_input.file_path // empty')
 
 case "$tool_name" in Edit|Write) ;; *) exit 0 ;; esac
 
+# Kill-switch for consumers who never use selector-development.
+if [ "${CIVITAS_DISABLE_SELECTOR_DEVELOPMENT:-0}" = "1" ]; then
+  exit 0
+fi
+
 # Extension filter — same set as activation-gate
 case "$file_path" in
   *.tsx|*.jsx|*.vue|*.svelte|*.html|*.htm) ;;
@@ -30,6 +59,14 @@ case "$file_path" in
 esac
 
 ws="${WORKSPACE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")}"
+
+# Sentinel gate: only enforce the inertness contract when the
+# selector-development pipeline is mid-flight. The pipeline-stepper
+# writes .current-scope on scope-init and clears it on commit. Without
+# it, this is a normal authoring edit and we have no opinion.
+if [ ! -f "$ws/tests/e2e/.selector-development/.current-scope" ]; then
+  exit 0
+fi
 
 # Fallback for dev-repo edge case where HOOK_DIR/lib doesn't exist but $ws/hooks/lib does
 # (e.g. when testing the hook directly from the repo root without postinstall).

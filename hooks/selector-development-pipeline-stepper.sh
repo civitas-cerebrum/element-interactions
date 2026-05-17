@@ -378,7 +378,13 @@ Receipt: ${RECEIPT}"
     if [ -n "${FAKE_STAGED_HASH:-}" ]; then
       STAGED_HASH="$FAKE_STAGED_HASH"
     else
-      mapfile -t FILES_ARR < <(jq -r '.files[]? // empty' "$RECEIPT" 2>/dev/null)
+      # Portable read-into-array (bash 3.2 lacks `mapfile`; macOS ships
+      # bash 3.2 as /bin/bash by default, so consumers running the hook
+      # on macOS would hit `command not found` here without this).
+      FILES_ARR=()
+      while IFS= read -r _line; do
+        FILES_ARR+=("$_line")
+      done < <(jq -r '.files[]? // empty' "$RECEIPT" 2>/dev/null)
       STAGED_HASH=$(git -C "$WS" diff --cached -- "${FILES_ARR[@]}" 2>/dev/null | sha256sum | awk '{print $1}' || echo "")
     fi
 

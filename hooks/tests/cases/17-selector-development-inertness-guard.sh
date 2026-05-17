@@ -3,12 +3,32 @@
 # Tests for hooks/selector-development-inertness-guard.sh
 #
 # Hook: PreToolUse:Edit|Write
-# Mode: DENY when a frontend file change is not a single-attribute additive edit.
+# Mode:
+#   - silent allow when no .current-scope sentinel exists (the
+#     pipeline isn't running — this hook has no opinion on frontend
+#     edits outside the selector-development workflow)
+#   - silent allow when CIVITAS_DISABLE_SELECTOR_DEVELOPMENT=1
+#   - DENY when scope is in flight AND the frontend file change is not
+#     a single-attribute additive edit (the inertness contract)
 
 H="$HOOK_DIR/selector-development-inertness-guard.sh"
 
 # Fixture paths
 FIX="$HOOK_DIR/tests/lib-fixtures/selector-development"
+
+# ---------------------------------------------------------------------------
+# Shared workspace setup
+# ---------------------------------------------------------------------------
+# The inertness-guard only fires when a selector-development scope is
+# in flight (sentinel at <ws>/tests/e2e/.selector-development/.current-scope).
+# Every "DENY" test below assumes the pipeline is running, so we seed a
+# scope-active workspace once at the top of the file and point
+# WORKSPACE_ROOT at it. Specific sections that test the no-scope path
+# unset / overwrite WORKSPACE_ROOT inline.
+INERT_WS=$(mktemp -d)
+mkdir -p "$INERT_WS/tests/e2e/.selector-development"
+printf 'test-scope\n' > "$INERT_WS/tests/e2e/.selector-development/.current-scope"
+export WORKSPACE_ROOT="$INERT_WS"
 
 # ---------------------------------------------------------------------------
 # Helper: read fixture file content
@@ -142,6 +162,11 @@ section "inertness-guard: C2 — HOOK_DIR/lib used when WORKSPACE_ROOT has no ho
 
 _tmp_ws=$(mktemp -d)
 # Deliberately do NOT create $_tmp_ws/hooks/lib — simulates consumer workspace
+# Seed .current-scope so the gate fires (otherwise no-scope silent-allow
+# would bypass the validator entirely and the test wouldn't exercise
+# its intended concern).
+mkdir -p "$_tmp_ws/tests/e2e/.selector-development"
+printf 'test-scope\n' > "$_tmp_ws/tests/e2e/.selector-development/.current-scope"
 
 printf '%s' "$baseline_content" > /tmp/inertness-c2.tsx
 
@@ -153,3 +178,54 @@ assert_allow "$H" \
 unset CONVENTION_OVERRIDE
 unset WORKSPACE_ROOT
 rm -rf "$_tmp_ws"
+
+# Restore the shared scope-active workspace for any tests that follow.
+export WORKSPACE_ROOT="$INERT_WS"
+
+# ---------------------------------------------------------------------------
+# Section 10 — no selector-development scope in flight → silent ALLOW
+# ---------------------------------------------------------------------------
+# Without a .current-scope sentinel the inertness contract does NOT
+# apply — frontend edits go through unchanged. This is the friendly-
+# default for any consumer who isn't using selector-development.
+section "inertness-guard: no scope in flight → silent ALLOW"
+
+_no_scope_ws=$(mktemp -d)
+# Deliberately NO .current-scope under tests/e2e/.selector-development/
+printf '%s' "$baseline_content" > /tmp/inertness-noscope.tsx
+
+export CONVENTION_OVERRIDE=data-testid
+export WORKSPACE_ROOT="$_no_scope_ws"
+
+# A diff that WOULD fail the inertness contract (structural change) —
+# but with no scope active, the gate is silent.
+assert_allow "$H" \
+  "$(payload tool_name=Write file_path=/tmp/inertness-noscope.tsx content="$structural_content")" \
+  "no scope: structural Write → silent ALLOW (contract doesn't apply)"
+
+unset CONVENTION_OVERRIDE
+unset WORKSPACE_ROOT
+rm -rf "$_no_scope_ws"
+
+# Restore the shared scope-active workspace.
+export WORKSPACE_ROOT="$INERT_WS"
+
+# ---------------------------------------------------------------------------
+# Section 11 — CIVITAS_DISABLE_SELECTOR_DEVELOPMENT=1 → silent ALLOW
+# ---------------------------------------------------------------------------
+# Kill-switch for consumers who never use this workflow. The hook
+# yields regardless of scope state or inertness contract.
+section "inertness-guard: CIVITAS_DISABLE_SELECTOR_DEVELOPMENT=1 → silent ALLOW"
+
+printf '%s' "$baseline_content" > /tmp/inertness-kill.tsx
+
+export CONVENTION_OVERRIDE=data-testid
+CIVITAS_DISABLE_SELECTOR_DEVELOPMENT=1 \
+  assert_allow "$H" \
+    "$(payload tool_name=Write file_path=/tmp/inertness-kill.tsx content="$structural_content")" \
+    "kill-switch on + scope in flight + bad diff → silent ALLOW"
+unset CONVENTION_OVERRIDE
+
+# Final cleanup
+unset WORKSPACE_ROOT
+rm -rf "$INERT_WS"
