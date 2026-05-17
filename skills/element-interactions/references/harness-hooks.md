@@ -12,6 +12,11 @@ Orchestrator-mode and cascade-routing concerns previously enforced by this packa
 
 - **[subagent-schema-preread-gate](../../../hooks/subagent-schema-preread-gate.sh)** — `PreToolUse:Agent`. Denies schema-validated role-prefixed dispatches whose brief omits the schema citation. [escape hatch: no]
 - **[standard-mode-first-pass-guard](../../../hooks/standard-mode-first-pass-guard.sh)** — `PreToolUse:Agent`. First-pass / first-cycle strict-dispatch enforcement for `coverage-expansion` + `journey-mapping`. Denies: (a) Pass-1 `[group]` / `[P3-batch]` dispatches under `mode: standard`; (b) `phase4-prioritise-author:` dispatches before ≥ 2 distinct cycle-1 sections have been dispatched; (c) single-subagent walkthroughs of journey-mapping cycle 1 (≥ 3 canonical section IDs in one description with no prior cycle-1 dispatches). Pass-2+ and cycle-2+ are silent-allowed. [escape hatch: no]
+- **[onboarding-ledger-gate](../../../hooks/onboarding-ledger-gate.sh)** — `PreToolUse:Agent`. Pipeline state-machine enforcement. Reads `tests/e2e/docs/onboarding-status.json` and denies (a) non-`workflow-reviewer-*` Agent dispatches at any transition point where the prior phase's `reviewerVerdict` is still `pending`; (b) out-of-order phase / pass / cycle dispatches (e.g. `phase4-*` while `currentPhase = 2`, `composer-j-…-2` while `pass-1.reviewerVerdict != approved`, `phase4-cycle-2-section-*` while `cycle-1.reviewerVerdict != approved`). `workflow-reviewer-*` dispatches always allowed. Silent-allow on missing / malformed ledger so a brand-new run can start. [escape hatch: no]
+
+### Write|Edit
+
+- **[onboarding-ledger-write-gate](../../../hooks/onboarding-ledger-write-gate.sh)** — `PreToolUse:Write|Edit`. Schema + state-machine integrity gate for writes to `tests/e2e/docs/onboarding-status.json`. Validates against `schemas/onboarding-status.schema.json` via the existing Ajv toolchain; additionally denies phase-skip ledger transitions that lack a `status: skipped` + `approvedDeviations[]` entry with a non-empty `authorizer`, and denies `reviewerVerdict: approved` paired with a null `handoverEnvelope`. Silent-allows on non-ledger writes and when node / ajv aren't available. [escape hatch: no]
 
 ### Bash
 

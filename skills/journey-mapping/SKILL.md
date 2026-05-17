@@ -99,6 +99,8 @@ The cycle protocol consumes `tests/e2e/docs/.discovery-draft.json` produced by `
 
 If the draft is missing or malformed (no sentinel, empty `cycle-1-targets`), `phases-2-4` mode stops immediately with `blocked-on-prerequisite: discovery-draft-missing` — `journey-mapping` does not synthesise a draft from scratch. (The harness hook that previously denied cycle dispatches when the draft was absent was retired in the 0.3.6 cleanup; the rule still applies.)
 
+> **Cycle transitions are now reviewer-gated (additive).** When this skill is invoked as Phase 4 of the onboarding pipeline, every cycle N → cycle N+1 transition is gated by a `workflow-reviewer-cycle<N>:` subagent reading the onboarding-status ledger (`tests/e2e/docs/onboarding-status.json`). The existing `.phase4-cycle-state.json` is unchanged and remains the authoritative per-cycle / per-section dispatch ledger; the new gate is additive — the orchestrator must dispatch `workflow-reviewer-cycle<N>:` between cycles, and the harness `onboarding-ledger-gate.sh` denies cycle-N+1 section dispatches until the prior cycle's `reviewerVerdict` is `approved`. See `skills/workflow-reviewer/SKILL.md` and `skills/onboarding/SKILL.md` §"Status ledger + workflow reviewer".
+
 ### Cycle protocol
 
 ```

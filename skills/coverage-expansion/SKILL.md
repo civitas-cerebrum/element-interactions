@@ -340,6 +340,8 @@ The declaration also serves as the auditable record of *why* a partial run, if a
 
 The skill's first action on entry is to read `tests/e2e/docs/coverage-expansion-state.json`. The full schema (top-level fields, per-journey `dispatches[]` entry shape including dual-stage fields, journey-roster mutability rules, and the corrupt-state-refusal protocol) is specified in [`references/state-file-schema.md`](references/state-file-schema.md). Resumption is a contract, not a convention — read it before authoring or modifying any state-file-touching code.
 
+> **Pass transitions are now reviewer-gated (additive).** When this skill is invoked as Phase 5 of the onboarding pipeline, every Pass N → Pass N+1 transition is gated by a `workflow-reviewer-pass<N>:` subagent reading the onboarding-status ledger (`tests/e2e/docs/onboarding-status.json`). The existing `coverage-expansion-state.json` is unchanged and remains the authoritative per-pass / per-journey resume marker; the new gate is additive — the orchestrator must dispatch `workflow-reviewer-pass<N>:` between passes, and the harness `onboarding-ledger-gate.sh` denies pass-N+1 composer / probe dispatches until the prior pass's `reviewerVerdict` is `approved`. See `skills/workflow-reviewer/SKILL.md` and `skills/onboarding/SKILL.md` §"Status ledger + workflow reviewer".
+
 ### Hard rules — kernel-resident
 
 - **Read first, before anything else.** If currentPass is set, resume from that pass; if absent or `status == "complete"`, start Pass 1 from scratch.
