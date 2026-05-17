@@ -8,6 +8,11 @@ Orchestrator-mode and cascade-routing concerns previously enforced by this packa
 
 ## PreToolUse
 
+### Agent
+
+- **[subagent-schema-preread-gate](../../../hooks/subagent-schema-preread-gate.sh)** — `PreToolUse:Agent`. Denies schema-validated role-prefixed dispatches whose brief omits the schema citation. [escape hatch: no]
+- **[standard-mode-first-pass-guard](../../../hooks/standard-mode-first-pass-guard.sh)** — `PreToolUse:Agent`. First-pass / first-cycle strict-dispatch enforcement for `coverage-expansion` + `journey-mapping`. Denies: (a) Pass-1 `[group]` / `[P3-batch]` dispatches under `mode: standard`; (b) `phase4-prioritise-author:` dispatches before ≥ 2 distinct cycle-1 sections have been dispatched; (c) single-subagent walkthroughs of journey-mapping cycle 1 (≥ 3 canonical section IDs in one description with no prior cycle-1 dispatches). Pass-2+ and cycle-2+ are silent-allowed. [escape hatch: no]
+
 ### Bash
 
 - **[commit-message-gate](../../../hooks/commit-message-gate.sh)** — `PreToolUse:Bash` (`git commit` only). Denies coverage-expansion / journey-mapping commits that violate the conventions (wrong type, multi-journey, hook-bypass flags). [escape hatch: no]

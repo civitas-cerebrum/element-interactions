@@ -123,6 +123,7 @@ const HOOK_MANIFEST = [
   { file: 'playwright-cli-isolation-guard.sh',    event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'commit-message-gate.sh',               event: 'PreToolUse', matcher: 'Bash',        timeout: 10 },
   { file: 'subagent-schema-preread-gate.sh',      event: 'PreToolUse', matcher: 'Agent',       timeout: 10 },
+  { file: 'standard-mode-first-pass-guard.sh',    event: 'PreToolUse', matcher: 'Agent',       timeout: 10 },
 
   // PostToolUse — observers (record + warn)
   { file: 'subagent-return-schema-guard.sh',      event: 'PostToolUse', matcher: 'Agent',      timeout: 10 },
