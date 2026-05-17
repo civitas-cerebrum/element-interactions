@@ -168,8 +168,9 @@ per journey, all sent in the same parallel wave). If grouping is
 genuinely needed on this run, the operator must re-enter the onboarding
 front-load gate and select \`runMode: standard\` instead.
 
-See: skills/coverage-expansion/SKILL.md §\"Depth mode —
-strict-parallel-everywhere\"."
+See:
+  - skills/coverage-expansion/SKILL.md §\"Depth mode — strict-parallel-everywhere\"
+  - skills/element-interactions/references/harness-hooks.md (this hook indexed there)"
     exit 0
   fi
   if [ -z "$CURRENT_PASS" ] || [ "$CURRENT_PASS" = "1" ]; then
@@ -189,8 +190,9 @@ the same parallel wave). Re-issue any \`[group]\` / \`[P3-batch]\`
 dispatches on Pass 2 or later, once Pass 1 has completed and the state
 file shows \`currentPass >= 2\`.
 
-See: skills/coverage-expansion/SKILL.md §\"Stage A per-journey dispatch
-is non-negotiable\"."
+See:
+  - skills/coverage-expansion/SKILL.md §\"Stage A per-journey dispatch is non-negotiable\"
+  - skills/element-interactions/references/harness-hooks.md (this hook indexed there)"
     exit 0
   fi
 fi
@@ -227,7 +229,9 @@ parallel wave (one per target section from the discovery draft's
 \`cycle-1-targets\`), wait for their returns to land in the state
 file, then re-dispatch the author.
 
-See: skills/journey-mapping/SKILL.md §\"Iterative discovery cycles\"."
+See:
+  - skills/journey-mapping/SKILL.md §\"Iterative discovery cycles\"
+  - skills/element-interactions/references/harness-hooks.md (this hook indexed there)"
     exit 0
   fi
 fi
@@ -316,8 +320,9 @@ per target section). If single-agent cycle-2+ dispatches are genuinely
 acceptable for this run, the operator must re-enter the onboarding
 front-load gate and select \`runMode: standard\` instead.
 
-See: skills/journey-mapping/SKILL.md §\"First-cycle strict /
-later-cycle relaxed\" — every-cycle-strict counterpart under depth."
+See:
+  - skills/journey-mapping/SKILL.md §\"First-cycle strict / later-cycle relaxed\" — every-cycle-strict counterpart under depth
+  - skills/element-interactions/references/harness-hooks.md (this hook indexed there)"
         exit 0
       fi
       if [ "$CYCLE_1_DISPATCHED" -eq 0 ]; then
@@ -341,7 +346,9 @@ the strict contract relaxes from cycle 2 onward (under
 \`cycleStrictness: standard\`; depth keeps the strict contract on every
 cycle).
 
-See: skills/journey-mapping/SKILL.md §\"Iterative discovery cycles\"."
+See:
+  - skills/journey-mapping/SKILL.md §\"Iterative discovery cycles\"
+  - skills/element-interactions/references/harness-hooks.md (this hook indexed there)"
         exit 0
       fi
       ;;
