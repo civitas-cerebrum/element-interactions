@@ -772,9 +772,73 @@ The same grep-based shape signals are enforced at the harness layer by a `PostTo
 
 ### 4.3 Harness validator — handover-envelope leash + deregistration
 
-The same return-schema guard also enforces the §2.0 handover envelope and drives the registry leash. On every `composer-` / `reviewer-` / `probe-` / `process-validator-` / `phase-validator-` return it parses the envelope, looks up the in-flight registry entry by slug, cycle-matches, and removes the slug on a terminal status (or leaves it in place for a non-terminal redispatch). Missing envelope or cycle-mismatch emits a fix-message WARN; the registry slot stays held until the TTL failsafe expires. **Deregistration itself fires regardless of validation mode** — the registry update is mechanical bookkeeping, not validation, so the leash works correctly even when envelope-validation is in WARN mode.
+The same return-schema guard also enforces the §2.0 handover envelope and drives the registry leash. On every `composer-` / `reviewer-` / `probe-` / `process-validator-` / `phase-validator-` / `selector-development-` return it parses the envelope, looks up the in-flight registry entry by slug, cycle-matches, and removes the slug on a terminal status (or leaves it in place for a non-terminal redispatch). Missing envelope or cycle-mismatch emits a fix-message WARN; the registry slot stays held until the TTL failsafe expires. **Deregistration itself fires regardless of validation mode** — the registry update is mechanical bookkeeping, not validation, so the leash works correctly even when envelope-validation is in WARN mode.
 
 Explicit deregistration via terminal-status handover is the primary cleanup path; the registry TTL is the secondary one for crashed / abandoned dispatches that never return an envelope. (Hook index: [harness-hooks.md](harness-hooks.md).)
+
+### 4.4 Per-prefix routing table (description-prefix → validation target)
+
+| Description prefix | Validation target |
+|---|---|
+| `composer-<j-slug>:` | Stage A — `status:` enum (new-tests-landed \| covered-exhaustively \| blocked \| skipped) + per-status fields (tests-added / run-time; mapping table; reason; reason+authorizer) |
+| `reviewer-<j-slug>:` | Stage B (§2.4) — `status:` (greenlight \| improvements-needed) + journey/pass/cycle + summary on greenlight \| findings sub-list on improvements-needed |
+| `probe-<j-slug>:` | Adversarial — `probes:` + `boundaries:` + `findings:` count or list |
+| `process-validator-<scope>:` | Sub-orchestrator — reviewer-shape applied to a manifest (`status:`, `findings:`, `summary:`) |
+| `phase-validator-<N>:` | Phase-exit checkpoint (§2.5) — `status:` + `phase:` + `exit-criteria-checked:` array + `summary:` (REQUIRED on both statuses) + `findings: []` literal on greenlight \| ≥1 `pv-<phase>-<nn>` must-fix on improvements-needed |
+| `selector-development-<scope>:` | Selector-development — `status:` enum (ok \| skipped \| blocked) + `mode` (jit \| audit) + `attribute` + `files_modified` + `guardrails` (7 sub-statuses) + `skipped_reason` (when status=skipped) + `blocked_artifact` (when status=blocked) |
+| `phase1-` / `stage2-` / `cleanup-` / bare `j-` / bare `sj-` | Silent allow — free-form or unstructured returns; no validation |
+
+### 4.5 Selector-development return schema
+
+Subagents dispatched under the `selector-development-<scope>:` description prefix return a result envelope documenting whether a stable test-attribute was added (`ok`), was already present or inapplicable (`skipped`), or could not be applied due to a missing prerequisite (`blocked`).
+
+#### Canonical envelope
+
+```jsonc
+{
+  "status": "ok" | "skipped" | "blocked",
+  "mode": "jit" | "audit",
+  "scope": "<element-key>" | "<page-id>",
+  "attribute": { "name": "data-testid", "value": "submit-button" },
+  "files_modified": ["src/components/Form.tsx"],
+  "guardrails": {
+    "before_snapshot": "pass",
+    "patch_applied":   "pass",
+    "typecheck":       "pass",
+    "unit_tests":      "pass",
+    "e2e":             "pass",
+    "after_snapshot":  "pass",
+    "visual_diff":     "pass"
+  },
+  "ledger_entry": "...",
+  "skipped_reason": "no-inert-option" | "not-frontend-project" | "selector-already-stable" | null,
+  "blocked_artifact": "<path>" | null
+}
+```
+
+#### Field rules
+
+| Field | Rule |
+|---|---|
+| `status` | One of `ok`, `skipped`, `blocked`. No other values. |
+| `mode` | One of `jit` (just-in-time, triggered by a test-writing dispatch) or `audit` (periodic sweep). |
+| `scope` | The element key or page identifier the subagent was dispatched for. |
+| `attribute` | Object with `name` and `value` — the attribute added or verified. Present on `ok`; may be omitted on `skipped` / `blocked`. |
+| `files_modified` | Array of repo-relative paths changed by the patch. Empty array (`[]`) on `skipped` / `blocked`. |
+| `guardrails` | Seven sub-statuses (`before_snapshot`, `patch_applied`, `typecheck`, `unit_tests`, `e2e`, `after_snapshot`, `visual_diff`). Each is one of `pass`, `skip`, or `fail`. Required on `ok`; recommended on `blocked`. |
+| `ledger_entry` | Human-readable one-line summary for the selector ledger. |
+| `skipped_reason` | Required when `status=skipped`. One of `no-inert-option`, `not-frontend-project`, `selector-already-stable`. Null otherwise. |
+| `blocked_artifact` | Required when `status=blocked`. Repo-relative path to the artifact (file, component, config) that must be resolved before the selector can be added. Null otherwise. |
+
+#### Minimal conformance check (what the hook validates)
+
+- `status:` followed by one of `ok | skipped | blocked`.
+- `mode:` followed by `jit` or `audit`.
+- `guardrails:` block present (the 7-sub-status object).
+- On `status: skipped`: `skipped_reason:` present with one of the valid enum values.
+- On `status: blocked`: `blocked_artifact:` present and non-null.
+
+The hook emits a WARN (non-blocking, initial release) when any of these markers is absent.
 
 ---
 

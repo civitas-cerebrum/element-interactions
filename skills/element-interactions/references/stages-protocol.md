@@ -76,6 +76,37 @@ The CLI is always installed (hard dep), but the browser binary may be missing or
 
 Use whatever the user provides to build the page-repository entries. Do NOT guess or infer selectors.
 
+### When no stable selector exists
+
+If DOM inspection completes but yields only fragile candidates (position-dependent CSS, bare text that drifts, role/name collisions, nth-child chains), apply the following branch **before** presenting selectors to the user:
+
+**Check workspace shape** — does this workspace contain the frontend source?
+
+A workspace contains frontend source when **both** of these are true:
+1. `package.json` lists the UI framework as a dependency (e.g. `react`, `vue`, `@angular/core`, `svelte`).
+2. A `src/`-style tree of component files (`.tsx`, `.jsx`, `.vue`, `.svelte`, or `.html` templates) is present.
+
+---
+
+**Frontend source IS in this workspace** → dispatch `selector-development` (`mode: "jit"`, `scope` = the element-key that needs a stable selector).
+
+The `selector-development` skill will:
+1. Add a single inert test attribute (e.g. `data-testid`) to the component.
+2. Validate via its 8-step pipeline that the change is functionally and visually inert.
+3. Return the new selector.
+
+After it returns, resume Stage 2 with the new `data-testid`-based selector available. Use it as the page-repository entry — it is now the most stable selector possible.
+
+---
+
+**Frontend source is NOT in this workspace** → fall back to the best available selector from inspection and attach a warning:
+
+> ⚠️ **Fragile selector recorded.** The selector for `<element-key>` relies on [text / CSS position / role collision] — there is no `data-test` attribute and the frontend source is not in this workspace, so `selector-development` cannot add one here. Record this as test debt: the selector may break if the UI text, layout, or role assignment changes.
+
+Do NOT attempt to harden the locator with compound selectors or nth-child chains — that adds brittleness without adding stability.
+
+---
+
 ### Present Proposed Selectors
 
 Show the user the exact JSON entries you want to add:

@@ -46,3 +46,7 @@ test-coverage-report.md
 /docs
 /skills/*-workspace
 /solution-designs
+
+# selector-development skill: local-only receipts, scope pointer, snapshots, cached convention.
+# Never committed — receipts authorize one commit each then archive locally.
+tests/e2e/.selector-development/

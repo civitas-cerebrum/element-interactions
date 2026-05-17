@@ -26,6 +26,9 @@ Skills that cite a hook should link this index once per skill rather than re-inl
 - **[failure-diagnosis-stage0-preread-guard](../../../hooks/failure-diagnosis-stage0-preread-guard.sh)** — `PreToolUse:Edit|Write`. Denies failure-diagnosis edits / bug-report writes that skip the documented Stage 0 context pre-read. [escape hatch: yes]
 - **[journey-map-sentinel-guard](../../../hooks/journey-map-sentinel-guard.sh)** — `PreToolUse:Write|Edit` (`tests/e2e/docs/journey-map.md` only). Denies writes that strip the line-1 `<!-- journey-mapping:generated -->` sentinel. [escape hatch: no]
 - **[playwright-config-defaults-guard](../../../hooks/playwright-config-defaults-guard.sh)** — `PreToolUse:Edit|Write` (`playwright.config.{ts,js,mjs,cjs}`). Warns when a config write strips documented `retries` / `video` / `trace` defaults. [escape hatch: yes]
+- **[selector-development-activation-gate](../../../hooks/selector-development-activation-gate.sh)** — `PreToolUse:Edit|Write` (frontend source paths only). Denies selector-development frontend edits when the workspace lacks a recognised frontend framework dep or a `tests/e2e/*.spec.ts` directory. [escape hatch: no]
+- **[selector-development-inertness-guard](../../../hooks/selector-development-inertness-guard.sh)** — `PreToolUse:Edit|Write` (frontend source paths only). Denies selector-development frontend edits whose diff is anything other than a single-attribute additive change matching the project's selector convention. [escape hatch: yes (env override)]
+- **[selector-development-pipeline-stepper](../../../hooks/selector-development-pipeline-stepper.sh)** — `PreToolUse:Bash|Edit|Write` (gate) + `PostToolUse:Bash|Edit|Write` (record). Enforces the 8-step selector-development pipeline (before-snapshot → patch → typecheck → unit → e2e → after-snapshot → visual-diff → commit); denies steps whose predecessor is not recorded as pass; records each step's outcome on the per-scope receipt. [escape hatch: no]
 - **[test-data-discipline-guard](../../../hooks/test-data-discipline-guard.sh)** — `PreToolUse:Edit|Write|MultiEdit` (`*.spec.{ts,js,…}` and `*.test.{ts,js,…}`). Denies hardcoded credentials (password / token / api_key / secret / bearer literals) in spec files unless the same line references `process.env.<NAME>`; warns on top-level magic constants outside a centralised test-data import. [escape hatch: yes (warn / off)]
 
 ### Agent
@@ -51,6 +54,7 @@ Skills that cite a hook should link this index once per skill rather than re-inl
 ## Stop
 
 - **[onboarding-pipeline-incomplete-stop-deny](../../../hooks/onboarding-pipeline-incomplete-stop-deny.sh)** — `Stop`. Blocks orchestrator Stop events while an onboarding pipeline is mid-flight without a user-authorised early-stop sentinel; auto-releases after a per-session block-cap. [escape hatch: yes]
+- **[selector-development-revert-on-stop](../../../hooks/selector-development-revert-on-stop.sh)** — `Stop`. Warns at orchestrator Stop when a selector-development scope is active and its receipt's last passing step is not `visual_diff` or `commit` — i.e. the pipeline stopped mid-flight; surfaces the recovery instruction. [escape hatch: no]
 
 ## SubagentStop
 
