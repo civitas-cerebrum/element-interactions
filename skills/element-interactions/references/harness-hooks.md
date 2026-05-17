@@ -4,7 +4,7 @@ One-line discoverability layer for every harness-installed hook in this repo. Ea
 
 Skills that cite a hook should link this index once per skill rather than re-inlining hook internals.
 
-Orchestrator-mode and cascade-routing concerns previously enforced by this package now live in the achilles companion (`npx @civitas-cerebrum/achilles onboarding`). This index documents only the hooks element-interactions still ships.
+Orchestrator-mode and cascade-routing concerns previously enforced by this package now live in external automated CLI drivers. This index documents only the hooks element-interactions still ships.
 
 ## PreToolUse
 

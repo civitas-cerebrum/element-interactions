@@ -2,14 +2,14 @@ import { request as playwrightRequest } from '@playwright/test';
 import { test, expect } from './fixture/StepFixture';
 
 /**
- * 100% API Coverage — HTTP Steps against a real the demo-app backend.
+ * 100% API Coverage — HTTP Steps against a real test backend.
  *
  * These tests exercise every `api*` / `verifyApi*` method on the Steps API
- * against the `example/demo-app-backend:latest` image brought up by the
- * project's docker-compose. No mocks — behaviour is locked against the same
- * real artefact that downstream consumers use.
+ * against the backend image brought up by the project's docker-compose.
+ * No mocks — behaviour is locked against the same real artefact that
+ * downstream consumers use.
  *
- * Endpoints exercised (from demo-app/README.md → Backend API):
+ * Endpoints exercised:
  *   GET    /api/health
  *   GET    /api/books, /api/books/{id}
  *   POST   /api/reset, /api/auth/login
@@ -28,7 +28,7 @@ const APP_HEALTH_DELAY_MS = 1000;
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('TC_API_001: HTTP API Steps — demo-app integration', () => {
+test.describe('TC_API_001: HTTP API Steps — backend integration', () => {
     test.beforeAll(async () => {
         // Infrastructure pre-flight uses Playwright's own `request` (the Steps
         // API fixture depends on `page`, which Playwright disallows in `beforeAll`).
@@ -120,7 +120,7 @@ test.describe('TC_API_001: HTTP API Steps — demo-app integration', () => {
 
     test('apiPatch — unmapped route returns 4xx', async ({ steps }) => {
         const res = await steps.apiPatch<unknown>('/api/books/book-001', { price: 1 });
-        // demo-app has no @PatchMapping; Spring returns 401/403/404/405 depending on filter chain.
+        // Backend has no @PatchMapping on this route; Spring returns 401/403/404/405 depending on filter chain.
         expect([401, 403, 404, 405]).toContain(res.status);
     });
 

@@ -27,7 +27,7 @@ The orchestrator decides — before dispatching — that running fewer than the 
 
 **Hooks that catch this:**
 - State-file schema rule (extended for this pattern): state-file writes where `currentPass >= 1` and zero dispatches are recorded across all passes are silent scope narrowing — the "write state-file then stop" form. (The harness schema guard that previously denied such writes was retired in 0.3.6; the rule still applies.)
-- `commit-message-gate.sh` (PR #125) — blocks commits with phase-progression messages on pre-emptively-reduced runs.
+- `commit-message-gate.sh` — blocks commits with phase-progression messages on pre-emptively-reduced runs.
 - (markdown-only for novel framings) — the registry's symptom list grows reactively as new framings appear; the failure-mode category is what the orchestrator must recognise.
 
 **Origin:** Recurring failure across multiple onboarding runs — most often surfaced as "evening-or-overnight" framing that dressed scope reduction up as candour. Codified as the §"Two valid exits" rule and the dual-stage no-skip extension; mechanical enforcement followed.
@@ -47,9 +47,9 @@ The orchestrator decides — before dispatching — to batch P0/P1/P2 journeys i
 **Reality:** Stage A is one composer per journey, in parallel up to host max — never N composer agents each covering N/k journeys sequentially. The only batching exception is P3 peripheral journeys, capped at 7 per brief, with cycle-1 split-out semantics. P0/P1/P2 NEVER batch. The diagnostic for getting this wrong: every Stage B reviewer for batched journeys returns `improvements-needed` because the batched composer rationed attention across siblings.
 
 **Hooks that catch this:**
-- Dispatch-discipline rule (introduced in PR #125, issue #126): dispatches whose prompt references 2+ distinct `j-<slug>` IDs require a `[P3-batch]` description prefix. (The harness-enforcement hook was retired in 0.3.6; the rule remains.)
+- Dispatch-discipline rule: dispatches whose prompt references 2+ distinct `j-<slug>` IDs require a `[P3-batch]` description prefix. (The harness-enforcement hook was retired in 0.3.6; the rule remains.)
 
-**Origin:** PR #105 (no-skip contract) + issue #126 (role-prefix tightening). Reinforced by issue #132 (brief-cleanup BLOCK promotion).
+**Origin:** the no-skip contract + role-prefix tightening, reinforced by brief-cleanup BLOCK promotion.
 
 ---
 
@@ -67,9 +67,9 @@ A subagent (composer, reviewer, or probe) skips the work and self-certifies succ
 **Reality:** `covered-exhaustively` requires evidence — a per-expectation mapping table, not a self-assessment. Stage B is the verification, not Stage A's self-certification. Every journey gets both stages every pass. A `review_status` written without a Stage B dispatch having occurred is fabricated state.
 
 **Hooks that catch this:**
-- `subagent-return-schema-guard.sh` (issue #127) — warns (will block) when a `covered-exhaustively` return lacks the per-expectation mapping table; warns when banned tokens (`no-new-tests-by-rationalisation`) appear.
+- `subagent-return-schema-guard.sh` — warns (will block) when a `covered-exhaustively` return lacks the per-expectation mapping table; warns when banned tokens (`no-new-tests-by-rationalisation`) appear.
 
-**Origin:** PR #105 + the dual-stage contract (issue #122 era). Re-pass mode triggers (1–4) exist precisely to force evidence into the certifying-greenlight return.
+**Origin:** the no-skip contract + the dual-stage contract. Re-pass mode triggers (1–4) exist precisely to force evidence into the certifying-greenlight return.
 
 ---
 
@@ -106,7 +106,7 @@ A subagent or orchestrator compresses Stage B findings into a "summary string" b
 **Hooks that catch this:**
 - (markdown-only) — finding compression happens inside orchestrator briefs, not at the dispatch boundary.
 
-**Origin:** Dual-stage retry-loop design (issue #122 era).
+**Origin:** Dual-stage retry-loop design.
 
 ---
 
@@ -122,9 +122,9 @@ The orchestrator infers from earlier-in-the-run telemetry that a given pass / jo
 **Reality:** Re-read the state file at every pass boundary. The orchestrator must not reason about "where did we leave off" from chat history. Memory is diagnostic, not authoritative.
 
 **Hooks that catch this:**
-- State-file schema rule (introduced in PR #125): the state-file shape must be valid on every Write/Edit, catching stale-state writes. (The harness schema guard that previously enforced this was retired in 0.3.6; the rule still applies.)
+- State-file schema rule: the state-file shape must be valid on every Write/Edit, catching stale-state writes. (The harness schema guard that previously enforced this was retired in 0.3.6; the rule still applies.)
 
-**Origin:** PR #105 + auto-compaction design (issue #122 era).
+**Origin:** the no-skip contract + auto-compaction design.
 
 ---
 
@@ -140,9 +140,9 @@ A subagent reaches for an MCP browser tool surfaced by the harness, on the impli
 **Reality:** The harness surfaces tools the consumer's environment has registered, not tools the skill suite sanctions. The MCP browser tools are explicitly forbidden — `playwright-cli` is the only sanctioned channel. A subagent that reaches for an MCP browser tool has a malformed dispatch brief, not a permitted alternative.
 
 **Hooks that catch this:**
-- MCP-browser-redirect rule (introduced in PR #125): MCP browser tool calls are forbidden; use the `playwright-cli` equivalent instead. (The harness redirect hook that previously denied MCP browser calls was retired in 0.3.6; the rule still applies.)
+- MCP-browser-redirect rule: MCP browser tool calls are forbidden; use the `playwright-cli` equivalent instead. (The harness redirect hook that previously denied MCP browser calls was retired in 0.3.6; the rule still applies.)
 
-**Origin:** PR #122 (MCP→playwright-cli migration). Reinforced by issue #126.
+**Origin:** the MCP→playwright-cli migration, reinforced by the role-prefix tightening.
 
 ---
 
@@ -159,15 +159,15 @@ A subagent's brief asks it to "dispatch N parallel subagents", "spawn workers", 
 **Reality:** Two valid patterns: (a) parent dispatches the wave directly (default for composer / reviewer / probe waves); (b) sub-orchestrator returns a manifest (the parent reads the manifest and dispatches). The sub-orchestrator NEVER tries to fire its own children — see `process-validator-workflow.md`.
 
 **Hooks that catch this:**
-- Subagent-fan-out rule (introduced in PR #125, issue #126; anti-pattern A): subagent briefs whose body contains "dispatch N parallel subagents", "fan out", "use the Agent tool to dispatch" are forbidden. (The harness dispatch-guard hook that previously denied these briefs was retired in 0.3.6; the rule still applies.)
+- Subagent-fan-out rule (anti-pattern A): subagent briefs whose body contains "dispatch N parallel subagents", "fan out", "use the Agent tool to dispatch" are forbidden. (The harness dispatch-guard hook that previously denied these briefs was retired in 0.3.6; the rule still applies.)
 
-**Origin:** Environment constraint surfaced during PR #122 era. Codified as the recursive-dispatch impossibility in `coverage-expansion/SKILL.md` §"Recursive dispatch is impossible".
+**Origin:** Environment constraint surfaced during the MCP→playwright-cli migration. Codified as the recursive-dispatch impossibility in `coverage-expansion/SKILL.md` §"Recursive dispatch is impossible".
 
 ---
 
 ## Pattern: Sonnet-everywhere drift
 
-The orchestrator argues for sonnet on dispatches the hybrid model table reserves for opus — generalising issue #164's single-cycle Sonnet/Opus parity observation on adversarial probes to dispatches the table doesn't cover (or to Pass 4 itself, which the table now keeps on opus because its findings feed Pass 5's regression layer).
+The orchestrator argues for sonnet on dispatches the hybrid model table reserves for opus — generalising a single-cycle Sonnet/Opus parity observation on adversarial probes to dispatches the table doesn't cover (or to Pass 4 itself, which the table now keeps on opus because its findings feed Pass 5's regression layer).
 
 **Symptoms:**
 - "Stage B reviewer per-journey can run sonnet — schema/coverage checks are mechanical" (the table says Opus for per-journey reviewers per the post-revision policy)
@@ -176,13 +176,13 @@ The orchestrator argues for sonnet on dispatches the hybrid model table reserves
 - "gap analysis between passes is mechanical enough for sonnet"
 - "failure-diagnosis is small enough to run sonnet"
 - "Pass 1 composer can run sonnet — the foundation will be re-reviewed anyway"
-- "issue #164 showed Sonnet/Opus parity, so Sonnet should be fine everywhere"
+- "a single-cycle observation showed Sonnet/Opus parity, so Sonnet should be fine everywhere"
 
 **Reality:** The hybrid table draws the line carefully:
 - **Sonnet remains the default** only for Pass 2/3 re-pass composers — the work is mechanical (the bulk of journeys return `covered-exhaustively`), and the cycle re-runs cap any quality slippage.
 - **Opus remains** for Pass 1 Stage A composer, **Pass 4 Stage A adversarial probes** (findings feed Pass 5's regression layer, so probe-depth quality at the boundary determines what gets locked in), **all of Pass 5** (gap analysis, targeted probes, regression-test authoring — the regression layer is the durable artifact, where quality at authoring time propagates forward indefinitely), the Stage B reviewer per-journey (kept on opus to keep review judgement at the quality boundary while batching ramps), the Stage B batch reviewer, cleanup ledger dedup, Phase 7 deck/report, and failure-diagnosis.
 
-Anti-pattern is now: sonnet on dispatches the table marks Opus — specifically Pass 4 Stage A probes, Pass 5 (any sub-stage), the Stage B reviewer per-journey, the Stage B batch reviewer, and failure-diagnosis. Issue #164's empirical Sonnet/Opus parity was a single-cycle observation on adversarial probe categories surfaced in that cycle — it is not a general "Sonnet on adversarial work" mandate, and the hybrid table does not act on it for Pass 4 because Pass 4's findings feed Pass 5's regression layer. Do not generalise the observation across the table.
+Anti-pattern is now: sonnet on dispatches the table marks Opus — specifically Pass 4 Stage A probes, Pass 5 (any sub-stage), the Stage B reviewer per-journey, the Stage B batch reviewer, and failure-diagnosis. Empirical Sonnet/Opus parity has only been observed as single-cycle measurements on adversarial probe categories surfaced in those cycles — it is not a general "Sonnet on adversarial work" mandate, and the hybrid table does not act on it for Pass 4 because Pass 4's findings feed Pass 5's regression layer. Do not generalise the observation across the table.
 
 **Hooks that catch this:**
 - (markdown-only) — model selection is not yet mechanically detectable at the dispatch boundary.
@@ -205,7 +205,7 @@ The orchestrator decides a journey is "trivial enough" to skip its cycle-1 Stage
 **Hooks that catch this:**
 - State-file schema rule: `review_status: greenlight` entries with `stage_b_cycles: 0` are invalid (the minimum for an actually-dispatched Stage B is 1). (The harness schema guard that previously flagged this was retired in 0.3.6; the rule still applies.)
 
-**Origin:** Dual-stage no-skip extension (issue #122 era).
+**Origin:** Dual-stage no-skip extension.
 
 ---
 
@@ -258,9 +258,9 @@ The parent orchestrator's brief to a subagent contains pipeline meta-content (de
 **Reality:** A composer / reviewer / probe brief only needs: journey block + must-fix list + slug + return-shape pointer. The pipeline structure belongs to the parent orchestrator's context, not the subagent's.
 
 **Hooks that catch this:**
-- Brief-cleanup rule (introduced in PR #125 as anti-pattern B, hardened by issue #132): pipeline meta-content in subagent briefs is forbidden for `composer-`, `reviewer-`, `probe-` prefixes; soft WARN preserved for `cleanup-`/`phase1-`/`phase2-`/`stage2-`. (The harness dispatch-guard hook that previously enforced the BLOCK/WARN promotion was retired in 0.3.6; the rule still applies.)
+- Brief-cleanup rule (anti-pattern B): pipeline meta-content in subagent briefs is forbidden for `composer-`, `reviewer-`, `probe-` prefixes; soft WARN preserved for `cleanup-`/`phase1-`/`phase2-`/`stage2-`. (The harness dispatch-guard hook that previously enforced the BLOCK/WARN promotion was retired in 0.3.6; the rule still applies.)
 
-**Origin:** PR #125, hardened by issue #132.
+**Origin:** Codified alongside the dispatch-discipline rules.
 
 ---
 
@@ -312,21 +312,19 @@ The cost the orchestrator pays for the dodge:
 
 ## Pattern: `markdown-only` deferral — batch-reviewer mode (cycle-1 compositional)
 
-The "Batch reviewer mode" rule lives in `skills/coverage-expansion/references/reviewer-subagent-contract.md` §"Batch reviewer mode (cycle-1 compositional only)" (introduced in PR #177, closes #164.2). The structural backstop — extending the surviving `subagent-return-schema-guard.sh` to recognise the `reviewer-batch-pass-<N>:` role-prefix and the `verdicts:` array shape — remains deferred. (The companion spillover-rewrite-gate hook that would have paired with it was retired in 0.3.6 along with the broader hook cleanup.)
+The "Batch reviewer mode" rule lives in `skills/coverage-expansion/references/reviewer-subagent-contract.md` §"Batch reviewer mode (cycle-1 compositional only)". The structural backstop — extending the surviving `subagent-return-schema-guard.sh` to recognise the `reviewer-batch-pass-<N>:` role-prefix and the `verdicts:` array shape — remains deferred. (The companion spillover-rewrite-gate hook that would have paired with it was retired in 0.3.6 along with the broader hook cleanup.)
 
 **Tag:** `markdown-only`.
 **Deferred hook:** `subagent-return-schema-guard.sh` extension for `reviewer-batch-pass-<N>:` / `verdicts:`.
-**Follow-up:** #164.7 / Wave 3I.3b.
 
 ---
 
 ## Pattern: `markdown-only` deferral — app-wide-scan sentinel + citation contract
 
-The "Pass-4 prelude — app-wide pattern scan" rule lives in `skills/coverage-expansion/SKILL.md` §"Hard rules — kernel-resident" + `references/app-wide-scan.md` + `adversarial-subagent-contract.md` §"Inputs" #9 (introduced in PR #178, closes #164.3). The output file `tests/e2e/docs/app-wide-patterns.md` carries the sentinel `<!-- app-wide-scan:generated -->`, but no hook validates that writes preserve the sentinel or that new entries follow the per-pattern catalogue schema (`<pattern-id>` + `Cite as: coverage: app-wide:<pattern-id>` line).
+The "Pass-4 prelude — app-wide pattern scan" rule lives in `skills/coverage-expansion/SKILL.md` §"Hard rules — kernel-resident" + `references/app-wide-scan.md` + `adversarial-subagent-contract.md` §"Inputs" #9. The output file `tests/e2e/docs/app-wide-patterns.md` carries the sentinel `<!-- app-wide-scan:generated -->`, but no hook validates that writes preserve the sentinel or that new entries follow the per-pattern catalogue schema (`<pattern-id>` + `Cite as: coverage: app-wide:<pattern-id>` line).
 
 **Tag:** `markdown-only`.
 **Deferred hook:** sentinel-validation hook for `tests/e2e/docs/app-wide-patterns.md` (the analogous sentinel-guard hook for `journey-map.md` was retired in 0.3.6; if revived, this pattern would mirror its sentinel-and-citation contract).
-**Follow-up:** #180.
 
 ---
 

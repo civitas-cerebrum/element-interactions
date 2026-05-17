@@ -56,4 +56,4 @@ See the existing schemas for examples.
 
 ## Consumers
 
-External consumers (e.g. `@civitas-cerebrum/achilles`) read these files directly. Treat them as a versioned public API — additions are minor bumps, removals are breaking.
+External consumers (automated CLI drivers and other orchestrators) read these files directly. Treat them as a versioned public API — additions are minor bumps, removals are breaking.

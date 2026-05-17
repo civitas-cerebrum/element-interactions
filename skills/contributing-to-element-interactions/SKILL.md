@@ -986,7 +986,7 @@ emit_warn() {
 }
 ```
 
-Define only what the hook actually uses (a deny-only hook doesn't need `emit_warn`). Don't inline a fresh `jq -n` in each call site — that's the older pattern PR #136 unified away.
+Define only what the hook actually uses (a deny-only hook doesn't need `emit_warn`). Don't inline a fresh `jq -n` in each call site — use the unified helpers instead.
 
 #### 3. Action-first error message template — guide the agent back on track
 

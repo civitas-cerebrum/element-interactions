@@ -15,8 +15,8 @@ description: >
 # Workflow reviewer — pipeline state-machine gate
 
 > **Subagent-only.** This skill is dispatched by the onboarding
-> orchestrator (or by the achilles CLI driver) at every phase, pass,
-> and cycle transition. Loading it in the orchestrator's context is a
+> orchestrator (or by an external automated CLI driver) at every phase,
+> pass, and cycle transition. Loading it in the orchestrator's context is a
 > methodology violation — the methodology itself lives in
 > `skills/onboarding/SKILL.md`, `skills/coverage-expansion/SKILL.md`,
 > and `skills/journey-mapping/SKILL.md`.
@@ -277,9 +277,9 @@ package (see `skills/element-interactions/references/stages-protocol.md`).
 
 ## Empirical origin
 
-A 21-journey benchmark onboarding run (BookHive, Run 5) demonstrated
-that markdown-text contract enforcement alone permits silent scope
-compression even when the rules are crisp. Observed failure modes:
+A 21-journey benchmark onboarding run demonstrated that markdown-text
+contract enforcement alone permits silent scope compression even when
+the rules are crisp. Observed failure modes:
 
 - The orchestrator skipped a phase entirely without a documented
   authorisation.

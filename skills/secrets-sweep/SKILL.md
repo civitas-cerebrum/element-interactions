@@ -166,9 +166,9 @@ the specs.
 chore: extract secrets to .env
 ```
 
-If the workflow is driven by an orchestrator (achilles or otherwise),
-the orchestrator may commit on your behalf — in that case just stage
-the changes.
+If the workflow is driven by an external automated orchestrator, that
+orchestrator may commit on your behalf — in that case just stage the
+changes.
 
 ---
 

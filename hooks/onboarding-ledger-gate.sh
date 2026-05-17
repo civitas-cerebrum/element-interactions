@@ -13,11 +13,12 @@
 # Why
 # ---
 # Markdown-text contract enforcement permits silent scope compression even
-# when the methodology rules are crisp. The BookHive 21-journey benchmark
-# (Run 5) demonstrated the orchestrator skipping phases entirely, stopping
-# early, and accepting subagent returns whose declared "complete" status
-# omitted required sub-deliverables. The status ledger + workflow-reviewer
-# subagent family are the contract layer; this hook is their enforcement.
+# when the methodology rules are crisp. An empirical 21-journey benchmark
+# onboarding run demonstrated the orchestrator skipping phases entirely,
+# stopping early, and accepting subagent returns whose declared "complete"
+# status omitted required sub-deliverables. The status ledger + workflow-
+# reviewer subagent family are the contract layer; this hook is their
+# enforcement.
 #
 # What it gates
 # -------------

@@ -106,14 +106,15 @@ function installCivitasSkills() {
 // settings where postinstall scripts must not modify ~/.claude/settings.json.
 // The orchestrator-era hook surface (cascade-routing, phase-validator
 // dispatch, onboarding-stop deny, parent-only orchestrator block, etc.)
-// was retired when @civitas-cerebrum/achilles took ownership of the
-// autonomous onboarding pipeline. Achilles is a deterministic JS driver
-// that spawns per-role `claude -p` children with narrow allowlists — the
-// per-phase progression guards are no longer needed inside element-interactions.
+// was retired when external automated drivers took ownership of the
+// autonomous onboarding pipeline. Such drivers are deterministic JS
+// processes that spawn per-role `claude -p` children with narrow
+// allowlists — the per-phase progression guards are no longer needed
+// inside element-interactions.
 //
 // Surviving hooks (role-agnostic defense-in-depth): playwright-cli isolation
 // + cleanup, commit-message gate, subagent-return schema validation. The
-// BookHive-era hardening hooks (bash allowlist, commit attribution / author
+// 0.3.6-era hardening hooks (bash allowlist, commit attribution / author
 // signature, harness trusted-state, playwright-config defaults, test-data
 // discipline, version-bump authorisation) were retired as part of the
 // public-dependency cleanup — they encoded project-specific policy
@@ -421,7 +422,7 @@ function installChromium() {
   if (!cliProbe.ok) {
     // Fail loudly — npm 7+ swallows postinstall stdout on success, but a
     // non-zero exit code surfaces the warning so the consumer learns
-    // chromium was NOT fetched. See issue #153 (mitigation 4).
+    // chromium was NOT fetched.
     console.warn('[@civitas-cerebrum/element-interactions] @playwright/cli not reachable via `npx`. The CLI is shipped as a dependency — re-run `npm install` if this is unexpected. Chromium was NOT fetched; subsequent skill activations may need to run `npx playwright-cli install-browser chromium` manually.');
     process.exitCode = 1;
     return;
@@ -448,7 +449,7 @@ function installChromium() {
 // firing against stale source. Only deletes files we know we previously
 // installed; never touches arbitrary user files.
 const LEGACY_EI_HOOKS = [
-  // Retired in the achilles handoff (pre-0.4.0)
+  // Retired in the external-driver handoff (pre-0.4.0)
   'contribution-handover-gate.sh',
   'coverage-expansion-direct-compose-block.sh',
   'coverage-expansion-dispatch-guard.sh',

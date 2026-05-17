@@ -478,7 +478,7 @@ containing the user's verbatim quote. Examples:
 
   \"modeAuthorizer\": \"user said: run onboarding in standard mode\"
   \"modeAuthorizer\": \"user typed 'depth' in response to mode-selection prompt\"
-  \"modeAuthorizer\": \"achilles --mode=depth (CLI flag)\"
+  \"modeAuthorizer\": \"external CLI driver --mode=depth (CLI flag)\"
 
 If the user has not yet been asked, ASK first; then write the ledger
 with the captured quote.

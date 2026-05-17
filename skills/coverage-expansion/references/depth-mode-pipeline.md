@@ -97,7 +97,7 @@ After a pass's per-journey subagents return clean and per-pass completion criter
 
 **Why it runs here:** per-journey subagent stabilization confirms each journey's tests pass in isolation, but cumulative state across the suite (DB pollution, port collisions, fixture drift, shared-resource depletion) only surfaces when the whole suite runs together. Running this gate at every pass exit catches integration-time regressions at the earliest pass that introduces them, rather than at end-of-pipeline.
 
-**Harness backstop (issue #131).** The same gate is enforced at the commit boundary by a windowed `Bash`-event ratchet that blocks phase-progression commits when the recent suite-run history is red, unfilled, or stale. Window-size override available — see the hook header for specifics, and [harness-hooks.md](../../element-interactions/references/harness-hooks.md) for the index entry.
+**Harness backstop.** The same gate is enforced at the commit boundary by a windowed `Bash`-event ratchet that blocks phase-progression commits when the recent suite-run history is red, unfilled, or stale. Window-size override available — see the hook header for specifics, and [harness-hooks.md](../../element-interactions/references/harness-hooks.md) for the index entry.
 
 The windowed shape catches a class of failure single-shot gates miss: serial-mode flakes, click-PUT race conditions, and auth-state eviction that pass an isolated single run but fail across 3-5 reviewer-driven re-runs. A flake that passes 70% of the time can't displace a failed entry from the window — by design — so the gate can't be cleared by one lucky re-run after a real regression. Pair this with the orchestrator-side check above for end-to-end coverage: orchestrator-side fires at every pass exit; the harness ratchet fires at every commit on top of the same window.
 
@@ -125,13 +125,13 @@ Across independence groups: groups run in priority order, each group exhausting 
 #### Parallel cap — lifted and jointly applied
 
 Previous: `min(4, credentials-per-role)` with batching for P3.
-New: **`host max`** — the orchestrator uses whatever parallel width the dispatch primitive allows. An explicit user override is accepted (`args: "parallel-cap: 8"`), otherwise no artificial ceiling beyond the shared-resource audit's credential-contention findings (PR #106).
+New: **`host max`** — the orchestrator uses whatever parallel width the dispatch primitive allows. An explicit user override is accepted (`args: "parallel-cap: 8"`), otherwise no artificial ceiling beyond the shared-resource audit's credential-contention findings.
 
 **The cap counts Stage A and Stage B dispatches jointly.** There is one pool of in-flight subagent slots; A and B compete for the same slots within a group. A journey's own A and B never overlap (sequential within a journey), but across journeys any A/B interleaving is possible. When the cap is saturated, new dispatches — whether A, B, or A-retry — queue until a slot frees. Queue order is FIFO; the orchestrator does not prioritise A over B or vice versa.
 
 #### Shared-resource audit interaction
 
-The Phase-0 shared-resource audit (PR #106) still caps parallelism where the app genuinely can't tolerate more (single credential per role, rate limits, CSRF serialization). Those caps override the host-max default. The audit's constraint tags apply to Stage A AND Stage B equally — reviewers compete for the same credentials.
+The Phase-0 shared-resource audit still caps parallelism where the app genuinely can't tolerate more (single credential per role, rate limits, CSRF serialization). Those caps override the host-max default. The audit's constraint tags apply to Stage A AND Stage B equally — reviewers compete for the same credentials.
 
 ### Model selection
 
@@ -273,7 +273,7 @@ A pass MAY use both paths in the same wave (one or more `[P3-batch]` dispatches 
 
 Dual-stage narrows this:
 
-- **Stage A may still be batched** for eligible P3 journeys (shared project, no pending gap flags, same priority tier, cap 7 per brief — criteria from PR #108).
+- **Stage A may still be batched** for eligible P3 journeys (shared project, no pending gap flags, same priority tier, cap 7 per brief).
 - **Stage B per-journey by default; one documented batch exception for compositional cycle-1.** In the P3-batch-A path, every journey in a batched Stage A still gets its own dedicated cycle-1 Stage B reviewer (the per-journey contract). The compositional-cycle-1 batch-reviewer exception (documented in `reviewer-subagent-contract.md` §"Batch reviewer mode (cycle-1 compositional only)") is a separate, narrower path — one reviewer per pass for the first cycle of compositional Passes 1, 2, 3 only — and **does NOT compose with P3-batch-A**: a P3 journey's batched Stage A still produces a per-journey cycle-1 Stage B (not folded into the cross-pass batch reviewer). Cycle-2+ is per-journey regardless. Adversarial passes (4 and 5) are always per-journey.
 - Batching is accepted ONLY when every journey in the batch's cycle-1 Stage B returns `greenlight`.
 - If any journey's cycle-1 Stage B returns `improvements-needed`: split the batch. From cycle 2 onward, the affected journey breaks out and runs its own per-journey Stage A plus its own Stage B. The batched cycle-1 Stage A return is retained as history input to the broken-out cycle-2 Stage A brief. The remaining greenlit journeys in the batch stay accepted at cycle 1 and proceed.

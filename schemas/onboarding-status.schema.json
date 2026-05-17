@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://civitas-cerebrum.github.io/element-interactions/schemas/onboarding-status.schema.json",
   "title": "Onboarding pipeline status ledger",
-  "description": "Single source of truth for the onboarding pipeline's state. Owned by the onboarding orchestrator (interactive) or the achilles CLI driver (automated). Read by the workflow-reviewer-* subagents and by the onboarding-ledger-* hooks. Lives at tests/e2e/docs/onboarding-status.json in consumer projects (gitignored — same pattern as .phase4-cycle-state.json + coverage-expansion-state.json).",
+  "description": "Single source of truth for the onboarding pipeline's state. Owned by the onboarding orchestrator (interactive) or an external automated CLI driver. Read by the workflow-reviewer-* subagents and by the onboarding-ledger-* hooks. Lives at tests/e2e/docs/onboarding-status.json in consumer projects (gitignored — same pattern as .phase4-cycle-state.json + coverage-expansion-state.json).",
   "type": "object",
   "additionalProperties": true,
   "required": [

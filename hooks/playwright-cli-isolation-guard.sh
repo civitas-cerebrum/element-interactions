@@ -50,9 +50,10 @@
 #   cleanup-<scope>:      →  cleanup-<scope>
 #   (companion- and fd- prefixes accepted for companion-mode / failure-diagnosis)
 #
-# Bare `j-<slug>-...` / `sj-<slug>-...` slugs were dropped per issue #126
-# alongside the matching dispatch-description prefixes — both ends use the
-# role-explicit form.
+# Bare `j-<slug>-...` / `sj-<slug>-...` slugs were dropped alongside the
+# matching dispatch-description prefixes — both ends use the role-explicit
+# form (composer-/reviewer-/probe-) so the slug identifies the dispatching
+# subagent role unambiguously.
 #
 # Failure → action
 # ----------------
@@ -112,10 +113,10 @@ fi
 
 # Allowed slug prefixes — must match dispatch-guard's role prefixes. The
 # trailing `[a-z0-9-]+` enforces a non-empty suffix so bare prefixes like
-# `phase1-` are rejected. Bare `j-`/`sj-` were dropped per issue #126:
-# composer-j-<slug>, reviewer-j-<slug>, probe-j-<slug> are the role-explicit
-# forms. Companion-mode and failure-diagnosis prefixes (`companion-`, `fd-`)
-# are also accepted — they're documented in playwright-cli-protocol.md §3.1.
+# `phase1-` are rejected. Bare `j-`/`sj-` are NOT accepted; use the
+# role-explicit forms `composer-j-<slug>`, `reviewer-j-<slug>`,
+# `probe-j-<slug>`. Companion-mode and failure-diagnosis prefixes
+# (`companion-`, `fd-`) are also accepted — see playwright-cli-protocol.md §3.1.
 SLUG_PREFIX_REGEX='^(phase1|phase2|phase4|stage2|composer|reviewer|probe|cleanup|companion|fd)-[a-z0-9][a-z0-9-]*'
 
 emit_deny() {
@@ -189,7 +190,7 @@ Fix: prefix the slug with this subagent's role so .playwright-cli/<slug>* files 
 
 Allowed prefixes: composer- | reviewer- | probe- | phase1- | phase2- | phase4- | stage2- | cleanup- | companion- | fd-
 
-Bare \`j-\` and \`sj-\` slug prefixes were dropped per issue #126 — they're role-ambiguous. Use \`composer-j-<slug>\`, \`reviewer-j-<slug>\`, or \`probe-j-<slug>\` based on the dispatching subagent's role.
+Bare \`j-\` and \`sj-\` slug prefixes are rejected — they're role-ambiguous. Use \`composer-j-<slug>\`, \`reviewer-j-<slug>\`, or \`probe-j-<slug>\` based on the dispatching subagent's role.
 
 Why: a slug without a role prefix is unreviewable — you can't tell from .playwright-cli/<slug>* which subagent or pass produced the artifacts. The convention also locks subagent description ↔ CLI slug into a mechanical mapping (same prefix on both ends). See coverage-expansion-dispatch-guard.sh and playwright-cli-protocol.md §3.1."
   exit 0

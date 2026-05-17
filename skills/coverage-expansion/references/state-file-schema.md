@@ -70,7 +70,7 @@ State file shape (minimum fields):
 
 A state file missing `stage_a_cycles`, `stage_b_cycles`, or `review_status` for any **dispatched** journey (i.e. excluding gated-skip entries — see §"Gated-skip entries" below) that has run this pass is incomplete — resume logic treats it as corrupt per `coverage-expansion/SKILL.md` §"Authoritative state file" (kernel-resident invariants).
 
-**Gated-skip entries (Passes 2 & 3 only, issue #164.1).** When the orchestrator's three triggers all evaluate to false, a journey is recorded as a gated-skip instead of a dispatch:
+**Gated-skip entries (Passes 2 & 3 only).** When the orchestrator's three triggers all evaluate to false, a journey is recorded as a gated-skip instead of a dispatch:
 
 ```json
 {

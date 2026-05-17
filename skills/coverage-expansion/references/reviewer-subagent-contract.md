@@ -51,7 +51,7 @@ A **staff-level QA engineer**, dispatched fresh for each journey-and-cycle pair.
    - Any `missing-scenarios` finding corresponding to an unimplemented item in the journey's `Test expectations:` list → record.
    - Any `missing-scenarios` finding in category `mobile` on a P0 or P1 journey → record.
    - Any `verification-misses` finding → record (a test that asserts something different than what the live DOM does is a broken test).
-   - `craft-issues` covering Steps-API misuse, inline selectors, missing page-repo entries, missing file-level serial for tenant-mutating specs (per PR #107) → record.
+   - `craft-issues` covering Steps-API misuse, inline selectors, missing page-repo entries, missing file-level serial for tenant-mutating specs → record.
    - `missing-scenarios` the reviewer invented adversarially (not from the expectations list) → record ONLY when the category is `adversarial-missed` in passes 4–5; otherwise do not surface.
    - **Passes 4–5 only — matrix-coverage gap → record.** Any negative-case-matrix entry from the journey's matrix that Stage A did NOT probe (no corresponding ledger finding) is a `missing-scenarios` finding with category `matrix-missed`. The matrix is the adversarial coverage floor per `adversarial-subagent-contract.md`; reviewers do not exercise discretion on this — every matrix entry must have a ledger finding (`Boundaries verified`, `Suspected bugs`, or `Ambiguous` are all acceptable; absence is not).
    - Cosmetic `craft-issues` (naming, ordering, comment quality) → do not surface.
@@ -67,7 +67,7 @@ A **staff-level QA engineer**, dispatched fresh for each journey-and-cycle pair.
 - **Do not append to the adversarial ledger.** Even if the reviewer's independent probes (passes 4–5) land findings, those findings are returned to the orchestrator as `missing-scenarios` so Stage A can attempt them properly on retry. Only Stage A writes to the ledger.
 - **Do not reuse a prior reviewer's context.** Every reviewer dispatch is a fresh subagent with a fresh `playwright-cli` session. The fresh-eyes property is load-bearing; inheriting context from the previous cycle's reviewer (or from the paired Stage A) defeats the adversarial role.
 - **Never return `covered-exhaustively` or `no-new-tests-by-rationalisation`.** Those are Stage A return states. A reviewer with no findings returns `greenlight`; a reviewer with one or more `must-fix` findings returns `improvements-needed`. There is no third state — `nice-to-have` and `greenlight-with-notes` are not part of the contract.
-- **Never authorise a `skipped` status.** Skipping a journey requires explicit user authorisation per PR #105's no-skip contract. The reviewer has no authorisation power.
+- **Never authorise a `skipped` status.** Skipping a journey requires explicit user authorisation per the no-skip contract. The reviewer has no authorisation power.
 
 ## Return shape
 

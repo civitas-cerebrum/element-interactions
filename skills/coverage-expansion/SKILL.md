@@ -6,9 +6,11 @@ description: >
   independent journeys, model selection per journey size, and map reconciliation
   between passes. Calls the test-composer skill per journey for compositional
   passes and invokes bug-discovery per journey for adversarial passes; does not
-  compose tests itself. Runs in two modes: `breadth` (one horizontal sweep,
-  fast) or `standard` (three compositional passes + two adversarial passes +
-  ledger dedup, journey-by-journey, default; `depth` is a backward-compat alias).
+  compose tests itself. Runs in three modes: `breadth` (one horizontal sweep,
+  fast); `standard` (three compositional passes + two adversarial passes +
+  ledger dedup, journey-by-journey — the default); or `depth` (strict
+  per-journey parallel on every pass, ~20× the dispatch cost — picked
+  explicitly for high-fidelity audits).
   Triggers on "increase coverage", "expand tests", "iterative coverage",
   "deep coverage pass", and when invoked by the onboarding skill as its Phase 5.
 ---
@@ -135,7 +137,7 @@ This file is the orchestrator-side contract kernel. The heavy spec lives in `ref
 | [`references/anti-rationalizations.md`](references/anti-rationalizations.md) | Failure-mode patterns the orchestrator and subagents must recognise (keyed by category, not surface phrasing). Each entry: name, symptoms, reality, enforcing hook (or `markdown-only`), origin. |
 | [`references/reviewer-subagent-contract.md`](references/reviewer-subagent-contract.md) | Stage B contract: role, inputs, must-fix calibration, hard constraints, the 7-step process. |
 | [`references/adversarial-subagent-contract.md`](references/adversarial-subagent-contract.md) | Stage A contract for passes 4–5: probe categories, negative-case matrix, ledger append protocol, regression-test authoring rules. |
-| [`../element-interactions/references/subagent-return-schema.md`](../element-interactions/references/subagent-return-schema.md) | Canonical return + ledger schema. §1 finding-return shape; §2 return states; §2.4 reviewer-return; §3 ledger schema; §4 caller contract; §4.1 grep-based conformance check; §4.2 harness validator (issue #127). |
+| [`../element-interactions/references/subagent-return-schema.md`](../element-interactions/references/subagent-return-schema.md) | Canonical return + ledger schema. §1 finding-return shape; §2 return states; §2.4 reviewer-return; §3 ledger schema; §4 caller contract; §4.1 grep-based conformance check; §4.2 harness validator. |
 
 ### Kernel-resident invariants — convention
 
@@ -202,7 +204,7 @@ Do NOT use this for:
 
 Read these as hard rules, not guidance. They prevent the most common shortcut path — running Pass 1, silently deferring passes 2–5 + cleanup "for budget", and reporting standard mode complete anyway.
 
-- When invoked with `mode: standard` (or `mode: depth` as the backward-compat alias, or with no args, since standard is the default), the orchestrator **MUST complete 3 compositional passes + 2 adversarial passes + ledger dedup, in order**. No exceptions. "Only Pass 1 ran" is never a valid completion state for standard mode.
+- When invoked with `mode: standard` (or with no args, since standard is the default), the orchestrator **MUST complete 3 compositional passes + 2 adversarial passes + ledger dedup, in order**. No exceptions. "Only Pass 1 ran" is never a valid completion state for standard mode. (The same five-pass contract applies under `mode: depth`, with the additional strictness that every pass dispatches per-journey instead of grouping.)
 - **Pass 1 alone is NOT coverage-expansion — it is one-fifth of the pipeline.** Any progress line, summary, or upstream report that conflates "ran Pass 1" with "ran coverage-expansion" is wrong and must be corrected before returning to the caller. The same goes for "ran passes 1–3 (compositional only)" — that is three-fifths of the pipeline; the adversarial passes + cleanup are part of the contract, not optional.
 - **If context budget threatens completion mid-pipeline**, the orchestrator MUST:
   1. Commit whatever the most recent pass produced (do not lose subagent work).
@@ -357,14 +359,14 @@ The skill's first action on entry is to read `tests/e2e/docs/coverage-expansion-
 | Mode | Invocation | Behaviour |
 |---|---|---|
 | `mode: standard` (default) | `args: "mode: standard"` or no args | Five passes + cleanup, journey-by-journey in priority order, parallel where independent. Passes 1–3 are compositional; passes 4–5 are adversarial. Final cleanup dedupes the adversarial findings ledger. **Pass 1 is strict per-journey parallel** (no `[group]`, no `[P3-batch]`); Passes 2-5 may use grouping per the documented batching paths. The strict-per-journey contract on Passes 4 and 5 becomes an opt-in via `args: "strict-adversarial: true"`. The state file is written with `runMode: "standard"` on the first state-file write. |
-| `mode: depth` (first-class — strict-parallel-everywhere) | `args: "mode: depth"` | Strict per-journey parallel on **every** pass — `[group]` and `[P3-batch]` markers are FORBIDDEN across all 5 passes (Passes 1, 2, 3, 4, AND 5). Adversarial Passes 4-5 are strict-per-journey by default (the `strict-adversarial: true` opt-in is implicit under depth — explicit declaration is a no-op since the strict contract already holds). The state file is written with `runMode: "depth"` on the first state-file write; the `standard-mode-first-pass-guard.sh` hook reads the field and denies grouping dispatches on every pass. **Cost:** up to ~20× more subagent dispatches and token spend than `mode: standard`. Best for high-stakes audits, package-quality benchmarks, and first-time onboarding of business-critical apps where you want exhaustive per-unit fidelity. (Previously `mode: depth` was preserved as a backward-compat alias for `mode: standard`; under the new first-class semantics that aliasing is retired and the depth flag actively triggers strict-parallel-everywhere.) |
+| `mode: depth` (strict-parallel-everywhere) | `args: "mode: depth"` | Strict per-journey parallel on **every** pass — `[group]` and `[P3-batch]` markers are FORBIDDEN across all 5 passes (Passes 1, 2, 3, 4, AND 5). Adversarial Passes 4-5 are strict-per-journey by default (the `strict-adversarial: true` opt-in is implicit under depth — explicit declaration is a no-op since the strict contract already holds). The state file is written with `runMode: "depth"` on the first state-file write; the `standard-mode-first-pass-guard.sh` hook reads the field and denies grouping dispatches on every pass. **Cost:** up to ~20× more subagent dispatches and token spend than `mode: standard`. Best for high-stakes audits, package-quality benchmarks, and first-time onboarding of business-critical apps where you want exhaustive per-unit fidelity. |
 | `mode: breadth` | `args: "mode: breadth"` | One horizontal sweep: priority × depth tiers across all journeys. Fast fallback for quick coverage growth. Adversarial passes do NOT run in breadth mode. Unchanged. |
 
 ---
 
 ## Standard mode — five-pass pipeline (3 compositional + 2 adversarial) + cleanup
 
-(Previously named `depth` mode. The rename clarifies that this is the default mode for non-quick-pass coverage growth, with Pass 1 fidelity preserved by the strict-first-pass rule and Pass 2-5 efficiency preserved by relaxed grouping. `mode: depth` is no longer an alias — it is now a first-class first-party mode that triggers the strict-parallel-everywhere semantics described in §"Depth mode — strict-parallel-everywhere" below.)
+Standard mode is the default for non-quick-pass coverage growth. Pass 1 fidelity is preserved by the strict-first-pass rule and Pass 2-5 efficiency is preserved by relaxed grouping. The `depth` mode below offers a strict-parallel-everywhere variant for cases where per-unit fidelity matters more than dispatch cost.
 
 ### Depth mode — strict-parallel-everywhere (first-class)
 
@@ -378,7 +380,7 @@ The skill's first action on entry is to read `tests/e2e/docs/coverage-expansion-
 
 When to pick depth: high-stakes audits, package-quality benchmarks, first-time onboarding of business-critical apps where exhaustive per-unit fidelity matters more than token efficiency.
 
-The full per-pass pipeline (steps 1–8), pass differences, commit-message conventions, per-pass completion criteria, the whole-suite re-run gate (incl. issue #131's harness-enforced windowed ratchet), the parallelism model, model selection (hybrid; opus where it pays), auto-compaction between passes, re-pass mode for compositional passes 2–3, batched dispatch for P3 peripheral journeys, adversarial grouping for Passes 4-5, and the post-pass-5 ledger dedup are specified in [`references/depth-mode-pipeline.md`](references/depth-mode-pipeline.md). Read it before authoring or modifying any standard-mode pass.
+The full per-pass pipeline (steps 1–8), pass differences, commit-message conventions, per-pass completion criteria, the whole-suite re-run gate (incl. the harness-enforced windowed ratchet), the parallelism model, model selection (hybrid; opus where it pays), auto-compaction between passes, re-pass mode for compositional passes 2–3, batched dispatch for P3 peripheral journeys, adversarial grouping for Passes 4-5, and the post-pass-5 ledger dedup are specified in [`references/depth-mode-pipeline.md`](references/depth-mode-pipeline.md). Read it before authoring or modifying any standard-mode pass.
 
 ### Hard rules — kernel-resident
 

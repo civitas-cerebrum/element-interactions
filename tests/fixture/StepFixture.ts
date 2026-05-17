@@ -5,9 +5,9 @@ import { isEmailConfigured, loadEmailConfig } from '../../src/config/config';
 // Safely evaluate if email credentials exist before initializing the fixture
 const emailCredentials = isEmailConfigured() ? loadEmailConfig() : undefined;
 
-// the demo-app backend is brought up alongside vue-test-site by docker-compose
-// (service `app-backend`, mapped to localhost:8080). Used by API-step
-// coverage tests; unused by UI tests, which pay nothing.
+// The test backend used by the API-step coverage tests is brought up via
+// docker-compose and mapped to localhost:8080. Override APP_API_URL to point
+// at a different backend in CI. Unused by UI tests, which pay nothing.
 const appApiUrl = process.env.APP_API_URL ?? 'http://localhost:8080';
 
 export const test = baseFixture(base, 'tests/data/page-repository.json', {

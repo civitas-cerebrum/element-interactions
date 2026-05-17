@@ -70,7 +70,7 @@ The parent dispatches the validator with a **manifest** of the planned wave. The
 
 | Field | Rule |
 |---|---|
-| `description prefix` | Begins with `composer-` / `reviewer-` / `probe-` / `process-validator-`. Bare `j-` / `sj-` are forbidden — see issue #126. |
+| `description prefix` | Begins with `composer-` / `reviewer-` / `probe-` / `process-validator-`. Bare `j-` / `sj-` are forbidden — they're role-ambiguous. |
 | `journey-id` | Slug from `journey-map.md`. The mapping description-prefix → journey-id is what the dispatch-guard checks. |
 | `slug` | The CLI session slug for this dispatch. Pattern matches the role (composer-j-… / reviewer-j-… / probe-j-…) and respects the 28-char cap. |
 | `model-hint` | Model hint per `coverage-expansion/SKILL.md` §"Hybrid model selection" — validate the manifest's model field matches the table for each dispatch's role-prefix and pass. |

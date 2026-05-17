@@ -5,9 +5,8 @@ description: >
   has none. Defines the eight-phase workflow (scaffold, groundwork,
   happy-path, journey-mapping, coverage-expansion, bug-discovery,
   secrets-sweep, report) and the gate criteria between phases. Use this
-  skill to run the workflow interactively in Claude Code. For automated
-  runs, the workflow is also packaged as the `@civitas-cerebrum/achilles`
-  CLI.
+  skill to run the workflow interactively in Claude Code, or invoke it
+  from an external automated CLI driver for a hands-off run.
 ---
 
 # Onboarding — eight-phase e2e bootstrap
@@ -18,7 +17,7 @@ a maintained suite. The same workflow runs two ways:
 | Mode | When | How |
 |---|---|---|
 | **Interactive** | You want fine-grained control or you're learning the system | Read this skill and follow the phase playbook below |
-| **Automated** | You want a hands-off run | `npx @civitas-cerebrum/achilles onboarding` |
+| **Automated** | You want a hands-off run | Invoke this skill from an external automated CLI driver that dispatches role-scoped subagents per phase |
 
 The two modes execute the same phases against the same gate criteria. The
 automated driver dispatches role-scoped subagents per phase; in interactive
@@ -52,7 +51,7 @@ The pipeline runs on top of a structured status ledger at
 `tests/e2e/docs/onboarding-status.json` (gitignored — same pattern as
 `tests/e2e/docs/.phase4-cycle-state.json` and
 `tests/e2e/docs/coverage-expansion-state.json`). The orchestrator
-(interactive) or the achilles CLI driver (automated) **MUST** update
+(interactive) or an external automated CLI driver **MUST** update
 this ledger after every phase / pass / cycle completion. Every
 transition (phase N → phase N+1, pass N → pass N+1 inside Phase 5,
 cycle N → cycle N+1 inside Phase 4) is gated by a
@@ -143,8 +142,7 @@ that consumes the mode:
 or `[onboarding] runMode: standard — Phase 5 first-pass strict, later
 relaxed`.
 
-The `mode: depth` invocation of `coverage-expansion` is no longer a
-backward-compat alias — under `runMode: depth` it is the first-class
+Under `runMode: depth`, `coverage-expansion` runs in its
 strict-parallel-everywhere mode. Cost: up to ~20× more subagent
 dispatches and token spend than `mode: standard`. Confirm with the user
 before defaulting to depth on any run that is not explicitly a
@@ -419,4 +417,6 @@ If onboarding was interrupted, find the latest greenlit phase from
 restart from the next phase. Each phase is independently runnable as
 long as its predecessor's deliverables exist on disk.
 
-For automated runs: `npx @civitas-cerebrum/achilles onboarding --resume`.
+For automated runs, the external CLI driver typically exposes a
+`--resume` flag that consumes the same `tests/e2e/docs/onboarding-status.json`
+ledger this skill maintains.

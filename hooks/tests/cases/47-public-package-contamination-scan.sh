@@ -17,15 +17,18 @@ ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 # Banned token pattern. Uses `.` as the separator wildcard so both
 # kebab and snake variants are caught (e.g. test-data-discipline AND
 # TEST_DATA_DISCIPLINE).
-BANNED='bookhive|book.hive|cookbook|chefnova|petfinder|j.administer.medication'
+BANNED='bookhive|book.hive|cookbook|chefnova|petfinder|j.administer.medication|achilles'
 
 # Surface to scan: everything npm publishes (per package.json `files`),
 # plus root files that are implicitly published.
 TARGETS=(hooks skills schemas package.json README.md CHANGELOG.md)
 
 # Filter out test fixtures that intentionally contain banned tokens
-# (they exist to test contamination detection itself).
-EXCLUDED_PATHS='hooks/tests/fixtures/bypass-artifacts'
+# (they exist to test contamination detection itself), and this
+# scanner file itself (the BANNED= definition contains the tokens
+# verbatim — necessarily — and is not part of the shipped surface
+# whose contents we're guarding).
+EXCLUDED_PATHS='hooks/tests/fixtures/bypass-artifacts|hooks/tests/cases/47-public-package-contamination-scan\.sh'
 
 section "public-package-contamination: no banned project-specific tokens in shipped surface"
 TESTS_RUN=$((TESTS_RUN + 1))
