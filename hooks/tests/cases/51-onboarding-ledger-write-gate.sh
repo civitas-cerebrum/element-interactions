@@ -64,8 +64,12 @@ assert_allow "$H" "$(payload tool_name=Write file_path='/repo/tests/e2e/docs/cov
 # ---------------------------------------------------------------------------
 section "ledger-write-gate: fresh-run init with valid JSON ALLOWED"
 rm -f "$LEDGER_PATH"
-assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$VALID_FRESH")" \
-  "Write fresh valid ledger → ALLOW"
+# A fresh ledger init must include both runMode AND modeAuthorizer (the
+# mode-authorisation gate further down enforces this in isolation, but
+# the fresh-init allow-path also has to satisfy the same contract).
+VALID_FRESH_INIT=$(echo "$VALID_FRESH" | "$JQ" '. + {modeAuthorizer: "user chose standard mode at front-load gate"}')
+assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$VALID_FRESH_INIT")" \
+  "Write fresh valid ledger (with modeAuthorizer) → ALLOW"
 
 # ---------------------------------------------------------------------------
 section "ledger-write-gate: malformed JSON DENIED"
@@ -194,3 +198,48 @@ assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$
   "Orchestrator non-approval write (deliverables update) → ALLOW"
 
 rm -f "$LEDGER_PATH" "$REGISTRY"
+
+# ---------------------------------------------------------------------------
+section "ledger-write-gate: mode-authorisation"
+# `runMode` is required by the schema; this gate forces it to be set
+# WITH an audit-trail `modeAuthorizer` field naming the user's explicit
+# choice. Defaults are not silent.
+
+VALID_FRESH_NO_AUTH="$VALID_FRESH"  # has runMode=standard, no modeAuthorizer
+VALID_FRESH_WITH_AUTH=$(echo "$VALID_FRESH" | "$JQ" '. + {modeAuthorizer: "user said: use standard mode"}')
+
+# Case A: fresh ledger init setting runMode without modeAuthorizer
+rm -f "$LEDGER_PATH"
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$VALID_FRESH_NO_AUTH")" \
+  "Fresh ledger init with runMode but no modeAuthorizer → DENY" "without a modeAuthorizer field"
+
+# Case B: fresh ledger init setting runMode WITH modeAuthorizer
+rm -f "$LEDGER_PATH"
+assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$VALID_FRESH_WITH_AUTH")" \
+  "Fresh ledger init with runMode AND modeAuthorizer → ALLOW"
+
+# Case C: subsequent write keeping runMode + modeAuthorizer unchanged
+printf '%s' "$VALID_FRESH_WITH_AUTH" > "$LEDGER_PATH"
+PERSIST_AUTH=$(echo "$VALID_FRESH_WITH_AUTH" | "$JQ" '.phases[0].deliverables = ["playwright.config.ts"]')
+assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PERSIST_AUTH")" \
+  "Write that keeps runMode + modeAuthorizer unchanged → ALLOW"
+
+# Case D: subsequent write clearing modeAuthorizer while keeping runMode
+printf '%s' "$VALID_FRESH_WITH_AUTH" > "$LEDGER_PATH"
+CLEARED_AUTH=$(echo "$VALID_FRESH_WITH_AUTH" | "$JQ" 'del(.modeAuthorizer)')
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$CLEARED_AUTH")" \
+  "Clearing modeAuthorizer while runMode persists → DENY" "modeAuthorizer cleared while runMode remains set"
+
+# Case E: subsequent write changing runMode without fresh modeAuthorizer
+printf '%s' "$VALID_FRESH_WITH_AUTH" > "$LEDGER_PATH"
+CHANGED_NO_AUTH=$(echo "$VALID_FRESH_WITH_AUTH" | "$JQ" '.runMode = "depth" | del(.modeAuthorizer)')
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$CHANGED_NO_AUTH")" \
+  "Changing runMode without fresh modeAuthorizer → DENY" "without a modeAuthorizer field"
+
+# Case F: subsequent write changing runMode WITH fresh modeAuthorizer
+printf '%s' "$VALID_FRESH_WITH_AUTH" > "$LEDGER_PATH"
+CHANGED_WITH_AUTH=$(echo "$VALID_FRESH_WITH_AUTH" | "$JQ" '.runMode = "depth" | .modeAuthorizer = "user re-elected depth mode after seeing Pass 1 cost"')
+assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$CHANGED_WITH_AUTH")" \
+  "Changing runMode WITH fresh modeAuthorizer → ALLOW"
+
+rm -f "$LEDGER_PATH"

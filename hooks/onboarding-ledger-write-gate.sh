@@ -37,9 +37,16 @@
 #    workflow-approver-registry.sh) can record approvals. This is the
 #    separation-of-duties gate: the orchestrator does the work, an
 #    approver subagent records the verdict.
-# 5. **Silent-allow for non-ledger writes.** Only files whose path ends
+# 5. **Mode authorisation.** Any write that sets or changes `runMode`
+#    (the coverage-expansion mode — `standard` vs `depth`) MUST also
+#    include a non-empty `modeAuthorizer` field capturing the user's
+#    explicit choice (verbatim quote). The schema permits `runMode` to
+#    be persisted; this gate forces it to be persisted with an audit
+#    trail of who chose it. Prevents the orchestrator from silently
+#    defaulting to a mode without asking.
+# 6. **Silent-allow for non-ledger writes.** Only files whose path ends
 #    with `tests/e2e/docs/onboarding-status.json` are gated.
-# 6. **Silent-allow when the file is missing AND the write has no
+# 7. **Silent-allow when the file is missing AND the write has no
 #    approvals.** A fresh-run ledger init with all phases pending has
 #    no actor-identity check (nothing is being approved).
 #
@@ -431,6 +438,80 @@ subagent has been running longer than that, re-dispatch a fresh
 Fix: re-dispatch the approver."
     exit 0
   fi
+fi
+
+# ---------------------------------------------------------------------------
+# Mode-authorisation check.
+# Setting or changing `runMode` requires the operator's explicit choice
+# captured in `modeAuthorizer` (a verbatim user quote). Forces the
+# orchestrator to ASK before silently defaulting to one of the two
+# documented coverage-expansion modes.
+# ---------------------------------------------------------------------------
+NEW_MODE=$("$JQ" -r '.runMode // empty' "$TMP_PROPOSED" 2>/dev/null || echo "")
+NEW_AUTHORIZER=$("$JQ" -r '.modeAuthorizer // empty' "$TMP_PROPOSED" 2>/dev/null || echo "")
+
+PRIOR_MODE=""
+PRIOR_AUTHORIZER=""
+if [ -f "$FILE_PATH" ]; then
+  PRIOR_MODE=$("$JQ" -r '.runMode // empty' "$FILE_PATH" 2>/dev/null || echo "")
+  PRIOR_AUTHORIZER=$("$JQ" -r '.modeAuthorizer // empty' "$FILE_PATH" 2>/dev/null || echo "")
+fi
+
+# Case A: runMode being set or changed. The new value differs from the
+# prior (or the prior didn't exist). Requires a non-empty modeAuthorizer
+# in the SAME write — co-located with the runMode field so the audit
+# trail can't be reconstructed out of order.
+if [ -n "$NEW_MODE" ] && [ "$NEW_MODE" != "$PRIOR_MODE" ]; then
+  if [ -z "$NEW_AUTHORIZER" ]; then
+    emit_deny "[BLOCKED] runMode being set to \"${NEW_MODE}\" without a modeAuthorizer field.
+
+File: ${FILE_PATH}
+Prior runMode: \"${PRIOR_MODE:-<unset>}\"
+New runMode:   \"${NEW_MODE}\"
+
+The orchestrator cannot silently choose between \`standard\` and \`depth\`
+coverage-expansion modes — the user must make that choice explicitly
+and the choice must land in the ledger as an audit-trail quote.
+
+Fix: add a top-level \`modeAuthorizer\` field to the proposed write,
+containing the user's verbatim quote. Examples:
+
+  \"modeAuthorizer\": \"user said: run onboarding in standard mode\"
+  \"modeAuthorizer\": \"user typed 'depth' in response to mode-selection prompt\"
+  \"modeAuthorizer\": \"achilles --mode=depth (CLI flag)\"
+
+If the user has not yet been asked, ASK first; then write the ledger
+with the captured quote.
+
+See:
+  - schemas/onboarding-status.schema.json §runMode
+  - skills/onboarding/SKILL.md §\"Front-load mode-selection gate\""
+    exit 0
+  fi
+fi
+
+# Case B: runMode persists across the write but modeAuthorizer was
+# silently cleared. Prevents post-hoc tampering of the audit trail —
+# once a mode is authorised, the authoriser quote stays in the ledger
+# for as long as that mode is in effect.
+if [ -n "$NEW_MODE" ] && [ -n "$PRIOR_AUTHORIZER" ] && [ -z "$NEW_AUTHORIZER" ]; then
+  emit_deny "[BLOCKED] modeAuthorizer cleared while runMode remains set.
+
+File: ${FILE_PATH}
+runMode (preserved):       \"${NEW_MODE}\"
+Prior modeAuthorizer:      \"${PRIOR_AUTHORIZER}\"
+New modeAuthorizer:        <empty/missing>
+
+Once a mode has been user-authorised, the authorisation quote must
+stay in the ledger for as long as the mode is in effect. Clearing it
+post-hoc would erase the audit trail.
+
+Fix: keep the existing modeAuthorizer field unchanged, OR update both
+runMode AND modeAuthorizer together (which re-triggers the case-A
+check above).
+
+See: schemas/onboarding-status.schema.json §runMode"
+  exit 0
 fi
 
 # All checks passed — silent allow.
