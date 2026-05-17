@@ -152,6 +152,17 @@ const HOOK_MANIFEST = [
 
   // SubagentStop — cleanup (async)
   { file: 'playwright-cli-cleanup-on-stop.sh',    event: 'SubagentStop', matcher: null,        timeout: 30, async: true },
+
+  // selector-development — activation + inertness gates (PreToolUse:Write|Edit)
+  { file: 'selector-development-activation-gate.sh',     event: 'PreToolUse', matcher: 'Write|Edit', timeout: 10 },
+  { file: 'selector-development-inertness-guard.sh',     event: 'PreToolUse', matcher: 'Write|Edit', timeout: 10 },
+
+  // selector-development — pipeline stepper (Pre + Post on Bash|Write|Edit)
+  { file: 'selector-development-pipeline-stepper.sh',    event: 'PreToolUse',  matcher: 'Bash|Write|Edit', timeout: 10 },
+  { file: 'selector-development-pipeline-stepper.sh',    event: 'PostToolUse', matcher: 'Bash|Write|Edit', timeout: 10 },
+
+  // selector-development — Stop-time revert WARN
+  { file: 'selector-development-revert-on-stop.sh',      event: 'Stop', matcher: null,                 timeout: 10 },
 ];
 
 function copyHookFile(hookSrc, hookDest) {
@@ -240,6 +251,32 @@ function installCivitasHooks() {
     if (registerHookInSettings(settings, entry, hookDest)) {
       registeredCount++;
       settingsModified = true;
+    }
+  }
+
+  // Copy hooks/lib/ helpers (e.g. selector-diff-validator, visual-diff). These
+  // are required at runtime by hook scripts that shell out to node. Pattern:
+  // idempotent file copy with mtime check, same as copyHookFile() above.
+  const libSrcDir  = path.join(packageDir, 'hooks', 'lib');
+  const libDestDir = path.join(userHooksDir, 'lib');
+  if (fs.existsSync(libSrcDir)) {
+    fs.mkdirSync(libDestDir, { recursive: true });
+    for (const entry of fs.readdirSync(libSrcDir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const srcPath  = path.join(libSrcDir, entry.name);
+      const destPath = path.join(libDestDir, entry.name);
+      let shouldCopy = !fs.existsSync(destPath);
+      if (!shouldCopy) {
+        try {
+          shouldCopy = fs.statSync(srcPath).mtimeMs > fs.statSync(destPath).mtimeMs;
+        } catch (_) {
+          shouldCopy = true;
+        }
+      }
+      if (shouldCopy) {
+        fs.copyFileSync(srcPath, destPath);
+        copiedCount++;
+      }
     }
   }
 

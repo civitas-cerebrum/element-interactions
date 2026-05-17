@@ -8,6 +8,12 @@ Orchestrator-mode and cascade-routing concerns previously enforced by this packa
 
 ## PreToolUse
 
+### Edit / Write
+
+- **[selector-development-activation-gate](../../../hooks/selector-development-activation-gate.sh)** — `PreToolUse:Edit|Write` (frontend source paths only). Denies selector-development frontend edits when the workspace lacks a recognised frontend framework dep or a `tests/e2e/*.spec.ts` directory. [escape hatch: no]
+- **[selector-development-inertness-guard](../../../hooks/selector-development-inertness-guard.sh)** — `PreToolUse:Edit|Write` (frontend source paths only). Denies selector-development frontend edits whose diff is anything other than a single-attribute additive change matching the project's selector convention. [escape hatch: yes (env override)]
+- **[selector-development-pipeline-stepper](../../../hooks/selector-development-pipeline-stepper.sh)** — `PreToolUse:Bash|Edit|Write` (gate) + `PostToolUse:Bash|Edit|Write` (record). Enforces the 8-step selector-development pipeline (before-snapshot → patch → typecheck → unit → e2e → after-snapshot → visual-diff → commit); denies steps whose predecessor is not recorded as pass; records each step's outcome on the per-scope receipt. [escape hatch: no]
+
 ### Agent
 
 - **[subagent-schema-preread-gate](../../../hooks/subagent-schema-preread-gate.sh)** — `PreToolUse:Agent`. Denies schema-validated role-prefixed dispatches whose brief omits the schema citation. [escape hatch: no]
@@ -26,6 +32,10 @@ Orchestrator-mode and cascade-routing concerns previously enforced by this packa
 ## PostToolUse
 
 - **[subagent-return-schema-guard](../../../hooks/subagent-return-schema-guard.sh)** — `PostToolUse:Agent`. Validates subagent-return canonical shape and drives the in-flight registry leash via the §2.0 handover envelope. [escape hatch: no]
+
+## Stop
+
+- **[selector-development-revert-on-stop](../../../hooks/selector-development-revert-on-stop.sh)** — `Stop`. Warns at orchestrator Stop when a selector-development scope is active and its receipt's last passing step is not `visual_diff` or `commit` — i.e. the pipeline stopped mid-flight; surfaces the recovery instruction. [escape hatch: no]
 
 ## SubagentStop
 

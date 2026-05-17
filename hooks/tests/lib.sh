@@ -183,12 +183,14 @@ section() {
 
 # Helper: build a JSON payload from inline kv args. Each kv is "key=value".
 # Recognised keys: tool_name, description, prompt, command, file_path,
-# content, new_string, response_text, response_content, exit_code, stdout,
-# cwd, hook_event_name. response_text becomes tool_response.output (the
-# legacy claude-code shape some test harnesses emit). response_content
-# becomes tool_response.content as a [{type:text,text:<v>}] array — the
-# shape the live claude-code harness actually emits for Agent returns
-# (confirmed by an earlier reviewer finding). Hooks reading Agent returns must handle both.
+# content, old_string, new_string, skill, args, response_text,
+# response_content, exit_code, stdout, cwd, hook_event_name.
+# response_text becomes tool_response.output (the legacy claude-code
+# shape some test harnesses emit). response_content becomes
+# tool_response.content as a [{type:text,text:<v>}] array — the shape
+# the live claude-code harness actually emits for Agent returns
+# (confirmed by an earlier reviewer finding). Hooks reading Agent
+# returns must handle both.
 payload() {
   local out='{}'
   for kv in "$@"; do
@@ -197,7 +199,7 @@ payload() {
     case "$k" in
       tool_name)
         out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" '. + {tool_name: $v}') ;;
-      description|prompt|command|file_path|content|new_string|skill|args)
+      description|prompt|command|file_path|content|old_string|new_string|skill|args)
         out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" --arg k "$k" '.tool_input = ((.tool_input // {}) + {($k): $v})') ;;
       response_text)
         out=$(printf '%s' "$out" | "$JQ" -c --arg v "$v" '.tool_response = ((.tool_response // {}) + {output: $v})') ;;
