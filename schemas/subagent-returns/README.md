@@ -23,7 +23,14 @@ The handover envelope defines two optional fields that the harness validator ins
 | `dispatch-mode` | enum (`per-journey`, `per-section`, `grouped`, `single-agent-collapsed`) | How the dispatch was structured. **Required** on cycle-1 (journey-mapping) and Pass-1 (coverage-expansion) returns. The harness rejects cycle-1 / Pass-1 returns with `dispatch-mode == grouped` or `single-agent-collapsed` — those first cycles/passes are strict-per-X by contract (see `coverage-expansion/SKILL.md` §"Stage A per-journey dispatch is non-negotiable" and `journey-mapping/SKILL.md` §"Iterative discovery cycles"). |
 | `parallel-wave-size` | integer ≥ 1 | Size of the parallel wave this dispatch was part of. On cycle-1 / Pass-1, `parallel-wave-size == 1` is rejected UNLESS the roster genuinely contains only one item (in which case `dispatch-mode: per-journey` with wave-size 1 is the correct shape). |
 
-Cycle-2+ returns (journey-mapping) and Pass-2-onward returns (coverage-expansion) may omit both fields or carry any enum value — the strict contract relaxes after the first cycle/pass.
+Cycle-2+ returns (journey-mapping) and Pass-2-onward returns (coverage-expansion) may omit both fields or carry any enum value under `runMode: standard` / `cycleStrictness: standard` — the strict contract relaxes after the first cycle/pass.
+
+**Under `runMode: depth` / `cycleStrictness: depth`** (selected via `onboarding`'s front-load gate), the rejection rule applies to EVERY pass / cycle, not just the first:
+
+- A coverage-expansion return on any pass (1, 2, 3, 4, or 5) with `dispatch-mode == grouped` is rejected when the state file carries `runMode: "depth"`. Pass-2+ returns that previously could declare `dispatch-mode: grouped` legitimately must now be `per-journey` under depth.
+- A journey-mapping return on any cycle (1, 2, 3, …) with `dispatch-mode == single-agent-collapsed` is rejected when the state file carries `cycleStrictness: "depth"`. Cycle-2+ returns that previously could declare `single-agent-collapsed` legitimately must now be `per-section` under depth.
+
+The schema itself does not encode the mode-aware rejection rule (the field enum is unchanged — `grouped` and `single-agent-collapsed` remain valid values for non-depth runs); the harness validator reads the relevant state file's mode field at validation time and applies the per-mode rejection scope. Schema additions for the mode marker itself are deliberately deferred to the orchestrator's state files (`coverage-expansion-state.json` / `.phase4-cycle-state.json`), where the mode is observable, rather than baked into per-return shape requirements.
 
 ## Format
 

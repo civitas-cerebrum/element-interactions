@@ -26,6 +26,20 @@ Both fields are additive — existing returns continue to validate (handover alr
 
 **Empirical origin.** A benchmark onboarding run on a 21-journey app surfaced two patterns the methodology change addresses: (a) `full`-mode journey-mapping collapsed to a single subagent and produced shallow per-section coverage; (b) the strict-per-journey contract on every coverage-expansion pass + cycle was expensive (high-teens / low-twenties dispatch count for a 21-journey app), with most Pass 2/3 dispatches gated-skipping and Pass 4/5 per-journey work producing minimal incremental value over grouped probes once the app-wide-pattern catalogue existed. The first-pass-strict / subsequent-pass-relaxed rule captures the fidelity moment where it pays without burning context on incremental refinement that would have grouped naturally anyway.
 
+**Onboarding front-load gate now asks the user to pick the run mode.** A new Step 0 prepends the onboarding front-load gate (`skills/onboarding/SKILL.md` §"Step 0 — Mode selection"). Before the three precondition checks, the user picks:
+
+- **standard** (default, recommended) — first-pass / first-cycle strict, subsequent passes / cycles relaxed. Best for everyday onboarding.
+- **depth** — strict parallel per-journey on every compositional pass, strict per-section on every discovery cycle. Up to ~20× more subagent dispatches and token spend than standard. Best for high-stakes audits, package-quality benchmarks, and first-time onboarding of business-critical apps where exhaustive per-unit fidelity matters.
+
+The selection propagates as:
+
+- Phase 4 (`journey-mapping`) — `args: "phases: full"` always; under depth the extra `cycle-strictness: depth` arg is added. The orchestrator writes `cycleStrictness: "depth"` into `.phase4-cycle-state.json`; the `standard-mode-first-pass-guard.sh` hook reads the field and denies single-agent cycle-N walkthroughs on every cycle (not just cycle 1).
+- Phase 5 (`coverage-expansion`) — `args: "mode: standard"` or `args: "mode: depth"`. The orchestrator writes `runMode: "depth"` into `coverage-expansion-state.json`; the hook reads the field and denies `[group]` / `[P3-batch]` on every pass (not just Pass 1). Adversarial Passes 4-5 are strict-per-journey by default under depth (the `strict-adversarial: true` opt-in is implicit).
+
+**`mode: depth` is now an active first-class option, not a backward-compat alias.** The prior alias semantics (`mode: depth` → `mode: standard` with one log line) are retired. `mode: depth` now actively triggers strict-parallel-everywhere semantics on coverage-expansion: no grouping on any pass, no single-agent collapse on any cycle. Operators must understand the cost trade-off — depth runs up to ~20× the subagent dispatch count of standard mode (every pass dispatches per-journey instead of grouping, every cycle dispatches per-section instead of relaxing; the multiplier compounds across the 5-pass coverage-expansion pipeline and the up-to-5-cycle journey-mapping pipeline). Pick depth only when exhaustive per-unit fidelity is worth the spend.
+
+**Hook + schema-doc updates for depth mode.** `standard-mode-first-pass-guard.sh` now reads the `runMode` and `cycleStrictness` state-file fields and applies the per-mode rejection scope (Pass-1-only under standard, every-pass under depth; cycle-1-only under standard, every-cycle under depth). 11 new test cases added to `hooks/tests/cases/49-standard-mode-first-pass-guard.sh` covering the depth-mode denials and the standard-mode preservation paths. Total: 34 cases (was 23); full hook test suite still passes 100%. `schemas/subagent-returns/README.md` documents that the harness validator rejects `dispatch-mode: grouped` / `single-agent-collapsed` returns on every pass / cycle under depth, not just the first (no schema-shape change — the rejection is harness-side and mode-conditional).
+
 ---
 
 ## Public-dependency cleanup
