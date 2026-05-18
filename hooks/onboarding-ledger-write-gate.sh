@@ -638,6 +638,23 @@ for phase_id in $PHASES_NEWLY_COMPLETED; do
           "complete the cycle protocol — dispatch cycle-1 section agents (strict per-section parallel), then the cycle-2 edge-probe — before closing Phase 4." \
           "skills/journey-mapping/SKILL.md §\"Iterative discovery cycles\""
       fi
+
+      # Cycle-roster completeness: for EVERY cycle recorded, the section
+      # subagents must have all returned. dispatched-sections == returned-
+      # sections (set equality, not just length). Catches the "dispatched
+      # 7, only 5 came back, marked the cycle done anyway" failure mode.
+      for cycle_id in 1 2; do
+        DISPATCHED=$("$JQ" -c ".cycles[\"${cycle_id}\"][\"dispatched-sections\"] // [] | sort" "$CYCLE_STATE_PATH" 2>/dev/null || echo "[]")
+        RETURNED=$("$JQ" -c ".cycles[\"${cycle_id}\"][\"returned-sections\"] // [] | sort" "$CYCLE_STATE_PATH" 2>/dev/null || echo "[]")
+        if [ "$DISPATCHED" != "$RETURNED" ]; then
+          DISPATCHED_COUNT=$(echo "$DISPATCHED" | "$JQ" 'length')
+          RETURNED_COUNT=$(echo "$RETURNED" | "$JQ" 'length')
+          emit_phase_deny "4" \
+            "Cycle ${cycle_id} dispatched-sections (${DISPATCHED_COUNT}) != returned-sections (${RETURNED_COUNT}). Some section agents did not return; the cycle is incomplete." \
+            "wait for every dispatched section to return before authoring the journey map. Re-dispatch any stalled sections. The author step consumes the union of all section returns — partial returns mean partial coverage." \
+            "skills/journey-mapping/SKILL.md §\"Cycle protocol\""
+        fi
+      done
       ;;
     5)
       # Phase 5 — coverage-expansion-state.json with at least pass-1 record.
@@ -655,15 +672,78 @@ for phase_id in $PHASES_NEWLY_COMPLETED; do
           "run at least Pass 1 of coverage-expansion before closing Phase 5." \
           "skills/coverage-expansion/SKILL.md §\"Non-negotiables\""
       fi
+
+      # Coverage-completeness check: Pass 1's dispatched-journeys + any
+      # deferredJourneys[] entries must together cover the journey map's
+      # full roster. Catches the "dispatched 8 of 41 journeys, called
+      # exit-#2, marked Phase 5 complete" failure mode. The roster is
+      # derived from the journey-map.md (one entry per `^#### j-` block).
+      MAP_PATH="$PROJECT_ROOT/tests/e2e/docs/journey-map.md"
+      if [ -f "$MAP_PATH" ]; then
+        ROSTER_COUNT=$(grep -c '^#### j-' "$MAP_PATH" 2>/dev/null; true)
+        ROSTER_COUNT=${ROSTER_COUNT:-0}
+        DISPATCHED_COUNT=$("$JQ" -r '.passes["1"]["dispatched-journeys"] // [] | length' "$COV_STATE_PATH" 2>/dev/null || echo "0")
+        DEFERRED_COUNT=$("$JQ" -r '.passes["1"]["deferredJourneys"] // [] | length' "$COV_STATE_PATH" 2>/dev/null || echo "0")
+        DISPATCHED_COUNT=${DISPATCHED_COUNT:-0}
+        DEFERRED_COUNT=${DEFERRED_COUNT:-0}
+        TOTAL_ACCOUNTED=$((DISPATCHED_COUNT + DEFERRED_COUNT))
+
+        if [ "$ROSTER_COUNT" -gt 0 ] && [ "$TOTAL_ACCOUNTED" -lt "$ROSTER_COUNT" ]; then
+          UNCOVERED=$((ROSTER_COUNT - TOTAL_ACCOUNTED))
+          emit_phase_deny "5" \
+            "Pass 1 coverage incomplete: journey-map.md lists ${ROSTER_COUNT} journeys; coverage-expansion-state.json records ${DISPATCHED_COUNT} dispatched + ${DEFERRED_COUNT} deferred = ${TOTAL_ACCOUNTED} accounted. ${UNCOVERED} journey(s) are silently missing. This is the silent-scope-compression failure mode." \
+            "either (a) dispatch the remaining ${UNCOVERED} journey(s) through coverage-expansion Pass 1, OR (b) add a deferredJourneys[] entry for each missing journey with a reason (structural prefix OR an \"authorizer\" field carrying a verbatim user quote). Pre-emptive scope reduction without authorisation is denied." \
+            "skills/coverage-expansion/SKILL.md §\"Two valid exits\" + §\"Deferral authorisation\""
+        fi
+
+        # Deferral authorisation: each deferredJourneys[] entry must have
+        # a structural reason prefix OR an explicit authorizer quote.
+        # Self-imposed reasons (budget-cap, session-length, auto-mode-stop)
+        # without an authorizer field are silent scope narrowing.
+        if [ "$DEFERRED_COUNT" -gt 0 ]; then
+          BAD_DEFERRAL=$(
+            "$JQ" -r '
+              .passes["1"]["deferredJourneys"] // [] | .[] |
+              select(
+                ((.reason // "") | test("^(blocked-on-app-bug:|test-data-prerequisite:|user-authorised:)")) | not
+              ) |
+              select(((.authorizer // "") | length) == 0) |
+              .journey // "<unknown>"
+            ' "$COV_STATE_PATH" 2>/dev/null | head -1 || true
+          )
+          if [ -n "$BAD_DEFERRAL" ]; then
+            emit_phase_deny "5" \
+              "deferredJourneys[] entry for \"${BAD_DEFERRAL}\" carries neither a structural reason prefix (\`blocked-on-app-bug:\`, \`test-data-prerequisite:\`, \`user-authorised:\`) nor an \`authorizer\` field with a verbatim user quote. Self-imposed deferrals (budget-cap, session-length, auto-mode-stop) without authorisation are silent scope narrowing." \
+              "either dispatch this journey through Pass 1, or add a reason matching one of the allowed structural prefixes, or capture the user's verbatim authorisation in an \`authorizer\` field." \
+              "skills/coverage-expansion/SKILL.md §\"Deferral authorisation\""
+          fi
+        fi
+      fi
       ;;
     6)
-      # Phase 6 — adversarial-findings ledger exists.
+      # Phase 6 — adversarial-findings ledger exists AND has substance.
       ADV_PATH="$PROJECT_ROOT/tests/e2e/docs/adversarial-findings.md"
       if [ ! -f "$ADV_PATH" ]; then
         emit_phase_deny "6" \
           "tests/e2e/docs/adversarial-findings.md does not exist." \
           "invoke the \`bug-discovery\` skill (or the adversarial passes of coverage-expansion). They write the findings ledger as probes return." \
           "skills/onboarding/SKILL.md §\"Phase 6 — Bug discovery\" + skills/bug-discovery/SKILL.md"
+      fi
+
+      # Content check: the ledger must contain at least one per-journey
+      # section block. The canonical schema (per
+      # references/subagent-return-schema.md §3) uses `### j-<slug>` as
+      # the per-journey section header. An empty ledger (just the
+      # title) means no probe ever ran — the file exists but the
+      # methodology was bypassed. grep -c always prints a count (even
+      # 0) and exits 1 on no-match — capture stdout, ignore exit code.
+      JOURNEY_BLOCKS=$(grep -c '^### j-' "$ADV_PATH" 2>/dev/null; true)
+      JOURNEY_BLOCKS=${JOURNEY_BLOCKS:-0}
+      if [ "$JOURNEY_BLOCKS" -lt 1 ]; then
+        emit_phase_deny "6" \
+          "tests/e2e/docs/adversarial-findings.md exists but contains 0 per-journey section blocks (\`### j-<slug>\`). File existence alone is not bug-discovery; the ledger must record at least one probe." \
+          "dispatch the bug-discovery probe subagents per journey (or the adversarial passes of coverage-expansion). Each probe appends a \`### j-<slug>\` section to the ledger as it returns." \
+          "skills/bug-discovery/SKILL.md + element-interactions/references/subagent-return-schema.md §3"
       fi
       ;;
     7)

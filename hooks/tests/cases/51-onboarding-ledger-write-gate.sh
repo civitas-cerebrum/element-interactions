@@ -300,6 +300,13 @@ EOF
 assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P4_COMPLETED")" \
   "Phase 4 → completed with map+sentinel+cycles 1+2 → ALLOW"
 
+# Phase 4: cycle-roster mismatch (dispatched ≠ returned) → DENY.
+cat > "$TMP_REPO/tests/e2e/docs/.phase4-cycle-state.json" <<'EOF'
+{"phase4-cycle-state-version":1,"started-at":"2026-05-18T09:00:00Z","cycleStrictness":"standard","cycles":{"1":{"kind":"discovery","dispatched-sections":["a","b","c"],"returned-sections":["a","b"]},"2":{"kind":"edge-probe","dispatched-sections":["a","b","c"],"returned-sections":["a","b","c"]}}}
+EOF
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P4_COMPLETED")" \
+  "Phase 4 → completed with cycle-1 dispatched(3)≠returned(2) → DENY" "Some section agents did not return"
+
 # ---- Phase 5 ----
 section "ledger-write-gate: Phase 5 → completed requires coverage-expansion-state"
 rm -f "$LEDGER_PATH" "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json"
@@ -319,8 +326,48 @@ assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$P
 cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
 {"coverage-expansion-state-version":1,"runMode":"standard","currentPass":1,"passes":{"1":{"kind":"compositional","dispatched-journeys":["j-x"],"returned-journeys":["j-x"]}}}
 EOF
+# At this point a sentinel-bearing journey-map.md from the prior Phase-4
+# test is still on disk (line 1 sentinel + `# Map` body). It has zero
+# `^#### j-` blocks, so the coverage-completeness check sees roster=0
+# and skips the comparison — ALLOW.
 assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
-  "Phase 5 → completed with pass-1 record → ALLOW"
+  "Phase 5 → completed with pass-1 record + empty journey-map → ALLOW (roster=0 skips count check)"
+
+# Phase 5 coverage-completeness: roster has 3 journeys, dispatched 1,
+# no deferrals → DENY (silent scope compression).
+cat > "$TMP_REPO/tests/e2e/docs/journey-map.md" <<'EOF'
+<!-- journey-mapping:generated -->
+# Map
+#### j-alpha
+#### j-beta
+#### j-gamma
+EOF
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
+  "Phase 5 → completed with 1/3 journeys dispatched, no deferrals → DENY" "silently missing"
+
+# Phase 5 coverage-completeness: roster 3 dispatched 1, 2 deferred with
+# valid structural reason prefixes → ALLOW.
+cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":1,"passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha"],"returned-journeys":["j-alpha"],"deferredJourneys":[{"journey":"j-beta","reason":"blocked-on-app-bug:BUG-007"},{"journey":"j-gamma","reason":"test-data-prerequisite:premium-seed-user"}]}}}
+EOF
+assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
+  "Phase 5 → completed with 1 dispatched + 2 structurally-deferred → ALLOW"
+
+# Phase 5 deferral-authorisation: a deferral without a structural prefix
+# AND without an authorizer quote → DENY.
+cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":1,"passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha"],"returned-journeys":["j-alpha"],"deferredJourneys":[{"journey":"j-beta","reason":"blocked-on-app-bug:BUG-007"},{"journey":"j-gamma","reason":"budget-cap"}]}}}
+EOF
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
+  "Phase 5 → completed with deferral citing 'budget-cap' + no authorizer → DENY" "neither a structural reason prefix"
+
+# Phase 5 deferral-authorisation: a deferral with authorizer quote
+# (verbatim user authorisation) → ALLOW even with a non-structural reason.
+cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":1,"passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha"],"returned-journeys":["j-alpha"],"deferredJourneys":[{"journey":"j-beta","reason":"blocked-on-app-bug:BUG-007"},{"journey":"j-gamma","reason":"session-length","authorizer":"user said: defer the adversarial journeys to a follow-up run"}]}}}
+EOF
+assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
+  "Phase 5 → completed with deferral carrying authorizer quote → ALLOW"
 
 # ---- Phase 6 ----
 section "ledger-write-gate: Phase 6 → completed requires adversarial-findings.md"
@@ -330,9 +377,21 @@ printf '%s' "$PRIOR_P6_INPROG" > "$LEDGER_PATH"
 PROPOSED_P6_COMPLETED=$(mark_phase_completed 6)
 assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P6_COMPLETED")" \
   "Phase 6 → completed without adversarial-findings.md → DENY" "adversarial-findings.md does not exist"
+
+# Empty ledger (title only, no per-journey blocks) → DENY.
 echo "# Adversarial Findings" > "$TMP_REPO/tests/e2e/docs/adversarial-findings.md"
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P6_COMPLETED")" \
+  "Phase 6 → completed with empty adversarial ledger → DENY" "0 per-journey section blocks"
+
+# At least one per-journey section block → ALLOW.
+cat > "$TMP_REPO/tests/e2e/docs/adversarial-findings.md" <<'EOF'
+# Adversarial Findings
+
+### j-alpha
+Pass 4 — probe: clean.
+EOF
 assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P6_COMPLETED")" \
-  "Phase 6 → completed with adversarial-findings.md → ALLOW"
+  "Phase 6 → completed with ≥1 per-journey section in ledger → ALLOW"
 
 # ---- Phase 7 ----
 section "ledger-write-gate: Phase 7 → completed requires .env.example"
