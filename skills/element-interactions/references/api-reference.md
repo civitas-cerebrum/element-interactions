@@ -5,7 +5,7 @@ The following sections document the full API available for writing tests in Stag
 ## Table of Contents
 - [Setup — Fixtures](#setup--fixtures)
 - [Locator Format](#locator-format) (css, xpath, id, text, role+name, regex, iframe)
-- [Steps API](#steps-api) (navigation, interaction, extraction, verification, expect matcher tree, visibility, listed elements, waiting, composite, screenshot)
+- [Steps API](#steps-api) (navigation, interaction, extraction, verification, expect matcher tree, visibility, listed elements, waiting, composite, screenshot, visual regression)
 - [Fluent API — steps.on()](#fluent-api--stepson) (strategy selectors, ifVisible, terminal actions, chaining)
 - [Accessing the Repository Directly](#accessing-the-repository-directly)
 - [Raw Interactions API](#raw-interactions-api)
@@ -143,7 +143,7 @@ Every method takes `elementName` and `pageName` as its first two arguments, matc
 
 **Imports** — add at the top of your test file as needed:
 ```ts
-import { DropdownSelectType, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, ScreenshotOptions, EmailFilterType, EmailMarkAction, WebElement } from '@civitas-cerebrum/element-interactions';
+import { DropdownSelectType, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, ScreenshotOptions, VisualMatchOptions, VisualMaskTarget, EmailFilterType, EmailMarkAction, WebElement } from '@civitas-cerebrum/element-interactions';
 ```
 
 ### Navigation
@@ -497,6 +497,47 @@ const buf = await steps.screenshot();                                       // p
 const buf2 = await steps.screenshot({ fullPage: true, path: 'out.png' });   // full page with save
 const buf3 = await steps.screenshot('elementName', 'PageName');             // element screenshot
 ```
+
+### Visual regression — `verifyVisualMatch`
+
+Asserts the current page (or a named element) matches its stored baseline screenshot. Dynamic regions can be masked by name so the pixel diff stays stable across runs.
+
+```ts
+// Page-level visual match. Dynamic regions are masked by element name.
+await steps.verifyVisualMatch('dashboard.png', {
+  mask: [
+    { elementName: 'currentTime',   pageName: 'DashboardPage' },
+    { elementName: 'transactionId', pageName: 'DashboardPage' },
+  ],
+});
+
+// Element-level visual match. The scope is the named element; masks may
+// reference any element on the page (or anywhere in the repository).
+await steps.verifyVisualMatch('header.png', {
+  elementName: 'header',
+  pageName:    'DashboardPage',
+  mask: [{ elementName: 'liveCounter', pageName: 'DashboardPage' }],
+});
+
+// Raw selector escape hatch when the masked region doesn't warrant a
+// repository entry.
+await steps.verifyVisualMatch('dashboard.png', {
+  mask: [{ selector: '[data-testid="current-time"]' }],
+});
+
+// Tuning the diff envelope when fonts antialias slightly differently
+// across runs.
+await steps.verifyVisualMatch('login.png', {
+  maxDiffPixelRatio: 0.01,
+  mask: [{ elementName: 'sessionExpiry', pageName: 'LoginPage' }],
+});
+```
+
+**Why mask?** Visual regression is great until the UI has dynamic data — a clock that ticks every second or a generated transaction id is enough to break a snapshot on the first run. Mask those regions and the surrounding UI stays pixel-perfect for comparison. Playwright disables CSS animations during the snapshot by default, so you only need `mask` for content-level dynamism (live counters, "updated N minutes ago" badges, randomly-generated ids, user avatars, charts that re-render).
+
+**Baselines:** the first run writes the baseline; subsequent runs diff. Use `npx playwright test --update-snapshots` to refresh baselines intentionally. Playwright fingerprints baselines per OS / browser channel, so generate them in the same environment your CI runs.
+
+See [`VisualMatchOptions`](../../../src/enum/Options.ts) for the full options surface (`maskColor`, `fullPage`, `maxDiffPixelRatio`, `maxDiffPixels`, `timeout`).
 
 ## Fluent API — `steps.on()`
 

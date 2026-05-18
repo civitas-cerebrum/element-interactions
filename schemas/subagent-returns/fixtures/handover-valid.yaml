@@ -1,0 +1,6 @@
+role: composer-j-example
+cycle: 1
+status: new-tests-landed
+next-action: deregister and dispatch reviewer-inloop
+dispatch-mode: per-journey
+parallel-wave-size: 7

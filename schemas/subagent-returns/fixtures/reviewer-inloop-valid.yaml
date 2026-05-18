@@ -1,0 +1,16 @@
+handover:
+  role: reviewer-inloop-acme
+  cycle: 1
+  status: improvements-needed
+  next-action: redispatch composer with findings
+journey: j-acme
+pass: 1
+cycle: 1
+missing-scenarios:
+  - id: j-acme-1-1-R-01
+    priority: must-fix
+    title: empty-state path not covered
+    scope: list view with zero results
+    expected: spec asserts placeholder copy + CTA
+    observed: no test exercises empty state
+summary: One missing-scenarios finding raised.

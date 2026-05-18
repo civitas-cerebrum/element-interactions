@@ -52,7 +52,9 @@ One journey per commit, one template per pass kind. Agents MUST NOT reinvent the
 | Compositional passes (1–3) | `test(<j-slug>): <variant>` | One journey per commit, always. `<variant>` names the variant added (e.g. `happy-path`, `error-states`, `mobile`, `data-lifecycle`). If a single composer invocation adds multiple variants, produce one commit per variant. |
 | Adversarial pass 4 | `docs(ledger): <j-slug> — N probes, M boundaries, K suspected bugs` | One commit per journey. Commit diff is the ledger file only. `N`, `M`, `K` come from the subagent return's structured summary. |
 | Adversarial pass 5 — regression | `test(<j-slug>-regression): lock <boundary-description>` | One commit per verified-boundary regression test authored. `<boundary-description>` is a short phrase naming the boundary being locked (e.g. `empty-cart-checkout-rejected`, `nav-cart-badge-clears-after-checkout`). |
-| Cleanup (post-pass-5 dedup) | `docs(ledger): dedupe cross-cutting findings` | Single commit from the one cleanup subagent. |
+| Per-pass dedup — compositional (passes 1–3) | `docs(ledger): pass <N> test dedup` | One commit per compositional pass, after Stage B greenlights and before the next pass. Commit diff is the consolidated test files (or a notes-only file if no consolidation was needed). |
+| Per-pass dedup — adversarial (passes 4–5) | `docs(ledger): pass <N> findings dedup` | One commit per adversarial pass, after every journey's findings are appended and before the next pass. Commit diff is `tests/e2e/docs/adversarial-findings.md` only. |
+| Cleanup (post-pass-5 cross-pass dedup) | `docs(ledger): dedupe cross-cutting findings` | Single commit from the one cross-pass cleanup subagent that runs once after Pass 5's per-pass findings dedup. Cross-pass synthesis only — within-pass dedup is owned by the per-pass step. |
 | Pass-4 prelude (app-wide scan) | `docs(app-wide): pattern catalogue established (pre-pass-4)` | Single commit at the start of Pass 4, before any per-journey probe is dispatched. Commit diff is `tests/e2e/docs/app-wide-patterns.md` only. |
 
 **Stage B returns do NOT produce their own commits.** Reviewer judgements are captured in the state file's per-journey `review_status` and `final_must_fix` fields — never as commits. The git log records what landed (Stage A's tests, ledger entries, regression locks) but not the review trail; the state file records the review trail. Mixing reviews into commits creates a diff-noisy log that obscures the actual change history.
@@ -73,7 +75,8 @@ A pass is complete only when **every** criterion for that pass is met. "Ran some
 - **Pass 3** complete = cross-journey and data-lifecycle variants have been dispatched for every journey whose `Test expectations:` calls for them, AND any journey that returned residual coverage gaps in passes 1 or 2 has been re-attempted, AND the pass commit has landed (if tests were added in this pass).
 - **Pass 4** complete = (a) the app-wide-scan prelude has emitted `tests/e2e/docs/app-wide-patterns.md` with the canonical sentinel (per `references/app-wide-scan.md`), AND (b) the adversarial-probe subagent has run for every journey in `journeyRoster - adversarialSkippedJourneys[].journey`, with terminal `review_status`. Journeys in `adversarialSkippedJourneys[]` are validly excluded per [`coverage-expansion/SKILL.md`](../SKILL.md) §"P3 small-surface journeys may opt OUT of adversarial passes". For every dispatched journey, the subagent's findings are appended to `tests/e2e/docs/adversarial-findings.md`. If no probes landed for a given dispatched journey (e.g., the subagent found nothing to probe or was gated), the orchestrator records `"no boundaries probed — <reason>"` for that journey in the ledger — it does NOT silently skip the journey. An empty ledger section for a dispatched journey is a bug, not a pass-4 completion state. The app-wide-scan prelude itself does NOT count toward the per-journey dispatch total — it is exempt per `app-wide-scan.md` §"Hard constraints".
 - **Pass 5** complete = every verified pass-4 finding has either a committed regression test in `j-<slug>-regression.spec.ts` OR an explicit decline-with-reason line in the ledger ("no regression written — finding classified as suspected bug / ambiguous / duplicate of cross-cutting #N"). Regression-test files are committed per journey.
-- **Cleanup** complete = one cleanup subagent has run once, cross-cutting findings are consolidated into the top-level section with backrefs in each journey's section, and the commit `docs: adversarial-findings — dedupe cross-cutting findings` has landed.
+- **Per-pass dedup** complete (every pass 1–5) = one cleanup subagent has run for the pass, the within-pass consolidation commit (`docs(ledger): pass <N> test dedup` for compositional passes, `docs(ledger): pass <N> findings dedup` for adversarial passes) has landed (with empty diff + a "no consolidation" log entry if nothing was merged), AND the whole-suite re-run gate has passed since the dedup commit. The next pass does NOT dispatch until this criterion holds.
+- **Post-pass-5 cross-pass cleanup** complete = one cross-pass cleanup subagent has run once, cross-cutting findings are consolidated into the top-level section with backrefs in each journey's section, and the commit `docs(ledger): dedupe cross-cutting findings` has landed. This is in addition to Pass 5's per-pass findings dedup — the cross-pass cleanup synthesises across all five passes' ledger contributions.
 
 Only when **all** of the above are true may the orchestrator report depth-mode coverage-expansion complete to its caller. Anything less is a partial run and must be reported as such (see the resume-state contract).
 
@@ -94,7 +97,7 @@ After a pass's per-journey subagents return clean and per-pass completion criter
 
 **Why it runs here:** per-journey subagent stabilization confirms each journey's tests pass in isolation, but cumulative state across the suite (DB pollution, port collisions, fixture drift, shared-resource depletion) only surfaces when the whole suite runs together. Running this gate at every pass exit catches integration-time regressions at the earliest pass that introduces them, rather than at end-of-pipeline.
 
-**Harness backstop (issue #131).** The same gate is enforced at the commit boundary by a windowed `Bash`-event ratchet that blocks phase-progression commits when the recent suite-run history is red, unfilled, or stale. Window-size override available — see the hook header for specifics, and [harness-hooks.md](../../element-interactions/references/harness-hooks.md) for the index entry.
+**Harness backstop.** The same gate is enforced at the commit boundary by a windowed `Bash`-event ratchet that blocks phase-progression commits when the recent suite-run history is red, unfilled, or stale. Window-size override available — see the hook header for specifics, and [harness-hooks.md](../../element-interactions/references/harness-hooks.md) for the index entry.
 
 The windowed shape catches a class of failure single-shot gates miss: serial-mode flakes, click-PUT race conditions, and auth-state eviction that pass an isolated single run but fail across 3-5 reviewer-driven re-runs. A flake that passes 70% of the time can't displace a failed entry from the window — by design — so the gate can't be cleared by one lucky re-run after a real regression. Pair this with the orchestrator-side check above for end-to-end coverage: orchestrator-side fires at every pass exit; the harness ratchet fires at every commit on top of the same window.
 
@@ -122,13 +125,13 @@ Across independence groups: groups run in priority order, each group exhausting 
 #### Parallel cap — lifted and jointly applied
 
 Previous: `min(4, credentials-per-role)` with batching for P3.
-New: **`host max`** — the orchestrator uses whatever parallel width the dispatch primitive allows. An explicit user override is accepted (`args: "parallel-cap: 8"`), otherwise no artificial ceiling beyond the shared-resource audit's credential-contention findings (PR #106).
+New: **`host max`** — the orchestrator uses whatever parallel width the dispatch primitive allows. An explicit user override is accepted (`args: "parallel-cap: 8"`), otherwise no artificial ceiling beyond the shared-resource audit's credential-contention findings.
 
 **The cap counts Stage A and Stage B dispatches jointly.** There is one pool of in-flight subagent slots; A and B compete for the same slots within a group. A journey's own A and B never overlap (sequential within a journey), but across journeys any A/B interleaving is possible. When the cap is saturated, new dispatches — whether A, B, or A-retry — queue until a slot frees. Queue order is FIFO; the orchestrator does not prioritise A over B or vice versa.
 
 #### Shared-resource audit interaction
 
-The Phase-0 shared-resource audit (PR #106) still caps parallelism where the app genuinely can't tolerate more (single credential per role, rate limits, CSRF serialization). Those caps override the host-max default. The audit's constraint tags apply to Stage A AND Stage B equally — reviewers compete for the same credentials.
+The Phase-0 shared-resource audit still caps parallelism where the app genuinely can't tolerate more (single credential per role, rate limits, CSRF serialization). Those caps override the host-max default. The audit's constraint tags apply to Stage A AND Stage B equally — reviewers compete for the same credentials.
 
 ### Model selection
 
@@ -227,13 +230,50 @@ The re-pass mode's contribution is **disciplined justification**, not speed. Eve
 
 **Orchestrator-side rejection check.** When a pass-2 or pass-3 return arrives, the orchestrator greps the return for (a) the literal strings "trigger 1", "trigger 2", "trigger 3", "trigger 4", (b) a mapping-table header row, and (c) per-expectation entries. If any is missing the orchestrator re-dispatches the journey with a brief explicitly quoting the rejected parts. The orchestrator does NOT accept partial returns as a concession to save re-dispatch cost — the discipline holds on both sides.
 
+### Relevance grouping for compositional passes
+
+**Trigger.** A priority tier in scope for a compositional pass (**2 or 3** — Pass 1 is strict per-journey under `mode: standard`, no grouping; see `coverage-expansion/SKILL.md` §"Stage A per-journey dispatch is non-negotiable" for the first-pass strict rule) has **more than 5 journeys**. When the trigger fires, the orchestrator MAY group those journeys for Stage A dispatch instead of dispatching one subagent per journey. Grouping is allowed regardless of priority (P0/P1/P2/P3 all eligible once the >5 threshold is crossed for that tier). Adversarial Passes 4 and 5 have their own grouping path (`coverage-expansion/SKILL.md` §"Adversarial grouping for Passes 4 and 5") — default `[group]` cap-7, opt back into per-journey with `args: "strict-adversarial: true"`.
+
+**Relationship to P3-batch.** Two distinct batching paths coexist:
+- **P3-batch** (cap 7): narrow, P3-only, shared Playwright project, no gap flags. See §"Batched dispatch for P3 peripheral journeys" below — its criteria are unchanged.
+- **Relevance group** (cap 7): broader, any priority once the >5 threshold is crossed, compositional passes only.
+
+A pass MAY use both paths in the same wave (one or more `[P3-batch]` dispatches alongside one or more `[group]` dispatches), but a single dispatch belongs to exactly one path. Priorities below P3 fall under the relevance-group path; the P3-batch path remains the right shape for shared-project P3 sweeps.
+
+**Group composition rules.**
+- **Same priority.** A relevance group's journeys must all share a priority tier — never mix P1 and P2 in one group. Priority is load-bearing for the orchestrator's pass-level decisions; mixing tiers in one brief erases that signal.
+- **Same section / shared `Pages touched`.** Group by relevance: prefer journeys that share a section identifier (e.g., all auth-section journeys, all cart-section journeys). When section alone leaves a tier with too few groupable journeys, fall back to overlapping `Pages touched` from the journey-map block — journeys that touch the same routes share page-repository entries and app-context knowledge, which is the cost saving the path is built around.
+- **No pending gap flags.** A journey carrying any of the three re-pass triggers (coverage gap, deferred stabilization, refined map block) is dispatched per-journey, not in a group. Same rule as P3-batch — flagged journeys need the brief's full attention.
+- **Cap 7.** Maximum 7 journeys per group. A tier of 28 journeys at the same priority becomes ⌈28/7⌉ = 4 groups. If a relevance cluster has 9 journeys, split it into 7+2 (the 2-journey group is fine — singleton and small groups are valid).
+
+**Parallelism preserved.** Each group dispatches as ONE Stage A subagent under the `[group]` marker; multiple groups dispatch in parallel up to the host-max cap. With 28 journeys grouped 7-per (4 groups) the wave size is 4 — comparable to N parallel single-journey dispatches but with roughly one seventh of the brief overhead per dispatch. Across-tier ordering (P0 first, then P1, then P2, then P3) is unchanged.
+
+**Stage B remains per-journey within a group.** Each journey in a `[group]` Stage A dispatch receives its own dedicated cycle-1 Stage B reviewer — same contract as the P3-batch path. The compositional-cycle-1 batch-reviewer exception (one cross-pass reviewer) is independent of `[group]` and does NOT compose with it; a `[group]` Stage A always produces per-journey cycle-1 Stage B reviewers.
+
+**Cycle-1 split-out.** A group is accepted only when every journey's cycle-1 Stage B returns `greenlight`. If any journey returns `improvements-needed`, that journey breaks out and runs its own per-journey Stage A from cycle 2 onward (with the cycle-1 group return retained as history input). The remaining greenlit journeys stay accepted at cycle 1 and proceed.
+
+**Quality safeguard.** The cap-7 group size and per-journey Stage B are the safeguards against the documented attention-rationing failure mode (every Stage B returns `improvements-needed` because the batched composer skipped Test-expectations bullets). If a group's cycle-1 reviews trend toward `improvements-needed` (≥3 of 7 in one group, or the same pattern across multiple groups in a pass), the orchestrator stops grouping for the remainder of that pass and falls back to per-journey dispatch.
+
+**Role-prefix.** The dispatch description is `[group] composer-j-<a>,composer-j-<b>,...:`. Cap-7 rule, enforced by methodology (the comma count in the description tells you whether you're at the cap). The harness dispatch-guard hook that previously enforced the cap mechanically was retired in the 0.3.6 cleanup; the rule still applies. Items must be role-explicit `composer-` slugs (compositional passes). The same `[group]` marker is also accepted for `probe-j-` items by `bug-discovery` Phase 6 — see `bug-discovery/SKILL.md`. Returns are per-journey concatenated under one Agent return.
+
+**Rationalizations to reject (relevance-group path):**
+
+| Excuse | Reality |
+|--------|---------|
+| "Only 4 journeys at this priority — let's group anyway, it's neater" | Trigger is >5 journeys at the tier. With ≤5, per-journey dispatch is the rule; the saving doesn't pay for the attention-rationing risk. |
+| "Group of 8, only one extra over the cap, I'll bend the rule" | Cap 7 is not negotiable. Split into 7+1, or 4+4 if the cluster shape supports it. |
+| "Two journeys are P1 and three are P2, but they share pages — group them" | Same priority is required. Mixing erases the priority signal the orchestrator relies on for pass-level decisions. |
+| "Journey X has a coverage-gap flag, but the gap is small — keep it in the group" | Any of the three re-pass triggers kicks the journey out into per-journey dispatch. Same rule as P3-batch. The flag's verdict is the subagent's, after reading prior-pass returns — which a grouped brief cannot do. |
+| "Group cycle-1 had 4 of 7 return improvements-needed — keep grouping next pass anyway, the saving is too good" | The pattern is the rationing failure mode. Stop grouping for the rest of this pass and the next; revisit only if the pass-level review spread improves. |
+| "Adversarial Pass 4 has 8 journeys — group them too" | Permitted under `mode: standard` default. See `coverage-expansion/SKILL.md` §"Adversarial grouping for Passes 4 and 5" — `[group]` cap-7 is the default; opt back into per-journey with `args: "strict-adversarial: true"`. (Prior versions of this row forbade adversarial grouping outright; that rule was relaxed once the app-wide-pattern catalogue made per-journey isolation less load-bearing on the adversarial layer.) |
+
 ### Batched dispatch for P3 peripheral journeys
 
-**Reminder: P3 only. P0/P1/P2 never batch.** Adjacent low-impact journeys — typically P3 smoke or admin-portal siblings sharing one Playwright project — MAY have Stage A batched into a single brief, cap 7 journeys per brief. Every other journey (P0, P1, P2) dispatches one subagent per journey, full stop. If you are tempted to batch a P0/P1/P2 journey because it "shares pages with P3 siblings" or "fits naturally with this group", STOP — that temptation is the failure mode this section's narrowness exists to prevent. Re-read `coverage-expansion/SKILL.md` §"Stage A per-journey dispatch is non-negotiable" before continuing.
+**Path scope: P3 only.** This `[P3-batch]` path covers the narrow case of adjacent low-impact P3 journeys — typically smoke or admin-portal siblings sharing one Playwright project — batched into a single brief, cap 7. P0/P1/P2 are NEVER eligible for the P3-batch path; sharing pages with P3 siblings is not authorisation for grouping non-P3 journeys at this cap. Non-P3 grouping has its own path with different criteria — see §"Relevance grouping for compositional passes" above (`[group]` marker, cap 7, triggered by tier size > 5). Do NOT mix the two paths in one dispatch.
 
 Dual-stage narrows this:
 
-- **Stage A may still be batched** for eligible P3 journeys (shared project, no pending gap flags, same priority tier, cap 7 per brief — criteria from PR #108).
+- **Stage A may still be batched** for eligible P3 journeys (shared project, no pending gap flags, same priority tier, cap 7 per brief).
 - **Stage B per-journey by default; one documented batch exception for compositional cycle-1.** In the P3-batch-A path, every journey in a batched Stage A still gets its own dedicated cycle-1 Stage B reviewer (the per-journey contract). The compositional-cycle-1 batch-reviewer exception (documented in `reviewer-subagent-contract.md` §"Batch reviewer mode (cycle-1 compositional only)") is a separate, narrower path — one reviewer per pass for the first cycle of compositional Passes 1, 2, 3 only — and **does NOT compose with P3-batch-A**: a P3 journey's batched Stage A still produces a per-journey cycle-1 Stage B (not folded into the cross-pass batch reviewer). Cycle-2+ is per-journey regardless. Adversarial passes (4 and 5) are always per-journey.
 - Batching is accepted ONLY when every journey in the batch's cycle-1 Stage B returns `greenlight`.
 - If any journey's cycle-1 Stage B returns `improvements-needed`: split the batch. From cycle 2 onward, the affected journey breaks out and runs its own per-journey Stage A plus its own Stage B. The batched cycle-1 Stage A return is retained as history input to the broken-out cycle-2 Stage A brief. The remaining greenlit journeys in the batch stay accepted at cycle 1 and proceed.
@@ -253,9 +293,50 @@ Dual-stage narrows this:
 | "I'll batch Stage B for cycle-2+ to save a dispatch" | Cycle-2+ Stage B is per-journey by hard rule (`reviewer-subagent-contract.md` §"Mode selection"). Cycle-2 already knows which specific journeys need attention; batching it would defeat the purpose. The compositional-cycle-1 batch-reviewer exception is empirically defensible — ~85% of cycle-1 reviews are greenlight, so the cross-journey synthesis is genuinely the better shape — but cycle-2+ has a different signal-to-noise profile. |
 | "Cycle-1 Stage B greenlit 6 of 7 journeys, I'll greenlight the 7th too since it's similar" | The 7th journey's reviewer returned `improvements-needed` for a reason. Split out cycle-2 for that journey; the reason does not carry to the greenlit 6. |
 | "Any flag on any journey kills the whole batch — too expensive, I'll keep batching" | Only the flagged journey breaks out. The greenlit journeys stay batched-and-accepted; no rework for them. |
-| "I'll batch Stage A across P1+P3 journeys if they share a project" | P0/P1 never batch, period. Priority is load-bearing; shared-project is necessary but not sufficient. |
+| "I'll batch Stage A across P1+P3 journeys if they share a project" | The P3-batch path is P3-only; mixing in P1 here is the rationalization. P1 grouping has its own path (`[group]`, see §"Relevance grouping for compositional passes") with its own criteria — it does not compose with P3-batch. |
 
 ---
+
+## Per-pass dedup (one cleanup subagent at the end of every pass)
+
+After every pass's Stage B greenlights all journeys (or every dispatched journey reaches a terminal `review_status`) AND the whole-suite re-run gate passes, the orchestrator dispatches **one** cleanup subagent before advancing to the next pass. This is in addition to the post-pass-5 cross-pass cleanup (which still runs as the final dedup).
+
+### Compositional passes (1–3): test dedup
+
+Inputs to the cleanup subagent:
+- The pass's commit range (`git log <pass-start-sha>..HEAD --grep '^test('`).
+- The pass's authored journey blocks (verbatim from `journey-map.md`).
+- The current `coverage-expansion-state.json`.
+
+Task:
+1. Identify semantically equivalent test cases across the journeys committed in this pass — same negative-case (e.g., "submit empty form rejected"), same boundary check, same error-state assertion.
+2. Keep one canonical version per equivalence class. Cross-reference the others via a one-line comment in the consumer journey's spec (`// dedup: see j-<canonical>.spec.ts § <test name>`).
+3. Do NOT touch tests authored in earlier passes — within-pass scope only.
+4. Do NOT alter test semantics or coverage. If two tests look similar but exercise different invariants, keep both.
+5. Commit: `docs(ledger): pass <N> test dedup` per the **Commit-message conventions** table.
+
+### Adversarial passes (4–5): findings dedup
+
+Inputs to the cleanup subagent:
+- The pass's appendings to `tests/e2e/docs/adversarial-findings.md` (the per-journey sections committed in this pass).
+- The current ledger.
+
+Task:
+1. Within-pass: identify duplicate findings across journeys in this pass — same boundary, same root cause, different journey contexts.
+2. Consolidate duplicates into a single canonical entry under the relevant section, cross-referenced from each journey's section.
+3. Do NOT drop or edit substantive finding content. Do NOT re-classify findings.
+4. Commit: `docs(ledger): pass <N> findings dedup` per the **Commit-message conventions** table.
+
+### Per-pass dedup constraints
+
+- **Single dispatch.** One cleanup subagent per pass; never per-journey.
+- **Within-pass scope.** The subagent reads only the current pass's commits / ledger appendings. Cross-pass synthesis is the post-pass-5 cleanup's job.
+- **Runs after the whole-suite gate.** A pass that fails the whole-suite re-run gate does NOT get its dedup step until the failures are resolved and the gate passes.
+- **Non-blocking for the next pass.** A per-pass dedup subagent that returns `no consolidation needed` still produces its commit (with an empty diff or a short notes file) so the git log records the gate having run. The orchestrator advances to the next pass on greenlight.
+
+### Per-pass dedup completion criterion
+
+For passes 1–5, the per-pass-dedup commit MUST land before the next pass dispatches. The orchestrator records `"pass <N> dedup — no consolidation"` in the state-file progress log when the subagent finds nothing to merge — silent skipping is forbidden.
 
 ## Ledger dedup (single cleanup subagent, runs once after pass 5)
 

@@ -27,6 +27,7 @@ State file shape (minimum fields):
 ```json
 {
   "status": "in-progress",
+  "runMode": "standard",
   "currentPass": 3,
   "journeyRoster": ["j-...", ...],
   "completedJourneys": ["j-...", ...],
@@ -54,6 +55,8 @@ State file shape (minimum fields):
 }
 ```
 
+**`runMode` field** — enum `{"standard", "depth"}`. Default `"standard"` when absent (back-compat: state files written before depth mode landed as a first-class option do not carry the field and are interpreted as standard). The orchestrator MUST write the field on the first state-file write of the run, sourced from the `mode:` arg parsed at entry: `mode: standard` → `runMode: "standard"`, `mode: depth` → `runMode: "depth"`, `mode: breadth` → field omitted (breadth mode is a separate pipeline shape, not a strictness flag). The `standard-mode-first-pass-guard.sh` hook reads this field to decide grouping-denial scope: under `"standard"` it denies `[group]` / `[P3-batch]` on Pass 1 only; under `"depth"` it denies them on every pass.
+
 **Per-journey dispatch entry fields (dual-stage).** Each entry in `dispatches[]` carries:
 
 - `journey` — the journey ID (`j-<slug>`).
@@ -67,7 +70,7 @@ State file shape (minimum fields):
 
 A state file missing `stage_a_cycles`, `stage_b_cycles`, or `review_status` for any **dispatched** journey (i.e. excluding gated-skip entries — see §"Gated-skip entries" below) that has run this pass is incomplete — resume logic treats it as corrupt per `coverage-expansion/SKILL.md` §"Authoritative state file" (kernel-resident invariants).
 
-**Gated-skip entries (Passes 2 & 3 only, issue #164.1).** When the orchestrator's three triggers all evaluate to false, a journey is recorded as a gated-skip instead of a dispatch:
+**Gated-skip entries (Passes 2 & 3 only).** When the orchestrator's three triggers all evaluate to false, a journey is recorded as a gated-skip instead of a dispatch:
 
 ```json
 {
@@ -89,7 +92,7 @@ Required fields:
 - `gated_skip: true` — distinguishes the entry from a dispatch.
 - `result: "covered-exhaustively"` — the Pass-2/3 contract is "the journey is covered to exhaustion" by Pass 1's tests; the gated-skip records that the orchestrator confirmed no new work was needed.
 - `review_status: "greenlight"` — gated skips are by definition greenlit; no Stage B review applies.
-- `triggers_checked` — object with three boolean fields naming each trigger explicitly. **All three MUST be `false`** for the entry to be valid; any `true` value means a trigger fired and the orchestrator should have dispatched. Missing fields are silent scope narrowing and are denied by `coverage-state-schema-guard.sh`.
+- `triggers_checked` — object with three boolean fields naming each trigger explicitly. **All three MUST be `false`** for the entry to be valid; any `true` value means a trigger fired and the orchestrator should have dispatched. Missing fields are silent scope narrowing. (The harness schema guard that previously denied such entries was retired in the 0.3.6 cleanup; the rule still applies.)
 
 Gated-skip entries count as "work done" for the §"Authoritative state file" pre-emptive-stop check — a Pass 2 with 30 gated skips and zero dispatches is legitimately complete. The hook recognises both shapes (dispatch with `stage_a_cycles`/`review_status`, or gated-skip with `triggers_checked`) as evidence of work.
 
@@ -124,7 +127,7 @@ Entry shape:
 
 **Namespace note.** This `authorizer` field is distinct from the per-`dispatches[]`-entry `authorizer` field documented above. The dispatch-entry `authorizer` is non-null only when `result == "skipped"` (per-journey skip authorised by user). The `deferredJourneys[]` `authorizer` is the verbatim quote authorising a self-imposed deferral. Two distinct contracts share the field name; the hook distinguishes by entry shape (presence of `stage_a_cycles` / `review_status` marks a dispatch entry; their absence + `journey` + `reason` marks a deferral entry).
 
-Harness-enforced by `hooks/coverage-state-deferral-auth-guard.sh` (PreToolUse:Write|Edit). Self-imposed reasons (`budget-cap`, `session-length`, `mode-deviation`, `inferred-pref`, `auto-mode-stop`) are DENY without an `authorizer:` field. Empty / whitespace-only / `null` authorizer also denies.
+Methodology rule. Self-imposed reasons (`budget-cap`, `session-length`, `mode-deviation`, `inferred-pref`, `auto-mode-stop`) are invalid without an `authorizer:` field; empty / whitespace-only / `null` authorizer is equally invalid. (The harness deferral-auth guard that previously denied such writes was retired in the 0.3.6 cleanup; the rule still applies.)
 
 **Journey-roster mutability.** The roster for a given pass is frozen at the start of that pass — it is a snapshot of the journey IDs the orchestrator intends to dispatch *this pass*. If a compositional pass discovers and promotes a new journey or sub-journey mid-pass, the new entry is appended to the **next** pass's roster, not retroactively to the current pass's. This prevents the "did I cover everything?" ambiguity where `journeyRoster` and `completedJourneys` diverge because the roster keeps growing. Reconciliation commits (Pass 2/3) write the new roster to the state file at the same commit that appends the new map blocks, so the post-compact resume reads a consistent roster-to-map alignment.
 

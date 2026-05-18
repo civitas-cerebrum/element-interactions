@@ -174,8 +174,8 @@ test.describe('timeout() — negative override (short timeout fails fast)', () =
 });
 
 /**
- * Issue #76 — `ElementAction.timeout()` now threads through Interactions-routed
- * actions (click, clickIfPresent, rightClick, uploadFile, dragAndDrop,
+ * `ElementAction.timeout()` threads through Interactions-routed actions
+ * (click, clickIfPresent, rightClick, uploadFile, dragAndDrop,
  * selectDropdown, setSliderValue, selectMultiple).
  *
  * Each test below targets an element that exists in the page-repository but is

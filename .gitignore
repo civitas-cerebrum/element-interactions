@@ -43,6 +43,7 @@ api-coverage-report.txt
 yalc.lock
 test-coverage-report.md
 *.txt
+!hooks/data/canonical-sections.txt
 /docs
 /skills/*-workspace
 /solution-designs

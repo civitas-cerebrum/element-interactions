@@ -25,7 +25,7 @@ If the scan output file already exists from a prior run on the same project, the
 
 ## Dispatch shape
 
-Description prefix: `probe-app-wide:`. Single subagent, dedicated `playwright-cli` session, isolated context. Recognised by `hooks/coverage-expansion-dispatch-guard.sh` as a leaf-shape probe (the `probe-` family).
+Description prefix: `probe-app-wide:`. Single subagent, dedicated `playwright-cli` session, isolated context. The `probe-` family role-prefix is the conventional leaf-shape probe marker. (The harness dispatch-guard hook that previously recognised the prefix was retired in 0.3.6; the convention still applies.)
 
 ```
 description: "probe-app-wide: pass 4 — establish pattern catalogue"
@@ -149,4 +149,4 @@ The `coverage:` field IS the citation. The per-journey probe does NOT re-documen
 - `coverage-expansion/SKILL.md` §"Adversarial passes (4 and 5)" — invokes this scan as the Pass-4 prelude.
 - `adversarial-subagent-contract.md` §"Inputs" — per-journey probes get the app-wide-patterns file as Input 9 alongside the journey-specific inputs.
 - `references/adversarial-findings-schema.md` — the `coverage:` field that holds the citation.
-- Issue #164.3 (this scan's filing) for the empirical motivation and savings analysis.
+- The empirical motivation and savings analysis for this scan are documented in the project history.

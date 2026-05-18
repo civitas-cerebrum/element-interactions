@@ -1,13 +1,12 @@
-# Subagent Return + Ledger Schema — Canonical Reference
+# Subagent Return + Ledger Schema — Reference
 
-**Status:** single source of truth for every subagent dispatched by `coverage-expansion`, `test-composer`, and `bug-discovery`.
-**Scope:** prose contract + example templates. Not a runtime validator.
+**Subagent returns** are validated against per-role JSON Schemas under [`schemas/subagent-returns/`](../../../schemas/subagent-returns/README.md). That directory is the source of truth — see its README for the role-to-schema table and authoring conventions.
 
-All three callers cite this file. Subagent dispatch briefs include a pointer to this file rather than re-pasting the schema. Callers MUST NOT fork, extend, or redefine the shape of these returns in their own SKILL.md files; deviations are contract violations.
+**Adversarial-findings ledger** (markdown) is documented in §1 below. The ledger format is prose because the ledger file (`tests/e2e/docs/adversarial-findings.md`) is markdown, not YAML — there is no machine-readable schema for it. §1 is therefore the source of truth for ledger entries.
 
 ---
 
-## 1. Canonical finding-return schema (mandatory)
+## 1. Canonical finding-return schema (mandatory, prose, for the ledger)
 
 Every subagent dispatched by `coverage-expansion`, `test-composer`, or `bug-discovery` that reports a finding MUST format each finding exactly as:
 
@@ -55,579 +54,69 @@ No finding may escalate above `info` if it is not visible in a screenshot. That 
 
 ---
 
-## 2. Return states — `covered-exhaustively` vs `no-new-tests-by-rationalisation`
+## 2. Handover envelope + per-role return shapes
 
-A compositional or adversarial pass subagent may end a journey without producing new tests. When that happens, it MUST pick one of the two return states below. The distinction is binding.
+### 2.0 Handover envelope (mandatory on every skill-loading subagent return)
 
-**Relationship to the broader return-state enum.** The full no-skip contract (see `coverage-expansion` §"No-skip contract") defines four possible subagent return types: `new-tests-landed`, `covered-exhaustively` (replaces the legacy `no-new-tests`), `blocked (reason)`, and `skipped (reason + who-authorized)`. The two states documented in this section (§2.1 and §2.2) apply specifically to the "journey was inspected and ended without new tests" fork. `blocked` and `skipped` are **separate return types** governed by the no-skip contract, not covered here — a subagent that cannot inspect (tenant data missing, credentials unavailable, malformed journey block) returns `blocked` with a reason, not `covered-exhaustively`.
+Full schema: `schemas/subagent-returns/handover.schema.json`.
 
-### 2.0 Handover envelope (mandatory)
+Every subagent that loads a skill via the `Skill` tool **MUST** include a `handover` object as the **first key** of its return. The envelope pairs the return with its in-flight registry entry and is the primary cleanup path for the harness leash.
 
-Every composer / reviewer / probe / process-validator / phase-validator subagent return MUST be prefaced with a `handover:` envelope. The envelope is the contract that pairs a return with its in-flight registration entry (written by the harness dispatch-guard) and tells the harness whether to deregister the slot or hold it for a redispatch. (Hook index: [harness-hooks.md](harness-hooks.md).)
+The envelope has exactly **four** required fields — no others are allowed inside it:
 
-The envelope sits at the top of the return body, separate from the role-specific schema below it (§2.1 / §2.4 / §2.5 etc.). A return that omits the envelope still gets schema-checked for the role-specific shape, but the dispatch's in-flight slot remains held by the registry until TTL — explicit deregistration is the primary cleanup path; TTL is the failsafe for crashed or abandoned dispatches.
-
-#### Schema
-
-```
-handover:
-  role: <role-prefixed slug — e.g., composer-j-<slug>>
-  cycle: <integer ≥ 1>
-  status: <role-specific enum — see table below>
-  next-action: <one-line directive for the orchestrator>
-```
-
-Field rules:
-
-| Field | Rule |
-|---|---|
-| `role` | Verbatim role-prefixed slug from the dispatching brief's description. Must match a registered slug. |
-| `cycle` | Integer cycle number. MUST equal the cycle on the matching registry entry; mismatch → harness refuses to deregister, asks for redispatch under the correct cycle. |
-| `status` | Role-specific enum (see table). Terminal statuses deregister immediately; non-terminal statuses hold the slot for redispatch under the same slug. |
-| `next-action` | One sentence telling the orchestrator what to do next ("dispatch reviewer-j-<slug> cycle 1", "advance to Phase 4", "redispatch composer-j-<slug> cycle 2 with must-fix list", etc.). |
-
-#### Per-role status enum
-
-| Role | Terminal (registry deregisters on handover) | Non-terminal (registry holds slot, orchestrator MUST redispatch under same slug) |
+| Field | Type | Rule |
 |---|---|---|
-| `composer-` | `new-tests-landed`, `covered-exhaustively`, `blocked`, `skipped` | — |
-| `reviewer-` | `greenlight` | `improvements-needed` |
-| `reviewer-batch-pass-<N>-` | `batch-complete` | — |
-| `probe-` | `clean`, `findings-emitted`, `blocked` | — |
-| `process-validator-` | `greenlight`, `block` | — |
-| `phase-validator-` | `greenlight` | `improvements-needed` |
+| `role` | string | Kebab-case slug identifying the dispatched role (e.g. `composer-j-login-flow`, `reviewer-inloop`, `probe`, `phase-validator`, `section-agent`, `phase4-prioritise-author`). |
+| `cycle` | integer ≥ 1 | Cycle number within the role's dispatch loop. |
+| `status` | string | Role-specific terminal-or-continuation status. Constrained by the per-role schema. |
+| `next-action` | string (non-empty) | One-line directive for the orchestrator — what should happen after this return. |
 
-The non-terminal `improvements-needed` statuses (reviewer + phase-validator) deliberately keep the slot leashed: the orchestrator's contract is to redispatch under the SAME slug with a stricter brief, and the redispatch refreshes the registry entry's `started_at` timestamp + `cycle` value. This prevents a non-terminal handover from clearing the slot, then a parallel orchestrator-driven write attempt slipping through the direct-compose gate while the redispatch is in flight.
+Fields that belong at the **top level** (never inside `handover`): `phase`, `summary`, `journey`, `pass`, `section`, `findings`, `exit-criteria-checked`, `spill`, and any other role payload field.
 
-The composer / probe / process-validator roles have no non-terminal statuses — every documented status is terminal because their failure modes (`blocked`, `skipped`, `block`) are themselves end-of-cycle outcomes the orchestrator handles by re-issuing under a NEW slug (different cycle, different brief), not by redispatching the current one.
+JSON is preferred over YAML for all handover returns. YAML's compact-mapping form (`key: value: rest`) silently corrupts values that contain `:`, causing schema validation to fail without a clear error.
 
-#### Cycle-mismatch contract
+### 2.5 Phase-validator return shape
 
-If the envelope claims `cycle: 1` but the registry entry says `cycle: 2`, the registry refuses to deregister and emits a fix-message asking the orchestrator to redispatch under the correct cycle. This catches the failure mode where a stale cycle-1 handover (e.g., from a slow or auto-compacted subagent) returns AFTER a cycle-2 redispatch already overwrote the registry — without the strict-match rule, the stale handover would clear the cycle-2 slot mid-flight and the orchestrator-direct-compose gate would mis-fire.
+Full schema: `schemas/subagent-returns/phase-validator.schema.json`.
 
-The match is strict — slug + cycle, both must agree. A handover with a slug not present in the registry (already deregistered by a sibling, or never registered) is silently allowed; the registry can't deregister what isn't there, and the validator falls through to role-specific schema checks.
+The phase-validator is dispatched at the end of each pipeline phase to verify exit criteria before the orchestrator advances.
 
-#### Worked example — composer terminal handover
+**Status enum:** `greenlight` | `improvements-needed`
 
+**Required top-level fields on `greenlight`:** `handover`, `phase` (integer 1–7), `exit-criteria-checked` (array, ≥1 item), `summary`.
+
+**Required top-level fields on `improvements-needed`:** `handover`, `phase`, `findings` (array, ≥1 item), `summary`.
+
+Finding blocks (under `improvements-needed`) match `^ {2}- \*\*pv-[1-7]-\d{2,}\*\* \[must-fix\]` with sub-bullets `criterion:` / `issue:` / `fix:`.
+
+Banned tokens inherited from reviewer shape: `nice-to-have`, `greenlight-with-notes`, top-level `notes:`.
+
+**Worked example — `greenlight`:**
+
+```json
+{
+  "handover": {
+    "role": "phase-validator",
+    "cycle": 1,
+    "status": "greenlight",
+    "next-action": "orchestrator to advance to phase 3"
+  },
+  "phase": 2,
+  "exit-criteria-checked": [
+    {
+      "criterion": "app-context.md exists with a sentinel line",
+      "satisfied": true,
+      "evidence": "File present at tests/e2e/docs/app-context.md; sentinel found on line 1"
+    },
+    {
+      "criterion": "journey-map.md exists with at least one journey entry",
+      "satisfied": true,
+      "evidence": "File present at tests/e2e/docs/journey-map.md; 3 journey entries identified"
+    }
+  ],
+  "summary": "Phase 2 exit criteria fully satisfied; greenlighting advance to phase 3."
+}
 ```
-handover:
-  role: composer-j-<slug>
-  cycle: 1
-  status: new-tests-landed
-  next-action: dispatch reviewer-j-<slug> cycle 1
-
-status: new-tests-landed
-tests-added: 6
-run-time: 47s
-
-(per-test breakdown below…)
-```
-
-#### Worked example — reviewer non-terminal handover
-
-```
-handover:
-  role: reviewer-j-<slug>
-  cycle: 1
-  status: improvements-needed
-  next-action: redispatch composer-j-<slug> cycle 2 with must-fix list j-<slug>-1-1-R-{01,02}
-
-status: improvements-needed
-journey: j-<slug>
-pass: 1
-cycle: 1
-
-missing-scenarios:
-  - **j-<slug>-1-1-R-01** [must-fix] — <missing-scenario title>
-    - …
-```
-
-Here the registry holds the `j-<slug>` slot across cycles 1 → 2 because reviewer returned `improvements-needed`. The composer cycle-2 redispatch under the same `composer-j-<slug>` slug refreshes the slot's `cycle` to `2`; if a second stale cycle-1 reviewer handover later arrives, the cycle-mismatch check catches it.
-
-#### Initial release: WARN-mode validation, deregistration always fires
-
-Per §4.3, the harness validator hook ships envelope-validation in WARN mode (matches the existing schema-guard mode) — missing or malformed envelopes emit a `systemMessage` but do not block. **Deregistration itself fires regardless of mode**: the registry-update mechanism is bookkeeping, not validation. A follow-up promotes envelope-validation to BLOCK after a representative run shows zero false positives.
-
-### 2.1 `status: covered-exhaustively`
-
-Only valid when the subagent **inspected** the journey. Required evidence:
-
-1. A per-expectation mapping table that names every item in the journey's `Test expectations:` list (or every explicit Pass-1 expectation, in a re-pass) and maps it to a spec file + test name.
-2. An explicit check against every trigger that would *require* new work in this pass (for re-pass mode: "trigger 1 — no delta markers since Pass 1", "trigger 2 — no sibling-bug ledger entries requiring regression here", etc.).
-3. Zero unexplained shorthand — every row in the mapping table names concrete coverage.
-
-#### Mapping table template
-
-```
-| Expectation | Covering spec | Test name |
-|---|---|---|
-| <verbatim text from journey block> | tests/e2e/<file>.spec.ts | <test(...) title> |
-| <verbatim text from journey block> | tests/e2e/<file>.spec.ts | <test(...) title> |
-```
-
-If the table has one or more rows with `coverage: none`, the subagent has NOT covered exhaustively and MUST compose tests or escalate.
-
-**Orchestrator-written `gated_skip: true` state-file entries.** `covered-exhaustively` is also valid as a `result:` value in orchestrator-written `gated_skip: true` state-file entries (per `coverage-expansion/SKILL.md` §"Trigger-gated re-pass for Passes 2 & 3"). In that context, the per-expectation mapping table is replaced by the `triggers_checked` evidence object — the orchestrator's three checks ARE the audit trail. The mapping-table requirement above applies only to subagent-return bodies; orchestrator-written gated-skip entries instead carry `triggers_checked: { map_delta, sibling_ledger_update, must_fix_carry_over }` (all three booleans, all three `false`), validated by `hooks/coverage-state-schema-guard.sh`.
-
-### 2.2 `status: no-new-tests-by-rationalisation` — **not a valid return**
-
-This state describes the failure mode where a subagent punts on the dispatch, rationalises that tests would be redundant, and returns without inspection. **This is not a valid return from any compositional or adversarial pass.** Orchestrators treat such returns as contract violations and MUST re-dispatch the subagent with a stricter brief.
-
-Legacy skills that previously used `status: no-new-tests` MUST rename to `covered-exhaustively` and attach the mapping table. The unqualified phrase "no new tests" is banned as a status value.
-
-### 2.3 Malformed-input escape hatch
-
-If the subagent cannot produce the mapping table because the input itself is unusable — the journey block is missing, `Test expectations:` is blank or unreadable, the referenced `sj-<slug>` sub-journey blocks cannot be located, etc. — the subagent MUST return `blocked (malformed-input: <reason>)`, **not** `covered-exhaustively` and **not** `no-new-tests-by-rationalisation`. The orchestrator treats `blocked (malformed-input: …)` as actionable: it fixes the input (usually by re-running `journey-mapping` for that journey) and re-dispatches. This prevents the failure mode where a subagent with no input conspires with the schema to return "covered" — the schema requires evidence that doesn't exist.
-
-### 2.4 Reviewer-return (Stage B of the dual-stage pipeline)
-
-This subsection defines the Reviewer-return (Stage B) shape. Stage B reviewer subagents — dispatched by `coverage-expansion` per journey per pass after a Stage A return — use a different top-level status vocabulary than compositional or adversarial subagents:
-
-| Status | Meaning | Blocks pass completion? |
-|---|---|---|
-| `greenlight` | Stage A's output is complete for this journey in this pass. No findings. | No. Orchestrator accepts. |
-| `improvements-needed` | Reviewer has at least one `must-fix` finding. Stage A must retry. | Only if retry cycle reaches the cap or the finding list is repeated. |
-
-The reviewer's outcome vocabulary is binary: greenlight (no findings) or improvements-needed (≥1 finding). There is no third "soft" state. A reviewer that wants to surface an observation classifies it as `must-fix` per the calibration rules in `reviewer-subagent-contract.md` step 6, which forces an `improvements-needed` return; observations that don't meet must-fix calibration are not surfaced.
-
-Return body for `improvements-needed`:
-
-````
-status: improvements-needed
-journey: j-<slug>
-pass: <N>
-cycle: <cycle-number>
-
-missing-scenarios:
-  - **<FINDING-ID>** [must-fix] — <one-line title>
-    - why: <one sentence, staff-QA rationale>
-    - category: <mobile | error-state | edge-case | adversarial | accessibility | i18n | lifecycle | concurrency>
-    - suggested-test: <one-sentence description of the test to write>
-
-craft-issues:
-  - **<FINDING-ID>** [must-fix] — <one-line title>
-    - file: <path>
-    - issue: <what's wrong>
-    - fix: <concrete remediation>
-
-verification-misses:
-  - **<FINDING-ID>** [must-fix] — <one-line title>
-    - file: <path>
-    - test-name: <test(...) title>
-    - asserted: <what the test currently asserts>
-    - live-observed: <what the reviewer saw via playwright-cli>
-    - suggested-fix: <concrete remediation>
-````
-
-Return body for `greenlight` (no findings):
-
-````
-status: greenlight
-journey: j-<slug>
-pass: <N>
-cycle: <cycle-number>
-summary: <one sentence — e.g., "All 8 test-expectations covered, craft clean, live DOM matches assertions.">
-````
-
-Every reviewer finding carries `[must-fix]`. There is no nice-to-have bracket, no notes sub-list, no third return state. If the reviewer noticed it and recorded it, Stage A retries; if the reviewer chose not to record it, it is gone. The classification gate is the recording gate — see `reviewer-subagent-contract.md` step 6 for the must-fix calibration that determines which observations get recorded.
-
-**Reviewer finding-ID subformat:** `<journey-slug>-<pass>-<cycle>-R-<nn>` where `<cycle>` is a two-digit zero-padded integer (`01`..`07`) and `R` tags the finding as reviewer-sourced (distinguishes it from Stage A's `<journey-slug>-<pass>-<nn>` format). This subformat is an explicit addition to §1's finding-ID rules; Stage B subagents MUST use it, Stage A subagents MUST NOT.
-
-**Caller contract addition:** Callers dispatching reviewer subagents (currently `coverage-expansion` only) must accept `greenlight` and `improvements-needed` as valid return statuses and MUST NOT treat `improvements-needed` as a schema violation. The retry loop for `improvements-needed` is documented in `skills/coverage-expansion/SKILL.md` §"Retry loop".
-
-### 2.4-batch — Batch reviewer return shape (compositional cycle-1 only)
-
-Returned by subagents dispatched under the `reviewer-batch-pass-<N>:` role-prefix. The handover envelope's `status` is `batch-complete` (added to the §2.0 status enum specifically for this shape). The body wraps per-journey verdicts in a `verdicts:` array. Each verdict is a §2.4-shape return scoped to one journey — same fields, just nested under the array.
-
-Shape:
-
-```yaml
-handover:
-  role: reviewer-batch-pass-<N>
-  status: batch-complete
-  pass: <N>
-  cycle: 1
-  next-action: dispatch reviewer-<JOURNEY> cycle 2 for the flagged journeys
-
-verdicts:
-  - journey: <JOURNEY>
-    status: greenlight
-    summary: <one-line; no findings>
-  - journey: <ANOTHER-JOURNEY>
-    status: improvements-needed
-    spill: tests/e2e/docs/.subagent-returns/reviewer-batch-pass-<N>-c1.md
-    findings:
-      - <ANOTHER-JOURNEY>-<N>-1-R-01
-      - <ANOTHER-JOURNEY>-<N>-1-R-02
-```
-
-Per-verdict shape rules:
-- `status: greenlight` → body inlines only `journey` + `summary`. No `spill:`, no `findings:`.
-- `status: improvements-needed` → body inlines `journey` + `spill:` (path to the shared per-pass spill file) + `findings:` (list of finding-IDs only — no inline blocks; the full sub-bullets live in the spill file's `## <JOURNEY>` section per §2.6).
-
-Hard constraints (validated by the dispatch-guard / spillover-rewrite-gate when those hooks gain batch-reviewer awareness):
-
-- `cycle: 1` only. A batch reviewer dispatched at cycle ≥ 2 is a contract violation.
-- `pass ∈ {1, 2, 3}` only. Adversarial Passes 4 and 5 always use `mode: per-journey`.
-- One batch reviewer per pass. Multiple batch reviewers within the same pass-cycle pair are forbidden.
-
-The reviewer-finding-ID subformat `<JOURNEY>-<pass>-<cycle>-R-<nn>` (per §2.4 above) applies to findings cited within the verdicts. Reviewer findings emerge at cycle 1 here, so `<cycle>` is always `1`.
-
-Spill-file naming: `tests/e2e/docs/.subagent-returns/reviewer-batch-pass-<N>-c1.md`, sentinel `<!-- subagent-returns:reviewer-batch:pass-<N>:cycle-1 -->` on line 1, sections namespaced by `## <JOURNEY>`. Registered in `skill-registry.md` §"Non-skill sentinel strings".
-
-### 2.5 Phase-validator return (Onboarding phase exit checkpoint)
-
-Phase-validator subagents — dispatched by `onboarding` at the end of every phase to verify the phase's completion contract — use the same status vocabulary as §2.4 reviewer-return, with a phase-scoped finding-ID format and a per-criterion verification table.
-
-| Status | Meaning | Onboarding response |
-|---|---|---|
-| `greenlight` | Phase's per-phase completion contract satisfied. | Record in `tests/e2e/docs/onboarding-phase-ledger.json`; advance to phase N+1. |
-| `improvements-needed` | At least one exit criterion failed. | Re-attempt the phase (revise sub-skill brief / re-run sub-skill / address findings inline), re-dispatch phase-validator-N. Cycle cap: 10 per phase. After cycle 10 → `blocked-phase-validator-stalled`, surface to user. |
-
-#### Return body — `greenlight`
-
-````
-status: greenlight
-phase: <1-7>
-sub-skill: <name | "inline">
-exit-criteria-checked:
-  - criterion: <verbatim text from per-phase completion contract>
-    satisfied: true
-    evidence: <file path | state-field | commit hash>
-  - criterion: <verbatim text>
-    satisfied: true
-    evidence: <pointer>
-  ...
-findings: []
-summary: <one sentence — names what was verified>
-````
-
-`exit-criteria-checked` enumerates EVERY criterion from the phase's row in `onboarding/SKILL.md`'s "Per-phase completion contract" table. Each row in the array is one criterion; `satisfied: true` for every row on greenlight; `evidence` is a concrete pointer (file path, JSON field reference, or git commit hash) the orchestrator can verify independently if it doubts the validator. `findings: []` is REQUIRED on greenlight (explicit empty array) so parsers don't have to distinguish "no findings field" from "no findings".
-
-#### Return body — `improvements-needed`
-
-````
-status: improvements-needed
-phase: <N>
-sub-skill: <name>
-exit-criteria-checked:
-  - criterion: <verbatim>
-    satisfied: false
-    evidence: absent — <why no evidence was found>
-  - criterion: <other>
-    satisfied: true
-    evidence: <pointer>
-  ...
-findings:
-  - **pv-<phase>-<nn>** [must-fix] — <one-line title>
-    - criterion: <verbatim text from the failed exit criterion>
-    - issue: <what's wrong; quote evidence pointers where relevant>
-    - fix: <concrete remediation — what the orchestrator does to satisfy this criterion>
-  - **pv-<phase>-<nn>** [must-fix] — <one-line title>
-    - criterion: <verbatim>
-    - issue: <what's wrong>
-    - fix: <concrete remediation>
-summary: <one sentence — N findings, phase N, blocking advance to N+1>
-````
-
-`exit-criteria-checked` shows BOTH satisfied and unsatisfied criteria — the validator must verify every criterion to demonstrate it ran the full check, not just stopped at the first failure. Each unsatisfied criterion gets a corresponding `pv-<phase>-<nn>` finding with concrete `fix:` text the orchestrator can act on.
-
-#### Phase-validator finding-ID subformat
-
-`pv-<phase>-<nn>` where `<phase>` is `1`-`7` and `<nn>` is a two-digit zero-padded integer. The `pv-` prefix tags the finding as phase-validator-sourced (distinguishes it from Stage B's `<journey-slug>-<pass>-<cycle>-R-<nn>` format and Stage A's `<journey-slug>-<pass>-<nn>`). Phase-validator findings are NOT anchored to one journey — they're anchored to one phase across the whole onboarding pipeline.
-
-#### Banned tokens
-
-Inherited from §2.4: `nice-to-have`, `greenlight-with-notes`, top-level `notes:` sub-list. Inherited from §1: legacy finding-ID prefixes (`AF-`, `P4-`, `REG-`).
-
-#### Cycle cap
-
-10 per phase. The cap is intentionally generous (vs the 7-cycle A↔B retry within a journey) because phase scope varies widely — a Phase 3 fix can be small (re-run Stage 4b after addressing one api-reference violation) while a Phase 5 fix can require a multi-pass re-run. After cycle 10, terminal state is `blocked-phase-validator-stalled`; the orchestrator commits what it has, writes the phase ledger with the unresolved findings, and surfaces to the user.
-
-#### Caller contract addition
-
-`onboarding` is the only caller dispatching phase-validator subagents (today). It MUST:
-
-1. Dispatch `phase-validator-<N>:` at the end of every phase, before advancing.
-2. Read `tests/e2e/docs/onboarding-phase-ledger.json` to determine cycle count for the active phase.
-3. On `greenlight`, write the phase entry to the ledger and advance.
-4. On `improvements-needed`, address each finding's `fix:` action, re-dispatch the validator (incrementing cycle count). Apply the cycle-10 cap.
-5. Never accept a malformed phase-validator return (missing required fields, banned tokens, or finding-ID format violations) — re-dispatch with a brief that quotes the violation.
-
-The minimal grep-based conformance check (per §4.1's pattern, applied to phase-validator returns):
-- `^status:\s*(greenlight|improvements-needed)`
-- `^phase:\s*[1-7]`
-- `^exit-criteria-checked:` followed by ≥1 `- criterion:` row
-- On greenlight: `^findings:\s*\[\]` literal
-- On improvements-needed: ≥1 `^  - \*\*pv-[1-7]-\d{2,}\*\* \[must-fix\]` line (`\d{2,}` = two-digit zero-padded per §1's `<nn>` rule)
-- `^summary:\s*` non-empty
-- No banned tokens
-
-The harness return-schema guard routes `phase-validator-` returns through this conformance check, same as it routes `composer-` / `reviewer-` / `probe-` / `process-validator-` returns. (Hook index: [harness-hooks.md](harness-hooks.md).)
-
-### 2.6 Spillover contract (hard enforcement, all five subagent roles)
-
-The Q1 work in #144 (handover envelope, in-flight registry, cycle-aware deregistration) gave the orchestrator a leash on subagent dispatches. It did not address the orthogonal pollution path: the **subagent's own return body lands verbatim in the orchestrator's transcript**. A composer's per-expectation mapping table, a probe's findings list, a reviewer's missing-scenarios sub-list, a phase-validator's exit-criteria array, a process-validator's per-violation block — all carry hundreds to thousands of tokens of structured detail into the orchestrator's context, every cycle, every retry.
-
-The spillover contract addresses this by moving the bulk content to disk while keeping the index-level fields the orchestrator structurally needs (status, identity, finding-ID list) inline.
-
-**Scope (this contract covers all five subagent roles dispatched by the suite).**
-
-| Role | Status that triggers spillover | Body content moved to disk | Statuses NOT subject to spillover (already index-only) |
-|---|---|---|---|
-| `composer-` | `covered-exhaustively` | Per-expectation mapping table | `new-tests-landed`, `blocked`, `skipped` |
-| `reviewer-` | `improvements-needed` | `missing-scenarios:` / `craft-issues:` / `verification-misses:` sub-lists | `greenlight` |
-| `probe-` | `findings-emitted` | `findings:` sub-list with full finding-blocks | `clean`, `blocked` |
-| `process-validator-` | `block` | Per-violation block | `greenlight` |
-| `phase-validator-` | `improvements-needed` | `exit-criteria-checked:` array + `pv-<phase>-<nn>` finding blocks | `greenlight` (already requires `findings: []` literal) |
-
-**Enforcement is hard, not soft.** The compliance check is binary (spill file at canonical path exists or doesn't; body inlines forbidden shape or doesn't) — there is no fuzzy zone that needs calibration. WARN-only enforcement would be a porous fence: every non-compliant first return leaks the body into the orchestrator's transcript before any post-hoc check fires. Hard enforcement at `SubagentStop` closes that gap by intercepting BEFORE the parent sees anything. The subagent's stop is blocked, stderr feedback is injected, the subagent rewrites in-session, and the orchestrator's tool result is the FINAL compliant return. Empirical verification of the `SubagentStop` exit-2-with-stderr in-session-rewrite mechanism is captured in the implementation thread on #145.
-
-**Cap on rewrite attempts.** A subagent that genuinely cannot produce a compliant return (broken understanding, contradictory feedback, environment issue) would otherwise loop indefinitely. The hook caps rewrites at 3 per `agent_id`. After the cap, the hook exits 0 with a loud `[CAP-REACHED]` stderr WARN and the non-compliant return lands in the orchestrator's context as a last resort — visible failure beats silent loop. Manual review surfaces what the subagent could not produce.
-
-#### Spill file path conventions
-
-```
-tests/e2e/docs/.subagent-returns/composer-<journey-slug>-<pass>-c<cycle>.md
-tests/e2e/docs/.subagent-returns/reviewer-<journey-slug>-<pass>-c<cycle>.md
-tests/e2e/docs/.subagent-returns/probe-<journey-slug>-<pass>-c<cycle>.md
-tests/e2e/docs/.subagent-returns/process-validator-<scope>-c<cycle>.md
-tests/e2e/docs/.subagent-returns/phase-validator-<phase>-c<cycle>.md
-```
-
-- `<journey-slug>` is the `j-<slug>` or `sj-<slug>` form from the dispatch description (composer / reviewer / probe).
-- `<pass>` is the pass number (1-5) from the brief (composer / reviewer / probe).
-- `<cycle>` is the 1-indexed retry-cycle number (all roles).
-- `<scope>` is the process-validator scope (e.g., `stage-a-wave`).
-- `<phase>` is the phase-validator phase number (1-7).
-
-Each spill file's first line carries a sentinel comment so unrelated tooling can identify spillover files:
-
-```
-<!-- subagent-returns:<role>:<identity-keys>:cycle-<C> -->
-```
-
-Examples: `<!-- subagent-returns:reviewer:j-<slug>:pass-1:cycle-2 -->`, `<!-- subagent-returns:phase-validator:5:cycle-1 -->`, `<!-- subagent-returns:process-validator:stage-a-wave:cycle-1 -->`.
-
-#### Compliant return body shapes (per role)
-
-Each role's spillover-compliant body contains only the index-level fields the orchestrator structurally needs to make next-action decisions. Bulk content is the spill file at the canonical path.
-
-**Composer (`covered-exhaustively`).** The mapping table moves to disk; body keeps identity + a count summary.
-
-```
-status: covered-exhaustively
-journey: j-<slug>
-pass: <N>
-cycle: <cycle-number>
-spill: tests/e2e/docs/.subagent-returns/composer-<slug>-<pass>-c<cycle>.md
-expectations-mapped: <count>
-```
-
-**Reviewer (`improvements-needed`).** Sub-lists move to disk; body keeps the finding-ID list (orchestrator routes the next composer-cycle brief from IDs).
-
-```
-status: improvements-needed
-journey: j-<slug>
-pass: <N>
-cycle: <cycle-number>
-spill: tests/e2e/docs/.subagent-returns/reviewer-<slug>-<pass>-c<cycle>.md
-findings:
-  - <FINDING-ID-1>
-  - <FINDING-ID-2>
-```
-
-**Probe (`findings-emitted`).** Findings list moves to disk; body keeps probe/boundary counts and finding-IDs.
-
-```
-status: findings-emitted
-journey: j-<slug>
-pass: <N>
-cycle: <cycle-number>
-spill: tests/e2e/docs/.subagent-returns/probe-<slug>-<pass>-c<cycle>.md
-probes: <count>
-boundaries: <count>
-findings:
-  - <FINDING-ID-1>
-  - <FINDING-ID-2>
-```
-
-**Process-validator (`block`).** Per-violation blocks move to disk; body keeps a one-sentence summary + the violation-ID list.
-
-```
-status: block
-scope: <scope>
-cycle: <cycle-number>
-spill: tests/e2e/docs/.subagent-returns/process-validator-<scope>-c<cycle>.md
-summary: <one sentence — e.g., "3 of 16 dispatches violate slug-length / brief-minimalism rules">
-findings:
-  - <VIOLATION-ID-1>
-  - <VIOLATION-ID-2>
-```
-
-**Phase-validator (`improvements-needed`).** Exit-criteria array + per-finding blocks move to disk; body keeps the `pv-<phase>-<nn>` ID list.
-
-```
-status: improvements-needed
-phase: <1-7>
-sub-skill: <name>
-cycle: <cycle-number>
-spill: tests/e2e/docs/.subagent-returns/phase-validator-<phase>-c<cycle>.md
-summary: <one sentence — N findings, phase N, blocking advance to N+1>
-findings:
-  - pv-<phase>-<nn-1>
-  - pv-<phase>-<nn-2>
-```
-
-In each shape, `findings:` (or `expectations-mapped:` for composer) carries IDs / counts **only**, not full blocks. The orchestrator constructs the next dispatch's brief by referencing the IDs and the spill-file path; the next subagent reads the spill file and consumes the detail there.
-
-#### Spill file body (per role)
-
-Each spill file's body is the exact role-specific structured block the subagent would have emitted inline before this contract — no schema change to the block shapes themselves, only their location.
-
-**Composer spill body (`covered-exhaustively`):**
-
-```markdown
-<!-- subagent-returns:composer:j-<slug>:pass-<N>:cycle-<C> -->
-
-# Composer return — j-<slug> (Pass <N>, cycle <C>) — covered-exhaustively
-
-| Expectation | Covering spec | Test name |
-|---|---|---|
-| <verbatim text from journey block> | tests/e2e/<file>.spec.ts | <test(...) title> |
-| <verbatim text> | tests/e2e/<file>.spec.ts | <test(...) title> |
-... (one row per `Test expectations:` entry)
-```
-
-**Reviewer spill body (`improvements-needed`):**
-
-```markdown
-<!-- subagent-returns:reviewer:j-<slug>:pass-<N>:cycle-<C> -->
-
-# Reviewer return — j-<slug> (Pass <N>, cycle <C>)
-
-missing-scenarios:
-  - **<FINDING-ID>** [must-fix] — <one-line title>
-    - why: <one sentence, staff-QA rationale>
-    - category: <mobile | error-state | edge-case | adversarial | accessibility | i18n | lifecycle | concurrency>
-    - suggested-test: <one-sentence description of the test to write>
-
-craft-issues:
-  - **<FINDING-ID>** [must-fix] — <one-line title>
-    - file: <path>
-    - issue: <what's wrong>
-    - fix: <concrete remediation>
-
-verification-misses:
-  - **<FINDING-ID>** [must-fix] — <one-line title>
-    - file: <path>
-    - test-name: <test(...) title>
-    - asserted: <what the test currently asserts>
-    - live-observed: <what the reviewer saw via playwright-cli>
-    - suggested-fix: <concrete remediation>
-```
-
-**Probe spill body (`findings-emitted`):**
-
-```markdown
-<!-- subagent-returns:probe:j-<slug>:pass-<N>:cycle-<C> -->
-
-# Probe return — j-<slug> (Pass <N>, cycle <C>) — findings-emitted
-
-findings:
-  - **<FINDING-ID>** [<severity>] — <one-line title>
-    - scope: <what was probed>
-    - expected: <what should happen>
-    - observed: <what happened>
-    - coverage: <existing test or none>
-  - **<FINDING-ID>** [<severity>] — <title>
-    ...
-```
-
-The probe spill is independent of the cross-pass canonical ledger at `tests/e2e/docs/adversarial-findings.md` (per §3) — the spill is a per-cycle artifact for orchestrator-context isolation, the ledger is the cross-cycle authoritative log. Both coexist. The probe writes to both within its dispatch (the ledger via the documented append discipline; the spill via the spillover contract).
-
-**Process-validator spill body (`block`):**
-
-```markdown
-<!-- subagent-returns:process-validator:<scope>:cycle-<C> -->
-
-# Process-validator return — <scope> (cycle <C>) — block
-
-violations:
-  - **<VIOLATION-ID>** [must-fix] — <one-line title>
-    - dispatch: <which manifest entry>
-    - rule: <which contract rule was violated>
-    - fix: <concrete remediation>
-```
-
-**Phase-validator spill body (`improvements-needed`):**
-
-```markdown
-<!-- subagent-returns:phase-validator:<phase>:cycle-<C> -->
-
-# Phase-validator return — phase <phase> (cycle <C>) — improvements-needed
-
-exit-criteria-checked:
-  - criterion: <verbatim text from per-phase completion contract>
-    satisfied: false
-    evidence: absent — <why no evidence was found>
-  - criterion: <verbatim text>
-    satisfied: true
-    evidence: <pointer>
-  ...
-
-findings:
-  - **pv-<phase>-<nn>** [must-fix] — <one-line title>
-    - criterion: <verbatim text from the failed exit criterion>
-    - issue: <what's wrong; quote evidence pointers where relevant>
-    - fix: <concrete remediation — what the orchestrator does to satisfy this criterion>
-```
-
-The sentinel comment on line 1 is required for every spill file so other tooling can identify spillover files in the directory.
-
-#### Statuses NOT subject to spillover (already index-only)
-
-These returns require no spill file because their bodies are already small:
-
-- **Composer** `new-tests-landed` (carries `tests-added: <count>` + `run-time: <duration>` — no large block).
-- **Composer** `blocked` (one `reason:` line).
-- **Composer** `skipped` (`reason:` + `authorizer:`).
-- **Reviewer** `greenlight` (just `summary:` + identity).
-- **Probe** `clean` (no findings; counts only).
-- **Probe** `blocked` (one `reason:` line).
-- **Process-validator** `greenlight` (`findings: []` + `summary:`).
-- **Phase-validator** `greenlight` (already requires `findings: []` literal — bodies are bounded by the per-phase completion-contract criteria count, kept small).
-
-For these statuses, the SubagentStop hook silent-allows; no spill file expected.
-
-#### Hook architecture
-
-Two hooks share the work, each at the right boundary:
-
-1. **Spillover rewrite-gate** (`SubagentStop`) — the **enforcer**. Validates body shape against §2.6 for each spillover-triggering role + status; non-compliant returns are blocked at stop with role-specific feedback that names the exact spill-file path and index-only body shape, and the subagent rewrites in-session. A retry cap auto-releases after a small number of attempts.
-2. **Return-schema guard** (`PostToolUse:Agent`) — the **audit trail**. WARNs about absent spill files when the enforcer is mis-installed / mis-configured / cap-released. Catches the leak post-hoc.
-
-See [harness-hooks.md](harness-hooks.md) for the index entries; the hook source files are the canonical reference for cap counts, counter paths, and exit-code semantics.
-
-#### Caller contract addition (per role)
-
-Callers dispatching subagents in any of the five roles must:
-
-1. Include the spillover instruction in the dispatch brief — name the exact spill-file path the subagent must write, with the canonical sentinel comment.
-2. Read the spill file when constructing the next-cycle brief (or when consuming the spill content for state-file updates / ledger writes); pass the file path through, do NOT inline its contents.
-3. Treat WARN messages from the schema-guard about spillover as a re-dispatch trigger (stricter brief) rather than a soft acknowledgement.
-
-For each role, the dispatch-brief template lives in:
-
-| Role | Brief template |
-|---|---|
-| `composer-` | `skills/test-composer/SKILL.md` (or coverage-expansion's composer dispatch section) |
-| `reviewer-` | `skills/coverage-expansion/references/reviewer-subagent-contract.md` |
-| `probe-` | `skills/coverage-expansion/references/adversarial-subagent-contract.md` |
-| `process-validator-` | `skills/coverage-expansion/references/process-validator-workflow.md` |
-| `phase-validator-` | `skills/onboarding/SKILL.md` (phase-validator dispatch section) |
-
-Each template carries a "Writeback contract" subsection naming its role's spill-path convention.
 
 ---
 
@@ -761,8 +250,8 @@ Callers do not run a parser — they grep the return for a short, fixed list of 
 - **`covered-exhaustively` returns:** the literal string `status: covered-exhaustively`, a table header row `| Expectation | Covering spec | Test name |`, and at least one data row per `Test expectations:` entry in the journey block.
 - **Banned tokens:** the literal strings `no-new-tests-by-rationalisation`, `no-new-tests` (unqualified), `AF-`, `P4-`, `REG-` (legacy finding-ID prefixes — note: the `-R-` infix in reviewer IDs is NOT a prefix and is allowed), and any `[p0]` / `[blocker]` / `[no-impact]` severity bracket.
 - **Ledger append:** the `**Pass <N> — <kind> (YYYY-MM-DD)**` header line, the `Scope:` line, and the closing `**Pass <N> summary:** probes=…, boundaries=…, suspected-bugs=…` line, in that order, bracketing the finding blocks.
-- **Reviewer returns (§2.4):** the top-level `status:` is one of `greenlight` or `improvements-needed`. Finding blocks (when present under `missing-scenarios:`, `craft-issues:`, or `verification-misses:` sub-lists) match `^ {2}- \*\*[a-z0-9-]+-\d+-\d+-R-\d+\*\* \[must-fix\]`. **A `summary:` line is REQUIRED on `greenlight` returns** — a `greenlight` status without a `summary:` is a contract violation; treat as `improvements-needed` and re-dispatch. `greenlight` carries `summary:` and no finding blocks; `improvements-needed` has at least one `must-fix` finding and no `summary:` line. Returns containing the literal tokens `nice-to-have`, `greenlight-with-notes`, or a `notes:` sub-list are contract violations from a prior schema revision; reject and re-dispatch with a brief that quotes the banned token. The Stage A regex in the previous bullet does NOT apply to reviewer returns.
-- **Phase-validator returns (§2.5):** the top-level `status:` is one of `greenlight` or `improvements-needed`. `phase:` line carries an integer 1-7 (anchored on end-of-line / non-digit so `phase: 12`, `phase: 71`, `phase: 8a` fail). `exit-criteria-checked:` array has ≥1 `- criterion:` row (the array cannot be empty). **A `summary:` line is REQUIRED on both statuses.** **`findings: []` is REQUIRED on `greenlight`** (explicit empty array). On `improvements-needed`, finding blocks match `^ {2}- \*\*pv-[1-7]-\d{2,}\*\* \[must-fix\]` with sub-bullets `criterion:` / `issue:` / `fix:`. Banned tokens inherited from §2.4: `nice-to-have`, `greenlight-with-notes`, top-level `notes:`. The reviewer regex from the previous bullet does NOT apply to phase-validator returns.
+- **Reviewer returns (see `coverage-expansion/references/reviewer-subagent-contract.md` § "Return shape"):** the top-level `status:` is one of `greenlight` or `improvements-needed`. Finding blocks (when present under `missing-scenarios:`, `craft-issues:`, or `verification-misses:` sub-lists) match `^ {2}- \*\*[a-z0-9-]+-\d+-\d+-R-\d+\*\* \[must-fix\]`. **A `summary:` line is REQUIRED on `greenlight` returns** — a `greenlight` status without a `summary:` is a contract violation; treat as `improvements-needed` and re-dispatch. `greenlight` carries `summary:` and no finding blocks; `improvements-needed` has at least one `must-fix` finding and no `summary:` line. Returns containing the literal tokens `nice-to-have`, `greenlight-with-notes`, or a `notes:` sub-list are contract violations from a prior schema revision; reject and re-dispatch with a brief that quotes the banned token. The Stage A regex in the previous bullet does NOT apply to reviewer returns.
+- **Phase-validator returns (§2.5):** the top-level `status:` is one of `greenlight` or `improvements-needed`. `phase:` line carries an integer 1-7 (anchored on end-of-line / non-digit so `phase: 12`, `phase: 71`, `phase: 8a` fail). `exit-criteria-checked:` array has ≥1 `- criterion:` row (the array cannot be empty). **A `summary:` line is REQUIRED on both statuses.** On `improvements-needed`, finding blocks match `^ {2}- \*\*pv-[1-7]-\d{2,}\*\* \[must-fix\]` with sub-bullets `criterion:` / `issue:` / `fix:`. Banned tokens: `nice-to-have`, `greenlight-with-notes`, top-level `notes:`. The reviewer regex from the previous bullet does NOT apply to phase-validator returns.
 
 If any of the above is missing or a banned token is present, the caller re-dispatches with a brief that quotes the specific violation. The grep-based check is sufficient — no AST, no JSON, no parser.
 
@@ -846,4 +335,4 @@ The hook emits a WARN (non-blocking, initial release) when any of these markers 
 
 - A programmatic schema validator. This is prose + examples. Subagents read and conform.
 - Per-skill schema overrides. If a future skill needs a return shape this schema cannot express, the fix is to extend this file — not to fork it.
-- Transport format. Subagents return Markdown-in-text. JSON is not accepted; it breaks orchestrator parsing and mixes with `test-composer`'s legacy return block.
+- Transport format for finding blocks. The §1 finding-return format is prose/Markdown. The §2.x handover-envelope returns use JSON (preferred) or YAML — per-role schemas live in `schemas/subagent-returns/`.

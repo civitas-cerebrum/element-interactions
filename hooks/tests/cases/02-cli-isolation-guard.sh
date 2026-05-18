@@ -13,7 +13,7 @@ assert_allow "$H" "$(payload tool_name=Bash command='npx playwright-cli -s=clean
 assert_allow "$H" "$(payload tool_name=Bash command='npx playwright-cli -s=companion-onb-form open --browser=chromium http://app')" "companion- slug → ALLOW"
 assert_allow "$H" "$(payload tool_name=Bash command='npx playwright-cli -s=fd-cart-flake open --browser=chromium http://app')" "fd- slug → ALLOW"
 
-section "cli-isolation: bare j- / sj- slugs denied (issue #126)"
+section "cli-isolation: bare j- / sj- slugs denied (role-ambiguous)"
 assert_deny "$H" "$(payload tool_name=Bash command='npx playwright-cli -s=j-checkout-3-stage-a open --browser=chromium http://app')" "bare j- slug → DENY" "missing role prefix"
 assert_deny "$H" "$(payload tool_name=Bash command='npx playwright-cli -s=sj-checkout-pay-1 open --browser=chromium http://app')" "bare sj- slug → DENY" "missing role prefix"
 

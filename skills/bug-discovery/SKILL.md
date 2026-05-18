@@ -36,6 +36,40 @@ Every finding reported by this skill — whether returned directly to the user o
 
 Do not re-paste the schema when dispatching sub-flows of this skill — point at the reference file instead.
 
+### Return shape (probe)
+
+Full schema: `schemas/subagent-returns/probe.schema.json`.
+
+Every probe return **MUST** open with a `handover` envelope as its first key. The envelope has exactly four required fields:
+
+| Field | Rule |
+|---|---|
+| `role` | `probe` (standalone) or `probe-j-<slug>` (when dispatched per-journey by coverage-expansion). |
+| `cycle` | Integer ≥ 1. |
+| `status` | One of `clean`, `findings-emitted`, `blocked`. |
+| `next-action` | One-line directive for the orchestrator. |
+
+`summary` is a **top-level** field — it MUST NOT appear inside `handover`. Forbidden inside the envelope: `phase`, `from`, `to`.
+
+JSON is preferred over YAML. YAML's compact-mapping form silently breaks when a value contains `:`.
+
+**Worked example — `findings-emitted`:**
+
+```json
+{
+  "handover": {
+    "role": "probe",
+    "cycle": 1,
+    "status": "findings-emitted",
+    "next-action": "orchestrator to review adversarial-findings.md and continue to next pass"
+  },
+  "journey": "j-login-flow",
+  "findings-emitted": 2,
+  "tests-added": 2,
+  "summary": "Discovered CSRF bypass and session-fixation edge cases; two regression tests added."
+}
+```
+
 ---
 
 ## Prerequisites
@@ -87,7 +121,29 @@ This skill runs in two scopes. The probing categories below apply to both, but t
 
 When standalone, derive an analogous per-page negative-case list on the fly: for every primary positive flow you observe on a page (the "QA happy-path" interpretation), enumerate at least one negative complement (missing required field, malformed input, unauthorised access, replay / idempotency, session boundary) before moving on. The matrix concept does not vanish in standalone mode — it is built ad-hoc from observation rather than supplied in a brief.
 
-**App-wide bug-discovery is a parent-only orchestrator.** Dispatching this skill as a subagent at app-wide scope (Phase 1a / Phase 1b across multiple journeys, "standalone bug-discovery", "fan out probes") hits the recursive-dispatch wall — subagents cannot fan out their own children. The parent must iterate journeys itself and dispatch one `probe-j-<slug>:` Agent call per journey directly. The journey-scoped invocation (called by `coverage-expansion` as a Pass-4/5 leaf) is leaf-shape and remains valid. **Harness-enforced by `hooks/parent-only-orchestrator-dispatch-block.sh`** (PreToolUse:Agent — denies app-wide / multi-journey dispatches via orchestrator-role language, regardless of whether the literal "skill"/"SKILL.md" word appears; per-journey single-scope dispatches with `probe-j-<slug>:` description prefix bypass the hook entirely).
+**App-wide bug-discovery is a parent-only orchestrator.** Dispatching this skill as a subagent at app-wide scope (Phase 1a / Phase 1b across multiple journeys, "standalone bug-discovery", "fan out probes") hits the recursive-dispatch wall — subagents cannot fan out their own children. The parent must iterate journeys itself and dispatch one `probe-j-<slug>:` Agent call per journey directly. The journey-scoped invocation (called by `coverage-expansion` as a Pass-4/5 leaf) is leaf-shape and remains valid. **Methodology rule** — app-wide / multi-journey dispatches via orchestrator-role language are forbidden, regardless of whether the literal "skill"/"SKILL.md" word appears; per-journey single-scope dispatches with `probe-j-<slug>:` description prefix are the only valid form. (The harness-enforcement hook for this rule was retired in the 0.3.6 cleanup.)
+
+### Relevance grouping for Phase 6 probes
+
+Per-journey dispatch is the default for Phase 6 element and flow probing — one `probe-j-<slug>:` Agent call per journey. When the app has many journeys and many of them share a section (auth, cart, marketplace, etc.), the parent MAY group same-section journeys into one dispatch under the `[group]` marker, mirroring the relevance-group path that `coverage-expansion` uses for compositional passes.
+
+**Trigger.** A Phase 6 pass (1a element-probing or 1b flow-probing) has more than 5 journeys to cover. Below that threshold, per-journey dispatch is the rule.
+
+**Composition rules** (same as the compositional `[group]` path — see `coverage-expansion/references/depth-mode-pipeline.md` §"Relevance grouping for compositional passes"):
+- **Priority-pure.** Never mix priorities in one group. If a Phase 6 pass spans multiple priority tiers, build separate groups per tier.
+- **Same section / shared `Pages touched`.** Group by relevance — auth-section journeys together, cart-section journeys together, etc. Section sharing is what makes the per-journey context overhead amortise.
+- **Cap 7.** Maximum 7 journeys per group. If a relevance cluster has 9 journeys, split into 7+2.
+- **No journeys carrying flagged remediation work.** If a journey is being re-probed because a prior pass surfaced a gap that needs targeted attention, dispatch it per-journey, not in a group.
+
+**Role-prefix.** Dispatch description: `[group] probe-j-<a>,probe-j-<b>,...:`. Items must all be `probe-j-` slugs (priority-pure, no mixing with `composer-j-`). Cap-7 rule, enforced by methodology (the comma count in the description tells you whether you're at the cap). The dispatch-guard hook that previously enforced this was retired in the 0.3.6 cleanup; the rule still applies. The parent-only-orchestrator methodology rule treats `[group]` dispatches the same way it treats `[P3-batch]` — both are valid leaf-shape forms.
+
+**Schema validation and `[group]` dispatches.** Grouped dispatches are intentionally **not** schema-validated by `subagent-return-schema-guard.sh` or `subagent-schema-preread-gate.sh`. The wrapper return contains per-item returns which the parent splits and validates individually. The schema-guards only fire on individual `composer-`/`probe-`/`reviewer-`/`phase-validator-` prefixed dispatches.
+
+**Returns.** Per-journey concatenated under one Agent return — each journey's findings appended to the report file under its own section heading (`### j-<slug> (probe-j-<slug>-<phase>, YYYY-MM-DD)`), exactly as if it had been dispatched per-journey. The grouped probe writes findings INCREMENTALLY (after each confirmed finding) so partial work survives if the dispatch is interrupted.
+
+**Quality safeguard — same as compositional `[group]`.** If multiple journeys in one grouped probe return shallow/under-covered findings (the attention-rationing failure mode), the parent stops grouping for the rest of that pass and falls back to per-journey dispatch.
+
+**When to keep per-journey dispatch even with > 5 journeys.** Cross-tab and concurrent-state probes (Phase 1b) often need their own dedicated `playwright-cli` session pool; if the journey's flow involves multiple authenticated browser contexts simultaneously, per-journey is safer. Element-probing (Phase 1a) groups more cleanly — most a11y / catalogue checks are per-page, not per-flow.
 
 ---
 

@@ -1,0 +1,9 @@
+handover:
+  role: reviewer-inloop-acme
+  cycle: 1
+  status: improvements-needed
+  next-action: redispatch composer
+journey: j-acme
+pass: 1
+cycle: 1
+summary: improvements-needed but no findings, should be rejected

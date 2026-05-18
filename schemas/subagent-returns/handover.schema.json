@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://civitas-cerebrum.github.io/element-interactions/schemas/subagent-returns/handover.schema.json",
+  "title": "Subagent handover envelope",
+  "description": "Mandatory envelope at the top of every skill-loading subagent return. Pairs the return with its in-flight registry entry. Includes optional dispatch-mode + parallel-wave-size fields that the harness validator inspects on cycle-1 (journey-mapping) and pass-1 (coverage-expansion) returns to reject grouped or single-agent-collapsed first-cycle/first-pass work.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "role": {
+      "type": "string",
+      "description": "Role slug. Pattern guidance: kebab-case, optionally with journey suffix."
+    },
+    "cycle": {
+      "type": ["integer", "string"],
+      "description": "Cycle number within the role's dispatch loop (accepts integer or numeric string)."
+    },
+    "status": {
+      "type": "string",
+      "description": "Role-specific terminal-or-continuation status."
+    },
+    "next-action": {
+      "type": "string",
+      "description": "One-line directive for the orchestrator."
+    },
+    "dispatch-mode": {
+      "type": "string",
+      "enum": ["per-journey", "per-section", "grouped", "single-agent-collapsed"],
+      "description": "How the dispatch was structured. REQUIRED on returns for cycle 1 of journey-mapping or Pass 1 of coverage-expansion. The harness validator rejects cycle-1 / pass-1 returns whose dispatch-mode is `grouped` or `single-agent-collapsed` — those first cycles/passes are strict-per-X by contract. `per-journey` applies to coverage-expansion composers/probes; `per-section` applies to journey-mapping section agents; `grouped` covers `[group]` / `[P3-batch]` wrappers; `single-agent-collapsed` is the anti-pattern of a single subagent doing the work of an entire wave."
+    },
+    "parallel-wave-size": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Size of the parallel wave this dispatch was part of. When `dispatch-mode == per-journey` or `per-section`, must be ≥ 1. On cycle-1 / pass-1, the harness rejects returns with `parallel-wave-size == 1` UNLESS the roster genuinely contains only one item (in which case `dispatch-mode: per-journey` with wave-size 1 is correct)."
+    }
+  }
+}

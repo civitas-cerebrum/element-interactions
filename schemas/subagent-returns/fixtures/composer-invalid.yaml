@@ -1,0 +1,6 @@
+handover:
+  role: composer-j-example
+  cycle: 1
+  status: blocked
+  next-action: hold registration
+journey: j-example

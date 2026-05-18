@@ -51,7 +51,7 @@ A **staff-level QA engineer**, dispatched fresh for each journey-and-cycle pair.
    - Any `missing-scenarios` finding corresponding to an unimplemented item in the journey's `Test expectations:` list → record.
    - Any `missing-scenarios` finding in category `mobile` on a P0 or P1 journey → record.
    - Any `verification-misses` finding → record (a test that asserts something different than what the live DOM does is a broken test).
-   - `craft-issues` covering Steps-API misuse, inline selectors, missing page-repo entries, missing file-level serial for tenant-mutating specs (per PR #107) → record.
+   - `craft-issues` covering Steps-API misuse, inline selectors, missing page-repo entries, missing file-level serial for tenant-mutating specs → record.
    - `missing-scenarios` the reviewer invented adversarially (not from the expectations list) → record ONLY when the category is `adversarial-missed` in passes 4–5; otherwise do not surface.
    - **Passes 4–5 only — matrix-coverage gap → record.** Any negative-case-matrix entry from the journey's matrix that Stage A did NOT probe (no corresponding ledger finding) is a `missing-scenarios` finding with category `matrix-missed`. The matrix is the adversarial coverage floor per `adversarial-subagent-contract.md`; reviewers do not exercise discretion on this — every matrix entry must have a ledger finding (`Boundaries verified`, `Suspected bugs`, or `Ambiguous` are all acceptable; absence is not).
    - Cosmetic `craft-issues` (naming, ordering, comment quality) → do not surface.
@@ -67,11 +67,53 @@ A **staff-level QA engineer**, dispatched fresh for each journey-and-cycle pair.
 - **Do not append to the adversarial ledger.** Even if the reviewer's independent probes (passes 4–5) land findings, those findings are returned to the orchestrator as `missing-scenarios` so Stage A can attempt them properly on retry. Only Stage A writes to the ledger.
 - **Do not reuse a prior reviewer's context.** Every reviewer dispatch is a fresh subagent with a fresh `playwright-cli` session. The fresh-eyes property is load-bearing; inheriting context from the previous cycle's reviewer (or from the paired Stage A) defeats the adversarial role.
 - **Never return `covered-exhaustively` or `no-new-tests-by-rationalisation`.** Those are Stage A return states. A reviewer with no findings returns `greenlight`; a reviewer with one or more `must-fix` findings returns `improvements-needed`. There is no third state — `nice-to-have` and `greenlight-with-notes` are not part of the contract.
-- **Never authorise a `skipped` status.** Skipping a journey requires explicit user authorisation per PR #105's no-skip contract. The reviewer has no authorisation power.
+- **Never authorise a `skipped` status.** Skipping a journey requires explicit user authorisation per the no-skip contract. The reviewer has no authorisation power.
 
 ## Return shape
 
-See `skills/element-interactions/references/subagent-return-schema.md` §2.4. The schema is canonical; this contract does NOT re-paste it.
+Full schema: `schemas/subagent-returns/reviewer-inloop.schema.json`.
+
+Every reviewer return **MUST** open with a `handover` envelope as its first key. The envelope has exactly four required fields:
+
+| Field | Rule |
+|---|---|
+| `role` | `reviewer-inloop` (per-journey) or `reviewer-batch-pass-<N>` (batch mode). |
+| `cycle` | Integer ≥ 1. |
+| `status` | One of `greenlight`, `improvements-needed` (per-journey); `batch-complete` (batch mode). |
+| `next-action` | One-line directive for the orchestrator. |
+
+`phase` and `summary` are **top-level** fields — they MUST NOT appear inside `handover`. Banned tokens inside any reviewer return: `nice-to-have`, `greenlight-with-notes`, top-level `notes:`.
+
+JSON is preferred over YAML. YAML's compact-mapping form silently breaks when a value contains `:`.
+
+**Worked example — `improvements-needed`:**
+
+```json
+{
+  "handover": {
+    "role": "reviewer-inloop",
+    "cycle": 1,
+    "status": "improvements-needed",
+    "next-action": "composer to address missing-scenarios before next cycle"
+  },
+  "journey": "j-login-flow",
+  "pass": 1,
+  "cycle": 1,
+  "missing-scenarios": [
+    {
+      "id": "j-login-flow-1-1-R-01",
+      "priority": "must-fix",
+      "title": "No mobile viewport test for login form",
+      "scope": "login-flow happy-path",
+      "expected": "At least one test locks viewport to iphone-15 before submitting the login form",
+      "observed": "All existing tests run at default desktop viewport"
+    }
+  ],
+  "summary": "One missing-scenario finding; mobile viewport coverage absent for login-flow."
+}
+```
+
+A `greenlight` return carries `summary:` at the top level and no finding arrays. An `improvements-needed` return carries at least one of `missing-scenarios`, `craft-issues`, or `verification-misses` (per the schema) and no `summary:` line.
 
 ## Dispatch brief template (for the orchestrator to follow)
 
@@ -138,25 +180,22 @@ The cross-journey synthesis is a real upgrade, not just a cost optimisation: a s
    - The page-repo slice (selectors used in tests must exist in the page-repo).
    - Sibling spills (cross-journey consistency: pattern X surfaced in journey A but missed in journey B that shares the same page).
 3. **Apply the must-fix calibration** from §"Behavior" item 6 of the per-journey contract — same recording rules. The batch reviewer is judging the same shape of finding, just across many journeys at once.
-4. **Return per-journey verdicts** in a single structured return. The schema is the per-journey return schema (§2.4) wrapped in a top-level array:
+4. **Return per-journey verdicts** in a single structured return. The handover envelope follows the canonical shape (`schemas/subagent-returns/reviewer-inloop.schema.json`) with role `reviewer-batch-pass-<N>` and status `batch-complete`; per-journey verdicts are a top-level `verdicts` array (not inside the envelope):
 
-   ```yaml
-   handover:
-     role: reviewer-batch-pass-<N>
-     status: batch-complete
-     pass: <N>
-     cycle: 1
-     verdicts:
-       - journey: j-a
-         status: greenlight
-         summary: <one-line>
-       - journey: j-b
-         status: improvements-needed
-         spill: tests/e2e/docs/.subagent-returns/reviewer-batch-pass-<N>-c1.md
-         findings: [j-b-1-1-R-01, j-b-1-1-R-02]
-       - journey: j-c
-         status: greenlight
-         summary: <one-line>
+   ```json
+   {
+     "handover": {
+       "role": "reviewer-batch-pass-1",
+       "cycle": 1,
+       "status": "batch-complete",
+       "next-action": "orchestrator to process per-journey verdicts"
+     },
+     "verdicts": [
+       {"journey": "j-a", "status": "greenlight", "summary": "<one-line>"},
+       {"journey": "j-b", "status": "improvements-needed", "spill": "tests/e2e/docs/.subagent-returns/reviewer-batch-pass-1-c1.md", "findings": ["j-b-1-1-R-01", "j-b-1-1-R-02"]},
+       {"journey": "j-c", "status": "greenlight", "summary": "<one-line>"}
+     ]
+   }
    ```
 
    Greenlit journeys carry only a one-line `summary` — no spill file, no findings list. Flagged journeys carry the §2.6 spillover shape (`spill:` path + `findings:` list); the spill file is appended to the same `tests/e2e/docs/.subagent-returns/` directory but under a single filename naming the batch:
@@ -194,9 +233,9 @@ The cross-journey synthesis is a real upgrade, not just a cost optimisation: a s
 - **Compositional passes only.** Pass 4 and 5 dispatch one reviewer per journey, never a batch.
 - **No live app.** The batch reviewer is a static reader; for any flagged journey that needs live-app verification, the orchestrator follows up with a `mode: per-journey` cycle-2 reviewer that opens its own session.
 - **One return per pass.** The batch reviewer's return is a single object with a `verdicts:` array; the orchestrator parses verdicts and dispatches per-journey cycle-2 reviewers for any `improvements-needed` entry.
-- **Dispatch-guard carve-out.** `hooks/coverage-expansion-dispatch-guard.sh` skips its meta-content leak check for descriptions matching `^reviewer-batch-pass-[0-9]+:` — the batch brief references compositional pass scope by construction, so those phrases are part of the rule rather than a leak.
-- **Return-shape enforcement is markdown-only (for now).** `subagent-spillover-rewrite-gate.sh` and `subagent-return-schema-guard.sh` do not yet recognise the `reviewer-batch-pass-<N>` role-prefix or the `verdicts:` array shape; a non-compliant batch return will land in the orchestrator's transcript without harness intervention. Hook backstop is a follow-up.
+- **Meta-content carve-out (methodology).** Descriptions matching `^reviewer-batch-pass-[0-9]+:` are exempt from the meta-content-leak check: the batch brief references compositional pass scope by construction, so those phrases are part of the rule rather than a leak. (The harness dispatch-guard hook that previously implemented this carve-out was retired in 0.3.6; the carve-out still applies methodologically.)
+- **Return-shape enforcement is markdown-only (for now).** The surviving `subagent-return-schema-guard.sh` does not yet recognise the `reviewer-batch-pass-<N>` role-prefix or the `verdicts:` array shape; a non-compliant batch return will land in the orchestrator's transcript without harness intervention. Hook backstop is a follow-up.
 
 ### Dispatch prefix
 
-The orchestrator dispatches batch with `description: "reviewer-batch-pass-<N>: cycle 1"`. The `reviewer-` family prefix is already recognised by `coverage-expansion-dispatch-guard.sh`; the `-batch-` infix triggers the batch return-shape validation in the schema-guard.
+The orchestrator dispatches batch with `description: "reviewer-batch-pass-<N>: cycle 1"`. The `reviewer-` family prefix is the conventional role-prefix recognised by methodology; the `-batch-` infix is the marker that selects the batch return-shape. (The harness dispatch-guard hook that previously codified the recognition was retired in 0.3.6; the surviving `subagent-return-schema-guard.sh` is the candidate site for the `-batch-` schema-selector extension.)

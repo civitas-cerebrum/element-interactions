@@ -31,19 +31,18 @@ This file is the rules-and-pointers kernel. The heavy spec lives in `references/
 | [`references/api-reference.md`](references/api-reference.md) | The Steps API surface — what to read before writing or modifying any test. |
 | [`references/playwright-cli-protocol.md`](references/playwright-cli-protocol.md) | The canonical browser-automation primitive: session model, slug naming, snapshots, auth state, dispatch-brief template. |
 | [`references/stages-protocol.md`](references/stages-protocol.md) | Stages 1–4 protocol: scenario discovery, element inspection, write automation, post-stabilization review (4a + 4b). |
-| [`references/subagent-return-schema.md`](references/subagent-return-schema.md) | Canonical return + ledger schema for every dispatched subagent. §4.1 grep-based conformance check; §4.2 harness validator (issue #127). |
+| [`references/subagent-return-schema.md`](references/subagent-return-schema.md) | Canonical return + ledger schema for every dispatched subagent. §4.1 grep-based conformance check; §4.2 harness validator. |
 | [`references/test-optimization.md`](references/test-optimization.md) | Stage 4a optimization checklist + the whole-suite re-run gate. |
-| [`references/cascade-detector.md`](references/cascade-detector.md) | Cascade detector — orchestrator that picks the right entry skill from project state. |
 | [`references/autonomous-mode-callers.md`](references/autonomous-mode-callers.md) | Per-caller `autonomousMode: true` contracts. |
 | [`references/skill-registry.md`](references/skill-registry.md) | Canonical skill name registry. |
 
 ## Autonomous-mode invocation cheat-sheet
 
-Companion skills (`onboarding`, `coverage-expansion`, `test-composer`, `companion-mode`) invoke this orchestrator with `autonomousMode: true` to disable the interactive hard gates. Each caller has its own required-args contract — they are NOT interchangeable.
+Callers (external automated CLI drivers' happy-path step, `coverage-expansion`, `test-composer`, `companion-mode`) invoke this orchestrator with `autonomousMode: true` to disable the interactive hard gates. Each caller has its own required-args contract — they are NOT interchangeable.
 
 | Caller | Required args | Optional args |
 |---|---|---|
-| `onboarding` Phase 3 | `autonomousMode: true`, `happyPathDescription: "<sentence>"` | `context: [...]` |
+| external-driver happy-path step | `autonomousMode: true`, `happyPathDescription: "<sentence>"` | `context: [...]` |
 | `coverage-expansion` pass 1–3 | `autonomousMode: true`, `journey: "<j-id>"` | — |
 | `companion-mode` Phase-6 graduation | `autonomousMode: true`, `entry: "stage3"`, `bundlePath: "<absolute-path>"` | — |
 | user direct | — (no autonomous flags) | — (full Stage 1–4 interactive flow) |
@@ -64,7 +63,7 @@ This skill is the orchestrator for a group of testing skills. It handles Stages 
 | `agents-vs-agents` | App has AI features, or user mentions AI guardrails/red-teaming/bias testing | Adversarial AI testing with LLM-powered attacker + judge |
 | `contract-testing` | User mentions contract tests, API contract, schema test, pact, breaking-change detection, or spec conformance — OR before writing any pure-API test that asserts response shape/status | Structured contract-style verification against real endpoints (status / headers / schema / error shape) using `steps.apiGet/Post/Put/Delete/Patch` |
 | `test-catalogue` | User asks for a "test catalogue", "scenario report", "client-ready catalogue", or an inventory of what the suite runs — opt-in only, never mandatory | Parses spec files + journey map, groups scenarios by app section and priority, renders a stakeholder-facing A4-landscape PDF catalogue (plus source HTML) with dedicated regression and skipped-with-reason sections |
-| `companion-mode` | User asks for ad-hoc functional verification with evidence (screenshots, video, trace) — opt-in only, never mandatory | Single-task evidence-first verification: produces an immutable bundle at `tests/e2e/evidence/<slug>-<ts>/`, then on a passed run proactively offers durable-automation graduation back into this orchestrator (Stage 3) or into `onboarding` per the project's cascade-detector level. Full behaviour: `skills/companion-mode/SKILL.md`. |
+| `companion-mode` | User asks for ad-hoc functional verification with evidence (screenshots, video, trace) — opt-in only, never mandatory | Single-task evidence-first verification: produces an immutable bundle at `tests/e2e/evidence/<slug>-<ts>/`, then on a passed run proactively offers durable-automation graduation back into this orchestrator (Stage 3) or into the `onboarding` skill per the project's cascade-detector level. For projects with no element-interactions scaffold, the user is pointed at the `onboarding` skill (interactive) or an external automated CLI driver. Full behaviour: `skills/companion-mode/SKILL.md`. |
 | `selector-development` | Stage 2 finds no stable selector AND frontend source is in the workspace; or failure-diagnosis blames a fragile selector; or user says "add stable selectors" / "audit selectors across the app" | Adds an inert `data-testid` (or detected convention) to the frontend source for the unstable element; runs typecheck + unit + e2e + visual-diff; commits selector change alongside the test |
 
 When any of these conditions are met, invoke the Skill tool with the companion skill name. Do not try to handle their workflows inline — they have their own staged processes.
@@ -75,6 +74,7 @@ When any of these conditions are met, invoke the Skill tool with the companion s
 
 Every subagent dispatched by a companion skill (`coverage-expansion`, `test-composer`, `bug-discovery`) returns findings and writes ledger entries against a single canonical schema documented in [`references/subagent-return-schema.md`](references/subagent-return-schema.md). This is the single source of truth for:
 
+- **Handover envelope** — every skill-loading subagent return MUST open with a `handover` object containing exactly `role`, `cycle`, `status`, and `next-action`. Per-role JSON Schemas live in `schemas/subagent-returns/`. See §2.0 of the reference file.
 - **Finding-return format** — the `<FINDING-ID> [<severity>] — <title>` block with `scope`, `expected`, `observed`, and `coverage` sub-bullets. Finding-IDs follow `<journey-slug>-<pass>-<nn>` or `<journey-slug>-<nn>`. Severities are `critical | high | medium | low | info` — no others.
 - **Return states** — `covered-exhaustively` requires a per-expectation mapping table; `no-new-tests-by-rationalisation` is **not a valid return** from any compositional or adversarial pass.
 - **Ledger schema** — the exact Markdown shape of `tests/e2e/docs/adversarial-findings.md`, including `### j-<slug>`, `**Pass <N> — <kind> (YYYY-MM-DD)**`, `Scope:` line, `#### <FINDING-ID>` blocks, and the `**Pass <N> summary:**` footer.
@@ -131,9 +131,8 @@ These rules are non-negotiable. They override helpfulness, initiative, and assum
 - A fix is not confirmed until the test passes **3-5 consecutive runs** without failure.
 
 ### 8. Before modifying `playwright.config.ts`, read the existing file first
-- The package ships documented defaults: `retries`, `use.video: 'on-first-retry'`, `use.trace: 'on-first-retry'`, HTML reporter, headless. See `references/playwright-config-defaults.md` for the canonical config and rationale.
+- The scaffold writes canonical defaults: `retries`, `use.video: 'on-first-retry'`, `use.trace: 'on-first-retry'`, HTML reporter, headless.
 - Don't strip the video / trace / retries defaults without an explicit reason in the PR description — the rerun-documents-failure guarantee `failure-diagnosis` Stage 1 relies on those artefacts.
-- The `playwright-config-defaults-guard.sh` hook emits a `systemMessage` warning on writes that drop those defaults, so a deviation is visible to reviewers rather than silent.
 
 ### 9. Do NOT work around application bugs — report them
 - When a test fails, **classify the problem** before acting:
@@ -193,7 +192,7 @@ Every time you navigate to a new page or discover a new component (via `playwrig
 
 ### 11. Browser automation goes through `@playwright/cli`
 
-Every skill in this suite that drives a live browser — `journey-mapping`, `coverage-expansion`, `test-composer`, `bug-discovery`, `failure-diagnosis`, `companion-mode`, this orchestrator's Stages 1–2, `onboarding`'s discovery phases — invokes `@playwright/cli` from the Bash tool. The protocol is documented in [`references/playwright-cli-protocol.md`](references/playwright-cli-protocol.md); read it before composing any browser-using subagent brief.
+Every skill in this suite that drives a live browser — `journey-mapping`, `coverage-expansion`, `test-composer`, `bug-discovery`, `failure-diagnosis`, `companion-mode`, this orchestrator's Stages 1–2, and any external driver's discovery + happy-path subagents — invokes `@playwright/cli` from the Bash tool. The protocol is documented in [`references/playwright-cli-protocol.md`](references/playwright-cli-protocol.md); read it before composing any browser-using subagent brief.
 
 **Why this rule exists.** Two parallel subagents sharing one browser fight over the active tab and corrupt each other's snapshots — discovery results become non-deterministic, tests compose against stale state, and the parent's own context fills with corrupted transcripts. The CLI's `-s=<name> open` primitive spawns an **isolated browser process per session** with its own user-data directory, so this corruption mode is impossible by construction. There is no isolation-prerequisite check; the OS provides isolation, not the orchestrator.
 
@@ -212,7 +211,7 @@ Every skill in this suite that drives a live browser — `journey-mapping`, `cov
 
 ### 12. Orchestrator context discipline
 
-Orchestrator skills (`coverage-expansion`, `onboarding`, this orchestrator) hold only **index-level state** in their own context:
+Orchestrator skills (`coverage-expansion`, this orchestrator) hold only **index-level state** in their own context:
 
 - Identifiers, names, priorities, page lists, counters, dispatch rosters.
 
@@ -230,7 +229,7 @@ If the skill contract says "dispatch per journey" or "run both phases," the orch
 
 ### 14. Companion-skill invocations run on the companion's contract, not the caller's estimate
 
-When this orchestrator (or `onboarding`, or any caller) invokes a companion skill — `journey-mapping`, `coverage-expansion`, `test-composer`, `bug-discovery`, `test-repair` — the companion's contract governs the run. The caller does NOT get to pre-emptively decide "I'll only run part of coverage-expansion because the full pipeline is too long," "I'll skip Pass 4–5 because adversarial probing is excessive for this app," or "I'll dispatch a subset of test-composer's variant set because the journey is small."
+When this orchestrator (or any caller, including external automated drivers) invokes a companion skill — `journey-mapping`, `coverage-expansion`, `test-composer`, `bug-discovery`, `test-repair` — the companion's contract governs the run. The caller does NOT get to pre-emptively decide "I'll only run part of coverage-expansion because the full pipeline is too long," "I'll skip Pass 4–5 because adversarial probing is excessive for this app," or "I'll dispatch a subset of test-composer's variant set because the journey is small."
 
 If the caller estimates the companion's full contract is more work than the session can absorb, the caller has exactly two options:
 - **Invoke the companion as designed.** The companion itself owns budget pressure: its own §"Auto-compaction" / resume-needed message handles mid-pipeline budget hits. The caller's job is to dispatch and let the companion run its own contract.
@@ -242,11 +241,11 @@ This rule applies regardless of how reasonable the caller's estimate is. "16 jou
 
 ### 15. Test data discipline — secrets in `.env`, variables centralised
 
-Two rules govern how test data shows up in spec files. Both are enforced by `test-data-discipline-guard.sh` (PreToolUse:Edit|Write|MultiEdit on `*.spec.{ts,js,…}` and `*.test.{ts,js,…}`). See `references/harness-hooks.md` for the hook contract.
+Two rules govern how test data shows up in spec files.
 
-- **Project secrets MUST live in `.env`** (gitignored) and load into specs via `process.env.<NAME>`. Hardcoded credential literals — `password`, `passwd`, `pwd`, `api_key` / `apiKey`, `secret`, `token`, `bearer`, `access_key` / `accessKey`, `auth` — assigned to a string literal in a spec file are **denied**. The escape on a single line is a `process.env.` reference: `const password = process.env.LOGIN_PASSWORD;`. The escape across the suite (legacy / migrating) is `TEST_DATA_DISCIPLINE_GUARD=warn` (downgrades to warn) or `=off` (silent allow).
+- **Project secrets MUST live in `.env`** (gitignored) and load into specs via `process.env.<NAME>`. Hardcoded credential literals — `password`, `passwd`, `pwd`, `api_key` / `apiKey`, `secret`, `token`, `bearer`, `access_key` / `accessKey`, `auth` — MUST NOT be assigned to a string literal in a spec file. Use a `process.env.` reference instead: `const password = process.env.LOGIN_PASSWORD;`.
 
-- **Test-data variables SHOULD be centralised in a single class / module** — e.g. `tests/fixtures/test-data.ts` exporting a `TestData` class or namespace. Scattered top-level `const NAME = "literal"` declarations across spec files (URLs, account names, magic strings) drift across files and resist refactor. The guard **warns** (does not deny) when it sees a top-level magic constant in a spec file that does NOT also import from a centralised data module (`test-data`, `testData`, `fixtures`, `fixture`, `constants`, `constant`). The recommended shape:
+- **Test-data variables SHOULD be centralised in a single class / module** — e.g. `tests/fixtures/test-data.ts` exporting a `TestData` class or namespace. Scattered top-level `const NAME = "literal"` declarations across spec files (URLs, account names, magic strings) drift across files and resist refactor. The recommended shape:
 
   ```ts
   // tests/fixtures/test-data.ts
@@ -261,6 +260,33 @@ Two rules govern how test data shows up in spec files. Both are enforced by `tes
   ```
 
 If you genuinely need a one-off literal in a spec (a hard-coded element label, a test-only string), put it inline in the assertion — the guard only flags top-level uppercase constant declarations, not inline literals inside `expect(...).toBe("literal")` or step calls.
+
+### 16. Visual regression — `verifyVisualMatch` with masks, not animation-freezing hacks
+
+The framework exposes `steps.verifyVisualMatch` for snapshot-based visual regression. It is a thin facade over Playwright's `toHaveScreenshot` with a higher-level mask shape that resolves `{ elementName, pageName }` entries through the ElementRepository — the same locator vocabulary every other step uses.
+
+**When to add a visual-regression variant.** A page or component is a candidate when its visual layout is treated as a contract by the team — marketing landing pages, settled design-system components, dashboard layouts in a stable product. The composer skill's variant-order list (item 7) names this rule from the composition side.
+
+**When to skip it.** Surfaces still under active design churn. Visual regression on a moving target generates pure noise. Revisit after the design settles.
+
+**The masking discipline (the one thing tests actually need to get right).** Visual regression breaks the moment a snapshot region contains dynamic data — a clock that ticks, a generated transaction id, a "updated N minutes ago" badge. Pass those regions in the `mask` option and Playwright paints a solid box over them BEFORE the pixel diff, so the rest of the page stays comparable. The framework's mask shape lets you reference those regions by repository name:
+
+```ts
+await steps.verifyVisualMatch('dashboard.png', {
+  mask: [
+    { elementName: 'currentTime',   pageName: 'DashboardPage' },
+    { elementName: 'transactionId', pageName: 'DashboardPage' },
+  ],
+});
+```
+
+Element-scoped variant + raw-selector escape hatch are documented in `references/api-reference.md` §"Visual regression".
+
+**What you don't have to do.** CSS animations are disabled by default during the snapshot (Playwright's own `animations: 'disabled'`). Don't reach for animation-freezing CSS hacks. Mask is only for **content-level dynamism** (text changing between runs), not motion.
+
+**Baselines.** First run writes the baseline; subsequent runs diff. Use `npx playwright test --update-snapshots` to refresh baselines intentionally. Playwright fingerprints baselines per OS / browser channel — generate them in the same environment your CI runs.
+
+**Rough mental shape for a typical journey.** One `verifyVisualMatch` per design-locked page or component, masking the dynamic-data regions, lives alongside the journey's other variants in the same describe block. Don't add visual-match assertions to every test — they're overhead for non-visual scenarios. Use them where the layout itself is the assertion.
 
 ### Workflow
 - **Run the tests** to validate your work. Do not skip this.
@@ -435,7 +461,7 @@ Only show the greeting menu if the user's message is vague or just says somethin
 
 ### Routing
 
-- **Onboarding intent** — phrases like "onboard this project", "set up element-interactions", "start from scratch", "automate this app from zero", OR a vague message on a project whose cascade detector (see below) reports a non-onboarded state → invoke the `onboarding` companion skill. Do not run Stages 1–4 inline.
+- **Onboarding intent** — see "Onboarding a new project" below. Onboarding is no longer invoked from inside Claude Code; it runs as an external CLI driver.
 - **Coverage expansion intent (deep)** — phrases like "increase coverage", "deeper coverage", "add more scenarios", "iterative test expansion", "expand tests", "deep coverage pass" → invoke `coverage-expansion` with default `mode: depth` (three passes, journey-by-journey, parallel where independent).
 - **Coverage expansion intent (breadth)** — phrases like "quick coverage", "fast coverage", "breadth coverage", "sweep coverage" → invoke `coverage-expansion` with `mode: breadth`.
 - **Compose tests for one journey** — phrases like "compose tests for journey X", "tests for j-<slug>", "test this journey" → invoke `test-composer` with `args: "journey=<j-id>"`.
@@ -444,24 +470,22 @@ Only show the greeting menu if the user's message is vague or just says somethin
 - **API question** — Answer directly from the API Reference section below. No stages needed.
 - **Fix or edit a test** — Skip to Stage 3 (Fix/Edit Mode).
 - **Scale existing project** — Read existing test files and `page-repository.json` first to understand current coverage, then proceed to Stage 1 with that context.
-- **Vague or no context** — Run the onboarding cascade detector (see the `onboarding` skill). If it returns Level A, B, or C, invoke `onboarding`. If everything is present, show the greeting menu and wait.
+- **Vague or no context** — Show the greeting menu and wait. If the project has no element-interactions scaffold, point the user at the `onboarding` skill (below).
 
-#### Onboarding cascade detector (quick reference)
+## Onboarding a new project
 
-The detector and its full caller-specific response matrix live in [`references/cascade-detector.md`](references/cascade-detector.md). This orchestrator's routing rule is summarised here for fast scanning:
-
-| Level | Routing action |
-|---|---|
-| A — package not in `package.json` | Invoke `onboarding` |
-| B — package present but scaffold incomplete | Invoke `onboarding` |
-| C — scaffold complete but `journey-map.md` missing or unsanctioned | Invoke `onboarding` |
-| None — all checks pass | No routing action — greet as normal |
+To onboard a new project from zero, invoke the `onboarding` skill — it
+is the umbrella eight-phase methodology document and runs from an
+interactive Claude Code session. An external automated CLI driver may
+also drive the same pipeline non-interactively; either entry point
+loads this skill (`element-interactions`) for Stages 1–4 of the
+happy-path step.
 
 ---
 
 ## Autonomous mode
 
-When the `onboarding` skill (or any other companion) invokes this orchestrator with `args` containing `autonomousMode: true`, the hard gates are disabled and Stages 1–4 run sequentially without prompts.
+When an external automated driver (or any other caller) invokes this orchestrator with `args` containing `autonomousMode: true`, the hard gates are disabled and Stages 1–4 run sequentially without prompts.
 
 Full per-entry-point contracts live in [`references/autonomous-mode-callers.md`](references/autonomous-mode-callers.md): required args, the `stage1` vs `stage3` split, the bundle-read schema for `entry: "stage3"`, malformed-bundle handling, gate suspension, commit discipline, and return shape. Read that file when implementing or reviewing a caller. The cheat-sheet at the top of this `SKILL.md` is the at-a-glance summary; the reference doc is the source of truth.
 

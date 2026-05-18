@@ -110,6 +110,7 @@ npm i @civitas-cerebrum/element-interactions
 * **Automatic failure screenshots** — `baseFixture` captures a full-page screenshot on every failed test and attaches it to the HTML report.
 * **Standardized waiting** — Built-in methods wait for elements to reach specific DOM states (visible, hidden, attached, detached).
 * **Advanced image verification** — `verifyImages` evaluates actual browser decoding and `naturalWidth`, not just DOM presence.
+* **Visual regression with dynamic-data masking** — `verifyVisualMatch` is a thin facade over Playwright's `toHaveScreenshot` with masks referenced by `{ elementName, pageName }`. Cover clocks / generated ids / live counters / "updated N minutes ago" badges so the pixel diff stays stable across runs without dropping into raw Playwright locators.
 * **Smart dropdowns** — Select by value, index, or randomly, with automatic skipping of disabled and empty options.
 * **Flexible assertions** — Verify exact text, non-empty text, URL substrings, or dynamic element counts (greater than, less than, exact).
 * **Smart interactions** — Drag to other elements, type sequentially, wait for specific element state, verify images and more!
@@ -621,6 +622,45 @@ await steps.clickListedElement('tableRows', 'Users', {
 
 * **`screenshot()`** — Captures a page screenshot. Pass `{ fullPage: true }` for scrollable capture, `{ path: 'file.png' }` to save to disk.
 * **`screenshot(elementName, pageName, options?)`** — Captures a screenshot of a specific element.
+
+### 🎯 Visual Regression — `verifyVisualMatch`
+
+Visual regression tests are great until your UI has dynamic data. A clock that ticks every second, a generated transaction id, or an "updated 3 minutes ago" badge is enough to break a baseline snapshot — your test fails on the first run, then again, then again, you give up and disable it.
+
+You don't have to. Playwright has a `mask` option built right into `toHaveScreenshot`: pass a list of locators and Playwright paints a solid box over those regions before the snapshot is captured, so the rest of the page stays pixel-perfect for comparison.
+
+`verifyVisualMatch` is the framework's facade over that capability — masks are referenced by `{ elementName, pageName }` (the same shape every other step uses), so you don't have to drop into raw Playwright locators.
+
+```ts
+// Page-level. The dashboard has a `currentTime` and a `transactionId` that
+// change every run. Both get masked. The snapshot stays stable.
+await steps.verifyVisualMatch('dashboard.png', {
+  mask: [
+    { elementName: 'currentTime',   pageName: 'DashboardPage' },
+    { elementName: 'transactionId', pageName: 'DashboardPage' },
+  ],
+});
+
+// Element-level. Scope the snapshot to the header; mask sub-regions inside it.
+await steps.verifyVisualMatch('header.png', {
+  elementName: 'header',
+  pageName:    'DashboardPage',
+  mask: [{ elementName: 'liveCounter', pageName: 'DashboardPage' }],
+});
+
+// Raw selector escape hatch — for regions that don't warrant a repo entry.
+await steps.verifyVisualMatch('dashboard.png', {
+  mask: [{ selector: '[data-testid="current-time"]' }],
+});
+```
+
+**When to use it.** Any UI that has live counters, charts, timestamps, randomly-generated ids, user avatars, or "updated N minutes ago" badges. Mask the dynamic regions once and sleep at night like a baby. The pattern is part of every recommended test-composition flow in the framework's skill suite — coverage-expansion composers, happy-path tests, and adversarial probes all benefit when the surface they're locking down has any content-level dynamism.
+
+**What you don't have to worry about.** CSS animations are disabled by default during the snapshot (Playwright's own `animations: 'disabled'`). You only need `mask` for content-level dynamism — no need for animation-freezing CSS hacks.
+
+**Baselines.** The first run writes the baseline; subsequent runs diff. Use `npx playwright test --update-snapshots` to refresh baselines intentionally. Playwright fingerprints baselines per OS / browser channel, so generate them in the same environment your CI runs.
+
+**Full options surface.** `mask`, `maskColor`, `fullPage`, `maxDiffPixelRatio`, `maxDiffPixels`, `timeout`, `errorMessage`. See [`VisualMatchOptions`](./src/enum/Options.ts).
 
 ---
 

@@ -51,7 +51,7 @@ If either input is missing, stop and tell the user — do not fabricate a journe
 
 | Arg | Default | Effect |
 |---|---|---|
-| `brand: <name>` | generic dark-mode | Overrides the cover/accent palette. Built-in: `civitas-cerebrum` (green `#3fb950`). Additional brands may be added by appending a row to the palette table below. |
+| `brand: <name>` | generic dark-mode | Overrides the cover/accent palette. Custom brands may be added by appending a row to the palette table below. |
 | `output: <path>` | `test-catalogue.pdf` | Output PDF filename at repo root |
 
 ---
@@ -291,10 +291,7 @@ The catalogue is a stakeholder-facing deliverable; the stakeholder cannot proof 
 | `--low` | `#9CA3AF` | P3 chips |
 | `--ok` | `#34D399` | Active-status chips |
 
-Brand overrides:
-- `brand: civitas-cerebrum` — swap `--brand` to `#3fb950`, keep `--accent` at `#58a6ff`, use `#0d1117` as `--bg`.
-
-Additional brands ride in via PR — append a row above with the override values. The skill does not infer brand from project name or hostname.
+Brand overrides ride in via PR — append a row above with the override values (`--brand`, `--accent`, `--bg`). The skill does not infer brand from project name or hostname.
 
 ---
 
@@ -308,7 +305,7 @@ This skill does not read `autonomousMode: true`. It is never invoked by another 
 
 ## Registry
 
-When PR #110 (canonical skill registry) lands, add this row to `skills/element-interactions/references/skill-registry.md`:
+This skill is registered in `skills/element-interactions/references/skill-registry.md`:
 
 ```
 | `test-catalogue` | `test-catalogue` | — (user-invoked, on-demand) | "produce a test catalogue", "generate a scenario report", "catalogue the suite", "client-ready catalogue", "export the scenario inventory"; never auto-invoked by any other skill. |

@@ -74,8 +74,379 @@ Phases 1 → 3.5 detail (process, parallel-discovery model, output formats) is i
 - **The `<!-- journey-mapping:generated -->` sentinel is line 1 of `journey-map.md`.** Maps without the sentinel are not valid. Tools (coverage-expansion, test-composer) refuse to consume sentinel-less maps.
 - **Priority is load-bearing.** P0 / P1 / P2 / P3 ordering drives dispatch order in coverage-expansion AND batching eligibility (only P3 may batch). Misclassifying a journey as P3 is a contract violation, not an optimization.
 - **Phase 4 is sentinel-bearing.** Phase 5 re-verifies. A Phase-4 commit without the sentinel re-fires Phase 4.
+- **In `phases-2-4` mode, Phases 2 / 3 / 3.5 run as iterative cycles, not as one sequential walkthrough.** See §"Iterative discovery cycles" below. The single-subagent sequential walkthrough is forbidden in `phases-2-4` mode — it produces shallow per-section coverage and hides the parallelism the skill was designed for.
+- **Cycle 1 (discovery) is strict per-section parallel in EVERY mode.** A single-subagent walkthrough is forbidden in cycle 1 of `full` mode AND `phases-2-4` mode — `full` mode previously left this under-specified, allowing a single agent to collapse the whole phase and hide the parallelism the skill was designed for. The first cycle establishes the section baseline at maximum fidelity; that quality propagates through every later cycle and into authoring. Harness-enforced: the `standard-mode-first-pass-guard.sh` hook denies a `phase4-prioritise-author:` dispatch until ≥ 2 distinct `phase4-cycle-1-section-<id>:` dispatches have been recorded, and denies a dispatch description that names ≥ 3 canonical section IDs in one brief (the single-agent-collapse heuristic).
+- **Cycle 2+ (edge-probe, additional discovery) may be single-subagent sequential when `cycleStrictness: standard`** (default). The strict-per-section contract that holds on cycle 1 is relaxed for cycle 2+: edge-probe and incremental-discovery work is empirically lower-fidelity per section and benefits less from per-section isolation. The hook does NOT block single-subagent cycle-2+ dispatches under `cycleStrictness: standard`.
+- **Under `cycleStrictness: depth`, EVERY cycle is strict per-section parallel.** When the invocation carries `args: "phases: full, cycle-strictness: depth"` (set by `onboarding` Phase 4 dispatch when the front-load gate selected `runMode: depth`), the strict-per-section contract holds on cycle 1 AND every later cycle (edge-probe and any additional discovery cycles). Single-subagent walkthroughs are forbidden in every cycle, not just cycle 1. The orchestrator writes `cycleStrictness: "depth"` into `tests/e2e/docs/.phase4-cycle-state.json` on the first state-file write so the `standard-mode-first-pass-guard.sh` hook can read the field and deny single-agent cycle-N dispatches for any cycle, not just cycle 1. Default is `cycleStrictness: "standard"` when the field is absent. Cost: each cycle under depth runs at the cycle-1 dispatch cap; for a typical 5-cycle convergence, that is ~5× the section-agent count of the standard-mode default (which runs ~1 cycle strict + ~4 cycles relaxed).
 
-## Phase 4: Journey Map Document
+## Iterative discovery cycles (drives Phases 2 / 3 / 3.5 in `phases-2-4` mode AND `full` mode)
+
+The cycle protocol runs **at minimum 2 cycles, up to 5** of section-agent dispatches. Each cycle expands the section roster from what the previous cycle discovered. The protocol always includes:
+
+- **At least one discovery cycle** (cycle 1) seeded by the discovery draft.
+- **Exactly one edge-probe cycle** that re-dispatches the mapped sections under an edge-finding brief — looking for less-obvious flows the initial pass missed (permission boundaries, deep links, lifecycle edges, hidden routes, role-locked features).
+
+The minimum 2 (1 discovery + 1 edge-probe) is non-negotiable: even when cycle 1 surfaces no new sections, the edge-probe runs to confirm there really aren't any edge journeys hiding. Per-cycle dedup terminates the loop when both conditions hold: no new sections post-dedup AND the edge-probe cycle has run. The loop is bounded at 5 cycles regardless. After cycles converge, a single `phase4-prioritise-author:` subagent applies Phase 3 prioritisation + Phase 3.5 redundancy revision + Phase 4 authoring.
+
+**First-cycle strict / later-cycle relaxed (standard) — or every-cycle strict (depth).** Cycle 1 is **strict per-section parallel** in every mode — one subagent per target section, dispatched in one parallel wave. The high-value moment for strict-parallel-per-section dispatch is the first cycle: it establishes the section baseline at maximum fidelity. Single-subagent walkthroughs of cycle 1 are forbidden (and hook-denied — see §"Hard rules — kernel-resident") regardless of whether the invocation is `full` mode or `phases-2-4` mode. Under `cycleStrictness: standard` (default), cycle 2+ (edge-probe and incremental discovery) may be single-subagent sequential when the orchestrator chooses — the strict contract relaxes from cycle 2 onward, because incremental discovery is empirically lower-fidelity-per-section and benefits less from per-section isolation. **Under `cycleStrictness: depth`** (selected via `onboarding`'s `runMode: depth` front-load gate and propagated as `args: "phases: full, cycle-strictness: depth"`), every cycle is strict per-section parallel — including edge-probe and any additional discovery cycles — and single-subagent walkthroughs are forbidden in every cycle. Phase 1 entry-crawl + post-crawl test-infra subagent contract is unchanged (already mandates parallelism).
+
+### Inputs
+
+The cycle protocol consumes `tests/e2e/docs/.discovery-draft.json` produced by `element-interactions` Stage 3 in `onboarding` Phase 3 (per `element-interactions/references/autonomous-mode-callers.md` §"Mandatory output for `onboarding` Phase 3 — discovery draft"). The draft seeds:
+
+- **Cycle-1 section roster** — the union of `sections-inferred[].id` and `unvisited-but-linked[].section-guess` from the draft.
+- **Credentials policy** — `handover-to-phase4.credentials-discovered` tells cycle agents whether they can self-credential to drive gated areas.
+
+If the draft is missing or malformed (no sentinel, empty `cycle-1-targets`), `phases-2-4` mode stops immediately with `blocked-on-prerequisite: discovery-draft-missing` — `journey-mapping` does not synthesise a draft from scratch. (The harness hook that previously denied cycle dispatches when the draft was absent was retired in the 0.3.6 cleanup; the rule still applies.)
+
+> **Cycle transitions are now reviewer-gated (additive).** When this skill is invoked as Phase 4 of the onboarding pipeline, every cycle N → cycle N+1 transition is gated by a `workflow-reviewer-cycle<N>:` subagent reading the onboarding-status ledger (`tests/e2e/docs/onboarding-status.json`). The existing `.phase4-cycle-state.json` is unchanged and remains the authoritative per-cycle / per-section dispatch ledger; the new gate is additive — the orchestrator must dispatch `workflow-reviewer-cycle<N>:` between cycles, and the harness `onboarding-ledger-gate.sh` denies cycle-N+1 section dispatches until the prior cycle's `reviewerVerdict` is `approved`. See `skills/workflow-reviewer/SKILL.md` and `skills/onboarding/SKILL.md` §"Status ledger + workflow reviewer".
+
+### Cycle protocol
+
+```
+state-file: tests/e2e/docs/.phase4-cycle-state.json
+schema:
+{
+  "phase4-cycle-state-version": 1,
+  "started-at": "<ISO-8601>",
+  "cycleStrictness": "standard" | "depth",  // optional, default "standard"
+  "draft-path": "tests/e2e/docs/.discovery-draft.json",
+  "cycles": {
+    "1": {
+      "kind": "discovery" | "edge-probe",
+      "dispatched-sections": ["catalog", "auth", "cart", "order", "marketplace"],
+      "returned-sections": [...],
+      "new-sections-discovered": [...],
+      "duplicates-merged": [...],
+      "completed-at": "<ISO-8601>"
+    },
+    "2": { ... },
+    ...
+  },
+  "convergence-status": "converged | continuing | hard-cap-reached",
+  "author-dispatched": false,
+  "author-attempts": 0,
+  "unvalidated-sections-flagged": []
+}
+
+orchestrator-loop (cycle N from 1 to 5):
+  1. Read state-file. Determine target sections + kind for cycle N:
+       - N == 1: kind="discovery", targets from discovery-draft cycle-1-targets
+       - N >  1 AND prior cycle surfaced new sections (post-dedup):
+         kind="discovery", targets = (cycle (N-1).new-sections-discovered) -
+         (union of cycles 1..(N-1).dispatched-sections)
+       - N >  1 AND no new sections remain AND no prior cycle has kind="edge-probe":
+         kind="edge-probe", targets = full union of all cycles' dispatched-sections
+         (re-dispatch every section under an edge-finding brief)
+  2. Dispatch one phase4-cycle-N-section-<id>: subagent per target, in parallel
+     up to host-max parallelism.
+       - role-prefix: phase4-cycle-<N>-section-<id>:
+       - description SHOULD include "edge-probe" when kind == "edge-probe" so
+         the harness records the cycle's kind correctly
+       - CLI session slug: phase4-c<N>-s-<id>      (≤28 chars; truncate <id> to ≤16)
+       - briefs are siblings — no inter-cycle context sharing
+       - edge-probe briefs explicitly ask agents to probe for: permission
+         boundaries, deep links, lifecycle edges (account deletion, expired
+         sessions), hidden routes, role-locked features, error paths, less-
+         obvious flows
+  3. Collect returns. For each, append to state-file (under file lock —
+     PostToolUse hook handles the mutation):
+       - returned-sections: <id>
+       - new-sections-discovered: <ids> from return
+       - kind: stamped from description suffix or return body
+     **WAIT FOR ALL CYCLE-N RETURNS BEFORE STEPS 4–5.** Cycle N+1 dispatch
+     lives inside step 5 — it is forbidden to fire until every section in
+     cycles.N.dispatched-sections appears in cycles.N.returned-sections.
+     Background dispatches do NOT count as completed until their PostToolUse
+     records the return; "all 7 cycle-N agents launched" is not the same as
+     "cycle N is done". (Methodology rule — dispatched-sections must equal
+     returned-sections before cycle-N+1 dispatch. The harness cycle-gate
+     hook that previously enforced this mechanically was retired in the
+     0.3.6 cleanup; the rule still applies.)
+  4. Per-cycle dedup:
+       - apply canonical section-id normalization (see §"Section vocabulary")
+       - drop new-sections-discovered already present in cycles 1..N
+       - record duplicates-merged
+  5. Decision (auto-derived by harness from the data — orchestrator-written
+     convergence-status field is informational only):
+       - cycles.<highest>.dispatched-sections == returned-sections AND
+         post-dedup new-sections-discovered is empty AND
+         at least one cycle has kind == "edge-probe" AND
+         cycles are contiguous 1..N
+         → convergence-status = "converged"
+       - N == 5 AND post-dedup new-sections-discovered non-empty
+         → convergence-status = "hard-cap-reached"
+       - otherwise → convergence-status = "continuing" (orchestrator
+         dispatches the next cycle: discovery if new sections remain,
+         edge-probe if they don't and edge-probe hasn't run yet)
+
+post-cycle: dispatch phase4-prioritise-author: (single subagent)
+  **WAIT FOR ALL CYCLE AGENTS TO RETURN BEFORE DISPATCHING THE AUTHOR.**
+  The author consumes the union of every cycle's spill files. Authoring while
+  cycle agents are still in flight produces a partial journey map — the
+  edge findings from in-flight agents land in `.subagent-returns/` after the
+  map is committed and silently disappear. The harness denies the author
+  dispatch when convergence-status (auto-derived from cycle data) is not
+  "converged" or "hard-cap-reached"; both require every dispatched section
+  in the highest cycle to appear in returned-sections.
+  - reads ALL section blocks from cycle returns (spill files + state file)
+  - applies Phase 3 prioritisation (P0/P1/P2/P3)
+  - applies Phase 3.5 redundancy revision + structural-smell prevention
+    (see §"Author step")
+  - composes cross-section journeys by following links-out across sections
+  - authors tests/e2e/docs/journey-map.md (sentinel preserved on line 1)
+  - records mapping-completeness in the journey-map's frontmatter:
+    "**Mapping completeness:** converged at cycle <N>" or
+    "**Mapping completeness:** hard-cap-reached at cycle 5 — <N> sections
+     still in new-sections-discovered queue. See coverage-expansion for
+     further mapping."
+```
+
+**Why the edge-probe is non-negotiable.** A naïve "terminate when cycle 1 surfaces no new sections" rule would let shallow exploration pass for full mapping. The edge-probe re-engages the same section agents with a different lens — explicitly asking for the flows users wouldn't volunteer ("how do I delete my account", "what happens when my session expires mid-checkout", "what does the admin path look like"). If the edge-probe genuinely surfaces nothing, that IS the converged state — but it's a confirmed convergence, not an assumed one.
+
+**Cycles must be contiguous.** Keys 1..N with no gaps. The harness `compute_convergence` explicitly checks this — a run with cycle keys {1, 3, 5} (gaps) cannot converge regardless of edge-probe presence. This closes a hole in the env-var escape hatch (`JOURNEY_MAPPING_CYCLE_GATE=off`) — even with the gate off, the convergence math refuses non-contiguous runs.
+
+### Per-section-agent contract (`phase4-cycle-<N>-section-<id>:`)
+
+Each cycle agent receives a focused brief and returns a structured section block. The agent does NOT author journey blocks (that's `phase4-prioritise-author:`'s job) — it returns flow descriptions that the author consumes.
+
+**Brief inputs:**
+
+- **Section ID** (canonical, from §"Section vocabulary").
+- **Routes already known** in the section (from the discovery-draft on cycle 1, or from prior cycles' returns).
+- **Routes-suggested** — links observed but not yet driven.
+- **Role required** — `unauthed-visitor`, `authed-user`, `authed-<role>`.
+- **Credentials policy** — from the draft's `credentials-discovered`. If self-credentialing is viable, the agent registers its own user via the documented signup endpoint. If not, the agent attempts only the unauthed surface and marks gated routes for handover to coverage-expansion.
+- **Prior-cycle context** (cycles ≥ 2 only) — the section's prior block, if any. The agent extends rather than replaces.
+- **CLI session slug** — `phase4-c<N>-s-<id>`. Open + close own session.
+
+**Behaviour:**
+
+1. Drive every route in the section breadth-first via `@playwright/cli`.
+2. Click every CTA, dropdown, tab, accordion. Identify the user flows the section supports.
+3. Note state variations per route (empty / loaded / errored / authed / unauthed).
+4. For each link out of the section, classify the target's section-guess (using §"Section vocabulary"). If no canonical match, propose a new section-id with rationale.
+5. For gated routes the agent cannot self-credential into, mark them in `gated-deferred-to-coverage-expansion` rather than attempting to map them.
+
+**Return shape** — full schema: `schemas/subagent-returns/section-agent.schema.json`. Every section-agent return **MUST** open with a `handover` envelope (role, cycle, status, next-action — see §2.0 of `element-interactions/references/subagent-return-schema.md`). `status` is one of `section-complete`, `section-deferred`, `blocked`. Index-level fields (`section`, `cycle`, `routes-driven`, `new-sections-discovered`, `gated-deferred-to-coverage-expansion`) inline; full flow descriptions and state-variation tables spill to `tests/e2e/docs/.subagent-returns/phase4-cycle-<N>-section-<id>.md`. JSON is preferred over YAML.
+
+**Worked example — `section-complete`:**
+
+```json
+{
+  "handover": {
+    "role": "phase4-cycle-1-section-checkout",
+    "cycle": 1,
+    "status": "section-complete",
+    "next-action": "deregister; section ready for author"
+  },
+  "section": "checkout",
+  "cycle": 1,
+  "kind": "section",
+  "routes-driven": ["/checkout", "/checkout/payment"],
+  "flows-identified": 4,
+  "state-variations-recorded": 2,
+  "spill": "tests/e2e/docs/journey-map/sections/checkout.md",
+  "summary": "Four flows mapped including one error variant."
+}
+```
+
+### Section vocabulary (canonical IDs)
+
+Cycle agents pick from this list when classifying routes. The list is intentionally a UNION across e-commerce / SaaS / documentation / banking / content / tooling shapes — most apps will match a subset; that is fine. Novel categories are allowed but must justify themselves with a `rationale:` field, and `phase4-prioritise-author:` flags them for review before authoring.
+
+The hook reads its canonical list from `hooks/data/canonical-sections.txt` (single source of truth). This table mirrors that file. When adding/removing/renaming an entry, update the data file FIRST, then mirror the change here.
+
+**Authentication + identity**
+
+| ID | Typical routes | Notes |
+|---|---|---|
+| `auth` | /login, /signup, /logout, /forgot-password, /reset, /verify-email, /mfa | Public auth surface plus identity-recovery flows. |
+| `profile` | /profile, /account, /me | Authenticated user's own data + own-resource management entry points. |
+| `admin` | /admin, /admin/* | Privileged role. Often gated by credentials cycle agents cannot self-discover. |
+
+**Commerce**
+
+| ID | Typical routes | Notes |
+|---|---|---|
+| `catalog` | /, /products, /categories, /search, /?category=*, /?query=* | Read-only browse + search of the primary content. |
+| `detail` | /products/:id, /articles/:slug, /items/:slug | Single-item view; usually links into `cart`, `marketplace`, or content-consumption flows. |
+| `cart` | /cart, /checkout | Pre-purchase state management. |
+| `order` | /orders, /orders/:id, /orders/:id/return, /receipts | Post-purchase state including returns/refunds. |
+| `billing` | /billing, /invoices, /subscriptions, /plans, /payment-methods | Payment / subscription / pricing-plan management. |
+| `marketplace` | /marketplace, /listings, /sell, /listings/:id | User-to-user supply side. |
+
+**Content + documentation**
+
+| ID | Typical routes | Notes |
+|---|---|---|
+| `content` | /blog, /articles, /press, /about, /faq, /terms, /privacy | Static / informational pages. |
+| `documentation` | /docs, /docs/*, /api, /reference, /changelog | Developer / product documentation surfaces, often with their own navigation. |
+
+**SaaS-style application surfaces**
+
+| ID | Typical routes | Notes |
+|---|---|---|
+| `dashboard` | /, /dashboard, /home, /overview | Authed-user landing surface; aggregates state from other sections. |
+| `settings` | /settings, /settings/*, /preferences | App-level + per-user configuration. (Distinct from `profile`, which is identity data.) |
+| `integrations` | /integrations, /connections, /apps, /webhooks, /api-keys | Third-party connections, OAuth flows, API tokens. |
+
+**Communication + support**
+
+| ID | Typical routes | Notes |
+|---|---|---|
+| `notifications` | /notifications, /alerts | Push/email/in-app alert preferences and history. |
+| `inbox` | /inbox, /messages, /chat, /threads | Conversation / messaging surface. |
+| `support` | /help, /support, /contact, /tickets | Customer-support entry points and ticket flows. |
+
+**Reporting + analytics**
+
+| ID | Typical routes | Notes |
+|---|---|---|
+| `reports` | /reports, /reports/:id, /exports | Generated reports, exports, scheduled deliveries. |
+| `analytics` | /analytics, /insights, /metrics, /audit-log | Live dashboards, charts, audit trails. |
+
+**Errors + fallbacks**
+
+| ID | Typical routes | Notes |
+|---|---|---|
+| `error` | /404, /500, /maintenance | Error / fallback routes. |
+
+When in doubt between two IDs, prefer the more specific one (e.g. `marketplace` over `catalog` for a P2P listings page; `documentation` over `content` for a versioned docs surface; `analytics` over `reports` for a live dashboard). Sub-divisions of a section (e.g., `catalog/search` vs `catalog/browse`) live as flows within one section's block, not as separate sections.
+
+**Multi-word IDs are allowed.** Canonical IDs may be hyphenated (e.g. `payment-methods` if it earns its own section). The harness vocabulary check (`is_canonical_section`) iterates the canonical list as a Bash array, not as a whitespace-split string, so hyphenated IDs match correctly. Whitespace inside an ID is forbidden.
+
+### Gated-areas policy
+
+For each gated route a cycle agent encounters:
+
+1. **Credentials in the discovery-draft** (`signup-open: true`, `demo-credentials: ...`, etc.) → agent self-credentials and drives the route. Result lands in the section block.
+2. **Credentials not in the draft, but inferrable from in-app affordances** (e.g., a "Demo Account" button, a public sign-up that doesn't require email verification) → agent self-credentials, lands in section block, and notes the inference path under `credentials-inferred`.
+3. **Credentials require external action** (admin role, paid subscription, MFA-coded test account, SSO bypass) → agent records the route under `gated-deferred-to-coverage-expansion` with the rationale ("admin role required", "paid plan only", etc.). Does NOT attempt to bypass.
+
+`phase4-prioritise-author:` lists every `gated-deferred-to-coverage-expansion` entry under the journey map's `## Gated Areas (Not Mapped)` heading with the credentials-needed annotation. `coverage-expansion` reads this section when deciding which journeys can be authored from existing data and which need user-provided credentials before they're dispatchable.
+
+### Author step (`phase4-prioritise-author:`)
+
+Single dispatch after cycles converge OR hit the hard cap. Inputs:
+
+- All section blocks from cycle returns (read from spill files).
+- The discovery draft (for `credentials-discovered`).
+- The state-file (for `convergence-status`, `unvalidated-sections-flagged`, and the cycle ledger).
+
+Outputs:
+
+- `tests/e2e/docs/journey-map.md` — overwritten in place, sentinel preserved.
+- A revision log appended under `## Phase 3.5 Revision Log` documenting every sub-journey extraction, variant collapse, and decomposition.
+- Frontmatter line `**Mapping completeness:**` with one of: `converged at cycle <N>`, `hard-cap-reached at cycle <N>`. (The legacy `single-cycle-floor` value is deprecated — the protocol now requires at least 1 discovery + 1 edge-probe cycle, so a single-cycle convergence is structurally impossible.)
+- A mandatory `## Section → Journey Map` table mapping every canonical section ID from the cycle returns to the journey IDs that cover it. Sections from `unvalidated-sections-flagged` are either normalised against the canonical vocabulary (preferred) OR carry an explicit `(novel)` annotation in the table with a one-sentence rationale.
+
+The author does NOT drive `playwright-cli` itself — all live observation happened in cycle agents. The author's job is synthesis: prioritisation, dedup, document authoring.
+
+**Cross-section flow composition.** A user journey often crosses multiple sections (e.g., `signup → browse → cart → checkout` crosses `auth → catalog → cart → order`). The author MUST identify these by following `links-out` entries from each section's flows into other sections' routes. Every entry-to-conversion path crossing ≥2 sections is a candidate journey block. The author does NOT assume sections decompose cleanly — multi-section journeys are the norm for conversion flows.
+
+**Structural-smell prevention.** The author MUST NOT produce journey blocks that match the following anti-patterns. These are the failure modes the protocol exists to prevent:
+
+| Anti-pattern | Correct shape |
+|---|---|
+| A journey whose only differentiator from another journey is **viewport size** (e.g., `j-mobile-checkout` vs `j-checkout`) | Single journey with `Mobile: yes` in `Test expectations:` and `mobile` in `State variations:`. Test-composer writes a mobile variant per journey. |
+| A journey whose primary content is an **empty-state assertion** (e.g., `j-marketplace-empty`: load `/marketplace`, assert "No listings") | A `State variations:` entry on the parent journey (`j-marketplace-buy.State variations: empty (No listings copy)`). |
+| A journey whose Steps list is **fewer than 3 actions** AND consists entirely of a UI-affordance toggle that doesn't change navigation (e.g., `j-theme-toggle`: load page, click toggle, assert localStorage) | A smoke test in `tests/e2e/smoke.spec.ts`, NOT a journey block. The journey map is for user flows, not UI-affordance unit tests. |
+| A journey whose Steps list is a **strict subset** of another journey's Steps + a state-modifier directive | The "missing" journey is a state variation on the larger one. |
+
+When in doubt: ask "is this a distinct user goal that requires separate prioritisation and test depth, OR is this a state/viewport variation on an existing journey?" If the latter, fold it in.
+
+**Retry semantics.** If the author returns `status: blocked` (corrupt cycle state, malformed spill files, unresolvable input, OR the author's own internal-consistency check failed), the orchestrator may re-dispatch `phase4-prioritise-author:` up to 3 times. (Methodology rule — `author-attempts` is tracked in the state file and the 4th attempt is forbidden. The harness cycle-gate hook that previously denied the 4th attempt was retired in the 0.3.6 cleanup; the rule still applies.) After 3 failures, surface to the user with the most recent author return — manual review of the cycle data is needed before proceeding.
+
+**Soft-blocked path: malformed-but-written.** A subtle failure mode: the author returns `journey-map-authored` (success), the hook flips `author-dispatched: true` and closes the retry path, but the file is malformed (missing sentinel, missing required sections, structural smells). Phase-validator-4 catches this later as `improvements-needed`. The orchestrator's recovery: delete `journey-map.md`, delete `.phase4-cycle-state.json`, and re-run from cycle 1. The author retry path is closed by design — successful-write commits the run; a malformed write is a re-run, not a re-author.
+
+**Internal-consistency check (author-side).** Before writing the file, the author MUST verify:
+
+- Every `Sub-journey refs: [sj-A, sj-B]` line on a journey block has matching `Used by: [..., j-X, ...]` entries on each referenced sub-journey.
+- Every `Used by: [j-X]` entry on a sub-journey has a matching `Sub-journey refs:` line on each named journey.
+- No orphan sub-journeys (`Used by: []`).
+- No journey-blocks reference an undefined `sj-<slug>`.
+
+If any check fails, the author returns `status: blocked` so the orchestrator can re-dispatch with corrected input. The phase-validator-4 hook re-runs this cross-reference check post-write; mismatches cause `improvements-needed` (which forces the soft-blocked recovery path above).
+
+**Return shape (`phase4-prioritise-author`)** — full schema: `schemas/subagent-returns/phase4-prioritise-author.schema.json`.
+
+Every `phase4-prioritise-author:` return **MUST** open with a `handover` envelope (role, cycle, status, next-action — see §2.0 of `element-interactions/references/subagent-return-schema.md`). `status` is one of `journey-map-authored` or `blocked`. `summary` and `journey-map` are **top-level** fields — MUST NOT appear inside `handover`. JSON is preferred over YAML.
+
+**Worked example — `journey-map-authored`:**
+
+```json
+{
+  "handover": {
+    "role": "phase4-prioritise-author",
+    "cycle": 2,
+    "status": "journey-map-authored",
+    "next-action": "advance to phase 5"
+  },
+  "cycles-consumed": 2,
+  "convergence-status": "converged",
+  "journey-map": {
+    "path": "tests/e2e/docs/journey-map.md",
+    "pages-discovered": 12,
+    "flows-identified": 28,
+    "priority-breakdown": {"P0": 4, "P1": 8, "P2": 10, "P3": 6}
+  },
+  "gated-areas-not-mapped": 1,
+  "mapping-completeness-note": "Admin panel behind role-gate not mapped; deferred to coverage-expansion.",
+  "summary": "Journey map authored with 28 flows across 12 pages; 4 P0 journeys identified."
+}
+```
+
+### Methodology rules (no longer harness-enforced)
+
+Two harness hooks previously gated the protocol mechanically; both were retired in the 0.3.6 cleanup for public-dep cleanliness. The rules themselves still apply:
+
+- **Discovery-draft prerequisite** — any `phase4-cycle-*-section-*:` or `phase4-prioritise-author:` dispatch is forbidden when `tests/e2e/docs/.discovery-draft.json` is missing, lacks the version sentinel, or has empty `cycle-1-targets`.
+- **Cycle gate** — reads `.phase4-cycle-state.json` and forbids:
+  - cycle-N section dispatches whose section-id is not in cycle-N's target list (per §"Cycle protocol")
+  - cycle-N+1 dispatches before cycle-N has at least one return
+  - `phase4-prioritise-author:` dispatches before either convergence or the 5-cycle hard cap
+  - cycle-6+ dispatches outright (the 5-cycle hard cap is enforced).
+  PostToolUse-style bookkeeping previously appended cycle-section returns to `returned-sections` and `new-sections-discovered`; the orchestrator now maintains these fields itself.
+
+### Concurrency coordination (race-only)
+
+Cycle agents run in parallel. Most parallel work is independent — each agent owns its own CLI session, its own throwaway user (per `single-tenant:shared-state` audit tags), its own subtree of routes. But some interactions are genuinely shared: a global reset endpoint (`POST /api/reset` style), an email-uniqueness constraint on signup, a rate-limited login endpoint. When a cycle agent encounters a race that affects sibling agents' work, it MUST emit a structured concurrency-log entry so siblings can adjust.
+
+**Channel.** A single append-only JSONL file at `tests/e2e/docs/.phase4-concurrency-log.jsonl`. One JSON object per line (a fixed canonical schema below). Atomic append on POSIX requires writes ≤ `PIPE_BUF` (typically 4096 bytes) — every entry must fit in a single line that fits the buffer. Lines longer than that race; emit a stub entry with `details: "see <spill-path>"` and write the long form to the spill file.
+
+**This channel is for race-only signaling, not pre-emptive coordination.** Agents do NOT lock resources up-front, do NOT register intent, do NOT broadcast their plan. They emit ONLY when:
+
+- An action they took caused a sibling agent's observable state to change unexpectedly (destructive side-effect).
+- A resource collision actually occurred (signup returned 409, login was rate-limited, a listing was bought out from under them).
+- A cycle agent observes an unexpected app state that almost certainly was caused by a parallel sibling and warrants telling them.
+
+Pre-emptive coordination (locks, claims) is forbidden. The protocol relies on per-agent isolation by default; the concurrency log is for the cases where isolation breaks down.
+
+**Strict format.** Every entry MUST conform to:
+
+```json
+{"timestamp":"<ISO-8601>","from":"phase4-cycle-<N>-section-<id>","conflict-type":"<enum>","resource":"<short-string>","value":"<short-string|null>","details":"<one-sentence rationale>","action-taken":"<enum>","recommendation":"<one-sentence advice for siblings|null>"}
+```
+
+`conflict-type` enum:
+- `resource-collision` — two agents tried to claim the same external resource (email, username, listing, cart-item slot).
+- `destructive-side-effect` — an action wiped or invalidated state another agent depended on (global reset, account deletion).
+- `auth-rate-limit` — login/signup endpoint returned 429.
+- `state-corruption` — observed app state inconsistent with what this agent expected, attributable to a parallel sibling.
+- `unexpected-data` — a route's content changed mid-flow in a way that suggests sibling write-traffic.
+
+`action-taken` enum:
+- `retry-with-namespace` — re-attempted with a namespaced identifier (e.g., email `cycle-<N>-<rand>@e2e.local`).
+- `abort-and-flag` — aborted the action; surfaced via the section return.
+- `wait-and-retry` — waited (≤30s) and re-tried.
+- `coordinate-with-peer` — held the action; logged here for sibling adjustment.
+
+**Reading the log.** Cycle agents SHOULD `tail` the log at the start of each high-risk action and check for entries from sibling agents in the same cycle. If a sibling has flagged `destructive-side-effect` on a resource this agent was about to touch (e.g., the reset endpoint), this agent adjusts (uses a per-test user, sequences the operation, etc.).
+
+**Author + validator consumption.** The author reads the log when synthesising flows — entries point at flow-level concurrency hazards that belong in the journey block's `State variations:` or `Branches:` sections (e.g., "concurrent buyers race for the same listing — first writer wins"). Phase-validator-4 includes the log's contents (if non-empty) in its return summary so reviewers can audit how races were handled.
+
+**File hygiene.** Gitignored — transient state. The author writes durable concurrency observations into the journey map itself; the raw log is discarded after the run.
 
 Write the complete journey map to `tests/e2e/docs/journey-map.md`. This is the blueprint that test-composer uses to determine what to implement and in what order.
 
@@ -93,6 +464,7 @@ Each journey is a self-contained block so a downstream subagent can be handed **
 **Pages discovered:** X
 **Flows identified:** X
 **Priority breakdown:** X P0, X P1, X P2, X P3
+**Mapping completeness:** converged at cycle <N> | hard-cap-reached at cycle <N> | single-cycle-floor
 
 ## Site Map
 [flat URL list from Phase 1]
@@ -128,6 +500,20 @@ Each journey is a self-contained block so a downstream subagent can be handed **
 
 ### j-<slug>: <next journey>
 ...
+
+## Section → Journey Map
+
+| Section ID (canonical) | Journeys covering it | Notes |
+|---|---|---|
+| auth | j-signup-checkout, j-login-checkout, j-bad-login, j-signup-conflict, j-logout | sj-signup-auth, sj-login-auth |
+| catalog | j-signup-checkout, j-search, j-genre-filter | |
+| ... | ... | ... |
+
+This table is mandatory in `phases-2-4` output. Phase-validator-4 reads it
+to verify every section in the cycle-state's `returned-sections` union
+either appears in this table OR under `## Gated Areas (Not Mapped)`.
+Sections without a row are uncovered — coverage-expansion will probe them
+or they need user-supplied credentials.
 
 ## Gated Areas (Not Mapped)
 [pages behind auth, paywalls, etc. with notes on what's needed to access]
@@ -202,15 +588,22 @@ If any P0 journey has less than 100% step coverage, the test suite is **not comp
 
 ## Invocation options
 
-This skill accepts one optional parameter via the `args` string when invoked through the Skill tool. The default (`phases: 'full'`) matches the original behaviour.
+This skill accepts up to two optional parameters via the `args` string when invoked through the Skill tool. The default (`phases: 'full'`, `cycle-strictness: standard`) matches the original behaviour.
 
 | Mode | Behaviour |
 |---|---|
-| `phases: 'full'` (default) | Run Phases 1–5 as documented above. |
+| `phases: 'full'` (default) | Run Phases 1–5 as documented above. **Cycle 1 of the iterative discovery cycles is strict per-section parallel** (inherits the first-cycle strict rule — see §"Iterative discovery cycles"); cycle 2+ may be single-subagent sequential under `cycle-strictness: standard`. A single subagent attempting to collapse all of cycle 1 is hook-denied. |
 | `phases: 'phase-1-only'` | Run Phase 1 (Page Discovery) only. Write a sentinel-bearing `journey-map.md` whose body contains the site map and empty `## User Journeys` / `## Gated Areas` / `## Coverage Checkpoint Template` headings for a later invocation to fill in. Do not run Phases 2, 3, 4, or 5. Commit with the message `docs: initial app-context and site map` if the caller is `onboarding`. |
-| `phases: 'phases-2-4'` | Require that `tests/e2e/docs/journey-map.md` already exists and carries the sentinel on line 1. Read its Phase-1 site map. Run Phases 2, 3, and 4, overwriting the file in place with the full journey map (sentinel preserved). Do not re-run Phase 1 or Phase 5. |
+| `phases: 'phases-2-4'` | Require that `tests/e2e/docs/journey-map.md` already exists and carries the sentinel on line 1, AND that `tests/e2e/docs/.discovery-draft.json` exists with a valid version-1 sentinel. Read the Phase-1 site map and the discovery draft. Run **iterative discovery cycles** per §"Iterative discovery cycles" (3-5 cycles driven by `.phase4-cycle-state.json` — cycle 1 strict per-section parallel, cycle 2+ relaxed under `cycle-strictness: standard`), then a single `phase4-prioritise-author:` subagent applies Phase 3 prioritisation + Phase 3.5 redundancy revision + Phase 4 authoring, overwriting `journey-map.md` in place (sentinel preserved). Do not re-run Phase 1 or Phase 5. The single-subagent sequential walkthrough is forbidden for cycle 1 in this mode. |
 
-Parameter parsing: the Skill tool passes `args` as a free-form string; the skill should recognise the literal substrings `phase-1-only`, `phases-2-4`, or `full` anywhere in `args`. If none appear, default to `full`. Reject conflicting combinations (e.g. both `phase-1-only` and `phases-2-4`) with a clear error, do nothing, and return.
+**Optional `cycle-strictness` parameter** (independent of `phases`):
+
+| Value | Behaviour |
+|---|---|
+| `cycle-strictness: standard` (default) | Cycle 1 strict per-section parallel, cycle 2+ may be single-subagent sequential. The original behaviour. |
+| `cycle-strictness: depth` | **Every** cycle is strict per-section parallel — cycle 1 AND every later cycle (edge-probe and any additional discovery cycles). Single-subagent walkthroughs are forbidden in every cycle. The orchestrator writes `cycleStrictness: "depth"` into `.phase4-cycle-state.json` on the first state-file write so the `standard-mode-first-pass-guard.sh` hook denies single-agent cycle-N dispatches for any cycle. Selected by `onboarding`'s `runMode: depth` front-load gate; cost is up to ~5× the section-agent count of the default. |
+
+Parameter parsing: the Skill tool passes `args` as a free-form string; the skill should recognise the literal substrings `phase-1-only`, `phases-2-4`, or `full` for the phases parameter, and the literal substring `cycle-strictness: depth` (with optional surrounding whitespace) for the cycle-strictness parameter, anywhere in `args`. If neither phases substring appears, default to `full`. If `cycle-strictness:` is absent OR the value is anything other than `depth`, default to `standard`. Reject conflicting combinations (e.g. both `phase-1-only` and `phases-2-4`) with a clear error, do nothing, and return.
 
 ## Integration with Other Skills
 

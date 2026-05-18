@@ -1,374 +1,422 @@
 ---
 name: onboarding
 description: >
-  Use this skill when asked to "onboard this project", "set up element-interactions",
-  "start from scratch", "automate this app from zero", or any request to bring a new
-  project from no test automation to a comprehensive element-interactions test suite.
-  Also auto-invoked by the element-interactions orchestrator when the cascade detector
-  reports a non-onboarded project state (missing framework dep, missing scaffold, or
-  missing sentinel-bearing journey-map.md). Runs the full pipeline autonomously after
-  a single front-load confirmation: install civitas-cerebrum + playwright deps,
-  scaffold framework files, crawl the app, automate the happy path, complete the
-  journey map, run five priority/depth-tiered coverage-expansion passes, run two
-  bug-hunt passes, and produce a summary deck plus onboarding report. Emits periodic
-  progress updates; requires no further prompts after the initial gate.
+  End-to-end methodology for adding a brand-new e2e suite to a project that
+  has none. Defines the eight-phase workflow (scaffold, groundwork,
+  happy-path, journey-mapping, coverage-expansion, bug-discovery,
+  secrets-sweep, report) and the gate criteria between phases. Use this
+  skill to run the workflow interactively in Claude Code, or invoke it
+  from an external automated CLI driver for a hands-off run.
 ---
 
-# Onboarding — Autonomous Project Setup
+# Onboarding — eight-phase e2e bootstrap
 
-> **Skill names: see `../element-interactions/references/skill-registry.md`.** Copy skill names from the registry verbatim. Never reconstruct a skill name from memory or recase it.
+This is the umbrella methodology for taking a project from zero e2e tests to
+a maintained suite. The same workflow runs two ways:
 
-The onboarding skill brings a fresh project from zero to a comprehensive test suite. It is the orchestrator that sequences the existing element-interactions, journey-mapping, test-composer, bug-discovery, failure-diagnosis, and work-summary-deck skills behind a single user confirmation.
-
-**Design reference:** `docs/superpowers/specs/2026-04-22-onboarding-skill-design.md`.
-
-## Reference index
-
-| Reference file | What's in it |
-|---|---|
-| [`references/phases-walkthrough.md`](references/phases-walkthrough.md) | Phases 1–7 detail: per-phase task list, hard gates, progress-output discipline. |
-| [`references/phase-validator-workflow.md`](references/phase-validator-workflow.md) | Phase-validator subagent dispatched at every phase end: when to invoke, manifest shape, per-phase verification table, response shape, cycle cap (10), parent's response handling. |
-
----
-
-## Activation
-
-This skill activates when:
-
-1. The user's message matches onboarding intent ("onboard this project", "set up element-interactions", "start from scratch", "automate this app from zero").
-2. The `element-interactions` orchestrator's Routing block invokes this skill after running the cascade detector.
-
-On activation, immediately run the cascade detector (below). Do not prompt the user yet.
-
-### Cascade detector
-
-The cascade detector is the canonical onboarding-state probe used by this skill, the `element-interactions` orchestrator's routing, and `companion-mode` Phase 6. Its full table and per-caller response matrix live in [`../element-interactions/references/cascade-detector.md`](../element-interactions/references/cascade-detector.md). Run it in order; stop at the first match. The four levels are:
-
-- **Level A** — `@civitas-cerebrum/element-interactions` not listed in `package.json` → install + scaffold + pipeline.
-- **Level B** — package present, but any of `playwright.config.ts` / `tests/fixtures/base.ts` / `page-repository.json` missing → scaffold + pipeline.
-- **Level C** — scaffold complete, but `tests/e2e/docs/journey-map.md` missing OR missing `<!-- journey-mapping:generated -->` on line 1 → pipeline only.
-- **Level None** — all checks pass → exit with the re-invocation message (below).
-
-Use the Read and Glob tools to perform the checks. Do not use Bash `ls` / `cat` for the detection. If a fifth level is ever added (e.g. for a new required scaffold file), it lands in the canonical reference first; this skill must be updated to handle it before the new check ships.
-
-### Already-onboarded exit message
-
-If the detector reports **None**, print this message and stop — do not run the pipeline:
-
-> "This project is already onboarded (found `tests/e2e/docs/journey-map.md` with the journey-mapping sentinel, scaffold complete). To expand coverage further, invoke `test-composer`. To run more bug hunts, invoke `bug-discovery`. To rebuild from scratch, delete `tests/e2e/docs/journey-map.md` and re-run onboarding."
-
----
-
-## Front-load gate
-
-Exactly one user interaction, at the start. After the user confirms, no further prompts until the run completes.
-
-Construct the gate message as follows:
-
-```
-Onboarding activated for <project name from package.json or directory basename>.
-
-Detected: Level <A | B | C> — <one-line summary of what's missing>
-
-Before I run, I need two things:
-  1. App URL: <auto-detected from playwright.config.ts baseURL if present; otherwise
-     ask the user>
-  2. One-sentence description of the primary thing a user most wants to do in this
-     app.
-
-I will then, autonomously and without further prompts:
-  <bullet list of phases that apply at the detected level, with the scaffolding /
-   install items elided for Level C and the install item elided for Level B>
-  • Full Phase-1 discovery (breadth-first crawl via @playwright/cli)
-  • Automate the happy path you described (Stages 1–4 inline)
-  • Full journey-mapping (Phases 2–4)
-  • 5 coverage-expansion passes (priority + depth tiered)
-  • 2 bug-hunt passes (element probing, then flow probing)
-  • Work summary deck + onboarding-report.md
-
-Scope preview — projected (Phase-1 discovery has NOT yet run at gate time, so these are
-pre-discovery estimates; actuals land after Phase 1 and are reported via progress lines):
-  • Phase 5 depth mode: ~<N_low>–<N_high> subagent dispatches across 5 passes + cleanup
-    (every journey, every pass — no skips)
-  • Phase 6 bug hunts: ~<M_low>–<M_high> dispatches
-  • Parallel peak: <P> agents depending on credential availability
-  • Model: per `coverage-expansion/SKILL.md` §"Hybrid model selection" (Pass 1,
-    Pass 4, and Pass 5 on Opus end-to-end, Pass 2/3 re-pass composers on Sonnet,
-    all Stage B review and synthesis on Opus)
-  • Expected wall-clock: ~<H1>–<H2> h active
-
-The scope preview is informational only. The skill's contract is full coverage; the
-preview exists for transparency so the user knows what they're committing to. There is
-no "reduce scope to save money" prompt — if the user wants a narrower run they invoke
-`mode: breadth` or ask explicitly for a priority-tier limit.
-
-Proceed? (y / cancel)
-```
-
-Wait for the user's reply. On `y` / `yes` / `proceed` / equivalent affirmative, move to the pipeline. On `cancel` or equivalent, stop without running any phase. Do not offer a "reduce scope" option and do not treat arbitrary replies as scope-change requests — the only valid responses are `y` (proceed with full coverage) or `cancel`.
-
-**Populating the scope preview — pre-Phase-1 estimation.** The gate renders BEFORE Phase-1 discovery, so the scope-preview numbers are projections based on signals available at gate time, not measurements. Derive each value as follows:
-
-- `<N_low>–<N_high>` for Phase-5 dispatch count (dual-stage expanded):
-  - Best case (every journey cycle-1 greenlights): `journeys_low × 2 × 5 + cleanup` to `journeys_high × 2 × 5 + cleanup` (one Stage A + one Stage B per journey per pass, 5 passes, plus cleanup subagent).
-  - Realistic case (average 1.5 cycles per journey per pass): `journeys_low × 3 × 5` to `journeys_high × 3 × 5`.
-  - Worst case (cycle-cap on every journey every pass): `journeys_low × 14 × 5` to `journeys_high × 14 × 5`.
-
-  The scope preview reports the realistic band (×3/pass) and footnotes the worst-case ceiling. The best case (×2/pass) is reported as the floor — every journey gets at least one Stage A + one Stage B per pass under the no-skip contract.
-
-  `journeys_low`/`journeys_high` is a journey-count band estimated from:
-  - the user-provided happy-path description (≥1 journey per major flow named),
-  - the top-level nav/link count on the app's homepage (one `playwright-cli snapshot` before the gate, counted as discovery preamble), and
-  - a fallback band of 15–40 if neither signal is reliable.
-- `<M_low>–<M_high>` = `journeys_low × 0.5` to `journeys_high × 0.5` (bug hunts target ~half the journey set).
-- **Two parallelism caps — `<P_dispatch>` (subagent count) and `<P_workers>` (Playwright workers).** They are governed by different constraints:
-  - `<P_dispatch>` = min(4, credential-count-per-role from Phase-0 pre-flight) — bounded by host CPU/memory + per-role credential availability + dispatch-time API rate limits. Affects how many composer / reviewer / probe subagents the orchestrator fans out per wave.
-  - `<P_workers>` = bounded by **DB-state isolation**, NOT credentials. Default = `<P_dispatch>` when the audit reports no global-state contention. Capped at **1** when the audit reports `global-reset:cross-test-race` (every test races on a global reset/teardown). Capped at **per-user-isolation cap** when the audit reports `single-tenant-global-state` (assertions on global collections race across workers).
-  - These are **independent**: a single-tenant app with `/api/reset` may legitimately have `P_dispatch=4` (4 composers writing 4 specs in parallel) and `P_workers=1` (those specs run serially at test time). Conflating them produces either over-paralleled runtime (flake) or under-paralleled dispatch (slow).
-- `<H1>–<H2>` = wall-clock band derived from `<N_high>` and `<N_low>` at `<P_dispatch>`-way parallel composition + `<P_workers>`-way parallel test-runtime.
-
-After Phase-1 discovery completes, the orchestrator emits a progress line of the form `[onboarding] scope update: <N_actual> journeys discovered — projection was <N_low>–<N_high>, proceeding with full coverage`. It does NOT re-prompt the user — the single-gate contract is preserved. If the actual lands outside the projected band, the progress line makes that visible; the run continues regardless.
-
-**Why projections, not measurements.** Running Phase-1 discovery before the gate would (a) violate the single-front-load-gate contract the skill promises, and (b) spend budget on an app the user may still cancel. The band acknowledges this: the user commits to full coverage within an estimated envelope, the orchestrator updates the actuals post-Phase-1, and nothing about the full-coverage contract changes if the actuals differ.
-
-### Shared-resource audit
-
-Before the user confirms the gate, the orchestrator runs a shared-resource audit against the target app and renders the findings as an additional informational block inside the gate message. The audit's job is not to block the run — it makes contention constraints **visible before** they become mid-pass flakiness.
-
-Run the checklist below and, for each row with a positive detection, emit a one-line constraint into the gate's "Shared-resource audit" block.
-
-| Constraint | Detection | Mitigation the user should consider | Tag |
-|---|---|---|---|
-| Single credential per role (OAuth or form) | Phase-0 credential count ≤ 1 per role | Pre-seed 3+ throwaway accounts per parallel-eligible role | `single-credential:<role>` |
-| Global rate limits (per-IP or per-tenant) | Probe login endpoint for 429 behaviour | Confirm rate-limit ceiling vs. planned parallel-dispatch peak | `rate-limit:<scope>` |
-| CSRF tokens tied to session (concurrent POSTs fail) | Static scan of form handlers for `csrf` / `antiforgery` patterns | File-level serial on mutating specs + throwaway accounts per worker | `csrf-session-bound` |
-| Shared tenant/workspace state | Single-tenant app with no per-user partition | Throwaway tenant for the run, or mandatory teardown hooks | `single-tenant:shared-state` |
-| No UI delete for created entities | Static scan for `Delete`/`Verwijder` action absence on add-* pages | API-backdoor cleanup helper | `missing-ui-delete:<entities>` |
-| **Global mutating reset/teardown endpoint** | Phase-1 probe finds reset endpoint AND mutation endpoints touch global (non-tenanted) collections (catalog-wide, marketplace-wide, etc.) | **Forbid `beforeEach(reset)` — it races across workers.** Use per-test throwaway users + `globalSetup` once-per-suite seed. Stage 4a §1 inverts under this tag (see `element-interactions/references/test-optimization.md` §1). | `global-reset:cross-test-race` |
-| **Per-tenant vs per-user data scoping** | Probe whether the app exposes any tenant/workspace partition (e.g., URL prefix `/t/<id>/...`, JWT `tenant_id` claim, dropdown switch) | Single-tenant apps make global-state assertions (e.g., "marketplace is empty") parallel-hostile across workers. Rewrite assertions to per-user-scoped views (e.g., "MY profile has no listings"). | `single-tenant-global-state` |
-
-Rendered example of the audit block inside the gate (positive detections):
-
-```
-Shared-resource audit:
-  • Single credential per privileged role [single-credential:<role-slug>] → P_dispatch capped at 1 for journeys gated by that role until seeding resolved.
-  • CSRF tokens session-bound [csrf-session-bound] → mandatory `test.describe.configure({ mode: 'serial' })` on mutating specs.
-  • Global /api/reset endpoint touches collection-wide state [global-reset:cross-test-race] → forbid beforeEach(reset); P_workers capped at 1 unless per-test-user pattern + globalSetup-once is adopted.
-  • Single-tenant global state [single-tenant-global-state] → rewrite "<global view> is empty" assertions to "MY <scoped view> has no <records>".
-  • No UI delete for one or more resource types [missing-ui-delete:<type-1>,<type-2>] → tenant pollution expected; API-backdoor cleanup required.
-
-Parallelism caps:
-  P_dispatch = 4 (composer / reviewer / probe subagents in parallel — bounded by host CPU/memory + credentials)
-  P_workers  = 1 (Playwright workers — capped by global-reset:cross-test-race; raise to 4 after per-test-user pattern is adopted)
-```
-
-**If the audit finds zero constraints**, the block still renders — silently skipping it would let a user assume the audit was not attempted. Render:
-
-```
-Shared-resource audit:
-  • No shared-resource constraints detected.
-
-Parallelism caps:
-  P_dispatch = <P_dispatch>
-  P_workers  = <P_workers>
-```
-
-The audit block is never omitted from the gate. Empty-findings runs still emit the block with the no-constraints line so the audit's execution is always visible to the user.
-
-The audit output has two downstream effects, both informational-to-the-user but load-bearing for the pipeline:
-
-1. **Onboarding report.** The audit block is copied verbatim into `tests/e2e/docs/onboarding-report.md` under a "Shared-resource audit" heading at Phase 7.
-2. **Constraint tag for later phases.** Each positive detection becomes a constraint tag attached to the run (e.g. `parallelism-capped:<role-slug>=1`, `mandatory-serial:mutating-specs`, `missing-ui-delete:<resource-type>`). Phase 5's `coverage-expansion` invocation reads these tags when selecting per-pass model/dispatch caps and when deciding whether to force `mode: 'serial'` on mutating spec files. The tags do not change the full-coverage contract — they change *how* it is executed.
-
-The audit does not introduce a new prompt. The user still only sees `y / cancel`.
-
----
-
-## Progress output
-
-After every major milestone, emit a single line prefixed with `[onboarding]` to the terminal. Do not emit multi-line status dumps, do not paginate logs from companion skills, do not print intermediate `playwright-cli` transcripts.
-
-Examples:
-
-```
-[onboarding] Level A detected — installing civitas-cerebrum + playwright
-[onboarding] Dependencies installed (3 packages)
-[onboarding] Scaffolding tests/fixtures/base.ts, page-repository.json, playwright.config.ts
-[onboarding] Phase 1 discovery — 12 pages visited so far…
-[onboarding] Phase 1 complete — 23 pages, 4 gated
-[onboarding] Journey mapping — 7 journeys identified (2 P0, 3 P1, 2 P2)
-[onboarding] Happy path test written, stabilizing…
-[onboarding] Happy path green — committed
-[onboarding] Coverage expansion starting (mode: depth, 5 passes)
-[onboarding] Coverage expansion pass 1/5 starting — 44 journeys, dual-stage A↔B
-[coverage-expansion] Pass 1/5, journey j-a: cycle 1/7, review greenlight
-[coverage-expansion] Pass 1/5, journey j-b: cycle 2/7, review greenlight (1 retry — mobile variant added)
-[coverage-expansion] Pass 1/5, journey j-c: cycle 7/7, review blocked-cycle-exhausted
-[onboarding] Coverage expansion pass 1/5 complete — 27 tests added, 3 branches discovered, 1 journey blocked-cycle-exhausted
-[onboarding] Coverage expansion pass 2/5 complete — 14 tests added, 1 sub-journey promoted, all journeys greenlit
-[onboarding] Coverage expansion pass 3/5 complete — 8 tests added, cross-journey interactions covered
-[onboarding] Coverage expansion pass 4/5 complete — 6 adversarial tests added, 2 edge cases surfaced
-[onboarding] Coverage expansion pass 5/5 complete — 4 adversarial tests added, ledger dedup applied
-[onboarding] Bug-hunt 1/2 (element probing) — 2 issues logged
-[onboarding] Bug-hunt 2/2 (flow probing) — 3 issues logged
-[onboarding] Generating work-summary-deck
-[onboarding] Done. See onboarding-report.md.
-```
-
----
-
-## Pipeline
-
-The seven-phase pipeline (Phase 1 Scaffold → Phase 2 Groundwork discovery → Phase 3 Happy path → Phase 4 Full journey mapping → Phase 5 Coverage expansion → Phase 6 Bug hunts → Phase 7 Final summary) is specified in [`references/phases-walkthrough.md`](references/phases-walkthrough.md). Read it before authoring or modifying any phase logic.
-
-**Onboarding is a parent-only orchestrator.** Dispatching the onboarding skill as a subagent (e.g. `Agent(prompt: "You are the onboarding orchestrator running the seven-phase pipeline …")`) hits the recursive-dispatch wall — subagents cannot fan out their own children, so the dispatched orchestrator returns `blocked-dispatch-failure: structural` after burning a full subagent budget. The parent must read this skill INTO its own context and dispatch the per-phase leaf subagents directly. **Harness-enforced by `hooks/parent-only-orchestrator-dispatch-block.sh`** (PreToolUse:Agent — denies dispatches whose prompt asks the subagent to act as the onboarding orchestrator, regardless of whether the literal "skill"/"SKILL.md" word appears).
-
-### Hard rules — kernel-resident
-
-#### One rule, applied to every phase
-
-**Onboarding is complete only when every phase has run to completion — every internal stage, every internal pass, every sub-skill's own contract honoured.** Pass 1 alone is not Phase 5. Stage 3 alone is not Phase 3. Phase 1 of journey-mapping alone is not Phase 4. "Most of the work done", "deferred the rest for budget", "honest stopping point" — all of these are honest mid-run *states* but NONE of them are *phase-complete*. Onboarding does not advance from any of those states; it commits what it has, writes resume state, and returns to the user with a "resume needed" message.
-
-#### Per-phase completion contract — every internal stage / pass must finish
-
-| Phase | Sub-skill / inline | What "phase complete" requires |
+| Mode | When | How |
 |---|---|---|
-| 1 — Scaffold | onboarding (inline) | `package.json` deps installed + scaffolded files present + Chromium installed |
-| 2 — Groundwork | onboarding (inline) | `app-context.md` written + ground-truth probe complete |
-| 3 — Happy path | element-interactions Stages 1, 2, 3, 4a, 4b | All five stages — scenario discovery, element inspection, write automation, optimization review, API compliance review. Stage 3 alone is not Phase 3 |
-| 4 — Journey mapping | journey-mapping Phases 1, 2, 3, 3.5, 4, 5 | All six phases — page discovery, flow identification, prioritization, redundancy revision, journey-map document, coverage checkpoint. Phase 1 alone is not Phase 4 |
-| 5 — Coverage expansion | coverage-expansion `mode: depth` | All 5 passes (3 compositional + 2 adversarial) + cleanup ledger dedup. Pass 1 alone is one-fifth of the pipeline. Every journey gets terminal `review_status` (greenlight / blocked-cycle-stalled / blocked-cycle-exhausted / blocked-dispatch-failure) on every pass — Stage-A-only is incomplete |
-| 6 — Bug hunts | bug-discovery (element + flow probing passes) | Both probing passes — element-level probing AND flow-level probing. One pass alone is not Phase 6 |
-| 7 — Final summary | onboarding (inline) | onboarding-report.md committed + work-summary deck generated |
+| **Interactive** | You want fine-grained control or you're learning the system | Read this skill and follow the phase playbook below |
+| **Automated** | You want a hands-off run | Invoke this skill from an external automated CLI driver that dispatches role-scoped subagents per phase |
 
-Reporting a phase complete when its sub-skill returned a partial state is a contract violation regardless of how the partial state is framed. The progressive forms — "Pass 1 done, 2–5 deferred for budget" / "compositional passes complete, adversarial deferred" / "Stage 3 done, 4a/4b skipped because tests passed" / "Phase 1 of journey-mapping done, full mapping deferred" — are honest mid-run *reports* but they ARE NOT phase completion.
-
-#### Sub-skill exit #2 does NOT advance Onboarding
-
-When ANY sub-skill takes its own exit #2 (commit-what-landed + state-file + resume-needed) — coverage-expansion at any pass, journey-mapping mid-Phase, element-interactions between stages, bug-discovery between probing passes — Onboarding pauses at that same point. It returns to the user with the sub-skill's resume-needed message. It does NOT proceed to the next phase. The next phase only fires after the previous phase's sub-skill returns `status: complete`.
-
-#### Every phase must EXECUTE before any exit
-
-Refusing to start a phase is not an exit — it's a contract violation, distinct from exit #2 (which is for budget-driven mid-pipeline stops AFTER work has begun). Specifically:
-
-- **Phase 5 must DISPATCH at least one composer wave** before exit #2 is invocable. Phase 3 (happy-path scaffolded test) is NOT a Phase 5 dispatch — different phases, different subagents, different work. Harness-enforced by `coverage-state-schema-guard.sh`.
-- The same principle generalises to every phase: an empty progress log + state file claiming "exit #2" is refusing to start, not exit #2.
-
-**Stop-event harness backstop**: `hooks/onboarding-pipeline-incomplete-stop-deny.sh` (Stop) reads the phase ledger and the coverage-expansion state file on every Stop the orchestrator emits. It blocks the stop with `decision: block` when mid-pipeline signals are present (sentinel-bearing journey-map, coverage-expansion state file with `.status != "complete"`, ledger phase 7 not greenlit) and no authorisation sentinel exists. The deny message tailors the redirect to the specific Phase-5 sub-case (zero dispatches → "dispatch the first wave"; in-flight dispatches present + no auto-compact → "auto-compact, don't stop"). User-authorised early stops are signalled by `touch .claude/onboarding-stop-authorized` (or `tests/e2e/docs/.onboarding-stop-authorized`) — the hook honours either path. The hook also honours the harness-supplied `stop_hook_active: true` payload field (silent allow when the agent is already running because of a prior Stop block, to avoid unrecoverable loops). A consecutive-block cap (3 attempts per session) provides a second escape from runaway deny loops. Escape hatch: `ONBOARDING_STOP_DENY=off` set in the parent process that launched Claude Code.
-
-#### Phase-validator checkpoint — every phase ends with a dispatch
-
-Onboarding dispatches `phase-validator-<N>:` at the **end of every phase**, before advancing to phase N+1. The validator is a fresh-context subagent that reads the per-phase completion contract (this section) and verifies each criterion against the phase's actual artifacts (state files, journey-map sentinel, commits, etc.). It returns `greenlight` (advance) or `improvements-needed` (re-attempt with concrete `fix:` actions).
-
-- **Skipping the validator dispatch is a contract violation.** Same family as skipping the phase itself.
-- **Cycle cap: 10 per phase.** After cycle 10 still `improvements-needed` → terminal `blocked-phase-validator-stalled`, surface to user with unresolved findings.
-- **Onboarding advances only on `greenlight`.** Recorded in `tests/e2e/docs/onboarding-phase-ledger.json`.
-- **Phase 3 (happy path), Phase 4 (journey mapping), Phase 5 (coverage expansion), Phase 6 (bug hunts) all dispatch a validator.** Phases 1, 2, 7 also dispatch one (inline-phase verification — scaffolded files, app-context.md sections, onboarding-report.md commit).
-
-Full workflow spec — manifest shape, per-phase verification table, response handling, cycle counting across resume — in [`references/phase-validator-workflow.md`](references/phase-validator-workflow.md). Return shape canonical in `../element-interactions/references/subagent-return-schema.md` §2.5. Schema-conformance and dispatch-required gating are harness-enforced (see [harness-hooks.md](../element-interactions/references/harness-hooks.md)).
-
-#### Inter-phase auto-compact
-
-After each phase greenlights via its `phase-validator-<N>:` and BEFORE the orchestrator begins phase N+1's work, Onboarding runs `/compact` (or emits the safe-compact line for manual compaction on platforms without programmatic compaction). Phase N's accumulated context — per-entry-point summaries, validator returns, in-flight composer bookkeeping — should not persist into Phase N+1. Only the structured state files survive across the compact (the `app-context.md`, `journey-map.md`, `coverage-expansion-state.json`, `onboarding-phase-ledger.json`, `adversarial-findings.md`).
-
-**Why routine, not threshold-only.** Coverage-expansion's `references/depth-mode-pipeline.md` §"Auto-compaction between passes" already runs auto-compact when context crosses a 70%-threshold. That handles the within-phase case (e.g. when Pass 5's adversarial-totals counter approaches budget mid-run). The inter-phase auto-compact is independent: even at 30% utilisation, flushing Phase N's context before Phase N+1 keeps the orchestrator at index-level state across phase boundaries — which is what the per-phase completion contract assumes.
-
-**Sequence:**
-
-1. Phase N's sub-skill returns. Orchestrator dispatches `phase-validator-<N>:` per the kernel rule above.
-2. Validator returns greenlight. Onboarding records the entry in `onboarding-phase-ledger.json` (auto-recorded by the dispatch-required gate; see [harness-hooks.md](../element-interactions/references/harness-hooks.md)).
-3. **Onboarding runs `/compact`** (or emits the safe-compact line). The orchestrator's first action on the post-compact turn is to re-read the ledger + relevant state files; it picks up from the ledger's recorded greenlight and proceeds to phase N+1.
-4. Phase N+1 begins.
-
-A skipped inter-phase compact is not a hard error — it just leaves Phase N's load on the orchestrator. Routine compact is the cheap, deliberate alternative to the >70%-threshold panic case.
-
-**Phase 7 exception.** No compact after Phase 7 — the run is done; the report and deck are the deliverables.
-
-#### Other invariants
-
-- **All seven phases run in order.** No reordering, no skipping. The front-load gate authorises Phases 1–7 up-front; the user does not get re-prompted between phases.
-- **Phase 5 invokes `coverage-expansion` with `mode: depth`.** Onboarding never invokes coverage-expansion in `mode: breadth`. Phase 6 invokes `bug-discovery` with both probing passes (element + flow). The mode arguments are fixed; the agent does not choose them.
-- **Hard gates between phases.** A phase that surfaces a malformed prerequisite (missing journey-map sentinel, missing tenant credentials, missing happy-path sentence, etc.) stops Onboarding with a clear `blocked-on-prerequisite` message — never silently proceeds.
-- **Front-load gate is the only user prompt.** Once the user authorises the run, Onboarding runs autonomously through Phase 7 — no further confirmation prompts. Mid-run scope-reduction without explicit user authorisation is forbidden (mirrors coverage-expansion §"Two valid exits"). "Honest" / "pragmatic" / "I want to surface this back upstream" framings are the same forbidden pattern with different words.
-
-## Onboarding report (`tests/e2e/docs/onboarding-report.md`)
-
-Accumulated throughout the run, committed at Phase 7. Structure:
-
-```markdown
-# Onboarding Report — <app name>
-
-**Date:** YYYY-MM-DD
-**Detected level:** A | B | C
-**Happy path:** <user-supplied sentence>
-**Runtime:** Xm Ys
-
-## Coverage
-| Priority | Journeys | Steps | Covered | % |
-| P0 | <n> | <n> | <n> | <n> |
-| P1 | <n> | <n> | <n> | <n> |
-| P2 | <n> | <n> | <n> | <n> |
-| P3 | <n> | <n> | <n> | <n> |
-
-## Skipped tests
-<list: test name + reason>
-
-## App bugs logged
-<list: short description + source phase>
-
-## Knowledge gained per pass
-Pass 1 — <3-line summary>
-Pass 2 — <3-line summary>
-Pass 3 — <3-line summary>
-Pass 4 — <3-line summary>
-Pass 5 — <3-line summary>
-
-## Next steps
-- Address app bugs listed above.
-- Rerun test-composer once blockers clear.
-```
+The two modes execute the same phases against the same gate criteria. The
+automated driver dispatches role-scoped subagents per phase; in interactive
+mode you load the relevant role-scoped skill yourself and work the phase
+through Claude Code's normal tool surface.
 
 ---
 
-## Failure handling
+## Phase map
 
-Every failure — in any phase — routes through `failure-diagnosis`. Four classifications:
+| # | Phase | What it produces | Skill |
+|---|---|---|---|
+| 1 | Scaffold | `playwright.config.ts`, `tests/e2e/{fixtures,docs}/`, `.gitignore` additions | `element-interactions` (Stage 1) |
+| 2 | Groundwork | `app-context.md`, `page-repository.json`, runtime self-credentialing fixture | `element-interactions` (Stage 2) |
+| 3 | Happy-path | One `tests/e2e/<journey>.spec.ts` per primary user flow that exercises sign-in + the critical action | `element-interactions` (Stages 3–4), `test-composer` |
+| 4 | Journey mapping | `tests/e2e/docs/journey-map.md`, `tests/e2e/docs/journey-map-coverage.md` | `journey-mapping` |
+| 5 | Coverage expansion | One `tests/e2e/<journey>.spec.ts` per priority-2/3 journey, grouped passes 2–5 with cleanup dedup | `coverage-expansion`, `test-composer` |
+| 6 | Bug discovery | Adversarial findings + regression specs that lock the failure modes | `bug-discovery` |
+| 7 | Secrets sweep | Credentials/keys/PII/URLs extracted to `.env`; `.env.example` committed | `secrets-sweep` |
+| 8 | Report | `qa-summary-deck.html` + `qa-summary-deck.pdf` at the project root | `work-summary-deck` |
 
-| Classification | Action |
-|---|---|
-| Test issue | Fix autonomously, re-run. If still failing after 3 stabilization cycles, skip with a comment and log to the onboarding report. |
-| App bug | Skip the test with a comment referencing the report; append the bug to `onboarding-report.md` under "App bugs logged"; continue. |
-| Ambiguous | Skip + log + continue. |
-| `playwright-cli` / infra error | Halt. Commit what is stable. Print a clear stop reason with the last progress line. |
-
-The only halt conditions are infra errors. The pipeline never halts on test or app failures.
-
-### CLI call duration discipline
-
-With `@playwright/cli` invoked from the Bash tool, the relevant time bound is the Bash tool's per-call timeout (default 2min, max 10min) — there is no MCP watchdog and no 600s silent-kill behaviour. Subagents driving long-running probes (Phase-3 happy-path stabilization, Phase-5 adversarial passes, Phase-6 bug-hunts) just need to keep each individual CLI call short enough to fit comfortably within the Bash timeout.
-
-Skill-level guidance, included verbatim in every subagent brief that drives `@playwright/cli`:
-
-> Issue one CLI command per Bash call. Do not chain more than a few commands per call (`-s=<name> open`, then `goto`, then `snapshot` is fine; a 50-page crawl in one Bash call is not). If a single command will plausibly take longer than ~90s (e.g. a `goto` against a slow staging environment, a long `tracing-stop` flush), pass `timeout: 180000` or higher to the Bash call explicitly. Do not run `playwright-cli show` (the interactive dashboard) or `playwright-cli pause-at` from a non-interactive subagent — those block on user input.
-
-This is skill-level guidance, not a config knob. The CLI's `--raw` and `--json` modes both flush on completion; there is no streaming-keepalive concern.
+A phase only advances once its **exit criteria** (below) are satisfied. A
+human or an automated phase-validator checks the criteria; ambiguity blocks
+the phase, not the run.
 
 ---
 
-## Re-invocation semantics
+## Status ledger + workflow reviewer (state-machine enforcement)
 
-Onboarding never auto-overwrites an already-onboarded project. If the cascade detector returns **None**, it prints the already-onboarded exit message and stops. To rebuild from scratch, the user deletes `tests/e2e/docs/journey-map.md` (breaking the sentinel check) and re-invokes.
+The pipeline runs on top of a structured status ledger at
+`tests/e2e/docs/onboarding-status.json` (gitignored — same pattern as
+`tests/e2e/docs/.phase4-cycle-state.json` and
+`tests/e2e/docs/coverage-expansion-state.json`). The orchestrator
+(interactive) or an external automated CLI driver **MUST** update
+this ledger after every phase / pass / cycle completion. Every
+transition (phase N → phase N+1, pass N → pass N+1 inside Phase 5,
+cycle N → cycle N+1 inside Phase 4) is gated by a
+`workflow-reviewer-*` subagent. The reviewer reads the ledger row +
+the closing subagent's handover envelope + the canonical methodology
+section, returns `verdict: approve | reject | escalate`, and the
+orchestrator only advances when the verdict is `approve`.
+
+The contract is harness-enforced:
+
+- `onboarding-ledger-gate.sh` (PreToolUse:Agent, DENY) — denies any
+  non-reviewer Agent dispatch at a transition point until the matching
+  `workflow-reviewer-*` has approved; also denies out-of-order phase
+  / pass / cycle dispatches (e.g. `phase4-*` while `currentPhase=2`).
+- `onboarding-ledger-write-gate.sh` (PreToolUse:Write|Edit, DENY) —
+  validates every ledger write against
+  `schemas/onboarding-status.schema.json` and denies phase-skip
+  transitions that lack a `status: skipped` row + an
+  `approvedDeviations[]` entry carrying a verbatim `authorizer`.
+
+**Skip / early-stop authorisation.** A phase can be skipped (or the
+pipeline stopped early) **only** when the workflow-reviewer for the
+prior phase approves the deviation, with the `authorizer` field on the
+reviewer return carrying either a verbatim user quote OR a documented
+structural exception. Self-imposed reasons (`session-length`,
+`budget-cap`, `auto-mode`, `inferred-pref`) are not authorisation —
+the harness rejects ledger writes that lack a proper authorizer.
+
+**3-cycle reject cap.** A workflow-reviewer that rejects three
+consecutive times returns `verdict: escalate`, and the orchestrator
+surfaces all three returns to the user for manual triage. The ledger
+row's `status` becomes `blocked`. This mirrors the existing
+3-cycle process-validator pattern.
+
+**Canonical references:**
+- `schemas/onboarding-status.schema.json` — ledger shape (v1)
+- `schemas/subagent-returns/workflow-reviewer.schema.json` — reviewer return shape
+- `skills/workflow-reviewer/SKILL.md` — reviewer methodology
+- `skills/element-interactions/references/harness-hooks.md` — both new hooks indexed
+
+The ledger + reviewer layer was added because empirical observation (a
+21-journey benchmark, Run 5) demonstrated that markdown-text contract
+enforcement alone permits silent scope compression: orchestrators
+could skip phases entirely, stop early, or accept subagent "complete"
+returns whose deliverables were missing. The state-machine layer
+makes those failure modes harness-denied rather than instruction-only.
 
 ---
 
-## Non-goals
+## Front-load gate (before Phase 1)
 
-This skill explicitly does not:
+Before any scaffolding, two things happen in order: (0) run-mode
+selection, then (1–3) the three preconditions.
 
-- Configure CI/CD.
-- Set up test data fixtures beyond the scaffold file.
-- Invoke `agents-vs-agents` (AI guardrail testing is opt-in).
-- Publish to npm, push tags, or modify any git remote.
-- Touch dependencies outside `@civitas-cerebrum/*` and Playwright.
+### Step 0 — Mode selection (ask the user first)
 
-If the user wants any of these, they ask for them separately after onboarding finishes.
+Before the precondition checks, present the run-mode choice to the user
+verbatim:
+
+> "Before starting, choose the run mode:
+>
+> - **standard** (default, recommended) — first-pass / first-cycle is
+>   strict parallel; subsequent passes / cycles may use grouping or
+>   single-agent dispatches for efficiency. Best for everyday onboarding
+>   runs.
+> - **depth** — strict parallel per-journey on every compositional pass
+>   and strict parallel per-section on every discovery cycle. Up to ~20×
+>   more subagent dispatches and token spend than standard. Best for
+>   high-stakes audits, package-quality benchmarks, and first-time
+>   onboarding of business-critical apps where you want exhaustive
+>   per-unit fidelity."
+>
+> "Which mode?"
+
+Capture the user's answer as `runMode ∈ {standard, depth}` (default
+`standard` if the user passes through without picking). The value
+propagates through the rest of the onboarding pipeline as follows:
+
+| Phase / dispatch | `runMode: standard` | `runMode: depth` |
+|---|---|---|
+| **Phase 4 — `journey-mapping`** | `args: "phases: full"` (default cycle-1 strict, cycle-2+ relaxed — the existing rule already coded into `journey-mapping/SKILL.md` §"First-cycle strict / later-cycle relaxed") | `args: "phases: full, cycle-strictness: depth"` — strict per-section parallel on every cycle (including edge-probe and any additional discovery cycles); single-subagent walkthroughs forbidden in every cycle |
+| **Phase 5 — `coverage-expansion`** | `args: "mode: standard"` (Pass 1 strict, Passes 2-5 may group; adversarial grouping permitted; `strict-adversarial: true` is opt-in) | `args: "mode: depth"` — strict per-journey parallel on every pass (no `[group]`, no `[P3-batch]` on any of Passes 1-5); adversarial Passes 4-5 are strict-per-journey by default (the `strict-adversarial: true` opt-in is implicit under depth) |
+| **State files** | Phase-5 `coverage-expansion-state.json` is written with `runMode: "standard"` on the first write; Phase-4 `.phase4-cycle-state.json` is written with `cycleStrictness: "standard"`. | Phase-5 `coverage-expansion-state.json` is written with `runMode: "depth"` on the first write; Phase-4 `.phase4-cycle-state.json` is written with `cycleStrictness: "depth"`. The `standard-mode-first-pass-guard.sh` hook reads these fields and enforces the depth-mode strict-everywhere semantics. |
+
+The orchestrator emits one declaration line at the start of each phase
+that consumes the mode:
+`[onboarding] runMode: depth — Phase 5 strict-per-journey on every pass`
+or `[onboarding] runMode: standard — Phase 5 first-pass strict, later
+relaxed`.
+
+Under `runMode: depth`, `coverage-expansion` runs in its
+strict-parallel-everywhere mode. Cost: up to ~20× more subagent
+dispatches and token spend than `mode: standard`. Confirm with the user
+before defaulting to depth on any run that is not explicitly a
+high-stakes audit or benchmark.
+
+### Steps 1–3 — Preconditions
+
+Once the run mode is captured, confirm three preconditions:
+
+1. **Dev server runs locally.** You can launch the app and reach its
+   landing page in a browser. Phase 2's groundwork depends on this.
+2. **`@civitas-cerebrum/element-interactions` installed.** `package.json`
+   lists the dep; `node_modules/@civitas-cerebrum/element-interactions/`
+   exists. (The package's postinstall installs the surviving hooks +
+   skills into `~/.claude/`.)
+3. **No prior e2e suite in conflict.** If `tests/e2e/` already exists with
+   committed specs, this is a *resume* (not onboarding). Switch to running
+   the relevant phase skill directly.
+
+If the project already runs `playwright` end-to-end with substantial
+coverage, do not run onboarding — it's designed for zero-to-suite, not
+augmentation.
+
+---
+
+## Phase 1 — Scaffold
+
+**Goal.** Land the Playwright config and the shared file tree.
+
+**Steps.**
+
+1. Create `playwright.config.ts` with the project's dev-server URL,
+   the standard reporters (`html` + `json`), and a `webServer` block if
+   the suite should launch the dev server itself.
+2. Create `tests/e2e/fixtures/`, `tests/e2e/docs/`, and `tests/e2e/playwright.setup.ts`.
+   Spec files themselves live at `tests/e2e/<journey>.spec.ts` (root of
+   `tests/e2e/`, no `specs/` subdirectory).
+3. Add `tests/e2e/.gitignore` entries for `playwright-report/`,
+   `test-results/`, `.last-run.json`.
+4. Commit as `chore: scaffold e2e suite`.
+
+**Exit criteria.**
+- `npx playwright test --list` lists zero specs without error.
+- The four scaffold files exist on disk.
+
+Load `element-interactions` (Stage 1) for the exact file shapes.
+
+---
+
+## Phase 2 — Groundwork
+
+**Goal.** Capture project context so later phases don't re-discover it.
+
+**Steps.**
+
+1. **App-context document.** Author `tests/e2e/docs/app-context.md`. Cover
+   what the app is, primary user roles, authentication model, key
+   subsystems, and the rough URL surface.
+2. **Page repository.** Walk the running app and populate
+   `tests/e2e/page-repository.json` with one entry per discoverable page
+   (path, purpose, primary selectors). Use Playwright's snapshot tool
+   interactively if helpful.
+3. **Runtime self-credentialing fixture.** Add `tests/e2e/fixtures/auth.ts`
+   that mints test users at runtime (signup → confirm → login) instead
+   of relying on seeded credentials. Phase 7's secrets sweep depends on
+   no credentials being hard-coded.
+
+**Exit criteria.**
+- The three artefacts exist and `npx playwright test --list` still works.
+
+Load `element-interactions` (Stage 2) for the page-repository schema and
+the self-credentialing pattern.
+
+---
+
+## Phase 3 — Happy path
+
+**Goal.** One green spec per primary user flow.
+
+**Steps.**
+
+1. Identify the *primary* journeys from `app-context.md` (typically 2–5).
+2. For each, load the `test-composer` skill with a brief that names the
+   journey, its prerequisites, and the critical assertion. Composer
+   writes the spec at `tests/e2e/<journey>.spec.ts`, lands tests, and
+   self-verifies with `npx playwright test`.
+3. The composer skill internally runs an in-loop reviewer pass that
+   catches craft issues, missing scenarios, and stale assertions
+   before declaring the cycle done — its return shape is the
+   `reviewer-inloop` schema (see `schemas/subagent-returns/`). You
+   don't load this reviewer as a separate skill; it is part of the
+   composer's cycle.
+4. Commit each spec individually: `test(j-<journey>): happy path`.
+
+**Exit criteria.**
+- One spec per primary journey, all passing locally.
+- `tests/e2e/docs/.discovery-draft.json` has been written by the
+  Stage-3 happy-path pass (used as input by Phase 4).
+
+Load `test-composer` for the dispatch contract; consult
+`schemas/subagent-returns/composer.schema.json` and
+`reviewer-inloop.schema.json` for return shapes.
+
+---
+
+## Phase 4 — Journey mapping
+
+**Goal.** Produce a structured map of every user journey worth testing,
+prioritised P1 / P2 / P3.
+
+**Steps.**
+
+1. Load `journey-mapping` with `args: "phases: full"` under `runMode:
+   standard` (cycle 1 strict per-section, cycle 2+ relaxed) or
+   `args: "phases: full, cycle-strictness: depth"` under `runMode:
+   depth` (every cycle strict per-section, single-subagent walkthroughs
+   forbidden in every cycle). The skill enforces an *iterative cycle*
+   protocol: at least one discovery cycle plus exactly one edge-probe
+   cycle. Shallow single-pass exploration is not accepted.
+2. Produce `tests/e2e/docs/journey-map.md` (priority-grouped) and
+   `tests/e2e/docs/journey-map-coverage.md` (mapping each journey to
+   the spec that covers it, or `<missing>`).
+3. Reviewer cross-check: the structural-smell prevention rule rejects
+   maps that collapse distinct flows or split one flow across journeys.
+
+**Exit criteria.**
+- Journey map exists with priority groupings and `<missing>` markers.
+- The edge-probe cycle's findings are reflected in the map (not just
+  discarded).
+
+Load `journey-mapping` for the cycle gate, the edge-probe contract, and
+the priority-tier rubric.
+
+---
+
+## Phase 5 — Coverage expansion
+
+**Goal.** Land one spec per priority-2 / priority-3 journey not already
+covered, plus per-pass dedup.
+
+**Steps.**
+
+1. Load `coverage-expansion` with `args: "mode: standard"` under
+   `runMode: standard` (Pass 1 strict per-journey, Passes 2-5 may
+   group; adversarial grouping is default and `strict-adversarial:
+   true` is opt-in) or `args: "mode: depth"` under `runMode: depth`
+   (strict per-journey on every pass — `[group]` and `[P3-batch]`
+   forbidden across all 5 passes; adversarial Passes 4-5 are
+   strict-per-journey by default). The skill defines compositional
+   passes (1–5) plus an adversarial pass and a cleanup/dedup pass.
+   The orchestrator writes `runMode` into
+   `tests/e2e/docs/coverage-expansion-state.json` on the first
+   state-file write so the `standard-mode-first-pass-guard.sh` hook
+   can enforce the depth-mode strict-everywhere semantics.
+2. **Relevance grouping.** When a priority tier holds more than five
+   journeys, group them by feature area and cap each group at seven.
+   Project-agnostic clustering vocabulary: browse / transact / account
+   / mutate / errors / auth. Avoid project-specific tokens.
+3. **First pass is opus-tier.** Reserve the most capable model for the
+   first compositional pass — the breadth scaffolding done here drives
+   every later pass.
+4. **Per-pass dedup.** Run one cleanup subagent at the end of every pass
+   to consolidate duplicate scenarios within the pass.
+5. **Adversarial passes.** Pass 4 (first adversarial) and pass 5 (second
+   adversarial) emit findings. If pass 5 surfaces seven or more
+   *unique* findings after dedup, run a third adversarial pass.
+
+**Exit criteria.**
+- Every P2 / P3 journey in the map has either a spec or a documented
+  skip with explicit authorisation.
+- The dedup pass at the end of each pass landed without leaving
+  duplicate-scenario findings open.
+
+Load `coverage-expansion` for the full pass protocol and the
+`[group]` dispatch marker syntax.
+
+---
+
+## Phase 6 — Bug discovery
+
+**Goal.** Surface adversarial findings — flows that *should* break the
+application — and lock the failure modes with regression specs.
+
+**Steps.**
+
+1. Load `bug-discovery`. The skill dispatches probe subagents per journey
+   (or per relevance group when there are many journeys).
+2. Each probe runs against the live app, emits findings, and authors
+   regression specs that reproduce each finding.
+3. Findings without reproductions are flagged but not committed as
+   specs; they go into `tests/e2e/docs/adversarial-findings.md`.
+
+**Exit criteria.**
+- Every probe completed (status `clean` or `findings-emitted`).
+- All `findings-emitted` returns have a corresponding regression spec
+  or an explicit `app-bug` flag for human triage.
+
+Load `bug-discovery` for the relevance-grouping rules and the probe
+return shape.
+
+---
+
+## Phase 7 — Secrets sweep
+
+**Goal.** Move every credential, API key, PII-shape literal, and
+hard-coded URL out of the test code into `.env`. The released suite
+should be portable across local / CI / staging targets.
+
+**Steps.**
+
+1. Load `secrets-sweep`. The skill defines the four literal classes
+   (credentials, API keys, PII, URLs) and the extraction playbook.
+2. Scan `tests/e2e/**/*.spec.ts` and `tests/e2e/fixtures/**/*.ts`.
+   *Do not* touch application source under `src/` or `app/`.
+3. Replace literals with `process.env.<NAME>`; write `.env` (real
+   values, gitignored) and `.env.example` (placeholders, committed);
+   ensure `.gitignore` covers `.env`.
+
+**Exit criteria.**
+- A re-scan of `tests/e2e/**` surfaces no literal credentials.
+- `.env`, `.env.example`, and the `.gitignore` entry are all in place.
+- `npx playwright test` still passes against the now-env-driven suite.
+
+Load `secrets-sweep` for the full playbook and the strict edit-scope
+rules.
+
+---
+
+## Phase 8 — Report
+
+**Goal.** Author the work summary so a stakeholder can understand what
+the suite covers without reading every spec.
+
+**Steps.**
+
+1. Load `work-summary-deck`. The skill writes `qa-summary-deck.html` at
+   the project root and automatically renders `qa-summary-deck.pdf`
+   next to it.
+2. The deck includes: total specs, journeys covered (priority-tiered),
+   adversarial findings landed as regressions, open `app-bug` flags,
+   and the suite's runtime envelope.
+
+**Exit criteria.**
+- `qa-summary-deck.html` and `qa-summary-deck.pdf` exist at the project
+  root.
+- The deck reflects the actual state of the suite (no stale numbers).
+
+---
+
+## Cross-cutting rules
+
+These rules apply to every phase. Violating them is a phase failure even
+when the exit criteria are technically met.
+
+- **Self-credentialing first.** No spec hard-codes a username, password,
+  or token. Auth flows mint test users at runtime.
+- **One commit per landed deliverable.** Phases commit per-spec, not
+  per-phase, so a partial run can be safely resumed.
+- **No project-specific vocabulary in shared docs.** Journey names use
+  generic web-UI clustering vocabulary (browse / transact / account /
+  mutate / errors / auth), not domain-specific tokens.
+- **Return-shape conformance.** Every subagent dispatch you run must
+  return a schema-conformant envelope (see
+  `schemas/subagent-returns/`).
+
+---
+
+## Resuming a partial run
+
+If onboarding was interrupted, find the latest greenlit phase from
+`tests/e2e/docs/journey-map-coverage.md` and the commit history, then
+restart from the next phase. Each phase is independently runnable as
+long as its predecessor's deliverables exist on disk.
+
+For automated runs, the external CLI driver typically exposes a
+`--resume` flag that consumes the same `tests/e2e/docs/onboarding-status.json`
+ledger this skill maintains.

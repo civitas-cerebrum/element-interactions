@@ -1,10 +1,10 @@
-import { Page, Response } from '@playwright/test';
+import { Page, Response, Locator } from '@playwright/test';
 import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
 import { ElementInteractions } from '../interactions/facade/ElementInteractions';
 import { Utils } from '../utils/ElementUtilities';
 import { EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
-import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions, StorageVerifyOptions } from '../enum/Options';
+import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions, StorageVerifyOptions, VisualMatchOptions, VisualMaskTarget } from '../enum/Options';
 import { stepLog as log } from '../logger/Logger';
 import { ElementAction } from './ElementAction';
 import { ExpectBuilder } from './ExpectMatchers';
@@ -1358,6 +1358,109 @@ export class Steps {
         const opts = typeof elementNameOrOptions === 'object' ? elementNameOrOptions : options;
         log.extract('Taking page screenshot');
         return await this.extract.screenshot(undefined, opts);
+    }
+
+    // ==========================================
+    // VISUAL REGRESSION
+    // ==========================================
+
+    /**
+     * Asserts the current page (or a named element) matches its stored
+     * baseline screenshot. Dynamic regions — clocks, generated ids, live
+     * counters, "updated N minutes ago" badges, avatars — can be masked
+     * by name so the pixel diff stays stable across runs.
+     *
+     * Two call shapes:
+     *
+     *   // page-level
+     *   await steps.verifyVisualMatch('dashboard.png', {
+     *     mask: [
+     *       { elementName: 'currentTime',   pageName: 'dashboard' },
+     *       { elementName: 'transactionId', pageName: 'dashboard' },
+     *     ],
+     *   });
+     *
+     *   // element-level (scope = the named element)
+     *   await steps.verifyVisualMatch('header.png', {
+     *     elementName: 'header',
+     *     pageName:    'dashboard',
+     *     mask: [{ elementName: 'liveCounter', pageName: 'dashboard' }],
+     *   });
+     *
+     * Mask entries may also use a raw selector when the masked region
+     * isn't worth a ElementRepository entry:
+     *
+     *   mask: [{ selector: '[data-testid="current-time"]' }]
+     *
+     * Behaviour notes (inherited from Playwright's `toHaveScreenshot`):
+     *   • CSS animations are disabled during the snapshot — no need to
+     *     freeze them manually.
+     *   • The first run writes the baseline; subsequent runs diff.
+     *   • Masked regions are painted with a solid colour (pink by
+     *     default) BEFORE the pixel diff, so dynamic content there
+     *     doesn't fail the comparison.
+     *
+     * @param snapshotName  — baseline file name (e.g. `dashboard.png`).
+     *                        Playwright derives OS/browser sub-paths.
+     * @param options       — see {@link VisualMatchOptions}; the
+     *                        `elementName`/`pageName` pair below is the
+     *                        step-level extension over the lower-level
+     *                        Verifications shape (which only knows
+     *                        page vs element via its argument).
+     */
+    async verifyVisualMatch(
+        snapshotName: string,
+        options?: VisualMatchOptions & { elementName?: string; pageName?: string },
+    ): Promise<void> {
+        // 1. Pick the assertion target — element vs page.
+        const target =
+            options?.elementName && options?.pageName
+                ? await this.getWebElement(options.elementName, options.pageName)
+                : this.page;
+
+        // 2. Resolve mask targets to Playwright Locators via the
+        //    ElementRepository fixture (for elementName entries) or
+        //    page.locator (for selector entries).
+        const maskLocators = options?.mask
+            ? await this.resolveVisualMaskLocators(options.mask)
+            : [];
+
+        // 3. Hand off to the assertion layer.
+        if (options?.elementName && options?.pageName) {
+            log.verify('Visual-match "%s" of "%s" in "%s" (mask=%d)',
+                snapshotName, options.elementName, options.pageName, maskLocators.length);
+        } else {
+            log.verify('Visual-match "%s" of full page (mask=%d)', snapshotName, maskLocators.length);
+        }
+
+        await this.verify.visuallyMatches(target, snapshotName, {
+            mask: maskLocators,
+            maskColor: options?.maskColor,
+            fullPage: options?.fullPage,
+            maxDiffPixelRatio: options?.maxDiffPixelRatio,
+            maxDiffPixels: options?.maxDiffPixels,
+            timeout: options?.timeout,
+            errorMessage: options?.errorMessage,
+        });
+    }
+
+    /**
+     * Resolve {@link VisualMaskTarget} entries to Playwright Locators.
+     * `{ elementName, pageName }` entries are looked up through the
+     * ElementRepository (the canonical, page-aware path); `{ selector }`
+     * entries are passed straight to `page.locator`.
+     */
+    private async resolveVisualMaskLocators(mask: VisualMaskTarget[]): Promise<Locator[]> {
+        const locators: Locator[] = [];
+        for (const m of mask) {
+            if ('selector' in m) {
+                locators.push(this.page.locator(m.selector));
+                continue;
+            }
+            const el = await this.getWebElement(m.elementName, m.pageName);
+            locators.push(el.locator);
+        }
+        return locators;
     }
 
     // ==========================================
