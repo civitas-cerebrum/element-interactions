@@ -79,15 +79,27 @@ fi
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | "$JQ" -r '.tool_name // empty' 2>/dev/null || echo "")
 
-# Branch by event. Only act on the gated surfaces.
+# Branch by event. Only act on the gated surfaces. Three Write/Edit
+# patterns, distinguished by TRIGGER_KIND so the deny message matches
+# the caller:
+#   write          — orchestrator-side journey-map.md / coverage matrix
+#   subagent-spill — section subagent's spill file under
+#                    tests/e2e/docs/.subagent-returns/phase4-*
+#   dispatch       — Agent dispatch with phase4-* prefix
 case "$TOOL_NAME" in
   Write|Edit)
     FILE_PATH=$(echo "$INPUT" | "$JQ" -r '.tool_input.file_path // empty' 2>/dev/null || echo "")
     case "$FILE_PATH" in
-      */tests/e2e/docs/journey-map.md|*/tests/e2e/docs/journey-map-coverage.md) ;;
+      */tests/e2e/docs/journey-map.md|*/tests/e2e/docs/journey-map-coverage.md)
+        TRIGGER_KIND="write"
+        ;;
+      */tests/e2e/docs/.subagent-returns/phase4-cycle-*-section-*.md|\
+      */tests/e2e/docs/.subagent-returns/phase4-cycle-*-edge-probe.md|\
+      */tests/e2e/docs/.subagent-returns/phase4-prioritise-author.md)
+        TRIGGER_KIND="subagent-spill"
+        ;;
       *) exit 0 ;;
     esac
-    TRIGGER_KIND="write"
     TRIGGER_TARGET="$FILE_PATH"
     ;;
   Agent)
@@ -142,8 +154,9 @@ fi
 
 # Construct the deny reason. The wording differs by trigger so the
 # remediation pointer matches.
-if [ "$TRIGGER_KIND" = "write" ]; then
-  REASON="[BLOCKED] Write to ${TRIGGER_TARGET} requires the journey-mapping skill to have been loaded in this session.
+case "$TRIGGER_KIND" in
+  write)
+    REASON="[BLOCKED] Write to ${TRIGGER_TARGET} requires the journey-mapping skill to have been loaded in this session.
 
 The journey-mapping skill defines the iterative discovery cycle protocol (cycle 1 strict per-section parallel + cycle 2 edge-probe + author step) that this file is the output of. A session that has never invoked the skill cannot have faithfully followed the protocol, regardless of what the proposed content looks like.
 
@@ -154,8 +167,22 @@ Alternative: if the orchestrator just needs to reference the rules (e.g. fix a t
 Bypass (advisory only — document the authorisation): set \`JOURNEY_MAPPING_PREREAD_GATE=off\` in the harness environment.
 
 See: skills/onboarding/SKILL.md §\"Phase 4 — Journey mapping\""
-else
-  REASON="[BLOCKED] Agent dispatch \`${TRIGGER_TARGET}\` requires the journey-mapping skill to have been loaded in this session.
+    ;;
+  subagent-spill)
+    REASON="[BLOCKED] Subagent spill write to ${TRIGGER_TARGET} requires this subagent to have loaded the journey-mapping skill before writing.
+
+Section / edge-probe / author subagents implement the journey-mapping skill's cycle protocol. The orchestrator's dispatch brief should have instructed this subagent to invoke \`Skill('journey-mapping')\` (or Read \`skills/journey-mapping/SKILL.md\`) before doing any work — the protocol's per-section discovery contract, the spill schema, and the return-shape expectations all live in the skill body.
+
+Fix (in the subagent): invoke the journey-mapping skill via the Skill tool, OR Read the skill file, BEFORE writing this spill.
+
+Fix (in the orchestrator's next dispatch): cite \`skills/journey-mapping/SKILL.md\` in the subagent brief so the subagent knows to load it.
+
+Bypass (advisory only — document the authorisation): set \`JOURNEY_MAPPING_PREREAD_GATE=off\` in the subagent's environment.
+
+See: skills/journey-mapping/SKILL.md §\"Iterative discovery cycles\""
+    ;;
+  *)
+    REASON="[BLOCKED] Agent dispatch \`${TRIGGER_TARGET}\` requires the journey-mapping skill to have been loaded in this session.
 
 Phase-4 dispatches (cycle-N section agents, edge-probe, prioritise-author) implement the journey-mapping skill's cycle protocol. The dispatching orchestrator must have read the skill body before delegating — without it, the briefs are constructed from in-context inference and the cycle-strictness contract is silently weakened.
 
@@ -165,7 +192,8 @@ Bypass (advisory only — document the authorisation): set \`JOURNEY_MAPPING_PRE
 
 See: skills/journey-mapping/SKILL.md §\"Iterative discovery cycles\"
 See: skills/onboarding/SKILL.md §\"Phase 4 — Journey mapping\""
-fi
+    ;;
+esac
 
 "$JQ" -n --arg r "$REASON" '{
   "hookSpecificOutput": {

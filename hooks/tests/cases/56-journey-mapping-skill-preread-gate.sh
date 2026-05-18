@@ -97,6 +97,44 @@ assert_allow "$H" "$(agent_payload 'phase4-cycle-1-section-auth:' "$SKILL_TRANSC
   "Agent dispatch phase4-cycle-1-section-auth, Skill preread → ALLOW"
 
 # ---------------------------------------------------------------------------
+section "preread: subagent-spill write WITHOUT preread DENIED"
+SPILL_AUTH="$TMP_DIR/tests/e2e/docs/.subagent-returns/phase4-cycle-1-section-auth.md"
+SPILL_EDGE="$TMP_DIR/tests/e2e/docs/.subagent-returns/phase4-cycle-2-edge-probe.md"
+SPILL_AUTHOR="$TMP_DIR/tests/e2e/docs/.subagent-returns/phase4-prioritise-author.md"
+mkdir -p "$(dirname "$SPILL_AUTH")"
+
+spill_payload() {
+  local path=$1
+  local transcript=$2
+  "$JQ" -n --arg fp "$path" --arg tp "$transcript" '{
+    tool_name: "Write",
+    tool_input: { file_path: $fp, content: "## section: auth\nroutes-driven: ..." },
+    transcript_path: $tp
+  }'
+}
+
+assert_deny "$H" "$(spill_payload "$SPILL_AUTH" "$NEITHER_TRANSCRIPT")" \
+  "Subagent spill phase4-cycle-1-section-auth, no preread → DENY" "subagent to have loaded the journey-mapping skill"
+assert_deny "$H" "$(spill_payload "$SPILL_EDGE" "$NEITHER_TRANSCRIPT")" \
+  "Subagent spill phase4-cycle-2-edge-probe, no preread → DENY" "subagent to have loaded the journey-mapping skill"
+assert_deny "$H" "$(spill_payload "$SPILL_AUTHOR" "$NEITHER_TRANSCRIPT")" \
+  "Subagent spill phase4-prioritise-author, no preread → DENY" "subagent to have loaded the journey-mapping skill"
+
+# ---------------------------------------------------------------------------
+section "preread: subagent-spill WITH Skill('journey-mapping') ALLOWED"
+assert_allow "$H" "$(spill_payload "$SPILL_AUTH" "$SKILL_TRANSCRIPT")" \
+  "Subagent spill with Skill('journey-mapping') in its own transcript → ALLOW"
+assert_allow "$H" "$(spill_payload "$SPILL_AUTH" "$READ_TRANSCRIPT")" \
+  "Subagent spill with Read of SKILL.md in its own transcript → ALLOW"
+
+# ---------------------------------------------------------------------------
+section "preread: non-phase4 subagent spills silent-allow"
+assert_allow "$H" "$(spill_payload "$TMP_DIR/tests/e2e/docs/.subagent-returns/composer-j-login-1-c1.md" "$NEITHER_TRANSCRIPT")" \
+  "Spill for non-phase4 role (composer-j-…) → silent allow"
+assert_allow "$H" "$(spill_payload "$TMP_DIR/tests/e2e/docs/.subagent-returns/reviewer-batch-pass-1-c1.md" "$NEITHER_TRANSCRIPT")" \
+  "Spill for non-phase4 role (reviewer-batch-…) → silent allow"
+
+# ---------------------------------------------------------------------------
 section "preread: missing transcript_path silent-allows (fail-open)"
 NO_TRANSCRIPT_PAYLOAD=$(write_payload "" | "$JQ" 'del(.transcript_path)')
 assert_allow "$H" "$NO_TRANSCRIPT_PAYLOAD" \
