@@ -514,5 +514,312 @@ See: schemas/onboarding-status.schema.json §runMode"
   exit 0
 fi
 
+# ---------------------------------------------------------------------------
+# Per-phase positive-deliverable checks (Phase-N → completed transitions).
+# When a phase's status flips from non-completed to "completed" in the
+# proposed write, the canonical deliverables for that phase must already
+# exist on disk. This catches "orchestrator marked the phase done without
+# actually producing the deliverables" — the failure mode that
+# markdown-text contract enforcement alone could not stop.
+#
+# Per-phase manifests (minimum required files / sentinel checks):
+#
+#   Phase 4 (Journey-mapping):
+#     - tests/e2e/docs/journey-map.md exists AND line 1 == the sentinel
+#       `<!-- journey-mapping:generated -->`.
+#     - tests/e2e/docs/.phase4-cycle-state.json exists AND contains at
+#       minimum cycles."1" + cycles."2" entries (cycle 1 discovery +
+#       cycle 2 edge-probe — non-negotiable per journey-mapping/SKILL.md
+#       §"Iterative discovery cycles").
+#
+#   Phase 5 (Coverage-expansion):
+#     - tests/e2e/docs/coverage-expansion-state.json exists AND contains
+#       at minimum passes."1" (the strict-per-journey first pass).
+#
+#   Phase 6 (Bug-discovery):
+#     - tests/e2e/docs/adversarial-findings.md exists.
+#
+#   Phase 7 (Secrets-sweep):
+#     - .env.example exists at the project root.
+#
+#   Phase 8 (Report):
+#     - qa-summary-deck.html AND qa-summary-deck.pdf exist at the
+#       project root.
+#
+# Phases 1-3 are not enforced here — their deliverables (config files,
+# fixtures, happy-path specs) don't have unforgeable signatures the
+# harness can verify cheaply. The ledger's `phases[N].deliverables[]`
+# array is the audit trail for those phases; the orchestrator-to-
+# reviewer brief gate ensures the reviewer reads them.
+# ---------------------------------------------------------------------------
+
+# PROJECT_ROOT is the directory containing tests/e2e/docs/. The ledger
+# path is .../tests/e2e/docs/onboarding-status.json — strip the tail.
+PROJECT_ROOT="${FILE_PATH%/tests/e2e/docs/onboarding-status.json}"
+
+# Build the set of phase IDs whose status is transitioning to "completed"
+# in this write. Compare proposed[N].status vs prior[N].status (treat
+# "prior" as "pending" when the file doesn't yet exist). Space-separated
+# list to keep set -u happy on bash 3 where empty arrays expand to
+# "unset variable" under "${arr[@]}".
+PHASES_NEWLY_COMPLETED=""
+for phase_id in 1 2 3 4 5 6 7 8; do
+  idx=$((phase_id - 1))
+  new_status=$("$JQ" -r ".phases[${idx}].status // empty" "$TMP_PROPOSED" 2>/dev/null || echo "")
+  prior_status="pending"
+  if [ -f "$FILE_PATH" ]; then
+    prior_status=$("$JQ" -r ".phases[${idx}].status // \"pending\"" "$FILE_PATH" 2>/dev/null || echo "pending")
+  fi
+  if [ "$new_status" = "completed" ] && [ "$prior_status" != "completed" ]; then
+    PHASES_NEWLY_COMPLETED="${PHASES_NEWLY_COMPLETED} ${phase_id}"
+  fi
+done
+
+# Helper: emit a deny with the standard payload structure used above.
+emit_phase_deny() {
+  local phase="$1"
+  local missing="$2"
+  local fix_hint="$3"
+  local skill_ref="$4"
+  emit_deny "[BLOCKED] Phase ${phase} cannot transition to status: \"completed\" — required deliverable missing.
+
+File: ${FILE_PATH}
+
+Missing: ${missing}
+
+This is the per-phase positive-deliverable check. The ledger cannot
+mark a phase complete unless that phase's canonical deliverables exist
+on disk. The deliverables are unforgeable signatures of the correct
+skill having been invoked — without them, the phase was either skipped
+or shortcut.
+
+Fix: ${fix_hint}
+
+See: ${skill_ref}"
+  exit 0
+}
+
+for phase_id in $PHASES_NEWLY_COMPLETED; do
+  case "$phase_id" in
+    4)
+      # Phase 4 — journey-map.md + sentinel + cycle-state with cycles 1 & 2.
+      MAP_PATH="$PROJECT_ROOT/tests/e2e/docs/journey-map.md"
+      CYCLE_STATE_PATH="$PROJECT_ROOT/tests/e2e/docs/.phase4-cycle-state.json"
+
+      if [ ! -f "$MAP_PATH" ]; then
+        emit_phase_deny "4" \
+          "tests/e2e/docs/journey-map.md does not exist." \
+          "invoke the \`journey-mapping\` skill via the Skill tool. It runs the iterative discovery cycle protocol and writes the map with the line-1 sentinel." \
+          "skills/onboarding/SKILL.md §\"Phase 4 — Journey mapping\" + skills/journey-mapping/SKILL.md"
+      fi
+
+      FIRST_LINE=$(head -n 1 "$MAP_PATH" 2>/dev/null || echo "")
+      if [ "$FIRST_LINE" != "<!-- journey-mapping:generated -->" ]; then
+        emit_phase_deny "4" \
+          "tests/e2e/docs/journey-map.md is missing the line-1 sentinel \`<!-- journey-mapping:generated -->\`. Got: \"${FIRST_LINE:0:80}\"" \
+          "regenerate the map via the journey-mapping skill. The sentinel is its authorship marker — without it the map is forged." \
+          "skills/journey-mapping/SKILL.md §\"Recognizing a previously-generated journey map\""
+      fi
+
+      if [ ! -f "$CYCLE_STATE_PATH" ]; then
+        emit_phase_deny "4" \
+          "tests/e2e/docs/.phase4-cycle-state.json does not exist." \
+          "the journey-mapping skill writes the cycle state as it dispatches per-section subagents. Absence ⇒ no cycle ever ran." \
+          "skills/journey-mapping/SKILL.md §\"Cycle protocol\""
+      fi
+
+      # Cycle 1 + Cycle 2 are non-negotiable per the iterative-discovery
+      # protocol (≥1 discovery cycle + exactly 1 edge-probe cycle).
+      HAS_CYCLE_1=$("$JQ" -r '.cycles["1"] != null' "$CYCLE_STATE_PATH" 2>/dev/null || echo "false")
+      HAS_CYCLE_2=$("$JQ" -r '.cycles["2"] != null' "$CYCLE_STATE_PATH" 2>/dev/null || echo "false")
+      if [ "$HAS_CYCLE_1" != "true" ] || [ "$HAS_CYCLE_2" != "true" ]; then
+        emit_phase_deny "4" \
+          ".phase4-cycle-state.json is missing cycle-1 and/or cycle-2 records (has-cycle-1=${HAS_CYCLE_1}, has-cycle-2=${HAS_CYCLE_2}). Both are non-negotiable: ≥1 discovery cycle + exactly 1 edge-probe cycle." \
+          "complete the cycle protocol — dispatch cycle-1 section agents (strict per-section parallel), then the cycle-2 edge-probe — before closing Phase 4." \
+          "skills/journey-mapping/SKILL.md §\"Iterative discovery cycles\""
+      fi
+
+      # Cycle-roster completeness: for EVERY cycle recorded, the section
+      # subagents must have all returned. dispatched-sections == returned-
+      # sections (set equality, not just length). Catches the "dispatched
+      # 7, only 5 came back, marked the cycle done anyway" failure mode.
+      for cycle_id in 1 2; do
+        DISPATCHED=$("$JQ" -c ".cycles[\"${cycle_id}\"][\"dispatched-sections\"] // [] | sort" "$CYCLE_STATE_PATH" 2>/dev/null || echo "[]")
+        RETURNED=$("$JQ" -c ".cycles[\"${cycle_id}\"][\"returned-sections\"] // [] | sort" "$CYCLE_STATE_PATH" 2>/dev/null || echo "[]")
+        if [ "$DISPATCHED" != "$RETURNED" ]; then
+          DISPATCHED_COUNT=$(echo "$DISPATCHED" | "$JQ" 'length')
+          RETURNED_COUNT=$(echo "$RETURNED" | "$JQ" 'length')
+          emit_phase_deny "4" \
+            "Cycle ${cycle_id} dispatched-sections (${DISPATCHED_COUNT}) != returned-sections (${RETURNED_COUNT}). Some section agents did not return; the cycle is incomplete." \
+            "wait for every dispatched section to return before authoring the journey map. Re-dispatch any stalled sections. The author step consumes the union of all section returns — partial returns mean partial coverage." \
+            "skills/journey-mapping/SKILL.md §\"Cycle protocol\""
+        fi
+      done
+      ;;
+    5)
+      # Phase 5 — coverage-expansion-state.json with at least pass-1 record.
+      COV_STATE_PATH="$PROJECT_ROOT/tests/e2e/docs/coverage-expansion-state.json"
+      if [ ! -f "$COV_STATE_PATH" ]; then
+        emit_phase_deny "5" \
+          "tests/e2e/docs/coverage-expansion-state.json does not exist." \
+          "invoke the \`coverage-expansion\` skill via the Skill tool. It writes the state file as it runs the per-pass pipeline." \
+          "skills/onboarding/SKILL.md §\"Phase 5 — Coverage expansion\" + skills/coverage-expansion/SKILL.md"
+      fi
+      HAS_PASS_1=$("$JQ" -r '.passes["1"] != null' "$COV_STATE_PATH" 2>/dev/null || echo "false")
+      if [ "$HAS_PASS_1" != "true" ]; then
+        emit_phase_deny "5" \
+          "coverage-expansion-state.json reports no pass-1 record. Pass 1 (strict per-journey, compositional) is the foundation of every coverage-expansion mode." \
+          "run at least Pass 1 of coverage-expansion before closing Phase 5." \
+          "skills/coverage-expansion/SKILL.md §\"Non-negotiables\""
+      fi
+
+      # Coverage-completeness check: Pass 1's dispatched-journeys + any
+      # deferredJourneys[] entries must together cover the journey map's
+      # full roster. Catches the "dispatched 8 of 41 journeys, called
+      # exit-#2, marked Phase 5 complete" failure mode. The roster is
+      # derived from the journey-map.md (one entry per `^#### j-` block).
+      MAP_PATH="$PROJECT_ROOT/tests/e2e/docs/journey-map.md"
+      if [ -f "$MAP_PATH" ]; then
+        ROSTER_COUNT=$(grep -c '^#### j-' "$MAP_PATH" 2>/dev/null; true)
+        ROSTER_COUNT=${ROSTER_COUNT:-0}
+        DISPATCHED_COUNT=$("$JQ" -r '.passes["1"]["dispatched-journeys"] // [] | length' "$COV_STATE_PATH" 2>/dev/null || echo "0")
+        DEFERRED_COUNT=$("$JQ" -r '.passes["1"]["deferredJourneys"] // [] | length' "$COV_STATE_PATH" 2>/dev/null || echo "0")
+        DISPATCHED_COUNT=${DISPATCHED_COUNT:-0}
+        DEFERRED_COUNT=${DEFERRED_COUNT:-0}
+        TOTAL_ACCOUNTED=$((DISPATCHED_COUNT + DEFERRED_COUNT))
+
+        if [ "$ROSTER_COUNT" -gt 0 ] && [ "$TOTAL_ACCOUNTED" -lt "$ROSTER_COUNT" ]; then
+          UNCOVERED=$((ROSTER_COUNT - TOTAL_ACCOUNTED))
+          emit_phase_deny "5" \
+            "Pass 1 coverage incomplete: journey-map.md lists ${ROSTER_COUNT} journeys; coverage-expansion-state.json records ${DISPATCHED_COUNT} dispatched + ${DEFERRED_COUNT} deferred = ${TOTAL_ACCOUNTED} accounted. ${UNCOVERED} journey(s) are silently missing. This is the silent-scope-compression failure mode." \
+            "either (a) dispatch the remaining ${UNCOVERED} journey(s) through coverage-expansion Pass 1, OR (b) add a deferredJourneys[] entry for each missing journey with a reason (structural prefix OR an \"authorizer\" field carrying a verbatim user quote). Pre-emptive scope reduction without authorisation is denied." \
+            "skills/coverage-expansion/SKILL.md §\"Two valid exits\" + §\"Deferral authorisation\""
+        fi
+
+        # Deferral authorisation: each deferredJourneys[] entry must have
+        # a structural reason prefix OR an explicit authorizer quote.
+        # Self-imposed reasons (budget-cap, session-length, auto-mode-stop)
+        # without an authorizer field are silent scope narrowing.
+        if [ "$DEFERRED_COUNT" -gt 0 ]; then
+          BAD_DEFERRAL=$(
+            "$JQ" -r '
+              .passes["1"]["deferredJourneys"] // [] | .[] |
+              select(
+                ((.reason // "") | test("^(blocked-on-app-bug:|test-data-prerequisite:|user-authorised:)")) | not
+              ) |
+              select(((.authorizer // "") | length) == 0) |
+              .journey // "<unknown>"
+            ' "$COV_STATE_PATH" 2>/dev/null | head -1 || true
+          )
+          if [ -n "$BAD_DEFERRAL" ]; then
+            emit_phase_deny "5" \
+              "deferredJourneys[] entry for \"${BAD_DEFERRAL}\" carries neither a structural reason prefix (\`blocked-on-app-bug:\`, \`test-data-prerequisite:\`, \`user-authorised:\`) nor an \`authorizer\` field with a verbatim user quote. Self-imposed deferrals (budget-cap, session-length, auto-mode-stop) without authorisation are silent scope narrowing." \
+              "either dispatch this journey through Pass 1, or add a reason matching one of the allowed structural prefixes, or capture the user's verbatim authorisation in an \`authorizer\` field." \
+              "skills/coverage-expansion/SKILL.md §\"Deferral authorisation\""
+          fi
+        fi
+      fi
+
+      # Multi-pass coverage-threshold check — closes the exit-#2 /
+      # cherry-pick exploit (Run-7 anti-pattern). The prior checks gate
+      # Pass-1 roster coverage; this check gates the full per-mode
+      # pipeline. The orchestrator may legitimately reduce scope, but
+      # only with a verbatim user quote in `scopeAuthorizer`. Compute:
+      #   ROSTER_SIZE      = length(journeyRoster) — falls back to
+      #                       ROSTER_COUNT from journey-map.md if absent
+      #   RUN_MODE         = runMode field ("standard"|"depth"|"breadth")
+      #   EXPECTED_PASSES  = 5 for standard|depth, 1 for breadth
+      #   TOTAL_DISPATCHES = sum over passes of length(dispatches[])
+      #                      OR length(dispatched-journeys[]) — whichever
+      #                      that pass carries (state-file shape varies)
+      #   THRESHOLD        = ROSTER_SIZE × EXPECTED_PASSES × 8 / 10  (80%)
+      # If TOTAL_DISPATCHES < THRESHOLD AND scopeAuthorizer is empty, DENY.
+      if [ -f "$COV_STATE_PATH" ]; then
+        ROSTER_SIZE=$("$JQ" -r '.journeyRoster // [] | length' "$COV_STATE_PATH" 2>/dev/null || echo "0")
+        ROSTER_SIZE=${ROSTER_SIZE:-0}
+        # If state file omits journeyRoster, fall back to the map count
+        # computed earlier (ROSTER_COUNT from journey-map.md).
+        if [ "$ROSTER_SIZE" -eq 0 ] && [ -n "${ROSTER_COUNT:-}" ]; then
+          ROSTER_SIZE=$ROSTER_COUNT
+        fi
+        RUN_MODE=$("$JQ" -r '.runMode // "standard"' "$COV_STATE_PATH" 2>/dev/null || echo "standard")
+        EXPECTED_PASSES=5
+        [ "$RUN_MODE" = "breadth" ] && EXPECTED_PASSES=1
+        TOTAL_DISPATCHES=$("$JQ" -r '
+          [.passes[]? | ((.dispatches // ."dispatched-journeys" // []) | length)] | add // 0
+        ' "$COV_STATE_PATH" 2>/dev/null || echo "0")
+        TOTAL_DISPATCHES=${TOTAL_DISPATCHES:-0}
+        SCOPE_AUTHORIZER=$("$JQ" -r '.scopeAuthorizer // ""' "$COV_STATE_PATH" 2>/dev/null || echo "")
+        THRESHOLD=$(( ROSTER_SIZE * EXPECTED_PASSES * 8 / 10 ))
+
+        # Skip the check when: (a) roster is empty (malformed — earlier
+        # checks own this case); (b) scopeAuthorizer is non-empty (user-
+        # authorised scope reduction). Otherwise enforce 80%.
+        if [ "${ROSTER_SIZE:-0}" -gt 0 ] && [ -z "$SCOPE_AUTHORIZER" ] && [ "${TOTAL_DISPATCHES:-0}" -lt "${THRESHOLD:-0}" ]; then
+          if [ "$ROSTER_SIZE" -gt 0 ] && [ "$EXPECTED_PASSES" -gt 0 ]; then
+            COVERAGE_PCT=$(( TOTAL_DISPATCHES * 100 / (ROSTER_SIZE * EXPECTED_PASSES) ))
+          else
+            COVERAGE_PCT=0
+          fi
+          emit_phase_deny "5" \
+            "coverage-expansion-state.json reports ${TOTAL_DISPATCHES} dispatches across ${EXPECTED_PASSES} pass(es) of a ${ROSTER_SIZE}-journey roster (${COVERAGE_PCT}% coverage). Threshold is 80% (≥ ${THRESHOLD} dispatches). No user-authorised scope reduction recorded in \`scopeAuthorizer\`." \
+            "either (a) dispatch the remaining journeys to bring coverage to ≥80%; OR (b) record an explicit user authorisation by writing the verbatim user-quote into the state file's top-level \`scopeAuthorizer\` field — e.g. \`\"scopeAuthorizer\": \"<exact words the user used to authorise the scope reduction>\"\`. Self-imposed reasons (\"session-length\", \"budget-cap\", \"auto-mode\", inferred preference) are NOT valid authorisation." \
+            "skills/coverage-expansion/SKILL.md §\"Two valid exits\" + §\"No-skip contract\""
+        fi
+      fi
+      ;;
+    6)
+      # Phase 6 — adversarial-findings ledger exists AND has substance.
+      ADV_PATH="$PROJECT_ROOT/tests/e2e/docs/adversarial-findings.md"
+      if [ ! -f "$ADV_PATH" ]; then
+        emit_phase_deny "6" \
+          "tests/e2e/docs/adversarial-findings.md does not exist." \
+          "invoke the \`bug-discovery\` skill (or the adversarial passes of coverage-expansion). They write the findings ledger as probes return." \
+          "skills/onboarding/SKILL.md §\"Phase 6 — Bug discovery\" + skills/bug-discovery/SKILL.md"
+      fi
+
+      # Content check: the ledger must contain at least one per-journey
+      # section block. The canonical schema (per
+      # references/subagent-return-schema.md §3) uses `### j-<slug>` as
+      # the per-journey section header. An empty ledger (just the
+      # title) means no probe ever ran — the file exists but the
+      # methodology was bypassed. grep -c always prints a count (even
+      # 0) and exits 1 on no-match — capture stdout, ignore exit code.
+      JOURNEY_BLOCKS=$(grep -c '^### j-' "$ADV_PATH" 2>/dev/null; true)
+      JOURNEY_BLOCKS=${JOURNEY_BLOCKS:-0}
+      if [ "$JOURNEY_BLOCKS" -lt 1 ]; then
+        emit_phase_deny "6" \
+          "tests/e2e/docs/adversarial-findings.md exists but contains 0 per-journey section blocks (\`### j-<slug>\`). File existence alone is not bug-discovery; the ledger must record at least one probe." \
+          "dispatch the bug-discovery probe subagents per journey (or the adversarial passes of coverage-expansion). Each probe appends a \`### j-<slug>\` section to the ledger as it returns." \
+          "skills/bug-discovery/SKILL.md + element-interactions/references/subagent-return-schema.md §3"
+      fi
+      ;;
+    7)
+      # Phase 7 — .env.example exists at project root.
+      ENV_EXAMPLE_PATH="$PROJECT_ROOT/.env.example"
+      if [ ! -f "$ENV_EXAMPLE_PATH" ]; then
+        emit_phase_deny "7" \
+          ".env.example does not exist at the project root." \
+          "invoke the \`secrets-sweep\` skill. It writes .env.example as it extracts literals from the test suite." \
+          "skills/onboarding/SKILL.md §\"Phase 7 — Secrets sweep\" + skills/secrets-sweep/SKILL.md"
+      fi
+      ;;
+    8)
+      # Phase 8 — qa-summary-deck.{html,pdf} exist at project root.
+      DECK_HTML="$PROJECT_ROOT/qa-summary-deck.html"
+      DECK_PDF="$PROJECT_ROOT/qa-summary-deck.pdf"
+      MISSING_DECK=""
+      [ -f "$DECK_HTML" ] || MISSING_DECK="qa-summary-deck.html"
+      [ -f "$DECK_PDF" ]  || MISSING_DECK="${MISSING_DECK:+$MISSING_DECK + }qa-summary-deck.pdf"
+      if [ -n "$MISSING_DECK" ]; then
+        emit_phase_deny "8" \
+          "$MISSING_DECK missing from project root." \
+          "invoke the \`work-summary-deck\` skill. It writes the HTML deck and renders the PDF." \
+          "skills/onboarding/SKILL.md §\"Phase 8 — Report\" + skills/work-summary-deck/SKILL.md"
+      fi
+      ;;
+  esac
+done
+
 # All checks passed — silent allow.
 exit 0
