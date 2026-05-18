@@ -243,3 +243,122 @@ assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$
   "Changing runMode WITH fresh modeAuthorizer → ALLOW"
 
 rm -f "$LEDGER_PATH"
+
+# ---------------------------------------------------------------------------
+# Per-phase positive-deliverable checks. Each phase has unforgeable
+# signatures of the correct skill having been invoked; transitioning a
+# phase to `completed` without those signatures is denied.
+# ---------------------------------------------------------------------------
+
+make_phase_in_progress() {
+  local target_phase=$1
+  local target_idx=$((target_phase - 1))
+  echo "$VALID_FRESH" | "$JQ" --argjson idx "$target_idx" \
+    '.phases[$idx].status = "in-progress" |
+     .currentPhase = ($idx + 1) |
+     .modeAuthorizer = "user chose standard mode"'
+}
+mark_phase_completed() {
+  local target_phase=$1
+  local target_idx=$((target_phase - 1))
+  echo "$VALID_FRESH" | "$JQ" --argjson idx "$target_idx" \
+    '.phases[$idx].status = "completed" |
+     .phases[$idx].handoverEnvelope = {"role":"phase-closing","cycle":1,"status":"complete","next-action":"advance"} |
+     .currentPhase = ($idx + 1) |
+     .modeAuthorizer = "user chose standard mode"'
+}
+
+# ---- Phase 4 ----
+section "ledger-write-gate: Phase 4 → completed requires journey-map + sentinel + cycles"
+rm -f "$LEDGER_PATH"
+PRIOR_P4_INPROG=$(make_phase_in_progress 4)
+printf '%s' "$PRIOR_P4_INPROG" > "$LEDGER_PATH"
+PROPOSED_P4_COMPLETED=$(mark_phase_completed 4)
+
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P4_COMPLETED")" \
+  "Phase 4 → completed with no journey-map.md → DENY" "journey-map.md does not exist"
+
+mkdir -p "$TMP_REPO/tests/e2e/docs"
+echo "# Hand-rolled, no sentinel" > "$TMP_REPO/tests/e2e/docs/journey-map.md"
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P4_COMPLETED")" \
+  "Phase 4 → completed with sentinel-less map → DENY" "missing the line-1 sentinel"
+
+echo "<!-- journey-mapping:generated -->
+# Map" > "$TMP_REPO/tests/e2e/docs/journey-map.md"
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P4_COMPLETED")" \
+  "Phase 4 → completed with no cycle-state → DENY" ".phase4-cycle-state.json does not exist"
+
+cat > "$TMP_REPO/tests/e2e/docs/.phase4-cycle-state.json" <<'EOF'
+{"phase4-cycle-state-version":1,"started-at":"2026-05-18T09:00:00Z","cycleStrictness":"standard","cycles":{"1":{"kind":"discovery","dispatched-sections":["a","b"],"returned-sections":["a","b"]}}}
+EOF
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P4_COMPLETED")" \
+  "Phase 4 → completed without cycle-2 edge-probe → DENY" "missing cycle-1 and/or cycle-2"
+
+cat > "$TMP_REPO/tests/e2e/docs/.phase4-cycle-state.json" <<'EOF'
+{"phase4-cycle-state-version":1,"started-at":"2026-05-18T09:00:00Z","cycleStrictness":"standard","cycles":{"1":{"kind":"discovery","dispatched-sections":["a","b"],"returned-sections":["a","b"]},"2":{"kind":"edge-probe","dispatched-sections":["a","b"],"returned-sections":["a","b"]}}}
+EOF
+assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P4_COMPLETED")" \
+  "Phase 4 → completed with map+sentinel+cycles 1+2 → ALLOW"
+
+# ---- Phase 5 ----
+section "ledger-write-gate: Phase 5 → completed requires coverage-expansion-state"
+rm -f "$LEDGER_PATH" "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json"
+PRIOR_P5_INPROG=$(make_phase_in_progress 5)
+printf '%s' "$PRIOR_P5_INPROG" > "$LEDGER_PATH"
+PROPOSED_P5_COMPLETED=$(mark_phase_completed 5)
+
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
+  "Phase 5 → completed without coverage-expansion-state → DENY" "coverage-expansion-state.json does not exist"
+
+cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":0,"passes":{}}
+EOF
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
+  "Phase 5 → completed without pass-1 record → DENY" "no pass-1 record"
+
+cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":1,"passes":{"1":{"kind":"compositional","dispatched-journeys":["j-x"],"returned-journeys":["j-x"]}}}
+EOF
+assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
+  "Phase 5 → completed with pass-1 record → ALLOW"
+
+# ---- Phase 6 ----
+section "ledger-write-gate: Phase 6 → completed requires adversarial-findings.md"
+rm -f "$LEDGER_PATH" "$TMP_REPO/tests/e2e/docs/adversarial-findings.md"
+PRIOR_P6_INPROG=$(make_phase_in_progress 6)
+printf '%s' "$PRIOR_P6_INPROG" > "$LEDGER_PATH"
+PROPOSED_P6_COMPLETED=$(mark_phase_completed 6)
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P6_COMPLETED")" \
+  "Phase 6 → completed without adversarial-findings.md → DENY" "adversarial-findings.md does not exist"
+echo "# Adversarial Findings" > "$TMP_REPO/tests/e2e/docs/adversarial-findings.md"
+assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P6_COMPLETED")" \
+  "Phase 6 → completed with adversarial-findings.md → ALLOW"
+
+# ---- Phase 7 ----
+section "ledger-write-gate: Phase 7 → completed requires .env.example"
+rm -f "$LEDGER_PATH" "$TMP_REPO/.env.example"
+PRIOR_P7_INPROG=$(make_phase_in_progress 7)
+printf '%s' "$PRIOR_P7_INPROG" > "$LEDGER_PATH"
+PROPOSED_P7_COMPLETED=$(mark_phase_completed 7)
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P7_COMPLETED")" \
+  "Phase 7 → completed without .env.example → DENY" ".env.example does not exist"
+echo "BASE_URL=" > "$TMP_REPO/.env.example"
+assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P7_COMPLETED")" \
+  "Phase 7 → completed with .env.example → ALLOW"
+
+# ---- Phase 8 ----
+section "ledger-write-gate: Phase 8 → completed requires qa-summary-deck.{html,pdf}"
+rm -f "$LEDGER_PATH" "$TMP_REPO/qa-summary-deck.html" "$TMP_REPO/qa-summary-deck.pdf"
+PRIOR_P8_INPROG=$(make_phase_in_progress 8)
+printf '%s' "$PRIOR_P8_INPROG" > "$LEDGER_PATH"
+PROPOSED_P8_COMPLETED=$(mark_phase_completed 8)
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P8_COMPLETED")" \
+  "Phase 8 → completed without deck files → DENY" "qa-summary-deck"
+echo "<html></html>" > "$TMP_REPO/qa-summary-deck.html"
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P8_COMPLETED")" \
+  "Phase 8 → completed without PDF → DENY" "qa-summary-deck.pdf"
+echo "%PDF" > "$TMP_REPO/qa-summary-deck.pdf"
+assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P8_COMPLETED")" \
+  "Phase 8 → completed with HTML+PDF deck → ALLOW"
+
+rm -f "$LEDGER_PATH"

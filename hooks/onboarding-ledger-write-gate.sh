@@ -514,5 +514,184 @@ See: schemas/onboarding-status.schema.json §runMode"
   exit 0
 fi
 
+# ---------------------------------------------------------------------------
+# Per-phase positive-deliverable checks (Phase-N → completed transitions).
+# When a phase's status flips from non-completed to "completed" in the
+# proposed write, the canonical deliverables for that phase must already
+# exist on disk. This catches "orchestrator marked the phase done without
+# actually producing the deliverables" — the failure mode that
+# markdown-text contract enforcement alone could not stop.
+#
+# Per-phase manifests (minimum required files / sentinel checks):
+#
+#   Phase 4 (Journey-mapping):
+#     - tests/e2e/docs/journey-map.md exists AND line 1 == the sentinel
+#       `<!-- journey-mapping:generated -->`.
+#     - tests/e2e/docs/.phase4-cycle-state.json exists AND contains at
+#       minimum cycles."1" + cycles."2" entries (cycle 1 discovery +
+#       cycle 2 edge-probe — non-negotiable per journey-mapping/SKILL.md
+#       §"Iterative discovery cycles").
+#
+#   Phase 5 (Coverage-expansion):
+#     - tests/e2e/docs/coverage-expansion-state.json exists AND contains
+#       at minimum passes."1" (the strict-per-journey first pass).
+#
+#   Phase 6 (Bug-discovery):
+#     - tests/e2e/docs/adversarial-findings.md exists.
+#
+#   Phase 7 (Secrets-sweep):
+#     - .env.example exists at the project root.
+#
+#   Phase 8 (Report):
+#     - qa-summary-deck.html AND qa-summary-deck.pdf exist at the
+#       project root.
+#
+# Phases 1-3 are not enforced here — their deliverables (config files,
+# fixtures, happy-path specs) don't have unforgeable signatures the
+# harness can verify cheaply. The ledger's `phases[N].deliverables[]`
+# array is the audit trail for those phases; the orchestrator-to-
+# reviewer brief gate ensures the reviewer reads them.
+# ---------------------------------------------------------------------------
+
+# PROJECT_ROOT is the directory containing tests/e2e/docs/. The ledger
+# path is .../tests/e2e/docs/onboarding-status.json — strip the tail.
+PROJECT_ROOT="${FILE_PATH%/tests/e2e/docs/onboarding-status.json}"
+
+# Build the set of phase IDs whose status is transitioning to "completed"
+# in this write. Compare proposed[N].status vs prior[N].status (treat
+# "prior" as "pending" when the file doesn't yet exist). Space-separated
+# list to keep set -u happy on bash 3 where empty arrays expand to
+# "unset variable" under "${arr[@]}".
+PHASES_NEWLY_COMPLETED=""
+for phase_id in 1 2 3 4 5 6 7 8; do
+  idx=$((phase_id - 1))
+  new_status=$("$JQ" -r ".phases[${idx}].status // empty" "$TMP_PROPOSED" 2>/dev/null || echo "")
+  prior_status="pending"
+  if [ -f "$FILE_PATH" ]; then
+    prior_status=$("$JQ" -r ".phases[${idx}].status // \"pending\"" "$FILE_PATH" 2>/dev/null || echo "pending")
+  fi
+  if [ "$new_status" = "completed" ] && [ "$prior_status" != "completed" ]; then
+    PHASES_NEWLY_COMPLETED="${PHASES_NEWLY_COMPLETED} ${phase_id}"
+  fi
+done
+
+# Helper: emit a deny with the standard payload structure used above.
+emit_phase_deny() {
+  local phase="$1"
+  local missing="$2"
+  local fix_hint="$3"
+  local skill_ref="$4"
+  emit_deny "[BLOCKED] Phase ${phase} cannot transition to status: \"completed\" — required deliverable missing.
+
+File: ${FILE_PATH}
+
+Missing: ${missing}
+
+This is the per-phase positive-deliverable check. The ledger cannot
+mark a phase complete unless that phase's canonical deliverables exist
+on disk. The deliverables are unforgeable signatures of the correct
+skill having been invoked — without them, the phase was either skipped
+or shortcut.
+
+Fix: ${fix_hint}
+
+See: ${skill_ref}"
+  exit 0
+}
+
+for phase_id in $PHASES_NEWLY_COMPLETED; do
+  case "$phase_id" in
+    4)
+      # Phase 4 — journey-map.md + sentinel + cycle-state with cycles 1 & 2.
+      MAP_PATH="$PROJECT_ROOT/tests/e2e/docs/journey-map.md"
+      CYCLE_STATE_PATH="$PROJECT_ROOT/tests/e2e/docs/.phase4-cycle-state.json"
+
+      if [ ! -f "$MAP_PATH" ]; then
+        emit_phase_deny "4" \
+          "tests/e2e/docs/journey-map.md does not exist." \
+          "invoke the \`journey-mapping\` skill via the Skill tool. It runs the iterative discovery cycle protocol and writes the map with the line-1 sentinel." \
+          "skills/onboarding/SKILL.md §\"Phase 4 — Journey mapping\" + skills/journey-mapping/SKILL.md"
+      fi
+
+      FIRST_LINE=$(head -n 1 "$MAP_PATH" 2>/dev/null || echo "")
+      if [ "$FIRST_LINE" != "<!-- journey-mapping:generated -->" ]; then
+        emit_phase_deny "4" \
+          "tests/e2e/docs/journey-map.md is missing the line-1 sentinel \`<!-- journey-mapping:generated -->\`. Got: \"${FIRST_LINE:0:80}\"" \
+          "regenerate the map via the journey-mapping skill. The sentinel is its authorship marker — without it the map is forged." \
+          "skills/journey-mapping/SKILL.md §\"Recognizing a previously-generated journey map\""
+      fi
+
+      if [ ! -f "$CYCLE_STATE_PATH" ]; then
+        emit_phase_deny "4" \
+          "tests/e2e/docs/.phase4-cycle-state.json does not exist." \
+          "the journey-mapping skill writes the cycle state as it dispatches per-section subagents. Absence ⇒ no cycle ever ran." \
+          "skills/journey-mapping/SKILL.md §\"Cycle protocol\""
+      fi
+
+      # Cycle 1 + Cycle 2 are non-negotiable per the iterative-discovery
+      # protocol (≥1 discovery cycle + exactly 1 edge-probe cycle).
+      HAS_CYCLE_1=$("$JQ" -r '.cycles["1"] != null' "$CYCLE_STATE_PATH" 2>/dev/null || echo "false")
+      HAS_CYCLE_2=$("$JQ" -r '.cycles["2"] != null' "$CYCLE_STATE_PATH" 2>/dev/null || echo "false")
+      if [ "$HAS_CYCLE_1" != "true" ] || [ "$HAS_CYCLE_2" != "true" ]; then
+        emit_phase_deny "4" \
+          ".phase4-cycle-state.json is missing cycle-1 and/or cycle-2 records (has-cycle-1=${HAS_CYCLE_1}, has-cycle-2=${HAS_CYCLE_2}). Both are non-negotiable: ≥1 discovery cycle + exactly 1 edge-probe cycle." \
+          "complete the cycle protocol — dispatch cycle-1 section agents (strict per-section parallel), then the cycle-2 edge-probe — before closing Phase 4." \
+          "skills/journey-mapping/SKILL.md §\"Iterative discovery cycles\""
+      fi
+      ;;
+    5)
+      # Phase 5 — coverage-expansion-state.json with at least pass-1 record.
+      COV_STATE_PATH="$PROJECT_ROOT/tests/e2e/docs/coverage-expansion-state.json"
+      if [ ! -f "$COV_STATE_PATH" ]; then
+        emit_phase_deny "5" \
+          "tests/e2e/docs/coverage-expansion-state.json does not exist." \
+          "invoke the \`coverage-expansion\` skill via the Skill tool. It writes the state file as it runs the per-pass pipeline." \
+          "skills/onboarding/SKILL.md §\"Phase 5 — Coverage expansion\" + skills/coverage-expansion/SKILL.md"
+      fi
+      HAS_PASS_1=$("$JQ" -r '.passes["1"] != null' "$COV_STATE_PATH" 2>/dev/null || echo "false")
+      if [ "$HAS_PASS_1" != "true" ]; then
+        emit_phase_deny "5" \
+          "coverage-expansion-state.json reports no pass-1 record. Pass 1 (strict per-journey, compositional) is the foundation of every coverage-expansion mode." \
+          "run at least Pass 1 of coverage-expansion before closing Phase 5." \
+          "skills/coverage-expansion/SKILL.md §\"Non-negotiables\""
+      fi
+      ;;
+    6)
+      # Phase 6 — adversarial-findings ledger exists.
+      ADV_PATH="$PROJECT_ROOT/tests/e2e/docs/adversarial-findings.md"
+      if [ ! -f "$ADV_PATH" ]; then
+        emit_phase_deny "6" \
+          "tests/e2e/docs/adversarial-findings.md does not exist." \
+          "invoke the \`bug-discovery\` skill (or the adversarial passes of coverage-expansion). They write the findings ledger as probes return." \
+          "skills/onboarding/SKILL.md §\"Phase 6 — Bug discovery\" + skills/bug-discovery/SKILL.md"
+      fi
+      ;;
+    7)
+      # Phase 7 — .env.example exists at project root.
+      ENV_EXAMPLE_PATH="$PROJECT_ROOT/.env.example"
+      if [ ! -f "$ENV_EXAMPLE_PATH" ]; then
+        emit_phase_deny "7" \
+          ".env.example does not exist at the project root." \
+          "invoke the \`secrets-sweep\` skill. It writes .env.example as it extracts literals from the test suite." \
+          "skills/onboarding/SKILL.md §\"Phase 7 — Secrets sweep\" + skills/secrets-sweep/SKILL.md"
+      fi
+      ;;
+    8)
+      # Phase 8 — qa-summary-deck.{html,pdf} exist at project root.
+      DECK_HTML="$PROJECT_ROOT/qa-summary-deck.html"
+      DECK_PDF="$PROJECT_ROOT/qa-summary-deck.pdf"
+      MISSING_DECK=""
+      [ -f "$DECK_HTML" ] || MISSING_DECK="qa-summary-deck.html"
+      [ -f "$DECK_PDF" ]  || MISSING_DECK="${MISSING_DECK:+$MISSING_DECK + }qa-summary-deck.pdf"
+      if [ -n "$MISSING_DECK" ]; then
+        emit_phase_deny "8" \
+          "$MISSING_DECK missing from project root." \
+          "invoke the \`work-summary-deck\` skill. It writes the HTML deck and renders the PDF." \
+          "skills/onboarding/SKILL.md §\"Phase 8 — Report\" + skills/work-summary-deck/SKILL.md"
+      fi
+      ;;
+  esac
+done
+
 # All checks passed — silent allow.
 exit 0

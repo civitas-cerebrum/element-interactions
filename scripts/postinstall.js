@@ -141,6 +141,17 @@ const HOOK_MANIFEST = [
   // short. Closes the orchestrator → reviewer brief-injection surface.
   { file: 'workflow-reviewer-brief-gate.sh',      event: 'PreToolUse', matcher: 'Agent',       timeout: 5 },
   { file: 'onboarding-ledger-write-gate.sh',      event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 3 },
+  // Phase-4 fidelity gates: ensure the journey-mapping skill is the
+  // only legitimate author of tests/e2e/docs/journey-map.md. The
+  // sentinel gate enforces the line-1 marker + the cycle-state preflight
+  // (cycle 1 dispatched somewhere); the skill-preread gate enforces
+  // that the orchestrator actually loaded the journey-mapping skill
+  // (or the dispatching brief did) before issuing writes / phase4-*
+  // Agent dispatches. Together they close the orchestrator-direct
+  // shortcut on Phase 4.
+  { file: 'journey-map-sentinel-gate.sh',         event: 'PreToolUse', matcher: 'Write|Edit',  timeout: 3 },
+  { file: 'journey-mapping-skill-preread-gate.sh', event: 'PreToolUse', matcher: 'Write|Edit', timeout: 5 },
+  { file: 'journey-mapping-skill-preread-gate.sh', event: 'PreToolUse', matcher: 'Agent',      timeout: 5 },
 
   // PostToolUse — observers (record + warn)
   { file: 'subagent-return-schema-guard.sh',      event: 'PostToolUse', matcher: 'Agent',      timeout: 10 },
