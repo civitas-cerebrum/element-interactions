@@ -34,9 +34,15 @@
 #    subagent FIRST.
 # 4. **Always allow `workflow-reviewer-*` dispatches** — those don't gate
 #    themselves, and they may fire even with a pending ledger row.
-# 5. **Silent-allow when the ledger is absent or malformed.** A brand-new
-#    onboarding run starts before any ledger exists; the hook must not
-#    block Phase 1 from beginning.
+# 5. **Silent-allow when the ledger is absent AND no `tests/e2e/*.spec.ts`
+#    files exist.** A brand-new onboarding run starts before any ledger
+#    exists; the hook must not block Phase 1 from beginning. But once
+#    Phase 3 has landed its first happy-path spec, the ledger becomes
+#    mandatory — without it the harness cannot enforce phase / pass /
+#    cycle ordering. Ledger-absent-but-specs-exist is now a hard DENY
+#    with a fix-it message naming the schema and a valid-fixture
+#    example. Malformed ledger still silent-allows (the write-gate
+#    owns integrity).
 #
 # Role prefix → phase / pass / cycle mapping
 # ------------------------------------------
@@ -58,7 +64,9 @@
 # Out-of-order phase dispatch         → DENY with the missing reviewer hint
 # Non-reviewer at transition point    → DENY naming the reviewer prefix
 # Workflow-reviewer-*                 → ALWAYS allow
-# Malformed / missing ledger          → silent allow
+# Ledger missing AND specs exist      → DENY with schema fix-it message
+# Ledger missing AND no specs yet     → silent allow (pre-Phase-3 fresh run)
+# Malformed ledger                    → silent allow (write-gate owns it)
 
 # Intentional: `set -uo pipefail` without `-e`. Input-tolerant by design.
 set -uo pipefail
@@ -89,8 +97,68 @@ GUARD_CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")
 GUARD_REPO_ROOT=$(git -C "$GUARD_CWD" rev-parse --show-toplevel 2>/dev/null || echo "$GUARD_CWD")
 LEDGER="$GUARD_REPO_ROOT/tests/e2e/docs/onboarding-status.json"
 
-# Rule 5: silent-allow when the ledger is missing — brand-new run.
-[ -f "$LEDGER" ] || exit 0
+# Helper: emit a DENY payload with the supplied reason. Defined ahead of
+# Rule 5 so the ledger-absent-but-specs-exist branch can use it.
+emit_deny() {
+  local reason="$1"
+  "$JQ" -n --arg r "$reason" '{
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "deny",
+      "permissionDecisionReason": $r
+    }
+  }'
+}
+
+# Rule 5 (REVISED): silent-allow ONLY when no Phase-3+ deliverables exist.
+# Original behaviour silent-allowed any time the ledger was missing — by
+# design, so brand-new projects could run Phase 1 unimpeded. But that
+# left a loophole: an orchestrator that never authored the ledger
+# bypassed the entire state machine. The revised rule is:
+#   - If no `tests/e2e/*.spec.ts` files exist, the project is pre-Phase-3
+#     and silent-allow is correct (no Phase-3+ work to gate).
+#   - If spec files exist, the project is past Phase 3 and the ledger
+#     is mandatory. DENY with a fix-it message naming the schema and a
+#     valid-fixture example.
+if [ ! -f "$LEDGER" ]; then
+  SPEC_COUNT=0
+  if [ -d "$GUARD_REPO_ROOT/tests/e2e" ]; then
+    SPEC_COUNT=$(find "$GUARD_REPO_ROOT/tests/e2e" -maxdepth 2 -name "*.spec.ts" -type f 2>/dev/null | wc -l | tr -d ' ')
+  fi
+  if [ "${SPEC_COUNT:-0}" -gt 0 ]; then
+    emit_deny "[BLOCKED] Onboarding ledger missing but Phase-3+ deliverables exist (${SPEC_COUNT} spec file(s) under tests/e2e/).
+
+Description: \"${DESCRIPTION}\"
+
+The state-machine gate is keyed on tests/e2e/docs/onboarding-status.json.
+When that ledger is absent the gate silent-allows — by design, so brand-
+new projects can run Phase 1 unimpeded. But the presence of spec files
+means this project is past Phase 3, and the ledger is now mandatory for
+every subsequent dispatch.
+
+Without the ledger the harness cannot enforce:
+  - Phase N+1 requires Phase N's reviewerVerdict = approved
+  - Pass N+1 requires Pass N's reviewerVerdict = approved
+  - Phase 5 dispatch-count threshold (Phase-5 coverage gate)
+  - Deferral authorisation (every deferredJourneys[] entry needs
+    either a structural-prefix \`reason:\` or an \`authorizer:\` quote)
+
+Fix: author tests/e2e/docs/onboarding-status.json. Minimum shape per
+schemas/onboarding-status.schema.json — record the phases already
+completed with status:\"completed\" + reviewerVerdict:\"approved\", set
+currentPhase to the in-progress phase, then re-issue this dispatch.
+
+A canonical example is at:
+  node_modules/@civitas-cerebrum/element-interactions/schemas/onboarding-status.fixtures/valid-mid-phase5.json
+
+See:
+  - skills/onboarding/SKILL.md §\"Status ledger + workflow reviewer\"
+  - schemas/onboarding-status.schema.json"
+    exit 0
+  fi
+  # No spec files → genuinely brand-new run. Silent-allow.
+  exit 0
+fi
 
 # Probe the ledger. Any extraction failure → silent allow (malformed
 # ledger should not jam the pipeline; the write-gate is responsible for
@@ -102,18 +170,6 @@ CURRENT_PHASE=$("$JQ" -r '.currentPhase // empty' "$LEDGER" 2>/dev/null || echo 
 case "$CURRENT_PHASE" in
   ''|*[!0-9]*) exit 0 ;;
 esac
-
-# Helper: emit a DENY payload with the supplied reason.
-emit_deny() {
-  local reason="$1"
-  "$JQ" -n --arg r "$reason" '{
-    "hookSpecificOutput": {
-      "hookEventName": "PreToolUse",
-      "permissionDecision": "deny",
-      "permissionDecisionReason": $r
-    }
-  }'
-}
 
 # ---------------------------------------------------------------------------
 # Detect a transition-point: last in-progress phase's reviewerVerdict is

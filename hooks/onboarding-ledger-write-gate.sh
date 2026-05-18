@@ -719,6 +719,54 @@ for phase_id in $PHASES_NEWLY_COMPLETED; do
           fi
         fi
       fi
+
+      # Multi-pass coverage-threshold check — closes the exit-#2 /
+      # cherry-pick exploit (Run-7 anti-pattern). The prior checks gate
+      # Pass-1 roster coverage; this check gates the full per-mode
+      # pipeline. The orchestrator may legitimately reduce scope, but
+      # only with a verbatim user quote in `scopeAuthorizer`. Compute:
+      #   ROSTER_SIZE      = length(journeyRoster) — falls back to
+      #                       ROSTER_COUNT from journey-map.md if absent
+      #   RUN_MODE         = runMode field ("standard"|"depth"|"breadth")
+      #   EXPECTED_PASSES  = 5 for standard|depth, 1 for breadth
+      #   TOTAL_DISPATCHES = sum over passes of length(dispatches[])
+      #                      OR length(dispatched-journeys[]) — whichever
+      #                      that pass carries (state-file shape varies)
+      #   THRESHOLD        = ROSTER_SIZE × EXPECTED_PASSES × 8 / 10  (80%)
+      # If TOTAL_DISPATCHES < THRESHOLD AND scopeAuthorizer is empty, DENY.
+      if [ -f "$COV_STATE_PATH" ]; then
+        ROSTER_SIZE=$("$JQ" -r '.journeyRoster // [] | length' "$COV_STATE_PATH" 2>/dev/null || echo "0")
+        ROSTER_SIZE=${ROSTER_SIZE:-0}
+        # If state file omits journeyRoster, fall back to the map count
+        # computed earlier (ROSTER_COUNT from journey-map.md).
+        if [ "$ROSTER_SIZE" -eq 0 ] && [ -n "${ROSTER_COUNT:-}" ]; then
+          ROSTER_SIZE=$ROSTER_COUNT
+        fi
+        RUN_MODE=$("$JQ" -r '.runMode // "standard"' "$COV_STATE_PATH" 2>/dev/null || echo "standard")
+        EXPECTED_PASSES=5
+        [ "$RUN_MODE" = "breadth" ] && EXPECTED_PASSES=1
+        TOTAL_DISPATCHES=$("$JQ" -r '
+          [.passes[]? | ((.dispatches // ."dispatched-journeys" // []) | length)] | add // 0
+        ' "$COV_STATE_PATH" 2>/dev/null || echo "0")
+        TOTAL_DISPATCHES=${TOTAL_DISPATCHES:-0}
+        SCOPE_AUTHORIZER=$("$JQ" -r '.scopeAuthorizer // ""' "$COV_STATE_PATH" 2>/dev/null || echo "")
+        THRESHOLD=$(( ROSTER_SIZE * EXPECTED_PASSES * 8 / 10 ))
+
+        # Skip the check when: (a) roster is empty (malformed — earlier
+        # checks own this case); (b) scopeAuthorizer is non-empty (user-
+        # authorised scope reduction). Otherwise enforce 80%.
+        if [ "${ROSTER_SIZE:-0}" -gt 0 ] && [ -z "$SCOPE_AUTHORIZER" ] && [ "${TOTAL_DISPATCHES:-0}" -lt "${THRESHOLD:-0}" ]; then
+          if [ "$ROSTER_SIZE" -gt 0 ] && [ "$EXPECTED_PASSES" -gt 0 ]; then
+            COVERAGE_PCT=$(( TOTAL_DISPATCHES * 100 / (ROSTER_SIZE * EXPECTED_PASSES) ))
+          else
+            COVERAGE_PCT=0
+          fi
+          emit_phase_deny "5" \
+            "coverage-expansion-state.json reports ${TOTAL_DISPATCHES} dispatches across ${EXPECTED_PASSES} pass(es) of a ${ROSTER_SIZE}-journey roster (${COVERAGE_PCT}% coverage). Threshold is 80% (≥ ${THRESHOLD} dispatches). No user-authorised scope reduction recorded in \`scopeAuthorizer\`." \
+            "either (a) dispatch the remaining journeys to bring coverage to ≥80%; OR (b) record an explicit user authorisation by writing the verbatim user-quote into the state file's top-level \`scopeAuthorizer\` field — e.g. \`\"scopeAuthorizer\": \"<exact words the user used to authorise the scope reduction>\"\`. Self-imposed reasons (\"session-length\", \"budget-cap\", \"auto-mode\", inferred preference) are NOT valid authorisation." \
+            "skills/coverage-expansion/SKILL.md §\"Two valid exits\" + §\"No-skip contract\""
+        fi
+      fi
       ;;
     6)
       # Phase 6 — adversarial-findings ledger exists AND has substance.
