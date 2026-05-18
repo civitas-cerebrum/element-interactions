@@ -253,6 +253,33 @@ Load `test-composer` for the dispatch contract; consult
 **Goal.** Produce a structured map of every user journey worth testing,
 prioritised P1 / P2 / P3.
 
+> **Phase 4 cannot be done in-orchestrator.** "Load `journey-mapping`"
+> means invoke the Skill tool with skill name `journey-mapping` and
+> follow whatever the skill body returns. It does NOT mean: summarise
+> what the skill would produce, then hand-roll `journey-map.md`
+> directly from in-context inference (the discovery-draft + an in-
+> session pass over the SPA bundle). That shortcut is harness-blocked
+> AND methodologically forbidden:
+>
+> - The map MUST carry `<!-- journey-mapping:generated -->` as line 1
+>   — the only legitimate author of that sentinel is the skill's
+>   `phase4-prioritise-author:` subagent. The `journey-map-sentinel-
+>   gate.sh` hook denies any other write.
+> - `tests/e2e/docs/.phase4-cycle-state.json` must exist with cycle 1
+>   (discovery, strict per-section parallel) AND cycle 2 (edge-probe)
+>   recorded before the ledger will permit Phase 4 → completed. The
+>   write-gate denies the transition otherwise.
+> - The dispatching session itself must have loaded the skill body
+>   (`Skill('journey-mapping')` or `Read` of `skills/journey-mapping/
+>   SKILL.md`). The `journey-mapping-skill-preread-gate.sh` hook fires
+>   on both orchestrator-side writes/dispatches AND on subagent-side
+>   spill writes to `tests/e2e/docs/.subagent-returns/phase4-*`,
+>   denying any session that doesn't show the preread.
+>
+> If you're tempted to inline-author because "the discovery-draft is
+> already in hand, this saves 6 subagent dispatches" — that is the
+> failure mode the gates exist to block. Dispatch the skill.
+
 **Steps.**
 
 1. Load `journey-mapping` with `args: "phases: full"` under `runMode:
@@ -260,16 +287,23 @@ prioritised P1 / P2 / P3.
    `args: "phases: full, cycle-strictness: depth"` under `runMode:
    depth` (every cycle strict per-section, single-subagent walkthroughs
    forbidden in every cycle). The skill enforces an *iterative cycle*
-   protocol: at least one discovery cycle plus exactly one edge-probe
-   cycle. Shallow single-pass exploration is not accepted.
-2. Produce `tests/e2e/docs/journey-map.md` (priority-grouped) and
+   protocol: at least one discovery cycle (`cycle 1` strict per-section
+   parallel — one subagent per section) plus exactly one edge-probe
+   cycle (`cycle 2` — re-walks the same sections under an adversarial
+   lens). Shallow single-pass exploration is not accepted.
+2. Produce `tests/e2e/docs/journey-map.md` (priority-grouped, with the
+   line-1 sentinel `<!-- journey-mapping:generated -->`) and
    `tests/e2e/docs/journey-map-coverage.md` (mapping each journey to
-   the spec that covers it, or `<missing>`).
+   the spec that covers it, or `<missing>`). Both files are written
+   by the skill's author subagent; the orchestrator does not hand-roll
+   them.
 3. Reviewer cross-check: the structural-smell prevention rule rejects
    maps that collapse distinct flows or split one flow across journeys.
 
 **Exit criteria.**
-- Journey map exists with priority groupings and `<missing>` markers.
+- Journey map exists with the line-1 sentinel, priority groupings, and
+  `<missing>` markers.
+- `tests/e2e/docs/.phase4-cycle-state.json` records cycles 1 + 2.
 - The edge-probe cycle's findings are reflected in the map (not just
   discarded).
 
@@ -282,6 +316,29 @@ the priority-tier rubric.
 
 **Goal.** Land one spec per priority-2 / priority-3 journey not already
 covered, plus per-pass dedup.
+
+> **Phase 5 cannot be done in-orchestrator.** "Load `coverage-expansion`"
+> means invoke the Skill tool with skill name `coverage-expansion` and
+> dispatch its per-journey subagents through to the full five-pass
+> pipeline. It does NOT mean: write Phase-5 spec files directly from
+> orchestrator context, OR run Pass 1 only and mark the phase
+> completed.
+>
+> - The five-pass pipeline (3 compositional + 2 adversarial + cleanup)
+>   is non-negotiable for `mode: standard` and `mode: depth`. Pass 1
+>   alone is one-fifth of the phase, not the whole phase. Stopping
+>   after Pass 1 is exit #2 (commit + state-file + "resume needed"),
+>   not Phase-5 completion.
+> - `tests/e2e/docs/coverage-expansion-state.json` must exist with at
+>   minimum a `pass-1` record before the ledger will permit Phase 5 →
+>   completed. The write-gate denies the transition otherwise.
+> - Pass 1 is strict per-journey under both modes. `[group]` and
+>   `[P3-batch]` markers on Pass 1 are harness-blocked by
+>   `standard-mode-first-pass-guard.sh`.
+>
+> If you're tempted to inline-author specs because dispatching N
+> composers feels expensive — that is the failure mode the contract
+> exists to block. Dispatch the skill.
 
 **Steps.**
 
@@ -325,6 +382,21 @@ Load `coverage-expansion` for the full pass protocol and the
 
 **Goal.** Surface adversarial findings — flows that *should* break the
 application — and lock the failure modes with regression specs.
+
+> **Phase 6 cannot be done in-orchestrator.** "Load `bug-discovery`"
+> means invoke the Skill tool with skill name `bug-discovery` and
+> dispatch its per-journey probe subagents. It does NOT mean: write
+> `adversarial-findings.md` directly from orchestrator context.
+>
+> - `tests/e2e/docs/adversarial-findings.md` must exist before the
+>   ledger will permit Phase 6 → completed. The write-gate denies the
+>   transition otherwise.
+> - Every probe must complete with a terminal status (`clean` or
+>   `findings-emitted`). A probe whose findings have no regression
+>   spec must carry an explicit `app-bug` flag — the orchestrator
+>   cannot silently discard findings.
+>
+> Dispatch the skill.
 
 **Steps.**
 
