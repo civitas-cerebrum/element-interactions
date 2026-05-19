@@ -13,22 +13,18 @@
     "test:email": "npx playwright test --grep 'Email Integration Tests'",
     "test:ui": "npx playwright test --headed",
     "prepublishOnly": "npm run build",
-    "postinstall": "node scripts/postinstall.js",
+    "postinstall": "node methodology/scripts/postinstall.js",
     "test:quiet": "TESTER_DEBUG=false npx playwright test",
     "test:coverage": "npx test-coverage",
     "test:with-coverage": "npx playwright test --grep-invert 'Email Integration Tests' && npx test-coverage --format github-plain",
-    "test:hooks": "hooks/tests/run.sh",
-    "sync-hooks": "node scripts/sync-hooks.js",
-    "schemas:lint": "node scripts/compile-schemas.mjs && node scripts/validate-schema-fixtures.mjs",
+    "test:hooks": "methodology/hooks/tests/run.sh",
+    "sync-hooks": "node methodology/scripts/sync-hooks.js",
+    "schemas:lint": "node methodology/scripts/compile-schemas.mjs && node methodology/scripts/validate-schema-fixtures.mjs",
     "prepack": "npm run test:hooks"
   },
   "files": [
     "dist",
-    "skills",
-    "hooks",
-    "schemas",
-    "scripts/postinstall.js",
-    "CHANGELOG.md"
+    "methodology"
   ],
   "peerDependencies": {
     "@playwright/test": ">=1.0.0"

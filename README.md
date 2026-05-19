@@ -266,7 +266,7 @@ test('Per-call timeout override', async ({ steps }) => {
 });
 ```
 
-**Field matchers:** `text`, `value`, `count`, `visible`, `enabled`, `attributes`, `css(prop)`. Each carries `.not` for negation. Snapshot fields available in predicates: `text`, `value`, `attributes`, `visible`, `enabled`, `count`. See the [API reference](skills/element-interactions/references/api-reference.md#expect-matcher-tree) for the full surface.
+**Field matchers:** `text`, `value`, `count`, `visible`, `enabled`, `attributes`, `css(prop)`. Each carries `.not` for negation. Snapshot fields available in predicates: `text`, `value`, `attributes`, `visible`, `enabled`, `count`. See the [API reference](methodology/skills/element-interactions/references/api-reference.md#expect-matcher-tree) for the full surface.
 
 ### StepOptions
 

@@ -1,5 +1,5 @@
 {
-  "$schema": "./schemas/contribution-handover.schema.json",
+  "$schema": "./methodology/schemas/contribution-handover.schema.json",
   "schemaVersion": 1,
   "pr": {
     "title": "<imperative summary, e.g. 'feat: add steps.X for Y use case'>",
