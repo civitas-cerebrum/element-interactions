@@ -6,22 +6,49 @@
 # Hook    : PreToolUse:Agent
 # Mode    : DENY (blocks the dispatch before the subagent starts)
 # State   : reads
-#             tests/e2e/docs/coverage-expansion-state.json   (Pass-1 detection,
-#                                                             runMode marker)
+#             tests/e2e/docs/onboarding-status.json          (workflow ledger —
+#                                                             runMode +
+#                                                             currentPhase +
+#                                                             currentSubStage;
+#                                                             primary source for
+#                                                             Rule 1)
+#             tests/e2e/docs/coverage-expansion-state.json   (fallback for
+#                                                             Rule 1 when the
+#                                                             workflow ledger is
+#                                                             absent — bare
+#                                                             coverage-expansion
+#                                                             invocations
+#                                                             outside onboarding)
 #             tests/e2e/docs/.phase4-cycle-state.json        (cycle-1 detection,
 #                                                             cycleStrictness)
 # Env     : none
 #
 # Mode awareness
 # --------------
-# Two state-file fields control whether the strict contract relaxes after the
-# first pass / cycle (default behaviour under `runMode: standard`) or holds
-# across every pass / cycle (`runMode: depth`).
+# Rule 1 (grouping permission) reads from the workflow-level onboarding ledger
+# rather than the Phase-5-internal coverage-expansion state file. The
+# coverage-expansion state file is deleted at Pass-5 cleanup per its
+# documented lifecycle, so cross-phase questions ("is this Phase-6 grouping
+# allowed?") must read from a state that survives Phase 5. The onboarding
+# ledger carries `runMode` + `currentPhase` + `currentSubStage` and lives
+# for the whole 8-phase pipeline — it is the right source.
 #
-#   coverage-expansion-state.json
-#     - `runMode: "standard" | "depth"` (optional; default "standard" when
-#       absent). Under "standard", `[group]` / `[P3-batch]` are denied on
-#       Pass 1 only; under "depth", they are denied on every pass.
+#   onboarding-status.json
+#     - `runMode: "standard" | "depth"` — the front-load gate's mode choice.
+#       Under "standard", `[group]` / `[P3-batch]` are denied on Pass 1 only;
+#       under "depth", they are denied on every pass.
+#     - `currentPhase: 1..8` — the active phase. Rule 1 denies grouping when
+#       `currentPhase < 5` (pre-coverage-expansion) or
+#       `currentPhase == 5 AND currentSubStage == "pass-1"` (Phase-5 Pass 1).
+#       Permits grouping when `currentPhase == 5 AND currentSubStage in
+#       {pass-2..pass-5}` OR `currentPhase >= 6`.
+#     - `currentSubStage: "pass-1".."pass-5" | "cycle-1".."cycle-5" | null` —
+#       for Phase 5 (pass-N) and Phase 4 (cycle-N) sub-state.
+#
+#   coverage-expansion-state.json (fallback only)
+#     - `runMode: "standard" | "depth"` and `currentPass: 1..5`. Used when
+#       the workflow ledger is absent (bare coverage-expansion invocations
+#       outside the onboarding pipeline). Same DENY semantics.
 #
 #   .phase4-cycle-state.json
 #     - `cycleStrictness: "standard" | "depth"` (optional; default "standard"
@@ -115,6 +142,7 @@ DESCRIPTION=$(echo "$INPUT" | "$JQ" -r '.tool_input.description // ""' 2>/dev/nu
 # Resolve the cwd (where the state files live) — fall back to "." if absent.
 GUARD_CWD=$(echo "$INPUT" | "$JQ" -r '.cwd // "."' 2>/dev/null || echo ".")
 GUARD_REPO_ROOT=$(git -C "$GUARD_CWD" rev-parse --show-toplevel 2>/dev/null || echo "$GUARD_CWD")
+WORKFLOW_LEDGER="$GUARD_REPO_ROOT/tests/e2e/docs/onboarding-status.json"
 COV_STATE="$GUARD_REPO_ROOT/tests/e2e/docs/coverage-expansion-state.json"
 CYCLE_STATE="$GUARD_REPO_ROOT/tests/e2e/docs/.phase4-cycle-state.json"
 
@@ -135,15 +163,51 @@ emit_deny() {
 # ---------------------------------------------------------------------------
 # Description starts with `[group]` or `[P3-batch]` (allowing whitespace).
 if echo "$DESCRIPTION" | grep -qE '^[[:space:]]*\[(group|P3-batch)\]'; then
-  # Determine current pass + run mode. If state file is absent, this is
-  # implicitly Pass 1 (no Pass 1 dispatch has been recorded yet) AND the
-  # mode defaults to "standard". If present, read both fields.
+  # Determine current pass + run mode. Primary source: the workflow-level
+  # onboarding ledger (`onboarding-status.json`), which lives for the whole
+  # 8-phase pipeline. Fallback: the Phase-5-internal coverage-expansion
+  # state file, for bare coverage-expansion invocations outside onboarding.
+  # If neither is present, this is implicitly Pass 1 (no dispatch has been
+  # recorded yet) AND the mode defaults to "standard".
   CURRENT_PASS=""
   RUN_MODE="standard"
-  if [ -f "$COV_STATE" ]; then
+  LEDGER_USED=""
+  if [ -f "$WORKFLOW_LEDGER" ]; then
+    LEDGER_USED="workflow"
+    RUN_MODE_RAW=$("$JQ" -r '.runMode // "standard"' "$WORKFLOW_LEDGER" 2>/dev/null || echo "standard")
+    case "$RUN_MODE_RAW" in
+      depth) RUN_MODE="depth" ;;
+      *)     RUN_MODE="standard" ;;
+    esac
+    CURRENT_PHASE=$("$JQ" -r '.currentPhase // 0' "$WORKFLOW_LEDGER" 2>/dev/null || echo "0")
+    CURRENT_SUB_STAGE=$("$JQ" -r '.currentSubStage // ""' "$WORKFLOW_LEDGER" 2>/dev/null || echo "")
+    case "$CURRENT_PHASE" in
+      ''|*[!0-9]*) CURRENT_PHASE=0 ;;
+    esac
+    # Translate workflow phase + sub-stage into the legacy `currentPass`
+    # field semantics that Rule 1 already encodes:
+    #   - currentPhase < 5            → CURRENT_PASS="" (pre-Phase-5, Pass-1-equivalent)
+    #   - currentPhase == 5, sub-stage=="pass-1" → CURRENT_PASS="1"
+    #   - currentPhase == 5, sub-stage in pass-2..5 → CURRENT_PASS=<n>
+    #   - currentPhase >= 6           → CURRENT_PASS="6" (post-Phase-5, grouping permitted)
+    if [ "$CURRENT_PHASE" -lt 5 ]; then
+      CURRENT_PASS=""
+    elif [ "$CURRENT_PHASE" -eq 5 ]; then
+      case "$CURRENT_SUB_STAGE" in
+        pass-1) CURRENT_PASS="1" ;;
+        pass-2) CURRENT_PASS="2" ;;
+        pass-3) CURRENT_PASS="3" ;;
+        pass-4) CURRENT_PASS="4" ;;
+        pass-5) CURRENT_PASS="5" ;;
+        *)      CURRENT_PASS="1" ;;
+      esac
+    else
+      CURRENT_PASS="6"
+    fi
+  elif [ -f "$COV_STATE" ]; then
+    LEDGER_USED="coverage-expansion"
     CURRENT_PASS=$("$JQ" -r '.currentPass // empty' "$COV_STATE" 2>/dev/null || echo "")
     RUN_MODE_RAW=$("$JQ" -r '.runMode // "standard"' "$COV_STATE" 2>/dev/null || echo "standard")
-    # Defensive: only accept the known enum values.
     case "$RUN_MODE_RAW" in
       depth) RUN_MODE="depth" ;;
       *)     RUN_MODE="standard" ;;
