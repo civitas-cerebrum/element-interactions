@@ -729,10 +729,17 @@ for phase_id in $PHASES_NEWLY_COMPLETED; do
       #                       ROSTER_COUNT from journey-map.md if absent
       #   RUN_MODE         = runMode field ("standard"|"depth"|"breadth")
       #   EXPECTED_PASSES  = 5 for standard|depth, 1 for breadth
-      #   TOTAL_DISPATCHES = sum over passes of length(dispatches[])
-      #                      OR length(dispatched-journeys[]) — whichever
-      #                      that pass carries (state-file shape varies)
-      #   THRESHOLD        = ROSTER_SIZE × EXPECTED_PASSES × 8 / 10  (80%)
+      #   TOTAL_DISPATCHES = sum over passes of length(dispatched-
+      #                      journeys[]) — canonical field. `dispatches`
+      #                      is honoured as a legacy alias only when
+      #                      `dispatched-journeys` is missing entirely
+      #                      (not when it's an empty array — jq's `//`
+      #                      treats `[]` as truthy, so we max() instead
+      #                      of fall-through).
+      #   THRESHOLD        = ROSTER_SIZE × EXPECTED_PASSES × N / 10
+      #                      where N defaults to 8 (80%), overridable
+      #                      via COVERAGE_EXPANSION_THRESHOLD env var
+      #                      (an integer in [10,100] = percent).
       # If TOTAL_DISPATCHES < THRESHOLD AND scopeAuthorizer is empty, DENY.
       if [ -f "$COV_STATE_PATH" ]; then
         ROSTER_SIZE=$("$JQ" -r '.journeyRoster // [] | length' "$COV_STATE_PATH" 2>/dev/null || echo "0")
@@ -745,25 +752,54 @@ for phase_id in $PHASES_NEWLY_COMPLETED; do
         RUN_MODE=$("$JQ" -r '.runMode // "standard"' "$COV_STATE_PATH" 2>/dev/null || echo "standard")
         EXPECTED_PASSES=5
         [ "$RUN_MODE" = "breadth" ] && EXPECTED_PASSES=1
+        # Sum across passes. For each pass take MAX of `dispatched-
+        # journeys` length and `dispatches` length so an empty array on
+        # one doesn't shadow a populated array on the other. Both fields
+        # are treated as positive coverage signals — gated_skip entries
+        # in dispatches[] also count (the orchestrator "considered" the
+        # journey in that pass, per coverage-expansion §"Trigger-gated
+        # re-pass for Passes 2 & 3").
         TOTAL_DISPATCHES=$("$JQ" -r '
-          [.passes[]? | ((.dispatches // ."dispatched-journeys" // []) | length)] | add // 0
+          [.passes[]? | (
+            [((."dispatched-journeys" // []) | length), ((.dispatches // []) | length)] | max
+          )] | add // 0
         ' "$COV_STATE_PATH" 2>/dev/null || echo "0")
         TOTAL_DISPATCHES=${TOTAL_DISPATCHES:-0}
         SCOPE_AUTHORIZER=$("$JQ" -r '.scopeAuthorizer // ""' "$COV_STATE_PATH" 2>/dev/null || echo "")
-        THRESHOLD=$(( ROSTER_SIZE * EXPECTED_PASSES * 8 / 10 ))
+
+        # Typo hint: detect close variants of `scopeAuthorizer` to
+        # surface in the deny message when present. Catches
+        # `scopeAuthoriser`, `scope_authorizer`, `scopeAuth`, etc.
+        SCOPE_AUTH_TYPO=$("$JQ" -r '
+          [keys[]? | select(test("scope.*author|scope.?auth"; "i")) | select(. != "scopeAuthorizer")] | first // ""
+        ' "$COV_STATE_PATH" 2>/dev/null || echo "")
+
+        # Threshold percent (default 80) — overridable for gated-skip-
+        # heavy runs (coverage-expansion §"Trigger-gated re-pass for
+        # Passes 2 & 3" describes runs where Passes 2/3 may legitimately
+        # produce zero new dispatches; operators on those workflows can
+        # set COVERAGE_EXPANSION_THRESHOLD=60).
+        THRESHOLD_PCT=${COVERAGE_EXPANSION_THRESHOLD:-80}
+        case "$THRESHOLD_PCT" in
+          ''|*[!0-9]*) THRESHOLD_PCT=80 ;;
+        esac
+        if [ "$THRESHOLD_PCT" -lt 10 ] || [ "$THRESHOLD_PCT" -gt 100 ]; then
+          THRESHOLD_PCT=80
+        fi
+        THRESHOLD=$(( ROSTER_SIZE * EXPECTED_PASSES * THRESHOLD_PCT / 100 ))
 
         # Skip the check when: (a) roster is empty (malformed — earlier
         # checks own this case); (b) scopeAuthorizer is non-empty (user-
-        # authorised scope reduction). Otherwise enforce 80%.
+        # authorised scope reduction). Otherwise enforce the threshold.
         if [ "${ROSTER_SIZE:-0}" -gt 0 ] && [ -z "$SCOPE_AUTHORIZER" ] && [ "${TOTAL_DISPATCHES:-0}" -lt "${THRESHOLD:-0}" ]; then
-          if [ "$ROSTER_SIZE" -gt 0 ] && [ "$EXPECTED_PASSES" -gt 0 ]; then
-            COVERAGE_PCT=$(( TOTAL_DISPATCHES * 100 / (ROSTER_SIZE * EXPECTED_PASSES) ))
-          else
-            COVERAGE_PCT=0
+          COVERAGE_PCT=$(( TOTAL_DISPATCHES * 100 / (ROSTER_SIZE * EXPECTED_PASSES) ))
+          TYPO_HINT=""
+          if [ -n "$SCOPE_AUTH_TYPO" ]; then
+            TYPO_HINT=" (found a similarly-named field \`${SCOPE_AUTH_TYPO}\` in the state file — likely a typo of \`scopeAuthorizer\`; rename it to take effect)"
           fi
           emit_phase_deny "5" \
-            "coverage-expansion-state.json reports ${TOTAL_DISPATCHES} dispatches across ${EXPECTED_PASSES} pass(es) of a ${ROSTER_SIZE}-journey roster (${COVERAGE_PCT}% coverage). Threshold is 80% (≥ ${THRESHOLD} dispatches). No user-authorised scope reduction recorded in \`scopeAuthorizer\`." \
-            "either (a) dispatch the remaining journeys to bring coverage to ≥80%; OR (b) record an explicit user authorisation by writing the verbatim user-quote into the state file's top-level \`scopeAuthorizer\` field — e.g. \`\"scopeAuthorizer\": \"<exact words the user used to authorise the scope reduction>\"\`. Self-imposed reasons (\"session-length\", \"budget-cap\", \"auto-mode\", inferred preference) are NOT valid authorisation." \
+            "coverage-expansion-state.json reports ${TOTAL_DISPATCHES} dispatches across ${EXPECTED_PASSES} pass(es) of a ${ROSTER_SIZE}-journey roster (${COVERAGE_PCT}% coverage). Threshold is ${THRESHOLD_PCT}% (≥ ${THRESHOLD} dispatches). No user-authorised scope reduction recorded in \`scopeAuthorizer\`${TYPO_HINT}." \
+            "either (a) dispatch the remaining journeys to bring coverage to ≥${THRESHOLD_PCT}% — gated-skipped passes must record one \`{gated_skip: true, journey: <id>}\` entry per journey in their dispatches[]/dispatched-journeys[] array so the threshold check can count them, not an empty array; OR (b) record an explicit user authorisation by writing the verbatim user-quote into the state file's top-level \`scopeAuthorizer\` field — e.g. \`\"scopeAuthorizer\": \"<exact words the user used to authorise the scope reduction>\"\`. Self-imposed reasons (\"session-length\", \"budget-cap\", \"auto-mode\", inferred preference) are NOT valid authorisation. To loosen the threshold for gated-skip-heavy workflows, set COVERAGE_EXPANSION_THRESHOLD=<10-100> in the session env (default 80)." \
             "skills/coverage-expansion/SKILL.md §\"Two valid exits\" + §\"No-skip contract\""
         fi
       fi

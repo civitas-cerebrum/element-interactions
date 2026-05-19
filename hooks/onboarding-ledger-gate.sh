@@ -123,7 +123,7 @@ emit_deny() {
 if [ ! -f "$LEDGER" ]; then
   SPEC_COUNT=0
   if [ -d "$GUARD_REPO_ROOT/tests/e2e" ]; then
-    SPEC_COUNT=$(find "$GUARD_REPO_ROOT/tests/e2e" -maxdepth 2 -name "*.spec.ts" -type f 2>/dev/null | wc -l | tr -d ' ')
+    SPEC_COUNT=$(find "$GUARD_REPO_ROOT/tests/e2e" -name "*.spec.ts" -type f 2>/dev/null | wc -l | tr -d ' ')
   fi
   if [ "${SPEC_COUNT:-0}" -gt 0 ]; then
     emit_deny "[BLOCKED] Onboarding ledger missing but Phase-3+ deliverables exist (${SPEC_COUNT} spec file(s) under tests/e2e/).
@@ -143,16 +143,40 @@ Without the ledger the harness cannot enforce:
   - Deferral authorisation (every deferredJourneys[] entry needs
     either a structural-prefix \`reason:\` or an \`authorizer:\` quote)
 
-Fix: author tests/e2e/docs/onboarding-status.json. Minimum shape per
-schemas/onboarding-status.schema.json — record the phases already
-completed with status:\"completed\" + reviewerVerdict:\"approved\", set
-currentPhase to the in-progress phase, then re-issue this dispatch.
+Recovery — two steps:
 
-A canonical example is at:
-  node_modules/@civitas-cerebrum/element-interactions/schemas/onboarding-status.fixtures/valid-mid-phase5.json
+  Step 1: Author tests/e2e/docs/onboarding-status.json with reviewerVerdict
+          set to \"pending\" on every completed phase. DO NOT write
+          \"approved\" yourself — the ledger-write-gate's actor-identity
+          check denies orchestrator-context writes that transition a
+          verdict to approved. Verdicts must be earned via reviewer
+          subagent dispatches in step 2.
+
+          Minimum shape per schemas/onboarding-status.schema.json:
+            - phases[N].status = \"completed\" for each phase whose
+              deliverables already exist on disk (Phase 1: playwright
+              config + dirs; Phase 2: app-context + page-repository;
+              Phase 3: tests/e2e/<journey>.spec.ts files)
+            - phases[N].reviewerVerdict = \"pending\" for those phases
+            - currentPhase = the phase you were about to dispatch into
+
+          A canonical fixture lives at:
+            node_modules/@civitas-cerebrum/element-interactions/schemas/onboarding-status.fixtures/valid-mid-phase5.json
+
+  Step 2: For each retroactively-completed phase, dispatch
+          \`workflow-reviewer-phaseN:\` (one at a time, oldest first).
+          The reviewer inspects the existing deliverables, returns a
+          verdict, and its return is what lands \`reviewerVerdict\` in
+          the ledger via the proper approver context. Workflow-reviewer
+          dispatches are always allowed by this hook (Rule 4) even with
+          a pending-verdict ledger row.
+
+After both steps land the ledger with reviewerVerdict: approved on each
+prior phase, re-issue this dispatch.
 
 See:
   - skills/onboarding/SKILL.md §\"Status ledger + workflow reviewer\"
+  - skills/workflow-reviewer/SKILL.md
   - schemas/onboarding-status.schema.json"
     exit 0
   fi

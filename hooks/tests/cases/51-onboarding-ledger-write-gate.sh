@@ -448,6 +448,53 @@ cat > "$TMP_REPO/tests/e2e/docs/journey-map.md" <<'EOF'
 #### j-gamma
 EOF
 
+# (g) Typo-hint surfacing — when the state file has a near-name field
+# (`scopeAuthoriser`, `scope_authorizer`, etc.), the deny message
+# surfaces it so the operator can rename instead of guessing.
+rm -f "$TMP_REPO/tests/e2e/docs/journey-map.md"
+cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":1,"journeyRoster":["j-alpha","j-beta","j-gamma"],"scopeAuthoriser":"user said: pass 1 is enough","passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha"],"returned-journeys":["j-alpha"]}}}
+EOF
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
+  "Phase 5 → completed with typo \`scopeAuthoriser\` (UK spelling) → DENY with rename hint" "scopeAuthoriser"
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
+  "Phase 5 → typo hint mentions rename instruction" "rename it to take effect"
+
+# (h) COVERAGE_EXPANSION_THRESHOLD env var lowers the bar — at 60%, a
+# state file with 9/15 dispatches (60%) passes when 80% would have denied.
+cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":3,"journeyRoster":["j-alpha","j-beta","j-gamma"],"passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]},"2":{"kind":"compositional","dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]},"3":{"kind":"compositional","dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]}}}
+EOF
+COVERAGE_EXPANSION_THRESHOLD=60 assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
+  "Phase 5 → 9/15 (60%) + COVERAGE_EXPANSION_THRESHOLD=60 → ALLOW"
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
+  "Phase 5 → 9/15 (60%) + default threshold 80% → DENY" "Threshold is 80%"
+
+# Invalid threshold values fall back to 80%.
+COVERAGE_EXPANSION_THRESHOLD=not-a-number assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
+  "Phase 5 → invalid threshold env var (\"not-a-number\") falls back to 80% → DENY" "Threshold is 80%"
+COVERAGE_EXPANSION_THRESHOLD=5 assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
+  "Phase 5 → out-of-range threshold env var (5) falls back to 80% → DENY" "Threshold is 80%"
+
+# (i) `dispatched-journeys` is canonical when both fields are present.
+# A pass with empty dispatches[] + populated dispatched-journeys[] used
+# to under-count (jq's `//` treated `[]` as truthy). The max() expression
+# now picks the non-empty field.
+cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":5,"journeyRoster":["j-alpha","j-beta","j-gamma"],"passes":{"1":{"kind":"compositional","dispatches":[],"dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]},"2":{"kind":"compositional","dispatches":[],"dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]},"3":{"kind":"compositional","dispatches":[],"dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]},"4":{"kind":"adversarial","dispatches":[],"dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]},"5":{"kind":"adversarial","dispatches":[],"dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]}}}
+EOF
+assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
+  "Phase 5 → empty dispatches[] + populated dispatched-journeys[] counts the latter → ALLOW"
+
+# Restore 3-entry map.
+cat > "$TMP_REPO/tests/e2e/docs/journey-map.md" <<'EOF'
+<!-- journey-mapping:generated -->
+# Map
+#### j-alpha
+#### j-beta
+#### j-gamma
+EOF
+
 # ---- Phase 6 ----
 section "ledger-write-gate: Phase 6 → completed requires adversarial-findings.md"
 rm -f "$LEDGER_PATH" "$TMP_REPO/tests/e2e/docs/adversarial-findings.md"

@@ -224,6 +224,26 @@ assert_deny "$H" "$(payload tool_name=Agent description='composer-j-bad-login' p
 assert_deny "$H" "$(payload tool_name=Agent description='probe-j-cart' prompt='Probe. probe.schema.json' cwd="$TMP_REPO")" \
   "spec file exists + no ledger + probe dispatch → DENY" "ledger is now mandatory"
 
+# Deny message must point at the legitimate recovery path
+# (reviewerVerdict: \"pending\" + reviewer dispatches), NOT at writing
+# \"approved\" directly — the write-gate's actor-identity check denies
+# orchestrator-context writes that transition a verdict to approved, so
+# advising the operator to author \"approved\" would just trigger a
+# second DENY from a different hook.
+assert_deny "$H" "$(payload tool_name=Agent description='composer-j-bad-login' prompt='Compose. composer.schema.json' cwd="$TMP_REPO")" \
+  "deny message advises reviewerVerdict: pending → DENY message format" "\"pending\""
+assert_deny "$H" "$(payload tool_name=Agent description='composer-j-bad-login' prompt='Compose. composer.schema.json' cwd="$TMP_REPO")" \
+  "deny message references workflow-reviewer-phaseN dispatch path" "workflow-reviewer-phaseN"
+
+# Nested spec paths (tests/e2e/journeys/auth/login.spec.ts) also trigger
+# the gate — the detection must not cap at maxdepth 2.
+mkdir -p "$TMP_REPO/tests/e2e/journeys/auth"
+rm -f "$TMP_REPO/tests/e2e/j-happy.spec.ts"
+printf 'import {test} from "@playwright/test";\ntest("nested", async ({page}) => {});\n' \
+  > "$TMP_REPO/tests/e2e/journeys/auth/login.spec.ts"
+assert_deny "$H" "$(payload tool_name=Agent description='composer-j-bad-login' prompt='Compose.' cwd="$TMP_REPO")" \
+  "nested spec at tests/e2e/journeys/auth/login.spec.ts + no ledger → DENY" "Phase-3+ deliverables exist"
+
 # Workflow-reviewer is always allowed even in this state (rule 4 wins).
 assert_allow "$H" "$(payload tool_name=Agent description='workflow-reviewer-phase3: review Phase 3' prompt='Review.' cwd="$TMP_REPO")" \
   "spec file exists + no ledger + workflow-reviewer-* → ALLOW (rule 4 supersedes)"
