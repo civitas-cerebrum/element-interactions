@@ -21,11 +21,13 @@ fi
 ATTEST_TMP=$(mktemp -d)
 trap 'rm -rf "$ATTEST_TMP"' EXIT
 ( cd "$ATTEST_TMP" && git init -q && git config user.email t@t && git config user.name t && git commit -q --allow-empty -m init ) >/dev/null 2>&1
-mkdir -p "$ATTEST_TMP/tests/e2e/docs" "$ATTEST_TMP/scripts"
+mkdir -p "$ATTEST_TMP/tests/e2e/docs" "$ATTEST_TMP/methodology/scripts"
 
-# Seed two real files in the temp repo.
+# Seed two real files in the temp repo. Paths mirror the post-reshape layout
+# (methodology/scripts/postinstall.js) so the attestation-gate regex's
+# optional `methodology/` capture is exercised end-to-end.
 echo "{}" > "$ATTEST_TMP/tests/e2e/docs/onboarding-status.json"
-echo "// stub" > "$ATTEST_TMP/scripts/postinstall.js"
+echo "// stub" > "$ATTEST_TMP/methodology/scripts/postinstall.js"
 
 section "attestation-gate: tool-name filtering"
 assert_allow "$H" "$(payload tool_name=Bash command='ls')" "Bash → silent allow"

@@ -136,10 +136,15 @@ EVIDENCE_TEXT=$(echo "$PARSED_JSON" | "$JQ" -r '
 ' 2>/dev/null || echo "")
 
 # Extract file-path-shaped substrings.
-# Pattern 1: known project-typed dirs followed by a path segment.
+# Pattern 1: known project-typed dirs followed by a path segment. The optional
+#            `methodology/` prefix captures the post-reshape layout — paths
+#            inside this package live under `methodology/`, so a reviewer who
+#            cites `methodology/scripts/postinstall.js` must yield the full
+#            path (not the stripped `scripts/postinstall.js` substring) so the
+#            existence check below resolves correctly.
 # Pattern 2: a bare filename with common project extensions.
 PATHS=$(printf '%s' "$EVIDENCE_TEXT" | grep -oE \
-  '(tests|src|app|hooks|skills|schemas|scripts|docs)/[A-Za-z0-9_./-]+[A-Za-z0-9_]|[A-Za-z0-9_-]+\.(spec\.ts|schema\.json|json|md|ts|yaml|yml)' \
+  '(methodology/)?(tests|src|app|hooks|skills|schemas|scripts|docs)/[A-Za-z0-9_./-]+[A-Za-z0-9_]|[A-Za-z0-9_-]+\.(spec\.ts|schema\.json|json|md|ts|yaml|yml)' \
   2>/dev/null | sort -u || true)
 
 if [ -z "$PATHS" ]; then

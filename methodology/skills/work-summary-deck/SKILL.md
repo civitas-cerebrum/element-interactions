@@ -143,7 +143,7 @@ The flow is non-interactive — once the HTML is written, the PDF export runs au
 1. **Write the HTML file** to the project root as `qa-summary-deck.html` (or a name the user specifies).
 2. **Render the PDF** by running:
    ```bash
-   node node_modules/@civitas-cerebrum/element-interactions/skills/work-summary-deck/scripts/export-pdf.js qa-summary-deck.html
+   node node_modules/@civitas-cerebrum/element-interactions/methodology/skills/work-summary-deck/scripts/export-pdf.js qa-summary-deck.html
    ```
    The script uses the project's existing `@playwright/test` peer dependency (no extra install) to print the deck in landscape with `@page` defaults preserved. Output PDF lands next to the HTML (`qa-summary-deck.pdf`). The script prints the resolved PDF path to stdout. If the script's stdout is non-empty AND the file exists, treat the export as complete.
 3. **Open the PDF** for the user — `open <pdf-path>` on macOS, `xdg-open <pdf-path>` on Linux. Open the HTML too only if the user asked for it; the PDF is the canonical deliverable.

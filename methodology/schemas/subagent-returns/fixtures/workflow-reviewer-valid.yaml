@@ -10,10 +10,10 @@ checklist:
   - item: One spec per primary journey, all passing locally
     satisfied: true
     evidence: tests/e2e/sign-in.spec.ts, tests/e2e/checkout.spec.ts both green
-    methodology-ref: skills/onboarding/SKILL.md §"Phase 3 — Happy path"
+    methodology-ref: methodology/skills/onboarding/SKILL.md §"Phase 3 — Happy path"
   - item: tests/e2e/docs/.discovery-draft.json has been written by Stage-3 happy-path pass
     satisfied: true
     evidence: file exists at tests/e2e/docs/.discovery-draft.json
-    methodology-ref: skills/onboarding/SKILL.md §"Phase 3 — Happy path"
+    methodology-ref: methodology/skills/onboarding/SKILL.md §"Phase 3 — Happy path"
 attestation: Phase 3 exit criteria met — happy-path specs landed and discovery draft seeded for Phase 4
 summary: Approved.

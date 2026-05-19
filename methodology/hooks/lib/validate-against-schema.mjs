@@ -19,7 +19,9 @@ if (!role || !dataFile) {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-// methodology/hooks/lib/ -> methodology/hooks/ -> repo root. Schemas are at root/schemas/subagent-returns/.
+// methodology/hooks/lib/ -> methodology/hooks/ -> methodology/. Schemas
+// live at methodology/schemas/subagent-returns/ — same parent as hooks/,
+// so two `..` from this file resolves there directly.
 const schemasDir = resolve(here, '..', '..', 'schemas', 'subagent-returns');
 const schemaPath = join(schemasDir, `${role}.schema.json`);
 if (!existsSync(schemaPath)) {
