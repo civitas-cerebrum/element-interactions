@@ -156,40 +156,54 @@ printf '%s' "$PROPOSED_CONTENT" > "$TMP_PROPOSED"
 
 # Spawn a one-off node invocation that validates the file against the
 # schema. We re-use the same Ajv config the package's existing validators
-# rely on (allowUnionTypes + strictSchema:false).
+# rely on (allowUnionTypes + strictSchema:false). When node or ajv is
+# unavailable, the schema check is skipped — but the non-node checks
+# below (state-machine, actor-identity, per-phase deliverables) still
+# fire. Silent-allowing the whole hook on a missing node binary would
+# let an orchestrator with no node on $PATH bypass the entire gate.
 NODE_BIN="$(command -v node 2>/dev/null || true)"
+SCHEMA_VALIDATION_SKIPPED=0
+NODE_EXIT=0
+VALIDATE_OUT=""
 if [ -z "$NODE_BIN" ]; then
-  # No node — silent allow (we can't validate without it).
-  exit 0
-fi
-
-VALIDATE_OUT=$("$NODE_BIN" -e "
-  const fs = require('fs');
-  let Ajv, addFormats;
-  try {
-    Ajv = require('ajv/dist/2020.js');
-    addFormats = require('ajv-formats');
-  } catch (e) {
-    // ajv unavailable — silent allow.
-    process.exit(0);
-  }
-  let schema, data;
-  try { schema = JSON.parse(fs.readFileSync('$SCHEMA_PATH', 'utf8')); }
-  catch (e) { console.error('SCHEMA_LOAD_FAIL', e.message); process.exit(0); }
-  try { data = JSON.parse(fs.readFileSync('$TMP_PROPOSED', 'utf8')); }
-  catch (e) { console.error('CONTENT_PARSE_FAIL: ' + e.message); process.exit(2); }
-  const ajv = new (Ajv.default || Ajv)({ strict: true, allErrors: true, allowUnionTypes: true, strictSchema: false });
-  (addFormats.default || addFormats)(ajv);
-  const validate = ajv.compile(schema);
-  if (!validate(data)) {
-    for (const err of validate.errors || []) {
-      console.error('SCHEMA_FAIL: ' + (err.instancePath || '/') + ' ' + err.message);
+  SCHEMA_VALIDATION_SKIPPED=1
+else
+  VALIDATE_OUT=$("$NODE_BIN" -e "
+    const fs = require('fs');
+    let Ajv, addFormats;
+    try {
+      Ajv = require('ajv/dist/2020.js');
+      addFormats = require('ajv-formats');
+    } catch (e) {
+      // ajv unavailable — emit a marker the bash side can detect.
+      console.error('AJV_UNAVAILABLE');
+      process.exit(4);
     }
-    process.exit(3);
-  }
-  process.exit(0);
-" 2>&1)
-NODE_EXIT=$?
+    let schema, data;
+    try { schema = JSON.parse(fs.readFileSync('$SCHEMA_PATH', 'utf8')); }
+    catch (e) { console.error('SCHEMA_LOAD_FAIL', e.message); process.exit(4); }
+    try { data = JSON.parse(fs.readFileSync('$TMP_PROPOSED', 'utf8')); }
+    catch (e) { console.error('CONTENT_PARSE_FAIL: ' + e.message); process.exit(2); }
+    const ajv = new (Ajv.default || Ajv)({ strict: true, allErrors: true, allowUnionTypes: true, strictSchema: false });
+    (addFormats.default || addFormats)(ajv);
+    const validate = ajv.compile(schema);
+    if (!validate(data)) {
+      for (const err of validate.errors || []) {
+        console.error('SCHEMA_FAIL: ' + (err.instancePath || '/') + ' ' + err.message);
+      }
+      process.exit(3);
+    }
+    process.exit(0);
+  " 2>&1)
+  NODE_EXIT=$?
+  # NODE_EXIT=4 means schema-validation infrastructure unavailable
+  # (ajv missing or schema unreadable). Skip the schema portion but
+  # continue with non-node checks.
+  if [ "$NODE_EXIT" = "4" ]; then
+    SCHEMA_VALIDATION_SKIPPED=1
+    NODE_EXIT=0
+  fi
+fi
 
 if [ "$NODE_EXIT" = "2" ]; then
   emit_deny "[BLOCKED] Proposed onboarding-status.json is not parseable JSON.
@@ -225,6 +239,21 @@ are working examples of the shape.
 See: schemas/onboarding-status.schema.json
      skills/onboarding/SKILL.md §\"Status ledger + workflow reviewer\""
   exit 0
+fi
+
+# When schema validation was skipped (no node / no ajv), we still need
+# the proposed content parseable as JSON for the downstream jq queries
+# to be meaningful. Fail-closed: deny on malformed JSON regardless of
+# whether ajv was available.
+if [ "$SCHEMA_VALIDATION_SKIPPED" = "1" ]; then
+  if ! "$JQ" -e . "$TMP_PROPOSED" >/dev/null 2>&1; then
+    emit_deny "[BLOCKED] Proposed onboarding-status.json is not parseable JSON (schema validation was skipped because node/ajv is unavailable, but jq parsing failed).
+
+File: ${FILE_PATH}
+
+Fix: re-author the JSON, run \`jq . <<< '<contents>'\` locally to confirm it parses, then re-issue the write."
+    exit 0
+  fi
 fi
 
 # ---------------------------------------------------------------------------

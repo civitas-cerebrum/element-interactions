@@ -476,6 +476,38 @@ COVERAGE_EXPANSION_THRESHOLD=not-a-number assert_deny "$H" "$(payload tool_name=
 COVERAGE_EXPANSION_THRESHOLD=5 assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
   "Phase 5 → out-of-range threshold env var (5) falls back to 80% → DENY" "Threshold is 80%"
 
+# Actor-identity check must fire even when `node` is unavailable to the
+# hook. Previously the hook silent-allowed on `command -v node` failure,
+# letting an orchestrator on a host with no node-on-PATH bypass the
+# entire gate (no schema check, no state-machine check, no actor-
+# identity check). Probe by invoking the hook with PATH=/bin:/usr/bin only —
+# on macOS that has jq (sufficient) but not node, mirroring the
+# real-world exploit shape.
+section "ledger-write-gate: node-missing bypass closed (actor-identity still fires)"
+rm -f "$LEDGER_PATH"
+DIRECT_APPROVAL=$(echo "$VALID_FRESH" | "$JQ" '
+  .currentPhase = 2 |
+  .phases[0].status = "completed" |
+  .phases[0].reviewerVerdict = "approved" |
+  .phases[0].handoverEnvelope = {"role":"phase1-scaffold","status":"complete"} |
+  . + {modeAuthorizer: "user chose standard mode at front-load gate"}
+')
+PAYLOAD_DIRECT=$(payload tool_name=Write file_path="$LEDGER_PATH" content="$DIRECT_APPROVAL")
+# Precondition: /usr/bin has jq but no node (macOS default).
+if [ -x /usr/bin/jq ] && ! /usr/bin/env -i PATH=/bin:/usr/bin command -v node >/dev/null 2>&1; then
+  TESTS_RUN=$((TESTS_RUN + 1))
+  OUT_NO_NODE=$(printf '%s' "$PAYLOAD_DIRECT" | env PATH=/bin:/usr/bin "$H" 2>&1)
+  if echo "$OUT_NO_NODE" | grep -q '"permissionDecision"[[:space:]]*:[[:space:]]*"deny"' \
+     && echo "$OUT_NO_NODE" | grep -q 'orchestrator context'; then
+    echo "${CLR_PASS}  ✓${CLR_RST} no-node + orchestrator-direct reviewerVerdict:approved write → DENY (actor-identity check fires)"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "${CLR_FAIL}  ✗${CLR_RST} no-node bypass test ${CLR_DIM}(expected deny with 'orchestrator context'; got: ${OUT_NO_NODE})${CLR_RST}"
+  fi
+else
+  echo "${CLR_DIM}  (skipped — /usr/bin layout doesn't match the macOS shape used for this test)${CLR_RST}"
+fi
+
 # (i) `dispatched-journeys` is canonical when both fields are present.
 # A pass with empty dispatches[] + populated dispatched-journeys[] used
 # to under-count (jq's `//` treated `[]` as truthy). The max() expression
