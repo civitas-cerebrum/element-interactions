@@ -153,6 +153,15 @@ const HOOK_MANIFEST = [
   { file: 'journey-mapping-skill-preread-gate.sh', event: 'PreToolUse', matcher: 'Write|Edit', timeout: 5 },
   { file: 'journey-mapping-skill-preread-gate.sh', event: 'PreToolUse', matcher: 'Agent',      timeout: 5 },
 
+  // Phase-3 / Phase-5 spec-creation gate. PreToolUse:Write only (Edit
+  // on existing specs is the Phase 7 secrets-sweep / bug-discovery
+  // patch path). Denies (a) orchestrator-context new-spec writes
+  // (parent_tool_use_id empty) — those must go through a test-composer
+  // dispatch; (b) subagent-context writes whose transcript shows no
+  // Skill('test-composer') / Read of its SKILL.md — i.e. freeform-brief
+  // subagents impersonating composer work.
+  { file: 'test-composer-dispatch-gate.sh',       event: 'PreToolUse', matcher: 'Write',       timeout: 5 },
+
   // PostToolUse — observers (record + warn)
   { file: 'subagent-return-schema-guard.sh',      event: 'PostToolUse', matcher: 'Agent',      timeout: 10 },
   // Reviewer attestation integrity: WARN when a workflow-reviewer-*

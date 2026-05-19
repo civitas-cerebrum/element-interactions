@@ -253,19 +253,62 @@ rm -f "$LEDGER_PATH"
 make_phase_in_progress() {
   local target_phase=$1
   local target_idx=$((target_phase - 1))
-  echo "$VALID_FRESH" | "$JQ" --argjson idx "$target_idx" \
-    '.phases[$idx].status = "in-progress" |
-     .currentPhase = ($idx + 1) |
-     .modeAuthorizer = "user chose standard mode"'
+  # Populate subStages[] with approved cycle/pass reviewer entries on
+  # the PRIOR ledger so the closure write (mark_phase_completed) isn't
+  # transitioning anything from non-approved to approved — the actor-
+  # identity check (lines 297-441) denies orchestrator-context writes
+  # that land NEW approved verdicts. Pre-approving the subStages here
+  # lets closure-write tests focus on other gate aspects without
+  # tripping the separation-of-duties check.
+  echo "$VALID_FRESH" | "$JQ" --argjson idx "$target_idx" '
+    .phases[$idx].status = "in-progress" |
+    .currentPhase = ($idx + 1) |
+    .modeAuthorizer = "user chose standard mode" |
+    (if $idx == 3 then
+      .phases[3].subStages = [
+        {"id":"cycle-1","kind":"cycle","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-cycle1","status":"complete"}},
+        {"id":"cycle-2","kind":"cycle","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-cycle2","status":"complete"}}
+      ]
+    elif $idx == 4 then
+      .phases[4].subStages = [
+        {"id":"pass-1","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass1","status":"complete"}},
+        {"id":"pass-2","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass2","status":"complete"}},
+        {"id":"pass-3","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass3","status":"complete"}},
+        {"id":"pass-4","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass4","status":"complete"}},
+        {"id":"pass-5","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass5","status":"complete"}}
+      ]
+    else . end)
+  '
 }
 mark_phase_completed() {
   local target_phase=$1
   local target_idx=$((target_phase - 1))
-  echo "$VALID_FRESH" | "$JQ" --argjson idx "$target_idx" \
-    '.phases[$idx].status = "completed" |
-     .phases[$idx].handoverEnvelope = {"role":"phase-closing","cycle":1,"status":"complete","next-action":"advance"} |
-     .currentPhase = ($idx + 1) |
-     .modeAuthorizer = "user chose standard mode"'
+  # For Phase 4 / Phase 5 the new subStages-required check demands
+  # reviewer-attested subStage entries before closure. Populate the
+  # required entries by default so existing tests that focus on other
+  # gate aspects (sentinel, cycle-roster, per-pass-1 coverage) don't
+  # trip the subStages check inadvertently. Tests that specifically
+  # want to verify the subStages-required gate should override these.
+  echo "$VALID_FRESH" | "$JQ" --argjson idx "$target_idx" '
+    .phases[$idx].status = "completed" |
+    .phases[$idx].handoverEnvelope = {"role":"phase-closing","cycle":1,"status":"complete","next-action":"advance"} |
+    .currentPhase = ($idx + 1) |
+    .modeAuthorizer = "user chose standard mode" |
+    (if $idx == 3 then
+      .phases[3].subStages = [
+        {"id":"cycle-1","kind":"cycle","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-cycle1","status":"complete"}},
+        {"id":"cycle-2","kind":"cycle","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-cycle2","status":"complete"}}
+      ]
+    elif $idx == 4 then
+      .phases[4].subStages = [
+        {"id":"pass-1","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass1","status":"complete"}},
+        {"id":"pass-2","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass2","status":"complete"}},
+        {"id":"pass-3","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass3","status":"complete"}},
+        {"id":"pass-4","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass4","status":"complete"}},
+        {"id":"pass-5","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass5","status":"complete"}}
+      ]
+    else . end)
+  '
 }
 
 # ---- Phase 4 ----
@@ -306,6 +349,35 @@ cat > "$TMP_REPO/tests/e2e/docs/.phase4-cycle-state.json" <<'EOF'
 EOF
 assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P4_COMPLETED")" \
   "Phase 4 → completed with cycle-1 dispatched(3)≠returned(2) → DENY" "Some section agents did not return"
+
+# Phase 4: subStages[] missing entirely → DENY (cycle-reviewer never
+# dispatched, silent self-attestation). Restore the well-formed cycle-
+# state first so this test isolates the subStages check.
+cat > "$TMP_REPO/tests/e2e/docs/.phase4-cycle-state.json" <<'EOF'
+{"phase4-cycle-state-version":1,"started-at":"2026-05-18T09:00:00Z","cycleStrictness":"standard","cycles":{"1":{"kind":"discovery","dispatched-sections":["a","b"],"returned-sections":["a","b"]},"2":{"kind":"edge-probe","dispatched-sections":["a","b"],"returned-sections":["a","b"]}}}
+EOF
+PROPOSED_P4_NO_SUBSTAGES=$(echo "$PROPOSED_P4_COMPLETED" | "$JQ" '.phases[3].subStages = []')
+PRIOR_P4_NO_SUBSTAGES=$(echo "$PRIOR_P4_INPROG" | "$JQ" '.phases[3].subStages = []')
+printf '%s' "$PRIOR_P4_NO_SUBSTAGES" > "$LEDGER_PATH"
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P4_NO_SUBSTAGES")" \
+  "Phase 4 → completed with empty subStages[] → DENY (cycle-reviewer never ran)" "workflow-reviewer-cycle1"
+
+# Phase 4: only 1 of 2 subStages approved → DENY.
+PROPOSED_P4_ONE_APPROVED=$(echo "$PROPOSED_P4_COMPLETED" | "$JQ" '
+  .phases[3].subStages = [
+    {"id":"cycle-1","kind":"cycle","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-cycle1","status":"complete"}},
+    {"id":"cycle-2","kind":"cycle","status":"completed","reviewerVerdict":"pending","reviewerCycles":0,"handoverEnvelope":null}
+  ]
+')
+PRIOR_P4_ONE_APPROVED=$(echo "$PRIOR_P4_INPROG" | "$JQ" '
+  .phases[3].subStages = [
+    {"id":"cycle-1","kind":"cycle","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-cycle1","status":"complete"}},
+    {"id":"cycle-2","kind":"cycle","status":"completed","reviewerVerdict":"pending","reviewerCycles":0,"handoverEnvelope":null}
+  ]
+')
+printf '%s' "$PRIOR_P4_ONE_APPROVED" > "$LEDGER_PATH"
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P4_ONE_APPROVED")" \
+  "Phase 4 → completed with cycle-2 verdict pending → DENY (only 1 of 2 approved)" "only 1 carry reviewerVerdict"
 
 # ---- Phase 5 ----
 section "ledger-write-gate: Phase 5 → completed requires coverage-expansion-state"
@@ -368,6 +440,58 @@ cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
 EOF
 assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
   "Phase 5 → completed with deferral carrying authorizer quote → ALLOW"
+
+# Phase 5 subStages-required: workflow-reviewer-passN: must have landed
+# verdicts on phases[4].subStages[] before Phase 5 closes. Standard
+# mode = 5 entries expected; breadth = 1.
+PROPOSED_P5_NO_SUBSTAGES=$(echo "$PROPOSED_P5_COMPLETED" | "$JQ" '.phases[4].subStages = []')
+PRIOR_P5_NO_SUBSTAGES=$(echo "$PRIOR_P5_INPROG" | "$JQ" '.phases[4].subStages = []')
+printf '%s' "$PRIOR_P5_NO_SUBSTAGES" > "$LEDGER_PATH"
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_NO_SUBSTAGES")" \
+  "Phase 5 → completed with empty subStages[] (runMode standard) → DENY (5 reviewers required)" "workflow-reviewer-passN"
+
+# Phase 5 subStages: only 3 of 5 passes approved → DENY.
+PRIOR_P5_THREE=$(echo "$PRIOR_P5_INPROG" | "$JQ" '
+  .phases[4].subStages = [
+    {"id":"pass-1","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass1","status":"complete"}},
+    {"id":"pass-2","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass2","status":"complete"}},
+    {"id":"pass-3","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass3","status":"complete"}}
+  ]
+')
+PROPOSED_P5_THREE=$(echo "$PROPOSED_P5_COMPLETED" | "$JQ" '
+  .phases[4].subStages = [
+    {"id":"pass-1","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass1","status":"complete"}},
+    {"id":"pass-2","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass2","status":"complete"}},
+    {"id":"pass-3","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass3","status":"complete"}}
+  ]
+')
+printf '%s' "$PRIOR_P5_THREE" > "$LEDGER_PATH"
+assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_THREE")" \
+  "Phase 5 → completed with 3/5 passes approved (standard) → DENY" "expects 5"
+
+# Phase 5 breadth mode: 1 subStage approved suffices (3/3 journeys
+# covered in the single pass).
+echo '{"coverage-expansion-state-version":1,"runMode":"breadth","currentPass":1,"passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]}}}' \
+  > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json"
+PRIOR_P5_BREADTH=$(echo "$PRIOR_P5_INPROG" | "$JQ" '
+  .phases[4].subStages = [
+    {"id":"pass-1","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass1","status":"complete"}}
+  ]
+')
+PROPOSED_P5_BREADTH=$(echo "$PROPOSED_P5_COMPLETED" | "$JQ" '
+  .phases[4].subStages = [
+    {"id":"pass-1","kind":"pass","status":"completed","reviewerVerdict":"approved","reviewerCycles":1,"handoverEnvelope":{"role":"workflow-reviewer-pass1","status":"complete"}}
+  ]
+')
+printf '%s' "$PRIOR_P5_BREADTH" > "$LEDGER_PATH"
+assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_BREADTH")" \
+  "Phase 5 → completed in breadth mode with 1 approved subStage → ALLOW"
+
+# Restore standard-mode state for downstream tests.
+cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
+{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":1,"passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha"],"returned-journeys":["j-alpha"],"deferredJourneys":[{"journey":"j-beta","reason":"blocked-on-app-bug:BUG-007"},{"journey":"j-gamma","reason":"session-length","authorizer":"user said: defer the adversarial journeys to a follow-up run"}]}}}
+EOF
+printf '%s' "$PRIOR_P5_INPROG" > "$LEDGER_PATH"
 
 # Actor-identity check must fire even when `node` is unavailable to the
 # hook (closes the node-missing bypass: prior to 5549c1d the hook
