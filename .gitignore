@@ -11,9 +11,9 @@
 # Companion-mode local workspace — runtime artefacts from companion-mode runs
 # (run-<N>/ subdirs, trigger-eval drafts, evidence bundles). Never tracked,
 # never shipped via npm publish (the `discoverSkills` function in
-# scripts/postinstall.js excludes it because it has no SKILL.md). Lives
-# under skills/ for adjacency to the companion-mode skill itself.
-skills/companion-mode-workspace/
+# methodology/scripts/postinstall.js excludes it because it has no SKILL.md). Lives
+# under methodology/skills/ for adjacency to the companion-mode skill itself.
+methodology/skills/companion-mode-workspace/
 
 # Hook runtime state — recreated by harness hooks on each run, never source.
 tests/e2e/docs/.in-flight-composers.json
@@ -29,7 +29,7 @@ tests/e2e/docs/.subagent-returns/
 tests/e2e/docs/.handover-payloads/
 
 # Per-PR contribution handover — local working artefact, validated by
-# hooks/contribution-handover-gate.sh on push. Never committed; carrying
+# methodology/hooks/contribution-handover-gate.sh on push. Never committed; carrying
 # the previous PR's handover into a new branch is the failure mode the
 # gate exists to catch. The schema/template at
 # .contribution-handover.template.json stays tracked.
@@ -43,9 +43,9 @@ api-coverage-report.txt
 yalc.lock
 test-coverage-report.md
 *.txt
-!hooks/data/canonical-sections.txt
+!methodology/hooks/data/canonical-sections.txt
 /docs
-/skills/*-workspace
+/methodology/skills/*-workspace
 /solution-designs
 
 # selector-development skill: local-only receipts, scope pointer, snapshots, cached convention.
