@@ -1,9 +1,0 @@
-handover:
-  role: phase4-cycle-1-section-checkout
-  cycle: 1
-  status: section-complete
-  next-action: deregister
-section: checkout
-cycle: 1
-kind: section
-summary: section-complete but no spill path

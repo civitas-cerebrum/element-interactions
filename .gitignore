@@ -8,13 +8,6 @@
 /.playwright-cli
 /.claude
 
-# Companion-mode local workspace — runtime artefacts from companion-mode runs
-# (run-<N>/ subdirs, trigger-eval drafts, evidence bundles). Never tracked,
-# never shipped via npm publish (the `discoverSkills` function in
-# methodology/scripts/postinstall.js excludes it because it has no SKILL.md). Lives
-# under methodology/skills/ for adjacency to the companion-mode skill itself.
-methodology/skills/companion-mode-workspace/
-
 # Hook runtime state — recreated by harness hooks on each run, never source.
 tests/e2e/docs/.in-flight-composers.json
 tests/e2e/docs/.coverage-expansion-cycle-*.json
@@ -28,11 +21,9 @@ tests/e2e/docs/.adversarial-findings.lock
 tests/e2e/docs/.subagent-returns/
 tests/e2e/docs/.handover-payloads/
 
-# Per-PR contribution handover — local working artefact, validated by
-# methodology/hooks/contribution-handover-gate.sh on push. Never committed; carrying
-# the previous PR's handover into a new branch is the failure mode the
-# gate exists to catch. The schema/template at
-# .contribution-handover.template.json stays tracked.
+# Per-PR contribution handover — local working artefact (validated by
+# the corresponding hook in @civitas-cerebrum/achilles when present).
+# Never committed.
 /.contribution-handover.json
 
 api-coverage-report.txt
@@ -43,9 +34,7 @@ api-coverage-report.txt
 yalc.lock
 test-coverage-report.md
 *.txt
-!methodology/hooks/data/canonical-sections.txt
 /docs
-/methodology/skills/*-workspace
 /solution-designs
 
 # selector-development skill: local-only receipts, scope pointer, snapshots, cached convention.

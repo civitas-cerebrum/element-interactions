@@ -1,6 +1,0 @@
-handover:
-  role: phase4-prioritise-author
-  cycle: 1
-  status: journey-map-authored
-  next-action: advance
-summary: missing journey-map block, cycles-consumed, and convergence-status

@@ -1,8 +1,0 @@
-handover:
-  role: probe-acme
-  cycle: 1
-  status: findings-emitted
-  next-action: deregister
-journey: j-acme
-findings-emitted: 0
-summary: claims findings but emitted zero
