@@ -346,143 +346,35 @@ assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$P
   "Phase 5 → completed with 1/3 journeys dispatched, no deferrals → DENY" "silently missing"
 
 # Phase 5 coverage-completeness: roster 3 dispatched 1, 2 deferred with
-# valid structural reason prefixes — but Pass 1 alone falls under the
-# multi-pass 80% threshold (1/15 = 7%). Require scopeAuthorizer for the
-# aggregate scope reduction → ALLOW.
+# valid structural reason prefixes → ALLOW.
 cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
-{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":1,"scopeAuthorizer":"user said: only j-alpha is worth dispatching this run; defer the others","passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha"],"returned-journeys":["j-alpha"],"deferredJourneys":[{"journey":"j-beta","reason":"blocked-on-app-bug:BUG-007"},{"journey":"j-gamma","reason":"test-data-prerequisite:premium-seed-user"}]}}}
+{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":1,"passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha"],"returned-journeys":["j-alpha"],"deferredJourneys":[{"journey":"j-beta","reason":"blocked-on-app-bug:BUG-007"},{"journey":"j-gamma","reason":"test-data-prerequisite:premium-seed-user"}]}}}
 EOF
 assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
-  "Phase 5 → completed with 1 dispatched + 2 structurally-deferred + scopeAuthorizer → ALLOW"
+  "Phase 5 → completed with 1 dispatched + 2 structurally-deferred → ALLOW"
 
 # Phase 5 deferral-authorisation: a deferral without a structural prefix
-# AND without an authorizer quote → DENY (per-entry check fires before
-# the threshold check is reached).
+# AND without an authorizer quote → DENY.
 cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
-{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":1,"scopeAuthorizer":"user said: defer the others","passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha"],"returned-journeys":["j-alpha"],"deferredJourneys":[{"journey":"j-beta","reason":"blocked-on-app-bug:BUG-007"},{"journey":"j-gamma","reason":"budget-cap"}]}}}
+{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":1,"passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha"],"returned-journeys":["j-alpha"],"deferredJourneys":[{"journey":"j-beta","reason":"blocked-on-app-bug:BUG-007"},{"journey":"j-gamma","reason":"budget-cap"}]}}}
 EOF
 assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
   "Phase 5 → completed with deferral citing 'budget-cap' + no authorizer → DENY" "neither a structural reason prefix"
 
 # Phase 5 deferral-authorisation: a deferral with authorizer quote
-# (verbatim user authorisation) + scopeAuthorizer for aggregate → ALLOW.
+# (verbatim user authorisation) → ALLOW even with a non-structural reason.
 cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
-{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":1,"scopeAuthorizer":"user said: defer the others","passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha"],"returned-journeys":["j-alpha"],"deferredJourneys":[{"journey":"j-beta","reason":"blocked-on-app-bug:BUG-007"},{"journey":"j-gamma","reason":"session-length","authorizer":"user said: defer the adversarial journeys to a follow-up run"}]}}}
+{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":1,"passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha"],"returned-journeys":["j-alpha"],"deferredJourneys":[{"journey":"j-beta","reason":"blocked-on-app-bug:BUG-007"},{"journey":"j-gamma","reason":"session-length","authorizer":"user said: defer the adversarial journeys to a follow-up run"}]}}}
 EOF
 assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
-  "Phase 5 → completed with per-entry authorizer quote + scopeAuthorizer → ALLOW"
-
-# Phase 5 multi-pass coverage-threshold: closes the exit-#2 / cherry-
-# pick exploit. ROSTER * EXPECTED_PASSES * 0.8 dispatches required, OR
-# scopeAuthorizer present. For these cases we remove journey-map.md so
-# the earlier per-pass-1 check skips (it depends on the map) and the
-# threshold check is reached. The threshold check derives ROSTER_SIZE
-# from the state file's `journeyRoster` field when the map is absent.
-rm -f "$TMP_REPO/tests/e2e/docs/journey-map.md"
-
-# (a) Full coverage across all 5 passes (3 journeys × 5 passes = 15
-# dispatches) → ALLOW.
-cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
-{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":5,"journeyRoster":["j-alpha","j-beta","j-gamma"],"passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]},"2":{"kind":"compositional","dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]},"3":{"kind":"compositional","dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]},"4":{"kind":"adversarial","dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]},"5":{"kind":"adversarial","dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]}}}
-EOF
-assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
-  "Phase 5 → completed with 5/5 passes × 3/3 journeys = 15 dispatches → ALLOW"
-
-# (b) Pass 1 only with full per-pass-1 coverage but no Pass-2-5 records,
-# no scopeAuthorizer → DENY (3/15 = 20% < 80%). This is the Run-7
-# exit-#2 anti-pattern.
-cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
-{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":1,"journeyRoster":["j-alpha","j-beta","j-gamma"],"passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]}}}
-EOF
-assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
-  "Phase 5 → completed with Pass-1 only (3/15 dispatches, no scopeAuthorizer) → DENY" "80%"
-
-# (c) Same shape as (b) but with scopeAuthorizer present → ALLOW
-# (user-authorised scope reduction).
-cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
-{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":1,"journeyRoster":["j-alpha","j-beta","j-gamma"],"scopeAuthorizer":"user said: pass 1 is enough for this run, defer passes 2-5","passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]}}}
-EOF
-assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
-  "Phase 5 → completed with Pass-1 only + scopeAuthorizer quote → ALLOW"
-
-# (d) Breadth mode: EXPECTED_PASSES=1, so single sweep at 80%+ → ALLOW.
-cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
-{"coverage-expansion-state-version":1,"runMode":"breadth","currentPass":1,"journeyRoster":["j-alpha","j-beta","j-gamma","j-delta","j-epsilon"],"passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha","j-beta","j-gamma","j-delta"],"returned-journeys":["j-alpha","j-beta","j-gamma","j-delta"]}}}
-EOF
-assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
-  "Phase 5 → completed in breadth mode with 4/5 dispatched (80%) → ALLOW"
-
-# (e) Breadth mode below 80% with no scopeAuthorizer → DENY (threshold).
-cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
-{"coverage-expansion-state-version":1,"runMode":"breadth","currentPass":1,"journeyRoster":["j-alpha","j-beta","j-gamma","j-delta","j-epsilon"],"passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha"],"returned-journeys":["j-alpha"]}}}
-EOF
-assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
-  "Phase 5 → completed in breadth mode with 1/5 (20%) + no scopeAuthorizer → DENY" "80%"
-
-# (f) Run-7 exact shape: roster 5, 1 dispatched, no scopeAuthorizer,
-# fake structural-prefix deferrals (everything else 'test-data-prerequisite:..').
-# With the map restored, per-pass-1 check passes (roster covered via
-# deferrals 1+4=5 ≥ 5) and the new threshold check fires (1/25 = 4%).
-# Closes the "fake deferral all" exploit.
-cat > "$TMP_REPO/tests/e2e/docs/journey-map.md" <<'EOF'
-<!-- journey-mapping:generated -->
-# Map
-#### j-alpha
-#### j-beta
-#### j-gamma
-#### j-delta
-#### j-epsilon
-EOF
-cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
-{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":1,"journeyRoster":["j-alpha","j-beta","j-gamma","j-delta","j-epsilon"],"passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha"],"returned-journeys":["j-alpha"],"deferredJourneys":[{"journey":"j-beta","reason":"test-data-prerequisite:premium"},{"journey":"j-gamma","reason":"test-data-prerequisite:premium"},{"journey":"j-delta","reason":"test-data-prerequisite:premium"},{"journey":"j-epsilon","reason":"test-data-prerequisite:premium"}]}}}
-EOF
-assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
-  "Phase 5 → completed with fake-prefix all-deferrals (1/25 dispatches, no scopeAuthorizer) → DENY" "80%"
-
-# Restore 3-journey map for any downstream tests that depend on it.
-cat > "$TMP_REPO/tests/e2e/docs/journey-map.md" <<'EOF'
-<!-- journey-mapping:generated -->
-# Map
-#### j-alpha
-#### j-beta
-#### j-gamma
-EOF
-
-# (g) Typo-hint surfacing — when the state file has a near-name field
-# (`scopeAuthoriser`, `scope_authorizer`, etc.), the deny message
-# surfaces it so the operator can rename instead of guessing.
-rm -f "$TMP_REPO/tests/e2e/docs/journey-map.md"
-cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
-{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":1,"journeyRoster":["j-alpha","j-beta","j-gamma"],"scopeAuthoriser":"user said: pass 1 is enough","passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha"],"returned-journeys":["j-alpha"]}}}
-EOF
-assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
-  "Phase 5 → completed with typo \`scopeAuthoriser\` (UK spelling) → DENY with rename hint" "scopeAuthoriser"
-assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
-  "Phase 5 → typo hint mentions rename instruction" "rename it to take effect"
-
-# (h) COVERAGE_EXPANSION_THRESHOLD env var lowers the bar — at 60%, a
-# state file with 9/15 dispatches (60%) passes when 80% would have denied.
-cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
-{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":3,"journeyRoster":["j-alpha","j-beta","j-gamma"],"passes":{"1":{"kind":"compositional","dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]},"2":{"kind":"compositional","dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]},"3":{"kind":"compositional","dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]}}}
-EOF
-COVERAGE_EXPANSION_THRESHOLD=60 assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
-  "Phase 5 → 9/15 (60%) + COVERAGE_EXPANSION_THRESHOLD=60 → ALLOW"
-assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
-  "Phase 5 → 9/15 (60%) + default threshold 80% → DENY" "Threshold is 80%"
-
-# Invalid threshold values fall back to 80%.
-COVERAGE_EXPANSION_THRESHOLD=not-a-number assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
-  "Phase 5 → invalid threshold env var (\"not-a-number\") falls back to 80% → DENY" "Threshold is 80%"
-COVERAGE_EXPANSION_THRESHOLD=5 assert_deny "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
-  "Phase 5 → out-of-range threshold env var (5) falls back to 80% → DENY" "Threshold is 80%"
+  "Phase 5 → completed with deferral carrying authorizer quote → ALLOW"
 
 # Actor-identity check must fire even when `node` is unavailable to the
-# hook. Previously the hook silent-allowed on `command -v node` failure,
-# letting an orchestrator on a host with no node-on-PATH bypass the
-# entire gate (no schema check, no state-machine check, no actor-
-# identity check). Probe by invoking the hook with PATH=/bin:/usr/bin only —
-# on macOS that has jq (sufficient) but not node, mirroring the
-# real-world exploit shape.
+# hook (closes the node-missing bypass: prior to 5549c1d the hook
+# silent-allowed everything on `command -v node` failure, letting an
+# orchestrator on a host with no node-on-PATH skip the actor-identity
+# check). Probe by invoking the hook with PATH=/bin:/usr/bin — on macOS
+# that has jq but not node.
 section "ledger-write-gate: node-missing bypass closed (actor-identity still fires)"
 rm -f "$LEDGER_PATH"
 DIRECT_APPROVAL=$(echo "$VALID_FRESH" | "$JQ" '
@@ -493,7 +385,6 @@ DIRECT_APPROVAL=$(echo "$VALID_FRESH" | "$JQ" '
   . + {modeAuthorizer: "user chose standard mode at front-load gate"}
 ')
 PAYLOAD_DIRECT=$(payload tool_name=Write file_path="$LEDGER_PATH" content="$DIRECT_APPROVAL")
-# Precondition: /usr/bin has jq but no node (macOS default).
 if [ -x /usr/bin/jq ] && ! /usr/bin/env -i PATH=/bin:/usr/bin command -v node >/dev/null 2>&1; then
   TESTS_RUN=$((TESTS_RUN + 1))
   OUT_NO_NODE=$(printf '%s' "$PAYLOAD_DIRECT" | env PATH=/bin:/usr/bin "$H" 2>&1)
@@ -507,25 +398,6 @@ if [ -x /usr/bin/jq ] && ! /usr/bin/env -i PATH=/bin:/usr/bin command -v node >/
 else
   echo "${CLR_DIM}  (skipped — /usr/bin layout doesn't match the macOS shape used for this test)${CLR_RST}"
 fi
-
-# (i) `dispatched-journeys` is canonical when both fields are present.
-# A pass with empty dispatches[] + populated dispatched-journeys[] used
-# to under-count (jq's `//` treated `[]` as truthy). The max() expression
-# now picks the non-empty field.
-cat > "$TMP_REPO/tests/e2e/docs/coverage-expansion-state.json" <<'EOF'
-{"coverage-expansion-state-version":1,"runMode":"standard","currentPass":5,"journeyRoster":["j-alpha","j-beta","j-gamma"],"passes":{"1":{"kind":"compositional","dispatches":[],"dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]},"2":{"kind":"compositional","dispatches":[],"dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]},"3":{"kind":"compositional","dispatches":[],"dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]},"4":{"kind":"adversarial","dispatches":[],"dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]},"5":{"kind":"adversarial","dispatches":[],"dispatched-journeys":["j-alpha","j-beta","j-gamma"],"returned-journeys":["j-alpha","j-beta","j-gamma"]}}}
-EOF
-assert_allow "$H" "$(payload tool_name=Write file_path="$LEDGER_PATH" content="$PROPOSED_P5_COMPLETED")" \
-  "Phase 5 → empty dispatches[] + populated dispatched-journeys[] counts the latter → ALLOW"
-
-# Restore 3-entry map.
-cat > "$TMP_REPO/tests/e2e/docs/journey-map.md" <<'EOF'
-<!-- journey-mapping:generated -->
-# Map
-#### j-alpha
-#### j-beta
-#### j-gamma
-EOF
 
 # ---- Phase 6 ----
 section "ledger-write-gate: Phase 6 → completed requires adversarial-findings.md"
