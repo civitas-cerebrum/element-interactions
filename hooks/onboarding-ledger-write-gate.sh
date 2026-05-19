@@ -668,6 +668,36 @@ for phase_id in $PHASES_NEWLY_COMPLETED; do
           "skills/journey-mapping/SKILL.md §\"Iterative discovery cycles\""
       fi
 
+      # Sub-stage reviewer attestation: the per-cycle workflow-reviewer-
+      # cycleN: dispatches must each have landed an approved verdict
+      # before Phase 4 closes. The reviewer-cycle subagents are what
+      # audit the per-cycle deliverables independently of the
+      # orchestrator; phases[3].subStages[] is where their verdicts get
+      # recorded. Without ≥2 subStage entries (one per cycle) and each
+      # with reviewerVerdict: approved, the cycle reviewer was either
+      # never dispatched or never produced a verdict. The actor-identity
+      # check (lines 297-441) already prevents orchestrator-direct
+      # writes to those reviewerVerdict fields — but it can't enforce
+      # that the subStages[] entries exist at all. That's this check.
+      SUBSTAGES_COUNT=$("$JQ" -r '.phases[3].subStages // [] | length' "$TMP_PROPOSED" 2>/dev/null || echo "0")
+      SUBSTAGES_COUNT=${SUBSTAGES_COUNT:-0}
+      APPROVED_SUBSTAGES_COUNT=$("$JQ" -r '
+        [.phases[3].subStages // [] | .[] | select(.reviewerVerdict == "approved")] | length
+      ' "$TMP_PROPOSED" 2>/dev/null || echo "0")
+      APPROVED_SUBSTAGES_COUNT=${APPROVED_SUBSTAGES_COUNT:-0}
+      if [ "$SUBSTAGES_COUNT" -lt 2 ]; then
+        emit_phase_deny "4" \
+          "phases[3].subStages[] has ${SUBSTAGES_COUNT} entries; the iterative-discovery protocol requires at least 2 (one per cycle) and each carrying a workflow-reviewer-cycleN: approved verdict." \
+          "dispatch \`workflow-reviewer-cycle1:\` after cycle 1 completes and \`workflow-reviewer-cycle2:\` after cycle 2; each reviewer's return lands a subStages[] row with reviewerVerdict: \"approved\". Without those entries the cycle was self-attested." \
+          "skills/onboarding/SKILL.md §\"Status ledger + workflow reviewer\" + skills/journey-mapping/SKILL.md §\"Iterative discovery cycles\""
+      fi
+      if [ "$APPROVED_SUBSTAGES_COUNT" -lt 2 ]; then
+        emit_phase_deny "4" \
+          "phases[3].subStages[] has ${SUBSTAGES_COUNT} entries but only ${APPROVED_SUBSTAGES_COUNT} carry reviewerVerdict: \"approved\". Each cycle needs an approved verdict before Phase 4 can close." \
+          "the missing verdicts must come from \`workflow-reviewer-cycleN:\` subagent returns (the actor-identity check prevents orchestrator-direct writes to those fields). Re-dispatch the reviewer for any cycle whose verdict is still pending or rejected." \
+          "skills/onboarding/SKILL.md §\"Status ledger + workflow reviewer\""
+      fi
+
       # Cycle-roster completeness: for EVERY cycle recorded, the section
       # subagents must have all returned. dispatched-sections == returned-
       # sections (set equality, not just length). Catches the "dispatched
@@ -700,6 +730,36 @@ for phase_id in $PHASES_NEWLY_COMPLETED; do
           "coverage-expansion-state.json reports no pass-1 record. Pass 1 (strict per-journey, compositional) is the foundation of every coverage-expansion mode." \
           "run at least Pass 1 of coverage-expansion before closing Phase 5." \
           "skills/coverage-expansion/SKILL.md §\"Non-negotiables\""
+      fi
+
+      # Sub-stage reviewer attestation: every pass needs its own
+      # workflow-reviewer-passN: approval before Phase 5 closes. The
+      # per-mode pass count varies — standard / depth = 5 (3
+      # compositional + 2 adversarial), breadth = 1. The orchestrator's
+      # runMode field on coverage-expansion-state.json tells us which.
+      # Reviewers land their verdicts on phases[4].subStages[]; absent
+      # entries mean the cycle reviewer was never dispatched (silent
+      # self-attestation).
+      RUN_MODE=$("$JQ" -r '.runMode // "standard"' "$COV_STATE_PATH" 2>/dev/null || echo "standard")
+      EXPECTED_PASSES=5
+      [ "$RUN_MODE" = "breadth" ] && EXPECTED_PASSES=1
+      PASS_SUBSTAGES_COUNT=$("$JQ" -r '.phases[4].subStages // [] | length' "$TMP_PROPOSED" 2>/dev/null || echo "0")
+      PASS_SUBSTAGES_COUNT=${PASS_SUBSTAGES_COUNT:-0}
+      PASS_APPROVED_COUNT=$("$JQ" -r '
+        [.phases[4].subStages // [] | .[] | select(.reviewerVerdict == "approved")] | length
+      ' "$TMP_PROPOSED" 2>/dev/null || echo "0")
+      PASS_APPROVED_COUNT=${PASS_APPROVED_COUNT:-0}
+      if [ "$PASS_SUBSTAGES_COUNT" -lt "$EXPECTED_PASSES" ]; then
+        emit_phase_deny "5" \
+          "phases[4].subStages[] has ${PASS_SUBSTAGES_COUNT} entries; runMode=${RUN_MODE} expects ${EXPECTED_PASSES} (one per pass), each carrying a workflow-reviewer-passN: approved verdict." \
+          "dispatch \`workflow-reviewer-pass1:\` through \`workflow-reviewer-pass${EXPECTED_PASSES}:\` as each pass completes; each reviewer's return lands a subStages[] row. Without those entries the per-pass dedup + cleanup contract was self-attested." \
+          "skills/onboarding/SKILL.md §\"Status ledger + workflow reviewer\" + skills/coverage-expansion/SKILL.md"
+      fi
+      if [ "$PASS_APPROVED_COUNT" -lt "$EXPECTED_PASSES" ]; then
+        emit_phase_deny "5" \
+          "phases[4].subStages[] has ${PASS_SUBSTAGES_COUNT} entries but only ${PASS_APPROVED_COUNT} carry reviewerVerdict: \"approved\". runMode=${RUN_MODE} requires ${EXPECTED_PASSES} approved." \
+          "the missing verdicts must come from \`workflow-reviewer-passN:\` subagent returns (the actor-identity check prevents orchestrator-direct writes to those fields). Re-dispatch the reviewer for any pass whose verdict is still pending or rejected." \
+          "skills/onboarding/SKILL.md §\"Status ledger + workflow reviewer\""
       fi
 
       # Coverage-completeness check: Pass 1's dispatched-journeys + any
