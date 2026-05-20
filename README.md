@@ -10,9 +10,7 @@ This package is the **framework** layer: a programmatic Playwright facade for hu
 
 ## 🏗️ The Test-Authoring Framework
 
-Underneath the harness is a clean test-authoring framework. The `Steps` API and `ElementRepository` decouple element acquisition from element interaction, so raw selectors never appear in test code. Tests reference elements by plain strings (`'CheckoutPage'`, `'submitButton'`) — a `page-repository.json` file is the single source of truth for selectors.
-
-Because the API is semantic and decoupled from the DOM, it is also an ideal authoring surface for LLMs: agents generate robust flows using plain-English strings without hallucinating CSS selectors or forgetting `waitFor` states.
+A `page-repository.json` file is the single source of truth for selectors. Tests reference elements by plain strings (`'CheckoutPage'`, `'submitButton'`); the framework handles resolution, waiting, logging, and overlay-retry on every interaction.
 
 **Before (Raw Playwright):**
 
@@ -65,7 +63,7 @@ cd playwright-project
 npm i @civitas-cerebrum/element-interactions
 ```
 
-> **Tip:** Set `reporter: 'html'` in `playwright.config.ts` so failure screenshots are captured and viewable in the HTML report — both the framework's `baseFixture` and the harness's failure-diagnosis flow rely on it.
+> **Tip:** Set `reporter: 'html'` in `playwright.config.ts` so failure screenshots are captured and viewable in the HTML report — `baseFixture` attaches them there, and the [`@civitas-cerebrum/achilles`](https://www.npmjs.com/package/@civitas-cerebrum/achilles) failure-diagnosis skill reads from the same report when you run that package.
 
 ---
 
@@ -231,7 +229,7 @@ test('Per-call timeout override', async ({ steps }) => {
 });
 ```
 
-**Field matchers:** `text`, `value`, `count`, `visible`, `enabled`, `attributes`, `css(prop)`. Each carries `.not` for negation. Snapshot fields available in predicates: `text`, `value`, `attributes`, `visible`, `enabled`, `count`. See the [API reference](methodology/skills/element-interactions/references/api-reference.md#expect-matcher-tree) for the full surface.
+**Field matchers:** `text`, `value`, `count`, `visible`, `enabled`, `attributes`, `css(prop)`. Each carries `.not` for negation. Snapshot fields available in predicates: `text`, `value`, `attributes`, `visible`, `enabled`, `count`. See the [API reference](https://github.com/civitas-cerebrum/achilles/blob/main/skills/element-interactions/references/api-reference.md#expect-matcher-tree) for the full surface.
 
 ### StepOptions
 
