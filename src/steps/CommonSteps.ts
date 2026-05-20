@@ -5,6 +5,7 @@ import { Utils } from '../utils/ElementUtilities';
 import { EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
 import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions, StorageVerifyOptions, VisualMatchOptions, VisualMaskTarget } from '../enum/Options';
+import { ExpectNoRequestOptions } from '../interactions/Navigation';
 import { stepLog as log } from '../logger/Logger';
 import { ElementAction } from './ElementAction';
 import { ExpectBuilder } from './ExpectMatchers';
@@ -1302,6 +1303,66 @@ export class Steps {
     async waitForResponse(urlPattern: string | RegExp, action: () => Promise<void>): Promise<Response> {
         log.wait('Waiting for response matching "%s"', urlPattern);
         return await this.navigate.waitForResponse(urlPattern, action);
+    }
+
+    /**
+     * Asserts that **no** network request matching `urlPattern` fires while
+     * `action` runs (and for an observation window afterwards). Negative
+     * companion to {@link waitForResponse}.
+     *
+     * Use to prove a client-side block — HTML5 `required`, native `type=email`
+     * validation, custom JS guards — short-circuits before any XHR is issued.
+     * URL-unchanged and cookie-unset surrogates prove the outcome; this
+     * asserts the mechanism.
+     *
+     * Matching delegates to Playwright's own URL matcher (via `page.route`),
+     * so strings are interpreted as **glob patterns** — same as
+     * {@link waitForResponse}, not naive substrings. Reach for a RegExp when
+     * you want a contains-style match.
+     *
+     * If `action` throws, the route handler is removed and the action's error
+     * is propagated; the observation window is skipped and any matches
+     * captured before the throw are discarded.
+     *
+     * **Secret-leak surface**: on failure, the offender URL is embedded
+     * verbatim in the thrown error — which flows into runner output, reporter
+     * artifacts, and Playwright traces (often uploaded as CI artifacts). If
+     * your URLs carry secrets in query parameters, pass `{ redactQuery: true }`.
+     *
+     * @param urlPattern - Playwright glob string or RegExp matched against the request URL.
+     * @param action - The action whose absence-of-request is being asserted.
+     * @param options - `timeout` is the observation window after `action`
+     *   resolves (default 1000ms). `methods` restricts to specific HTTP
+     *   methods (e.g. `['POST']`) so a permitted GET preflight doesn't trip
+     *   the assertion. `redactQuery` scrubs query strings from the failure
+     *   message when offender URLs may carry secrets.
+     *
+     * @example
+     * ```ts
+     * // HTML5 required blocks submission — no XHR fires.
+     * await steps.expectNoRequest(/\/api\/auth\/signup/, async () => {
+     *   await steps.click('submitButton', 'SignupPage');
+     * });
+     *
+     * // Restrict to POST so a permitted GET preflight doesn't trip.
+     * await steps.expectNoRequest('**\/api/users', async () => {
+     *   await steps.click('saveButton', 'ProfilePage');
+     * }, { methods: ['POST'], timeout: 500 });
+     *
+     * // Scrub query strings from the failure message when URLs may
+     * // carry tokens or API keys.
+     * await steps.expectNoRequest('**\/api/signed', async () => {
+     *   await steps.click('downloadButton', 'ReportsPage');
+     * }, { redactQuery: true });
+     * ```
+     */
+    async expectNoRequest(
+        urlPattern: string | RegExp,
+        action: () => Promise<void>,
+        options?: ExpectNoRequestOptions,
+    ): Promise<void> {
+        log.verify('Expecting no request matching "%s" during action (window %dms)', urlPattern, options?.timeout ?? 1000);
+        await this.navigate.expectNoRequest(urlPattern, action, options);
     }
 
     /**

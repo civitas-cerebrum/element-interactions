@@ -379,3 +379,158 @@ test.describe('TC_071: waitForResponse — wait for network response', () => {
     log('TC_071 waitForResponse — passed');
   });
 });
+
+
+// ─── TC_072: expectNoRequest ───
+//
+// Exercises the proposal's stated use case: a client-side block (HTML5
+// `required`) must short-circuit form submission before any XHR fires.
+// Tests are self-contained — they route a small validated form into the
+// browser and stub the form's submit endpoint, so they don't depend on the
+// vue-test-app having any particular validated form.
+test.describe('TC_072: expectNoRequest — HTML5 form block', () => {
+
+  const FORM_HTML = `<!DOCTYPE html>
+<html>
+  <body>
+    <form id="signup-form">
+      <input id="email-input" name="email" type="email" required />
+      <button id="submit-btn" type="submit">Sign up</button>
+    </form>
+    <script>
+      // HTML5 validation runs BEFORE the submit event fires, so this handler
+      // only runs when the form is valid. preventDefault keeps the page from
+      // navigating to the fetch response.
+      document.getElementById('signup-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await fetch('/api/signup', {
+          method: 'POST',
+          body: new URLSearchParams(new FormData(e.target)),
+        });
+      });
+    </script>
+  </body>
+</html>`;
+
+  async function mountForm(page: import('@playwright/test').Page) {
+    // Serve the form HTML on a routed path so the form's relative POST target
+    // (`/api/signup`) resolves against a real page URL — `page.setContent` on
+    // about:blank can't issue relative fetches.
+    await page.route('**/expectNoRequest-test-form', (route) =>
+      route.fulfill({ status: 200, contentType: 'text/html', body: FORM_HTML }),
+    );
+    // Stub the form's submit endpoint so the POST has somewhere to land.
+    // Registered before expectNoRequest so its handler runs AFTER ours
+    // (Playwright dispatches last-added first) — our observer calls
+    // route.continue() and this handler then fulfills.
+    await page.route('**/api/signup', (route) =>
+      route.fulfill({ status: 200, contentType: 'text/plain', body: 'ok' }),
+    );
+    await page.goto('/expectNoRequest-test-form');
+  }
+
+  test('passes when HTML5 required blocks an empty form submit', async ({ page, steps }) => {
+
+    await test.step('Mount the validated form', async () => {
+      await mountForm(page);
+    });
+
+    await test.step('Submit the empty form — HTML5 should block, no POST should fire', async () => {
+      // Email field left empty → HTML5 `required` rejects → submit event
+      // never fires → no fetch is issued. expectNoRequest must pass.
+      await steps.expectNoRequest('**/api/signup', async () => {
+        await page.click('#submit-btn');
+      }, { timeout: 500 });
+    });
+
+    log('TC_072 expectNoRequest (HTML5 block) — passed');
+  });
+
+  test('throws loudly when the same submit is allowed through', async ({ page, steps }) => {
+
+    await test.step('Mount the validated form and fill the required field', async () => {
+      await mountForm(page);
+      await page.fill('#email-input', 'user@example.com');
+    });
+
+    await test.step('Submit the filled form — POST fires, expectNoRequest must reject', async () => {
+      let captured: Error | undefined;
+      try {
+        await steps.expectNoRequest('**/api/signup', async () => {
+          await page.click('#submit-btn');
+        }, { timeout: 500 });
+      } catch (e) {
+        captured = e as Error;
+      }
+
+      expect(captured, 'expectNoRequest should reject when the matching POST fires').toBeDefined();
+      expect(captured!.message).toMatch(/expectNoRequest failed:/);
+      // Failure message must name the offending request so the user sees
+      // which call slipped through — the assertion's main load-bearing UX.
+      expect(captured!.message).toMatch(/POST .*\/api\/signup/);
+    });
+
+    log('TC_072 expectNoRequest (allowed-through, throws) — passed');
+  });
+
+  test('honors the `methods` filter — non-listed methods are ignored', async ({ page, steps }) => {
+
+    await test.step('Mount the validated form and fill the required field', async () => {
+      await mountForm(page);
+      await page.fill('#email-input', 'user@example.com');
+    });
+
+    await test.step('Submit fires a POST — assertion scoped to GET should pass', async () => {
+      // Submit fires POST /api/signup. Restricting methods to GET means the
+      // POST is ignored by the filter — the bucket stays empty, assertion passes.
+      await steps.expectNoRequest('**/api/signup', async () => {
+        await page.click('#submit-btn');
+      }, { timeout: 500, methods: ['GET'] });
+    });
+
+    log('TC_072 expectNoRequest (methods filter) — passed');
+  });
+
+  test('redactQuery scrubs query strings from the failure message', async ({ page, steps }) => {
+
+    const SECRET = 'TOKEN_SECRET_REDACT_TEST_PAYLOAD';
+
+    await test.step('Mount the form page and stub a separate signed-download endpoint', async () => {
+      await mountForm(page);
+      // Glob `**/api/signed-download**` so the query string doesn't prevent
+      // the stub from fulfilling.
+      await page.route('**/api/signed-download**', (route) =>
+        route.fulfill({ status: 200, contentType: 'text/plain', body: 'ok' }),
+      );
+    });
+
+    await test.step('With redactQuery: true — the secret must NOT appear in the error', async () => {
+      let scrubbed: Error | undefined;
+      try {
+        await steps.expectNoRequest(/\/api\/signed-download/, async () => {
+          await page.evaluate((u) => fetch(u), `/api/signed-download?token=${SECRET}`);
+        }, { timeout: 500, redactQuery: true });
+      } catch (e) {
+        scrubbed = e as Error;
+      }
+      expect(scrubbed, 'expectNoRequest should reject when the matching fetch fires').toBeDefined();
+      expect(scrubbed!.message).not.toContain(SECRET);
+      expect(scrubbed!.message).toMatch(/\?…\(redacted\)/);
+    });
+
+    await test.step('Without redactQuery (default) — the full URL is shown, proving the opt-in is the only safe path for secret-bearing URLs', async () => {
+      let plain: Error | undefined;
+      try {
+        await steps.expectNoRequest(/\/api\/signed-download/, async () => {
+          await page.evaluate((u) => fetch(u), `/api/signed-download?token=${SECRET}`);
+        }, { timeout: 500 });
+      } catch (e) {
+        plain = e as Error;
+      }
+      expect(plain, 'expectNoRequest should reject when the matching fetch fires').toBeDefined();
+      expect(plain!.message).toContain(SECRET);
+    });
+
+    log('TC_072 expectNoRequest (redactQuery) — passed');
+  });
+});
