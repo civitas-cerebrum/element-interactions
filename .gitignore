@@ -8,6 +8,9 @@
 /.playwright-cli
 /.claude
 
+# Local-only authoring artefacts — presentation decks, scratch exports.
+spritecloud-pitch-deck.*
+
 # Hook runtime state — recreated by harness hooks on each run, never source.
 tests/e2e/docs/.in-flight-composers.json
 tests/e2e/docs/.coverage-expansion-cycle-*.json
