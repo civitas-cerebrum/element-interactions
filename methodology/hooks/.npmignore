@@ -1,5 +1,0 @@
-# Dev-only test harnesses — not included in the published tarball.
-tests/
-tests/**
-test/
-test/**

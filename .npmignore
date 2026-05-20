@@ -1,11 +1,6 @@
 # Excluded from the published tarball.
-# `package.json#files` already restricts publish entry points; npm walks
-# the contents of those allowlisted dirs WITHOUT applying this root-level
-# .npmignore for sub-paths. So sub-directory exclusions live in their own
-# .npmignore files:
-#   - methodology/hooks/.npmignore   → drops dev-only methodology/hooks/tests/ harness
-#   - methodology/skills/.npmignore  → drops *-workspace/ runtime artefacts
-# This file only has to cover root-level noise.
+# `package.json#files` is now ["dist"] — npm only walks dist/ — so this
+# file only has to cover root-level noise.
 
 .DS_Store
 *.swp
