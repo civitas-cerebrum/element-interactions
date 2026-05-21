@@ -113,10 +113,22 @@ export class Interactions {
         await element.fill(text, { timeout: this.ELEMENT_TIMEOUT });
     }
 
-    async uploadFile(element: WebElement, filePath: string, options?: ActionTimeoutOptions): Promise<void> {
+    async uploadFile(element: WebElement, filePath: string | string[], options?: ActionTimeoutOptions): Promise<void> {
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
         await this.utils.waitForState(element, 'attached', timeout);
-        await element.setInputFiles(filePath, { timeout });
+        // TODO: remove cast when element-repository ships widened setInputFiles(string | string[]) type (companion PR #47)
+        await (element as any).setInputFiles(filePath, { timeout });
+    }
+
+    async dropFiles(
+        element: WebElement,
+        filenames: string[],
+        options?: { mimeType?: string } & ActionTimeoutOptions,
+    ): Promise<void> {
+        const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
+        await this.utils.waitForState(element, 'attached', timeout);
+        // TODO: remove cast when element-repository ships WebElement.dropFiles (companion PR #47)
+        await (element as any).dropFiles(filenames, { mimeType: options?.mimeType, timeout });
     }
 
     /**

@@ -269,6 +269,24 @@ test.describe('Fluent API — steps.on()', () => {
       await steps.verifyTextContains( 'singleFileName','FileUploadPage', 'StepFixture');
     });
 
+    test('uploadFile() — string[] attaches multiple files', async ({ steps }) => {
+      await steps.navigateTo('/');
+      await steps.click( 'fileUploadLink','SidebarNav');
+      const file1 = path.resolve(__dirname, 'test-files/test-upload.txt');
+      const file2 = path.resolve(__dirname, 'fixture/StepFixture.ts');
+      await steps.on('multipleFileInput', 'FileUploadPage').uploadFile([file1, file2]);
+      await steps.verifyTextContains( 'multipleFileList','FileUploadPage', 'test-upload.txt');
+      await steps.verifyTextContains( 'multipleFileList','FileUploadPage', 'StepFixture');
+    });
+
+    test.fixme('dropFiles() — dispatches drop events with named files — blocked on element-repository #47', async ({ steps }) => {
+      await steps.navigateTo('/');
+      await steps.click( 'fileUploadLink','SidebarNav');
+      await steps.on('dropZone', 'FileUploadPage').dropFiles(['report.pdf', 'photo.png']);
+      await steps.verifyTextContains( 'dropList','FileUploadPage', 'report.pdf');
+      await steps.verifyTextContains( 'dropList','FileUploadPage', 'photo.png');
+    });
+
     test('dragAndDrop() — targeted drop verifies via status text', async ({ steps, repo }) => {
       // Offset-only drags don't land on any drop zone in the Vue test app
       // (status stays 'none'). For a real verification we drag onto the first
