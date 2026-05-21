@@ -534,3 +534,99 @@ test.describe('TC_072: expectNoRequest — HTML5 form block', () => {
     log('TC_072 expectNoRequest (redactQuery) — passed');
   });
 });
+
+
+// ─── TC_073: expectNoRequest against the live BookHive backend ───
+//
+// Same form-block scenario as TC_072, but the POST is allowed to flow through
+// to the real `bookhive-backend` service (port 8080, started by docker-compose).
+// No `route.fulfill` on the API endpoint — only the form-host page is routed,
+// because BookHive is API-only and has no signup/login UI of its own.
+//
+// This proves `expectNoRequest` behaves correctly when route.continue() hands
+// the request off to a live backend, not a stub — catching any regression
+// where the observer accidentally suppresses or alters traffic.
+//
+// Requires `bookhive-backend` to be up. The repo's docker-compose brings it
+// up alongside `vue-test-website`; CI is already configured to do so.
+test.describe('TC_073: expectNoRequest — live BookHive backend (no API mocking)', () => {
+
+  const BOOKHIVE_URL = process.env.BOOKHIVE_API_URL ?? 'http://localhost:8080';
+
+  // Form's submit handler issues a cross-origin POST with `mode: 'no-cors'` so
+  // the request fires as a CORS "simple request" — no preflight, no special
+  // BookHive CORS configuration needed. BookHive returns 400/415 on the
+  // form-encoded body (it expects JSON), but the request itself fires, which
+  // is the only thing this assertion observes.
+  const FORM_HTML = `<!DOCTYPE html>
+<html>
+  <body>
+    <form id="login-form">
+      <input id="email-input" name="email" type="email" required />
+      <input id="password-input" name="password" type="password" required />
+      <button id="submit-btn" type="submit">Log in</button>
+    </form>
+    <script>
+      document.getElementById('login-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const body = new URLSearchParams(new FormData(e.target));
+        fetch('${BOOKHIVE_URL}/api/auth/login', {
+          method: 'POST',
+          body,
+          mode: 'no-cors',
+        }).catch(() => { /* opaque cross-origin response; we don't read it */ });
+      });
+    </script>
+  </body>
+</html>`;
+
+  async function mountForm(page: import('@playwright/test').Page) {
+    await page.route('**/bookhive-login-test-form', (route) =>
+      route.fulfill({ status: 200, contentType: 'text/html', body: FORM_HTML }),
+    );
+    // Deliberately do NOT route **/api/auth/login — let the POST hit BookHive.
+    await page.goto('/bookhive-login-test-form');
+  }
+
+  test('passes when HTML5 required blocks an empty form (no POST reaches BookHive)', async ({ page, steps }) => {
+
+    await test.step('Mount the login form pointed at the live BookHive endpoint', async () => {
+      await mountForm(page);
+    });
+
+    await test.step('Submit the empty form — HTML5 should block before any POST is issued', async () => {
+      await steps.expectNoRequest('**/api/auth/login', async () => {
+        await page.click('#submit-btn');
+      }, { timeout: 500, methods: ['POST'] });
+    });
+
+    log('TC_073 expectNoRequest (BookHive, HTML5 block) — passed');
+  });
+
+  test('throws when the filled form POSTs to BookHive (request flows through to the live backend)', async ({ page, steps }) => {
+
+    await test.step('Mount the form and fill the required fields', async () => {
+      await mountForm(page);
+      await page.fill('#email-input', `expect-no-request-${Date.now()}@bookhive.test`);
+      await page.fill('#password-input', 'SomePassword123!');
+    });
+
+    await test.step('Submit — POST fires against the live BookHive backend; expectNoRequest must reject', async () => {
+      let captured: Error | undefined;
+      try {
+        await steps.expectNoRequest('**/api/auth/login', async () => {
+          await page.click('#submit-btn');
+        }, { timeout: 1000, methods: ['POST'] });
+      } catch (e) {
+        captured = e as Error;
+      }
+      expect(captured, 'expectNoRequest should reject when the matching POST fires').toBeDefined();
+      expect(captured!.message).toMatch(/expectNoRequest failed:/);
+      // The offender URL points at the real BookHive host — proves the request
+      // travelled to the live backend, not a stub.
+      expect(captured!.message).toMatch(/POST .*\/api\/auth\/login/);
+    });
+
+    log('TC_073 expectNoRequest (BookHive, allowed-through) — passed');
+  });
+});
