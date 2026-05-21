@@ -1,5 +1,6 @@
 import path from 'path';
 import { test, expect } from './fixture/StepFixture';
+import { Page } from '@playwright/test';
 import { Interactions } from '../src/interactions/Interaction';
 import { WebElement } from '@civitas-cerebrum/element-repository';
 
@@ -21,12 +22,12 @@ const FILE2 = path.resolve(__dirname, 'fixture/StepFixture.ts');
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-async function pageWithFileInput(page: any, multiple = false) {
+async function pageWithFileInput(page: Page, multiple = false) {
     await page.setContent(`<input type="file" id="fi" ${multiple ? 'multiple' : ''} />`);
     return new WebElement(page.locator('#fi'));
 }
 
-async function pageWithDropZone(page: any) {
+async function pageWithDropZone(page: Page) {
     await page.setContent(`
         <div id="dz" style="width:200px;height:200px">Drop here</div>
         <ul id="log"></ul>
@@ -164,6 +165,16 @@ test.describe('Interactions.dropFiles', () => {
 
         const items = await page.locator('#log li').allTextContents();
         expect(items[0]).toContain('application/pdf');
+    });
+
+    test.fixme('empty filenames[] — no-op drop event does not throw', async ({ page }) => {
+        const element = await pageWithDropZone(page);
+        const interact = new Interactions(page);
+
+        await interact.dropFiles(element, []);
+
+        const items = await page.locator('#log li').allTextContents();
+        expect(items).toHaveLength(0);
     });
 
 });

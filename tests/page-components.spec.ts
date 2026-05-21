@@ -1,6 +1,7 @@
 import { test, expect } from './fixture/StepFixture';
 import { DropdownSelectType } from '../src/enum/Options';
 import { createLogger } from '../src/logger/Logger';
+import path from 'path';
 
 const log = createLogger('tests');
 
@@ -260,14 +261,14 @@ test.describe('TC_015: File Upload Page', () => {
     });
 
     await test.step('Upload a single file and verify filename displayed', async () => {
-      await steps.uploadFile( 'singleFileInput','FileUploadPage', 'tests/test-files/test-upload.txt');
+      await steps.uploadFile( 'singleFileInput','FileUploadPage', path.resolve(__dirname, 'test-files/test-upload.txt'));
       await steps.verifyTextContains( 'singleFileName','FileUploadPage', 'test-upload.txt');
     });
 
     log('TC_015 File Upload Page — passed');
   });
 
-  test('multi-file upload and drop-zone', async ({ steps }) => {
+  test('multi-file upload', async ({ steps }) => {
 
     await test.step('Navigate to File Upload page via sidebar', async () => {
       await steps.navigateTo('/');
@@ -277,20 +278,24 @@ test.describe('TC_015: File Upload Page', () => {
 
     await test.step('Upload multiple files and verify both names listed', async () => {
       await steps.uploadFile( 'multipleFileInput','FileUploadPage', [
-        'tests/test-files/test-upload.txt',
-        'tests/data/page-repository.json',
+        path.resolve(__dirname, 'test-files/test-upload.txt'),
+        path.resolve(__dirname, 'data/page-repository.json'),
       ]);
       await steps.verifyTextContains( 'multipleFileList','FileUploadPage', 'test-upload.txt');
       await steps.verifyTextContains( 'multipleFileList','FileUploadPage', 'page-repository.json');
     });
 
-    await test.step('Drop files onto drop zone and verify both names listed', async () => {
-      await steps.dropFiles( 'dropZone','FileUploadPage', ['report.pdf', 'photo.png']);
-      await steps.verifyTextContains( 'dropList','FileUploadPage', 'report.pdf');
-      await steps.verifyTextContains( 'dropList','FileUploadPage', 'photo.png');
-    });
+    log('TC_015 File Upload Page (multi) — passed');
+  });
 
-    log('TC_015 File Upload Page (multi + drop) — passed');
+  test.fixme('drop-zone — blocked on element-repository #47', async ({ steps }) => {
+    await steps.navigateTo('/');
+    await steps.click( 'fileUploadLink','SidebarNav');
+    await steps.verifyUrlContains('/file-upload');
+
+    await steps.dropFiles( 'dropZone','FileUploadPage', ['report.pdf', 'photo.png']);
+    await steps.verifyTextContains( 'dropList','FileUploadPage', 'report.pdf');
+    await steps.verifyTextContains( 'dropList','FileUploadPage', 'photo.png');
   });
 });
 
