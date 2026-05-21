@@ -15,22 +15,27 @@ import { WebElement } from '@civitas-cerebrum/element-repository';
 export class Extractions {
     private ELEMENT_TIMEOUT: number;
     private utils: Utils;
+    private static readonly SOFT_PROBE_MS = 2_000;
 
     constructor(private page: Page, timeout: number = 30000) {
         this.ELEMENT_TIMEOUT = timeout;
         this.utils = new Utils(this.ELEMENT_TIMEOUT);
     }
 
+    private async softProbe(element: WebElement): Promise<void> {
+        await this.utils.waitForState(element, 'attached', Math.min(this.ELEMENT_TIMEOUT, Extractions.SOFT_PROBE_MS));
+    }
+
     /** Safely retrieves and trims the text content of an element. */
     async getText(target: WebElement): Promise<string | null> {
-        await this.utils.waitForState(target, 'attached');
+        await this.softProbe(target);
         const text = await target.textContent();
         return text?.trim() ?? null;
     }
 
     /** Retrieves the value of a specified attribute. */
     async getAttribute(target: WebElement, attributeName: string): Promise<string | null> {
-        await this.utils.waitForState(target, 'attached');
+        await this.softProbe(target);
         return target.getAttribute(attributeName);
     }
 
@@ -43,7 +48,7 @@ export class Extractions {
 
     /** Retrieves the current value of an input, textarea, or select element. */
     async getInputValue(target: WebElement): Promise<string> {
-        await this.utils.waitForState(target, 'attached');
+        await this.softProbe(target);
         return target.inputValue();
     }
 
@@ -54,7 +59,7 @@ export class Extractions {
 
     /** Retrieves a computed CSS property value from an element. */
     async getCssProperty(target: WebElement, property: string): Promise<string> {
-        await this.utils.waitForState(target, 'attached');
+        await this.softProbe(target);
         return target.getCssProperty(property);
     }
 
@@ -67,7 +72,7 @@ export class Extractions {
      * read than the standard verification family.
      */
     async getHtml(target: WebElement, options?: { outer?: boolean }): Promise<string> {
-        await this.utils.waitForState(target, 'attached');
+        await this.softProbe(target);
         const locator = target.locator.first();
         if (options?.outer) {
             return await locator.evaluate((el: Element) => el.outerHTML);
