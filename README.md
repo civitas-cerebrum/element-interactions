@@ -819,6 +819,87 @@ await steps.cleanEmails();
 
 ---
 
+## SQL Database Steps
+
+Query a SQL database directly in your tests — the natural oracle for verifying that a UI or API
+mutation actually persisted. Backed by `@civitas-cerebrum/sql-client` (Postgres). All values are
+parametrised; never interpolate values into SQL.
+
+### Fixture configuration
+
+```ts
+export const test = baseFixture(base, 'tests/data/page-repository.json', {
+  dbUrl: process.env.DB_URL,            // default connection
+  dbProviders: {                        // optional named connections
+    analytics: process.env.ANALYTICS_DB_URL,
+  },
+});
+```
+
+Pools open lazily on first use and are closed automatically when the test finishes.
+
+### Reading (SELECT)
+
+```ts
+const res = await steps.sqlQuery<{ title: string }>(
+  'SELECT title FROM books WHERE genre = $1 ORDER BY title', ['Fiction']);
+await steps.verifySqlRowCount(res, 5);
+await steps.verifySqlValue(res, 0, 'title', '1984');
+```
+
+### Writing (INSERT/UPDATE/DELETE)
+
+```ts
+const ins = await steps.sqlExecute(
+  'INSERT INTO cart_items (cart_item_id,user_id,book_id,quantity,added_at) VALUES ($1,$2,$3,$4,$5)',
+  ['cart-1','user-1','book-1',2,'2026-01-01T00:00:00Z']);
+// ins.rowCount === 1
+```
+
+### Fluent builder
+
+```ts
+const top = await steps.sqlSelect('books')
+  .columns('title', 'price')
+  .where('price < ?', 15)
+  .orderBy('price', 'desc')
+  .limit(5)
+  .run();
+
+await steps.sqlInsert('cart_items').values({ cart_item_id: 'c1', user_id: 'u1', book_id: 'b1', quantity: 1, added_at: '2026-01-01T00:00:00Z' }).run();
+await steps.sqlUpdate('books').set({ stock: 14 }).where('book_id = ?', 'book-001').run();
+await steps.sqlDelete('cart_items').where('cart_item_id = ?', 'c1').run();
+```
+
+### Transactions
+
+```ts
+await steps.sqlTransaction(async (tx) => {
+  await tx.execute('UPDATE books SET stock = stock - 1 WHERE book_id = $1', ['book-001']);
+  await tx.execute('INSERT INTO orders (...) VALUES (...)');
+}); // auto-COMMIT, or auto-ROLLBACK if the callback throws
+```
+
+### Verification matchers
+
+| Method | Asserts |
+|---|---|
+| `verifySqlRowCount(res, n \| {min,max})` | exact or bounded row count |
+| `verifySqlValue(res, rowIndex, column, expected)` | a single cell's value |
+| `verifySqlContains(res, partialRow)` | ≥1 row matches a column subset |
+| `verifySqlColumn(res, column, expectedOrdered[])` | a column's ordered values (ORDER BY) |
+| `verifySqlEmpty(res)` / `verifySqlNotEmpty(res)` | zero / ≥1 rows |
+
+### Running the bookhive Postgres fixture
+
+```bash
+docker compose -f docker-compose.sql.yml up -d --wait
+npx playwright test tests/sql-steps.spec.ts
+docker compose -f docker-compose.sql.yml down -v
+```
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please read the guidelines below before opening a PR.
