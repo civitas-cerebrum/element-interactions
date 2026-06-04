@@ -1847,4 +1847,62 @@ export class Steps {
         }
         this.dbClients.clear();
     }
+
+    /** Asserts the result row count equals `expected`, or falls within `{min,max}`. */
+    async verifySqlRowCount(result: SqlResult<unknown>, expected: number | { min?: number; max?: number }): Promise<void> {
+        const actual = result.rowCount;
+        if (typeof expected === 'number') {
+            log.sql('verify rowCount === %d (actual %d)', expected, actual);
+            if (actual !== expected) throw new Error(`Expected SQL row count ${expected} but got ${actual}.`);
+            return;
+        }
+        if (expected.min !== undefined && actual < expected.min) throw new Error(`Expected SQL row count >= ${expected.min} but got ${actual}.`);
+        if (expected.max !== undefined && actual > expected.max) throw new Error(`Expected SQL row count <= ${expected.max} but got ${actual}.`);
+    }
+
+    /** Asserts a single cell at `rowIndex`/`column` equals `expected` (loose `==` after String()). */
+    async verifySqlValue(result: SqlResult<Record<string, unknown>>, rowIndex: number, column: string, expected: unknown): Promise<void> {
+        const row = result.rows[rowIndex];
+        if (!row) throw new Error(`Expected a row at index ${rowIndex} but the result has ${result.rows.length} row(s).`);
+        const actual = row[column];
+        log.sql('verify row[%d].%s === %o (actual %o)', rowIndex, column, expected, actual);
+        if (String(actual) !== String(expected)) {
+            throw new Error(`Expected row[${rowIndex}].${column} to be "${expected}" but got "${actual}".`);
+        }
+    }
+
+    /** Asserts at least one row matches every column/value pair in `partialRow`. */
+    async verifySqlContains(result: SqlResult<Record<string, unknown>>, partialRow: Record<string, unknown>): Promise<void> {
+        const entries = Object.entries(partialRow);
+        const found = result.rows.some((row) => entries.every(([k, v]) => String(row[k]) === String(v)));
+        log.sql('verify contains %o (found=%s)', partialRow, found);
+        if (!found) {
+            throw new Error(`Expected a row matching ${JSON.stringify(partialRow)} but none of the ${result.rows.length} row(s) did.`);
+        }
+    }
+
+    /** Asserts the ordered values of `column` across all rows equal `expected`. */
+    async verifySqlColumn(result: SqlResult<Record<string, unknown>>, column: string, expected: unknown[]): Promise<void> {
+        const actual = result.rows.map((r) => r[column]);
+        log.sql('verify column %s order %o (actual %o)', column, expected, actual);
+        if (actual.length !== expected.length || actual.some((v, i) => String(v) !== String(expected[i]))) {
+            throw new Error(`Expected column "${column}" to be [${expected.join(', ')}] but got [${actual.join(', ')}].`);
+        }
+    }
+
+    /** Asserts the result has zero rows. */
+    async verifySqlEmpty(result: SqlResult<unknown>): Promise<void> {
+        log.sql('verify empty (actual %d)', result.rowCount);
+        if (result.rowCount !== 0 || result.rows.length !== 0) {
+            throw new Error(`Expected an empty SQL result but got ${result.rowCount} row(s).`);
+        }
+    }
+
+    /** Asserts the result has at least one row. */
+    async verifySqlNotEmpty(result: SqlResult<unknown>): Promise<void> {
+        log.sql('verify not empty (actual %d)', result.rowCount);
+        if (result.rows.length === 0) {
+            throw new Error('Expected a non-empty SQL result but got 0 rows.');
+        }
+    }
 }
