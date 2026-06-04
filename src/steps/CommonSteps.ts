@@ -4,6 +4,7 @@ import { ElementInteractions } from '../interactions/facade/ElementInteractions'
 import { Utils } from '../utils/ElementUtilities';
 import { EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
+import { SqlClient, SqlResult, QueryBuilder } from '@civitas-cerebrum/sql-client';
 import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions, StorageVerifyOptions, VisualMatchOptions, VisualMaskTarget } from '../enum/Options';
 import { stepLog as log } from '../logger/Logger';
 import { ElementAction } from './ElementAction';
@@ -24,6 +25,7 @@ export class Steps {
     private utils;
     private email;
     private apiClients: Map<string, WasapiClient>;
+    private dbClients: Map<string, SqlClient>;
     private timeout?: number;
 
     /**
@@ -39,6 +41,8 @@ export class Steps {
             timeout?: number;
             apiBaseUrl?: string;
             apiProviders?: Record<string, string>;
+            dbUrl?: string;
+            dbProviders?: Record<string, string>;
         }
     ) {
         this.page = repo.driver;
@@ -59,6 +63,16 @@ export class Steps {
         if (apiProviders) {
             for (const [name, url] of Object.entries(apiProviders)) {
                 this.apiClients.set(name, new WasapiClient.Builder().setBaseUrl(url).setLogHeaders(false).buildRaw());
+            }
+        }
+        const { dbUrl, dbProviders } = options ?? {};
+        this.dbClients = new Map();
+        if (dbUrl) {
+            this.dbClients.set('default', new SqlClient({ connectionString: dbUrl }));
+        }
+        if (dbProviders) {
+            for (const [name, url] of Object.entries(dbProviders)) {
+                this.dbClients.set(name, new SqlClient({ connectionString: url }));
             }
         }
     }

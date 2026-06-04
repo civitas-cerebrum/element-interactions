@@ -172,5 +172,6 @@ export const stepLog = {
   verify: logger('verify'),
   email: logger('email'),
   api: logger('api'),
+  sql: logger('sql'),
   wait: logger('wait'),
 };
