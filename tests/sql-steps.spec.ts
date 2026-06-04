@@ -23,7 +23,7 @@ test.describe('TC_SQL_001: SQL Database Steps — bookhive integration', () => {
 
     test('verifySqlRowCount range + verifySqlNotEmpty + verifySqlEmpty', async ({ steps }) => {
         const some = await steps.sqlQuery('SELECT * FROM books');
-        await steps.verifySqlRowCount(some, { min: 1, max: 100 });
+        await steps.verifySqlRowCount(some, { min: 1, max: 8 });
         await steps.verifySqlNotEmpty(some);
         const none = await steps.sqlQuery('SELECT * FROM books WHERE genre = $1', ['Nonexistent']);
         await steps.verifySqlEmpty(none);
@@ -108,9 +108,10 @@ test.describe('TC_SQL_001: SQL Database Steps — bookhive integration', () => {
     });
 
     test('Raw sqlExecute INSERT/DELETE + provider routing (analytics)', async ({ steps }) => {
-        await steps.sqlExecute(
+        const ins = await steps.sqlExecute(
             'INSERT INTO cart_items (cart_item_id,user_id,book_id,quantity,added_at) VALUES ($1,$2,$3,$4,$5)',
             ['cart-raw', 'user-003', 'book-001', 2, '2026-04-03T00:00:00Z']);
+        expect(ins.rowCount).toBe(1);
         const viaProvider = await steps.sqlQuery('analytics', 'SELECT quantity FROM cart_items WHERE cart_item_id = $1', ['cart-raw']);
         await steps.verifySqlValue(viaProvider, 0, 'quantity', 2);
         const del = await steps.sqlExecute('DELETE FROM cart_items WHERE cart_item_id = $1', ['cart-raw']);
@@ -122,11 +123,13 @@ test.describe('TC_SQL_001: SQL Database Steps — bookhive integration', () => {
             await tx.execute('UPDATE books SET stock = stock - 1 WHERE book_id = $1', ['book-002']);
             await tx.execute("INSERT INTO orders (order_id,user_id,total_price,status,purchased_at) VALUES ('order-tx','user-003',10.99,'COMPLETED','2026-04-04T00:00:00Z')");
         });
-        const after = await steps.sqlQuery<{ stock: number }>('SELECT stock FROM books WHERE book_id = $1', ['book-002']);
-        await steps.verifySqlValue(after, 0, 'stock', 11); // 12 - 1
-        // cleanup
-        await steps.sqlExecute("DELETE FROM orders WHERE order_id = 'order-tx'");
-        await steps.sqlExecute('UPDATE books SET stock = 12 WHERE book_id = $1', ['book-002']);
+        try {
+            const after = await steps.sqlQuery('SELECT stock FROM books WHERE book_id = $1', ['book-002']);
+            await steps.verifySqlValue(after, 0, 'stock', 11);
+        } finally {
+            await steps.sqlExecute("DELETE FROM orders WHERE order_id = 'order-tx'");
+            await steps.sqlExecute('UPDATE books SET stock = 12 WHERE book_id = $1', ['book-002']);
+        }
     });
 
     test('Transaction ROLLBACK — failure leaves stock intact', async ({ steps }) => {
@@ -144,6 +147,13 @@ test.describe('TC_SQL_001: SQL Database Steps — bookhive integration', () => {
             return Number(r.rows[0].n);
         });
         expect(count).toBe(8);
+    });
+
+    test('Negative: verifySqlRowCount mismatch + range violation throw', async ({ steps }) => {
+        const res = await steps.sqlQuery('SELECT * FROM books');
+        await expect(steps.verifySqlRowCount(res, 999)).rejects.toThrow(/row count/i);
+        await expect(steps.verifySqlRowCount(res, { min: 999 })).rejects.toThrow(/row count/i);
+        await expect(steps.verifySqlRowCount(res, { max: 1 })).rejects.toThrow(/row count/i);
     });
 
     test('Negative: verifySqlValue mismatch throws', async ({ steps }) => {
