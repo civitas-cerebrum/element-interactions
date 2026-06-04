@@ -1739,4 +1739,112 @@ export class Steps {
             throw new Error(`Expected header "${headerName}" to be "${expectedValue}" but got "${actual[1]}"`);
         }
     }
+
+    /**
+     * Resolves the named `SqlClient` from the internal registry. Defaults to the
+     * `'default'` client (configured via `dbUrl`). Named connections come from
+     * `dbProviders` on the fixture options.
+     */
+    private getDbClient(name?: string): SqlClient {
+        const clientName = name ?? 'default';
+        const client = this.dbClients.get(clientName);
+        if (!client) {
+            if (clientName === 'default') {
+                throw new Error('SQL client is not configured. Pass dbUrl to baseFixture() options when setting up your test fixture.');
+            }
+            throw new Error(`SQL provider "${clientName}" is not configured. Pass it in dbProviders to baseFixture() options. Available: ${[...this.dbClients.keys()].join(', ')}`);
+        }
+        return client;
+    }
+
+    /**
+     * Splits `(sqlOrProvider, sql?, params?)` into a resolved client + sql + params.
+     * If the second arg is a string, the first is treated as a provider name.
+     */
+    private resolveSqlArgs(sqlOrProvider: string, sql?: string | unknown[], params?: unknown[]): { client: SqlClient; sql: string; params: unknown[] } {
+        if (typeof sql === 'string') {
+            return { client: this.getDbClient(sqlOrProvider), sql, params: params ?? [] };
+        }
+        return { client: this.getDbClient(), sql: sqlOrProvider, params: (sql as unknown[]) ?? [] };
+    }
+
+    /**
+     * Runs a parametrised read query (SELECT) against the default SQL client, or
+     * the named provider when the first argument matches a key in `dbProviders`.
+     *
+     * @example
+     * ```ts
+     * const res = await steps.sqlQuery<{ title: string }>('SELECT title FROM books WHERE genre = $1', ['Fiction']);
+     * const res = await steps.sqlQuery('analytics', 'SELECT count(*) FROM orders');
+     * ```
+     */
+    async sqlQuery<T = Record<string, unknown>>(sqlOrProvider: string, sql?: string | unknown[], params?: unknown[]): Promise<SqlResult<T>> {
+        const resolved = this.resolveSqlArgs(sqlOrProvider, sql, params);
+        log.sql('QUERY %s %o', resolved.sql, resolved.params);
+        return await resolved.client.query<T>(resolved.sql, resolved.params);
+    }
+
+    /**
+     * Runs a parametrised write statement (INSERT/UPDATE/DELETE) and returns the
+     * affected `rowCount`. Same provider-overload as {@link sqlQuery}.
+     */
+    async sqlExecute(sqlOrProvider: string, sql?: string | unknown[], params?: unknown[]): Promise<SqlResult> {
+        const resolved = this.resolveSqlArgs(sqlOrProvider, sql, params);
+        log.sql('EXECUTE %s %o', resolved.sql, resolved.params);
+        return await resolved.client.execute(resolved.sql, resolved.params);
+    }
+
+    /**
+     * Runs `fn` inside a transaction (BEGIN/COMMIT, auto-ROLLBACK on throw).
+     * Pass a provider name as the first argument to target a named connection:
+     * `steps.sqlTransaction('analytics', async (tx) => { ... })`.
+     */
+    async sqlTransaction<R>(fnOrProvider: string | ((tx: import('@civitas-cerebrum/sql-client').SqlTransaction) => Promise<R>), fn?: (tx: import('@civitas-cerebrum/sql-client').SqlTransaction) => Promise<R>): Promise<R> {
+        if (typeof fnOrProvider === 'string') {
+            log.sql('TRANSACTION (provider=%s)', fnOrProvider);
+            return await this.getDbClient(fnOrProvider).transaction(fn!);
+        }
+        log.sql('TRANSACTION (default)');
+        return await this.getDbClient().transaction(fnOrProvider);
+    }
+
+    /** Begin a fluent SELECT builder pre-bound to the default (or named) client. */
+    sqlSelect(table: string, provider?: string): QueryBuilder & { run<T = Record<string, unknown>>(): Promise<SqlResult<T>> } {
+        return this.bindBuilder(QueryBuilder.select(table), provider);
+    }
+    /** Begin a fluent INSERT builder. Call `.values({...}).run()`. */
+    sqlInsert(table: string, provider?: string): QueryBuilder & { run<T = Record<string, unknown>>(): Promise<SqlResult<T>> } {
+        return this.bindBuilder(QueryBuilder.insert(table), provider);
+    }
+    /** Begin a fluent UPDATE builder. Call `.set({...}).where(...).run()`. */
+    sqlUpdate(table: string, provider?: string): QueryBuilder & { run<T = Record<string, unknown>>(): Promise<SqlResult<T>> } {
+        return this.bindBuilder(QueryBuilder.update(table), provider);
+    }
+    /** Begin a fluent DELETE builder. Call `.where(...).run()`. */
+    sqlDelete(table: string, provider?: string): QueryBuilder & { run<T = Record<string, unknown>>(): Promise<SqlResult<T>> } {
+        return this.bindBuilder(QueryBuilder.delete(table), provider);
+    }
+
+    /**
+     * Rebinds a builder's `.run()` so the test author needs no client argument:
+     * `.run()` dispatches through the resolved SqlClient.
+     */
+    private bindBuilder(builder: QueryBuilder, provider?: string): QueryBuilder & { run<T = Record<string, unknown>>(): Promise<SqlResult<T>> } {
+        const client = this.getDbClient(provider);
+        const bound = builder as QueryBuilder & { run<T = Record<string, unknown>>(): Promise<SqlResult<T>> };
+        bound.run = (<T = Record<string, unknown>>() => {
+            const { text, values } = builder.toSql(client.dialect);
+            log.sql('BUILD %s %o', text, values);
+            return /^\s*select/i.test(text) ? client.query<T>(text, values) : (client.execute(text, values) as Promise<SqlResult<T>>);
+        }) as QueryBuilder['run'] & (<T>() => Promise<SqlResult<T>>);
+        return bound;
+    }
+
+    /** Closes all open SQL connection pools. Called by the fixture in teardown. */
+    async closeDbConnections(): Promise<void> {
+        for (const client of this.dbClients.values()) {
+            await client.end();
+        }
+        this.dbClients.clear();
+    }
 }
