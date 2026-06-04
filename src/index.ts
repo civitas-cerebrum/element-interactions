@@ -57,3 +57,7 @@ export { EmailFilterType, EmailMarkAction } from '@civitas-cerebrum/email-client
 export { WasapiClient, ApiCall, ApiResponse, ResponsePair, FailedCallException, WasapiException, HttpMethod } from '@civitas-cerebrum/wasapi';
 export type { RequestConfig, ClientConfig, CallOptions } from '@civitas-cerebrum/wasapi';
 export { GET, POST, PUT, DELETE, PATCH, HTTP } from '@civitas-cerebrum/wasapi';
+
+// Re-exports from @civitas-cerebrum/sql-client
+export { SqlClient, QueryBuilder, PostgresDialect, SqlException, QueryFailedException } from '@civitas-cerebrum/sql-client';
+export type { SqlResult, SqlField, SqlClientConfig, SqlTransaction, Dialect, RunnableClient } from '@civitas-cerebrum/sql-client';
