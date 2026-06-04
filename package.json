@@ -54,8 +54,10 @@
     "@civitas-cerebrum/context-store": "^0.0.2",
     "@civitas-cerebrum/element-repository": "^0.2.1",
     "@civitas-cerebrum/email-client": "^0.0.7",
+    "@civitas-cerebrum/sql-client": "file:../sql-client",
     "@civitas-cerebrum/wasapi": "^0.0.3",
     "debug": "^4.4.3",
-    "dotenv": "^17.3.1"
+    "dotenv": "^17.3.1",
+    "pg": "^8.13.0"
   }
 }
