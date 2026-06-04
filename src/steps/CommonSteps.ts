@@ -1835,17 +1835,20 @@ export class Steps {
         bound.run = (<T = Record<string, unknown>>() => {
             const { text, values } = builder.toSql(client.dialect);
             log.sql('BUILD %s %o', text, values);
+            // QueryBuilder only emits plain SELECT/INSERT/UPDATE/DELETE; a leading SELECT → read path.
+            // If the builder ever gains CTEs (WITH ... SELECT) or RETURNING, revisit this dispatch.
             return /^\s*select/i.test(text) ? client.query<T>(text, values) : (client.execute(text, values) as Promise<SqlResult<T>>);
         }) as QueryBuilder['run'] & (<T>() => Promise<SqlResult<T>>);
         return bound;
     }
 
-    /** Closes all open SQL connection pools. Called by the fixture in teardown. */
+    /** Closes all open SQL connection pools. Called by the fixture in teardown. Safe to call more than once. */
     async closeDbConnections(): Promise<void> {
-        for (const client of this.dbClients.values()) {
+        const clients = [...this.dbClients.values()];
+        this.dbClients.clear();
+        for (const client of clients) {
             await client.end();
         }
-        this.dbClients.clear();
     }
 
     /** Asserts the result row count equals `expected`, or falls within `{min,max}`. */
