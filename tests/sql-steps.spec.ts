@@ -175,4 +175,10 @@ test.describe('TC_SQL_001: SQL Database Steps — bookhive integration', () => {
     test('Negative: unconfigured provider throws helpful error', async ({ steps }) => {
         await expect(steps.sqlQuery('nope', 'SELECT 1')).rejects.toThrow(/SQL provider "nope" is not configured/);
     });
+
+    test('closeDbConnections — idempotent pool shutdown', async ({ steps }) => {
+        // First call drains the pools; second call must not throw (idempotent).
+        await steps.closeDbConnections();
+        await steps.closeDbConnections();
+    });
 });
