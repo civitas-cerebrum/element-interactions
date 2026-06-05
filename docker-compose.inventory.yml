@@ -1,0 +1,22 @@
+# Projection read-model Postgres for the inventory-SQL-verification specs.
+# Separate from docker-compose.sql.yml's static-seed mirror (5432) so those
+# suites never interfere. No seed — the specs project state from the live API.
+# Up:   docker compose -f docker-compose.inventory.yml up -d --wait
+# Down: docker compose -f docker-compose.inventory.yml down -v
+services:
+  bookhive-live-postgres:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_DB: bookhive_live
+      POSTGRES_USER: bookhive
+      POSTGRES_PASSWORD: bookhive
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./tests/sql/projection-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookhive -d bookhive_live"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
