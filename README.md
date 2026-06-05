@@ -2,52 +2,15 @@
 
 [![NPM Version](https://img.shields.io/npm/v/@civitas-cerebrum/element-interactions?color=rgb(88%2C%20171%2C%2070))](https://www.npmjs.com/package/@civitas-cerebrum/element-interactions)
 
-A new medium of quality assurance, powered by Playwright and harness engineering. The framework comprises two components: a Steps API that streamlines UI interactions, and a QA methodology that drives the agentic process around them.
+A robust, readable interaction-and-assertion facade for Playwright. The `Steps` API and `ElementRepository` decouple element acquisition from interaction, so raw selectors never appear in test code — and tests stay tight, semantic, and resistant to DOM churn.
 
----
-
-## 🤖 Autonomous Quality Assurance
-
-The harness ships inside the npm package. When you install `@civitas-cerebrum/element-interactions`, Claude Code picks the skills up from `node_modules` automatically — nothing extra to configure.
-
-You drive it in plain English. The orchestrators detect project state and route to the right skill on their own:
-
-> *"Onboard this project — automate https://your-app-url.com from zero."*
-> *"Increase coverage."*
-> *"Find bugs."*
-> *"Repair the suite."*
-> *"Verify the checkout flow with evidence."*
-
-> **Tip:** This package bundles `@playwright/cli` and the skills drive it from the Bash tool — no MCP plugin to enable, no `.mcp.json` to write. After `npm install`, run `npx playwright-cli install-browser chromium` once so the headless-shell binary is available, and the harness can inspect the live DOM before writing any locator. This removes the most common source of AI-generated test flakiness.
-
-### Features
-
-| Capability | What it does |
-|---|---|
-| **Zero-to-suite onboarding** | Installs deps, scaffolds the framework, crawls the app, automates the happy path, completes the journey map, runs priority/depth-tiered coverage passes, runs adversarial bug-hunts, and produces a summary deck — all behind a single confirmation gate, with no further prompts after kickoff. |
-| **Journey mapping** | Discovers pages and user flows, prioritises them by business impact, and writes the journey-map blueprint that every downstream test traces back to. |
-| **Coverage expansion** | Iterates the journey map and grows the suite per journey. *Depth* mode runs three compositional passes plus two adversarial passes per journey; *breadth* mode runs one fast horizontal sweep across all journeys. Independent journeys are dispatched in parallel. |
-| **Per-journey test composition** | For one mapped journey, composes the full portfolio: happy path, error states, edge cases, mobile variants, negative flows, data-lifecycle scenarios. |
-| **Adversarial bug discovery** | Probes the live app first — the "first-time effect", where fresh eyes catch what familiarity blinds you to — then cross-references findings against existing tests. Produces a prioritised, deduplicated bug ledger with reproduction tests. |
-| **Agents-vs-agents AI red-teaming** | Adversarial testing of LLM-integrated features: guardrail verification, bias detection, prompt injection, compliance auditing. One LLM plays the adversary, the application's AI is the target, a third LLM judges the result. |
-| **API contract testing** | Locks the backend surface (status codes, response shape, error envelopes, critical headers) against drift, separately from UI flow tests. |
-| **Failure diagnosis** | When a test fails in any mode, runs evidence-based triage — screenshot analysis, DOM inspection, root-cause hypothesis — then either fixes the test autonomously or flags an app bug with the evidence to back it. |
-| **Suite repair** | When many tests fail at once (suite rot, app drift), batch-clusters failures by shared root cause and heals them per cluster instead of one-by-one — far faster than per-test diagnosis at scale. |
-| **Companion mode** | Single-task evidence-first verification for daily QA. Runs one focused check against the live app and produces a bundle of per-step screenshots, video, Playwright trace, HAR, console log, and a summary — the artifact a developer reads, not a durable suite test. |
-| **Test catalogue** | Stakeholder-facing PDF answering *"what scenarios are we running, and why?"* — A4-landscape, organised by portal and priority, with skipped-with-reason transparency. |
-| **Work summary deck** | Branded HTML deck summarising the QA work delivered, exportable to PDF for managers, product owners, and clients. |
-
-### Working autonomously
-
-Once kicked off, the orchestrators run end-to-end without further prompts. `onboarding` takes a fresh project from no test automation to a complete suite — install, scaffold, crawl, happy path, journey map, five priority/depth-tiered coverage passes, two bug-hunt passes, summary deck — emitting periodic progress updates but requiring no confirmation after the initial gate. `coverage-expansion` and `bug-discovery` follow the same pattern at smaller scope. The agent owns the entire lifecycle of a test suite — discovery, growth, repair, adversarial probing, reporting — and ships its work as durable artifacts rather than transient chat output.
+This package is the **framework** layer: a programmatic Playwright facade for humans + LLM agents to write against. If you want the **methodology** layer — agent skills, harness hooks, return-shape schemas, and the postinstall plumbing that drives Claude Code through an end-to-end autonomous QA pipeline — install [`@civitas-cerebrum/achilles`](https://www.npmjs.com/package/@civitas-cerebrum/achilles) alongside this package. Achilles depends on element-interactions and orchestrates it through eight documented phases.
 
 ---
 
 ## 🏗️ The Test-Authoring Framework
 
-Underneath the harness is a clean test-authoring framework. The `Steps` API and `ElementRepository` decouple element acquisition from element interaction, so raw selectors never appear in test code. Tests reference elements by plain strings (`'CheckoutPage'`, `'submitButton'`) — a `page-repository.json` file is the single source of truth for selectors.
-
-Because the API is semantic and decoupled from the DOM, it is also an ideal authoring surface for LLMs: agents generate robust flows using plain-English strings without hallucinating CSS selectors or forgetting `waitFor` states.
+A `page-repository.json` file is the single source of truth for selectors. Tests reference elements by plain strings (`'CheckoutPage'`, `'submitButton'`); the framework handles resolution, waiting, logging, and overlay-retry on every interaction.
 
 **Before (Raw Playwright):**
 
@@ -100,7 +63,7 @@ cd playwright-project
 npm i @civitas-cerebrum/element-interactions
 ```
 
-> **Tip:** Set `reporter: 'html'` in `playwright.config.ts` so failure screenshots are captured and viewable in the HTML report — both the framework's `baseFixture` and the harness's failure-diagnosis flow rely on it.
+> **Tip:** Set `reporter: 'html'` in `playwright.config.ts` so failure screenshots are captured and viewable in the HTML report — `baseFixture` attaches them there, and the [`@civitas-cerebrum/achilles`](https://www.npmjs.com/package/@civitas-cerebrum/achilles) failure-diagnosis skill reads from the same report when you run that package.
 
 ---
 
@@ -110,6 +73,7 @@ npm i @civitas-cerebrum/element-interactions
 * **Automatic failure screenshots** — `baseFixture` captures a full-page screenshot on every failed test and attaches it to the HTML report.
 * **Standardized waiting** — Built-in methods wait for elements to reach specific DOM states (visible, hidden, attached, detached).
 * **Advanced image verification** — `verifyImages` evaluates actual browser decoding and `naturalWidth`, not just DOM presence.
+* **Visual regression with dynamic-data masking** — `verifyVisualMatch` is a thin facade over Playwright's `toHaveScreenshot` with masks referenced by `{ elementName, pageName }`. Cover clocks / generated ids / live counters / "updated N minutes ago" badges so the pixel diff stays stable across runs without dropping into raw Playwright locators.
 * **Smart dropdowns** — Select by value, index, or randomly, with automatic skipping of disabled and empty options.
 * **Flexible assertions** — Verify exact text, non-empty text, URL substrings, or dynamic element counts (greater than, less than, exact).
 * **Smart interactions** — Drag to other elements, type sequentially, wait for specific element state, verify images and more!
@@ -265,7 +229,7 @@ test('Per-call timeout override', async ({ steps }) => {
 });
 ```
 
-**Field matchers:** `text`, `value`, `count`, `visible`, `enabled`, `attributes`, `css(prop)`. Each carries `.not` for negation. Snapshot fields available in predicates: `text`, `value`, `attributes`, `visible`, `enabled`, `count`. See the [API reference](skills/element-interactions/references/api-reference.md#expect-matcher-tree) for the full surface.
+**Field matchers:** `text`, `value`, `count`, `visible`, `enabled`, `attributes`, `css(prop)`. Each carries `.not` for negation. Snapshot fields available in predicates: `text`, `value`, `attributes`, `visible`, `enabled`, `count`. See the [API reference](https://github.com/civitas-cerebrum/achilles/blob/main/skills/element-interactions/references/api-reference.md#expect-matcher-tree) for the full surface.
 
 ### StepOptions
 
@@ -621,6 +585,45 @@ await steps.clickListedElement('tableRows', 'Users', {
 
 * **`screenshot()`** — Captures a page screenshot. Pass `{ fullPage: true }` for scrollable capture, `{ path: 'file.png' }` to save to disk.
 * **`screenshot(elementName, pageName, options?)`** — Captures a screenshot of a specific element.
+
+### 🎯 Visual Regression — `verifyVisualMatch`
+
+Visual regression tests are great until your UI has dynamic data. A clock that ticks every second, a generated transaction id, or an "updated 3 minutes ago" badge is enough to break a baseline snapshot — your test fails on the first run, then again, then again, you give up and disable it.
+
+You don't have to. Playwright has a `mask` option built right into `toHaveScreenshot`: pass a list of locators and Playwright paints a solid box over those regions before the snapshot is captured, so the rest of the page stays pixel-perfect for comparison.
+
+`verifyVisualMatch` is the framework's facade over that capability — masks are referenced by `{ elementName, pageName }` (the same shape every other step uses), so you don't have to drop into raw Playwright locators.
+
+```ts
+// Page-level. The dashboard has a `currentTime` and a `transactionId` that
+// change every run. Both get masked. The snapshot stays stable.
+await steps.verifyVisualMatch('dashboard.png', {
+  mask: [
+    { elementName: 'currentTime',   pageName: 'DashboardPage' },
+    { elementName: 'transactionId', pageName: 'DashboardPage' },
+  ],
+});
+
+// Element-level. Scope the snapshot to the header; mask sub-regions inside it.
+await steps.verifyVisualMatch('header.png', {
+  elementName: 'header',
+  pageName:    'DashboardPage',
+  mask: [{ elementName: 'liveCounter', pageName: 'DashboardPage' }],
+});
+
+// Raw selector escape hatch — for regions that don't warrant a repo entry.
+await steps.verifyVisualMatch('dashboard.png', {
+  mask: [{ selector: '[data-testid="current-time"]' }],
+});
+```
+
+**When to use it.** Any UI that has live counters, charts, timestamps, randomly-generated ids, user avatars, or "updated N minutes ago" badges. Mask the dynamic regions once and sleep at night like a baby. The pattern is part of every recommended test-composition flow in the framework's skill suite — coverage-expansion composers, happy-path tests, and adversarial probes all benefit when the surface they're locking down has any content-level dynamism.
+
+**What you don't have to worry about.** CSS animations are disabled by default during the snapshot (Playwright's own `animations: 'disabled'`). You only need `mask` for content-level dynamism — no need for animation-freezing CSS hacks.
+
+**Baselines.** The first run writes the baseline; subsequent runs diff. Use `npx playwright test --update-snapshots` to refresh baselines intentionally. Playwright fingerprints baselines per OS / browser channel, so generate them in the same environment your CI runs.
+
+**Full options surface.** `mask`, `maskColor`, `fullPage`, `maxDiffPixelRatio`, `maxDiffPixels`, `timeout`, `errorMessage`. See [`VisualMatchOptions`](./src/enum/Options.ts).
 
 ---
 

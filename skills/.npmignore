@@ -1,4 +1,0 @@
-# Skill workspaces (LLM eval logs, trigger-tuning data, transcripts)
-# are runtime artefacts and never part of the published package.
-*-workspace/
-*-workspace/**
