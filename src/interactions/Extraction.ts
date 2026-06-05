@@ -22,33 +22,35 @@ export class Extractions {
     }
 
     private async softProbe(element: WebElement): Promise<void> {
-        await this.utils.softProbe(element);
+        await this.utils.softProbe(element, 'attached', this.ELEMENT_TIMEOUT);
     }
 
     /** Safely retrieves and trims the text content of an element. */
     async getText(target: WebElement): Promise<string | null> {
         await this.softProbe(target);
-        const text = await target.textContent();
+        const text = await target.locator.textContent({ timeout: this.ELEMENT_TIMEOUT });
         return text?.trim() ?? null;
     }
 
     /** Retrieves the value of a specified attribute. */
     async getAttribute(target: WebElement, attributeName: string): Promise<string | null> {
         await this.softProbe(target);
-        return target.getAttribute(attributeName);
+        return target.locator.getAttribute(attributeName, { timeout: this.ELEMENT_TIMEOUT });
     }
 
     /** Retrieves the trimmed text content of every element matching the locator. */
     async getAllTexts(target: WebElement): Promise<string[]> {
         const all = await target.all();
-        const texts = await Promise.all(all.map(e => e.textContent()));
+        const texts = await Promise.all(
+            all.map(e => (e as WebElement).locator.textContent({ timeout: this.ELEMENT_TIMEOUT })),
+        );
         return texts.map(t => (t ?? '').trim());
     }
 
     /** Retrieves the current value of an input, textarea, or select element. */
     async getInputValue(target: WebElement): Promise<string> {
         await this.softProbe(target);
-        return target.inputValue();
+        return target.locator.inputValue({ timeout: this.ELEMENT_TIMEOUT });
     }
 
     /** Returns the number of DOM elements matching the target. */
@@ -59,7 +61,10 @@ export class Extractions {
     /** Retrieves a computed CSS property value from an element. */
     async getCssProperty(target: WebElement, property: string): Promise<string> {
         await this.softProbe(target);
-        return target.getCssProperty(property);
+        return target.locator.evaluate(
+            (el: Element, prop: string) => window.getComputedStyle(el).getPropertyValue(prop),
+            property,
+        );
     }
 
     /**
@@ -76,7 +81,7 @@ export class Extractions {
         if (options?.outer) {
             return await locator.evaluate((el: Element) => el.outerHTML);
         }
-        return await locator.innerHTML();
+        return await locator.innerHTML({ timeout: this.ELEMENT_TIMEOUT });
     }
 
     /**
