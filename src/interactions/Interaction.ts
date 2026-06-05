@@ -155,7 +155,7 @@ export class Interactions {
         // Random path — look for enabled, non-empty <option> descendants.
         const enabledOptions = element.locateChild('option:not([disabled]):not([value=""])');
 
-        await this.utils.waitForState(enabledOptions.first() as WebElement, 'attached', timeout).catch(() => { });
+        await this.softProbe(enabledOptions.first() as WebElement, 'attached', timeout);
 
         const count = await enabledOptions.count();
         if (count === 0) {
