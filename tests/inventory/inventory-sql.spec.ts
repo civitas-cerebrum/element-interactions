@@ -549,8 +549,13 @@ test.describe('TC_INV: Inventory SQL Verification — bookhive + Postgres projec
         );
         expect(buyRes.status, `expected 400 insufficient balance, got ${buyRes.status}`).toBe(400);
 
-        // Re-project listing and users (should be unchanged)
-        await projectListing(steps, listing); // still ACTIVE
+        // re-read the listing from the marketplace (post-rejection) and project its REAL status
+        const listings = await steps.apiGet<Array<{ id: string; sellerId: string; bookId: string; condition?: string; price: number; status: string; listedAt?: string }>>('/api/marketplace');
+        const live = listings.body.find((l) => l.id === listing.id);
+        expect(live, 'listing should still be present in /api/marketplace after a rejected buy').toBeTruthy();
+        await projectListing(steps, live!); // genuine post-op status
+
+        // Re-project users (should be unchanged)
         const buyerMe = await getMe(steps, buyer.token);
         const sellerMe = await getMe(steps, seller.token);
         await projectUser(steps, { userId: buyer.userId, balance: buyerMe.balance });
@@ -595,6 +600,12 @@ test.describe('TC_INV: Inventory SQL Verification — bookhive + Postgres projec
             { headers: { Authorization: `Bearer ${seller.token}` } },
         );
         expect(buyRes.status, `expected 400 cannot buy own listing, got ${buyRes.status}`).toBe(400);
+
+        // re-read the listing from the marketplace (post-rejection) and project its REAL status
+        const listings = await steps.apiGet<Array<{ id: string; sellerId: string; bookId: string; condition?: string; price: number; status: string; listedAt?: string }>>('/api/marketplace');
+        const live = listings.body.find((l) => l.id === listing.id);
+        expect(live, 'listing should still be present in /api/marketplace after a rejected buy').toBeTruthy();
+        await projectListing(steps, live!); // genuine post-op status
 
         // SQL: listing still ACTIVE
         const listRow = await steps.sqlQuery('SELECT status FROM marketplace_listings WHERE listing_id = $1', [listing.id]);
