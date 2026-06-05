@@ -8,6 +8,7 @@ import { log } from '../logger/Logger';
  * framework works consistently across web and platform drivers.
  */
 export class Utils {
+    static readonly SOFT_PROBE_MS = 2_000;
     private readonly timeout: number;
     constructor(timeout: number = 30000) {
         this.timeout = timeout;
@@ -16,6 +17,10 @@ export class Utils {
     /** Returns the current timeout value. */
     public getTimeout(): number {
         return this.timeout;
+    }
+
+    async softProbe(element: WebElement, state: 'visible' | 'attached' = 'attached', timeout?: number): Promise<void> {
+        await this.waitForState(element, state, Math.min(timeout ?? this.timeout, Utils.SOFT_PROBE_MS));
     }
 
     /**

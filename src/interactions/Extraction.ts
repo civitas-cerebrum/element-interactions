@@ -15,7 +15,6 @@ import { WebElement } from '@civitas-cerebrum/element-repository';
 export class Extractions {
     private ELEMENT_TIMEOUT: number;
     private utils: Utils;
-    private static readonly SOFT_PROBE_MS = 2_000;
 
     constructor(private page: Page, timeout: number = 30000) {
         this.ELEMENT_TIMEOUT = timeout;
@@ -23,7 +22,7 @@ export class Extractions {
     }
 
     private async softProbe(element: WebElement): Promise<void> {
-        await this.utils.waitForState(element, 'attached', Math.min(this.ELEMENT_TIMEOUT, Extractions.SOFT_PROBE_MS));
+        await this.utils.softProbe(element);
     }
 
     /** Safely retrieves and trims the text content of an element. */

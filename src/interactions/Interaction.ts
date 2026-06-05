@@ -36,7 +36,6 @@ function escapeRegex(input: string): string {
  * Locators via `new WebElement(locator)` at the call site if you need to bridge.
  */
 export class Interactions {
-    private static readonly SOFT_PROBE_MS = 2_000;
     private ELEMENT_TIMEOUT: number;
     private utils: Utils;
 
@@ -46,7 +45,7 @@ export class Interactions {
     }
 
     private async softProbe(element: WebElement, state: 'visible' | 'attached', timeout?: number): Promise<void> {
-        await this.utils.waitForState(element, state, Math.min(timeout ?? this.ELEMENT_TIMEOUT, Interactions.SOFT_PROBE_MS));
+        await this.utils.softProbe(element, state, timeout);
     }
 
     /**
