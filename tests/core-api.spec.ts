@@ -132,28 +132,27 @@ test.describe('E2E Facade Implementation Suite', () => {
     log('TC_003 Negative Assertions — passed');
   });
 
-  test('TC_004: Wait For State - Warning behavior on incorrect state', async ({ page, repo }) => {
+  test('TC_004: Wait For State - throws on unreachable state; optional probe stays soft', async ({ page, repo }) => {
     const steps = new Steps(repo, { timeout: 500 });
 
     await test.step('Navigate to the website', async () => {
       await steps.navigateTo('/');
     });
 
-    await test.step('waitForState should swallow the error and log a warning', async () => {
-      let errorCaught = false;
-
-      log('Intentionally waiting for a timeout to trigger the warning mechanism...');
-      try {
-        await steps.waitForState( 'categories','HomePage', 'hidden');
-      } catch (error) {
-        errorCaught = true;
-      }
-
-      expect(errorCaught).toBeFalsy();
-      log('waitForState safely swallowed the timeout error and proceeded');
+    await test.step('waitForState should throw when the state is never reached (0.4.0)', async () => {
+      log('Intentionally waiting for a timeout to trigger the honest failure...');
+      await expect(steps.waitForState( 'categories','HomePage', 'hidden'))
+        .rejects.toThrow(/'HomePage\.categories' did not reach state 'hidden'/);
+      log('waitForState rejected on timeout with the element-qualified error');
     });
 
-    log('TC_004 Wait For State Warning Behavior — passed');
+    await test.step('optional:true restores the soft probe (resolves false)', async () => {
+      const reached = await steps.waitForState( 'categories','HomePage', 'hidden', { optional: true });
+      expect(reached).toBe(false);
+      log('optional waitForState resolved false instead of throwing');
+    });
+
+    log('TC_004 Wait For State Honesty Behavior — passed');
   });
 
   test('TC_005: Click Random - Category Navigation', async ({ steps }) => {

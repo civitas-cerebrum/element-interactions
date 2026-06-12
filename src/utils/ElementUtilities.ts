@@ -20,36 +20,54 @@ export class Utils {
 
     /**
      * Standardized wait logic for element states.
-     * Does not fail the test on timeout; logs a warning instead.
+     * Throws on timeout as of 0.4.0; pass `optional: true` to get the
+     * pre-0.4 soft behavior (resolves `false`, logs a warning).
      * If the resolver yields multiple elements (strict mode violation),
-     * the wait is retried automatically on the first matched element.
+     * the wait retries on the first matched element and logs loudly.
      *
-     * @param element - An `Element` to wait on.
-     * @param state   - The state to wait for. Defaults to `'visible'`.
-     * @param timeout - Per-call timeout override. Falls back to the instance timeout when omitted.
+     * @param element  - An `Element` to wait on.
+     * @param state    - The state to wait for. Defaults to `'visible'`.
+     * @param timeout  - Per-call timeout override. Falls back to the instance timeout when omitted.
+     * @param optional - When `true`, a timeout resolves `false` instead of throwing.
+     * @returns `true` when the state was reached; `false` only when `optional` and the wait timed out.
      */
     async waitForState(
         element: WebElement,
         state: 'visible' | 'attached' | 'hidden' | 'detached' = 'visible',
         timeout?: number,
-    ): Promise<void> {
+        optional: boolean = false,
+    ): Promise<boolean> {
         const effectiveTimeout = timeout ?? this.timeout;
         try {
             await element.waitFor({ state, timeout: effectiveTimeout });
+            return true;
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
 
             if (message.includes('strict mode violation')) {
-                console.warn('Locator resolved to multiple elements. Waiting on first element instead.');
+                log.warn(`Locator resolved to multiple elements (strict mode violation) — waiting on the FIRST match. Narrow the repository selector to silence this.`);
                 try {
                     await element.first().waitFor({ state, timeout: effectiveTimeout });
-                } catch {
-                    log.warn(`First element failed to reach state '${state}' within ${effectiveTimeout}ms...`);
+                    return true;
+                } catch (innerError) {
+                    return this.handleWaitTimeout(state, effectiveTimeout, optional, innerError);
                 }
-                return;
             }
 
-            log.warn(`Element failed to reach state '${state}' within ${effectiveTimeout}ms...`);
+            return this.handleWaitTimeout(state, effectiveTimeout, optional, error);
         }
+    }
+
+    /**
+     * Terminal handling for a timed-out wait: soft (warn + `false`) when the
+     * wait was optional, an error carrying the original cause otherwise.
+     */
+    private handleWaitTimeout(state: string, timeout: number, optional: boolean, cause: unknown): boolean {
+        if (optional) {
+            log.warn(`Element did not reach state '${state}' within ${timeout}ms (optional wait — continuing).`);
+            return false;
+        }
+        const causeMsg = cause instanceof Error ? cause.message : String(cause);
+        throw new Error(`Element did not reach state '${state}' within ${timeout}ms. ${causeMsg}`);
     }
 }

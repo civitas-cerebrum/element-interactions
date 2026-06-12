@@ -555,10 +555,16 @@ await steps.clickListedElement('tableRows', 'Users', {
 
 ### ⏳ Wait
 
-* **`waitForState(elementName, pageName, state?: 'visible' | 'attached' | 'hidden' | 'detached')`** — Waits for an element to reach a specific DOM state. Defaults to `'visible'`.
+* **`waitForState(elementName, pageName, state?: 'visible' | 'attached' | 'hidden' | 'detached', options?)`** — Waits for an element to reach a specific DOM state. Defaults to `'visible'`. Returns `Promise<boolean>`. **Throws on timeout as of 0.4.0**; pass `{ optional: true }` to probe without failing (resolves `false` instead). `{ timeout: ms }` overrides the instance timeout per call.
+
+  ```ts
+  await steps.waitForState('confirmationModal', 'CheckoutPage', 'visible');                        // throws on timeout (0.4.0+)
+  const open = await steps.waitForState('promoBanner', 'HomePage', 'visible', { optional: true }); // probe — false on timeout
+  ```
+
 * **`waitForNetworkIdle()`** — Waits until there are no in-flight network requests for at least 500ms.
 * **`waitForResponse(urlPattern: string | RegExp, action: () => Promise<void>)`** — Executes an action and waits for a matching network response. Returns the `Response` object.
-* **`waitAndClick(elementName, pageName, state?: string)`** — Waits for an element to reach a state (default `'visible'`), then clicks it.
+* **`waitAndClick(elementName, pageName, state?: string, options?)`** — Waits for an element to reach a state (default `'visible'`), then clicks it. Throws when the element never reaches the state — `optional` softness is deliberately not inherited here.
 
 ### 🧩 Composite / Workflow
 

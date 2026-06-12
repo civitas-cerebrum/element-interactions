@@ -1226,23 +1226,33 @@ export class Steps {
 
     /**
      * Waits for an element to reach the specified state before proceeding.
+     * Throws on timeout as of 0.4.0; pass `{ optional: true }` to probe
+     * without failing (resolves `false` instead).
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param state - The desired state to wait for.
-     * @param options - Optional step options for element resolution.
+     * @param options - Optional step options: element resolution, `timeout` (per-call override), `optional` (soft probe).
+     * @returns `true` when the state was reached; `false` only when `optional` and the wait timed out.
      */
     async waitForState(
         elementName: string,
         pageName: string,
         state: 'visible' | 'attached' | 'hidden' | 'detached' = 'visible',
         options?: StepOptions
-    ): Promise<void> {
+    ): Promise<boolean> {
         log.wait('Waiting for "%s" in "%s" to be "%s"', elementName, pageName, state);
         const element = await this.getWebElement(elementName, pageName, options);
+        const timeout = options?.timeout ?? this.timeout;
         try {
-            await element.waitFor({ state, timeout: this.timeout });
-        } catch {
-            log.wait('Element failed to reach state \'%s\' within %dms...', state, this.timeout ?? 30000);
+            await element.waitFor({ state, timeout });
+            return true;
+        } catch (error) {
+            if (options?.optional) {
+                log.wait("Element '%s.%s' did not reach state '%s' within %dms (optional wait — continuing)", pageName, elementName, state, timeout);
+                return false;
+            }
+            const causeMsg = error instanceof Error ? error.message : String(error);
+            throw new Error(`waitForState: '${pageName}.${elementName}' did not reach state '${state}' within ${timeout}ms. ${causeMsg}`);
         }
     }
 
@@ -1261,7 +1271,10 @@ export class Steps {
     ): Promise<void> {
         log.interact('Waiting for "%s" in "%s" to be "%s", then clicking', elementName, pageName, state);
         const element = await this.getWebElement(elementName, pageName, options);
-        await this.utils.waitForState(element, state);
+        // Deliberately NOT forwarding `options.optional`: a wait-then-click on a
+        // missing element must throw — soft-skipping the wait would just defer
+        // the failure to the click with a less precise error.
+        await this.utils.waitForState(element, state, options?.timeout);
         await this.interact.click(element);
     }
 

@@ -336,4 +336,14 @@ export interface StepOptions {
     ifPresent?: boolean;
     /** Force the click, bypassing Playwright's pointer-interception checks. */
     force?: boolean;
+    /**
+     * Per-call timeout override in milliseconds. Applies to the wait/action
+     * this options bag is passed to. Falls back to the instance timeout.
+     */
+    timeout?: number;
+    /**
+     * For waitForState: do not throw on timeout — resolve `false` instead.
+     * Default `false` (timeouts throw as of 0.4.0).
+     */
+    optional?: boolean;
 }

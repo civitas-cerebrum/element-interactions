@@ -75,16 +75,17 @@ test.describe('Negative Tests', () => {
     log('TC_082 Negative selectDropdown invalid value — passed');
   });
 
-  test('TC_083: clicking non-matching listed element throws', async ({ page, steps }) => {
+  test('TC_083: resolving a non-matching listed element throws', async ({ page, steps }) => {
     const fast = new ElementInteractions(page, { timeout: NEGATIVE_TIMEOUT });
     await steps.navigateTo('/table');
     const rows = page.locator('[data-testid^="table-row-"]');
-    const result = await fast.interact.getListedElement(rows, { text: 'Nonexistent Person XYZ' });
-    // The locator resolves but points to nothing — clicking it should throw
+    // 0.4.0: getListedElement's own visibility wait now throws instead of
+    // handing back a locator that points to nothing (the click used to be
+    // the first place this surfaced).
     await expect(async () => {
-      await fast.interact.click(result);
-    }).rejects.toThrow();
-    log('TC_083 Negative clicking non-matching listed element — passed');
+      await fast.interact.getListedElement(rows, { text: 'Nonexistent Person XYZ' });
+    }).rejects.toThrow(/did not reach state 'visible'/);
+    log('TC_083 Negative resolving non-matching listed element — passed');
   });
 
   test('TC_084: getListedElement requires text or attribute', async ({ page, steps }) => {

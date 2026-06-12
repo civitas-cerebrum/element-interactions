@@ -150,7 +150,9 @@ export class Interactions {
         // Random path — look for enabled, non-empty <option> descendants.
         const enabledOptions = element.locateChild('option:not([disabled]):not([value=""])');
 
-        await this.utils.waitForState(enabledOptions.first() as WebElement, 'attached', timeout).catch(() => { });
+        // Optional probe: absence of enabled options is handled by the explicit
+        // count check below, which produces the clearer domain error.
+        await this.utils.waitForState(enabledOptions.first() as WebElement, 'attached', timeout, true);
 
         const count = await enabledOptions.count();
         if (count === 0) {
@@ -214,11 +216,8 @@ export class Interactions {
         }
 
         if (options.xOffset !== undefined && options.yOffset !== undefined) {
-            // The mouse-drag path has no action method with a built-in timeout,
-            // so enforce `timeout` here by requiring the element to actually be
-            // visible before reading its bounding box. `Utils.waitForState` only
-            // log-warns; this throws, keeping elapsed time bounded.
-            await element.waitFor({ state: 'visible', timeout });
+            // The `waitForState('visible')` above throws on timeout (0.4.0), so
+            // the element is guaranteed visible here and elapsed time is bounded.
             const box = await element.boundingBox();
             if (!box) {
                 throw new Error('[Action] Error -> Unable to get bounding box for element to perform drag action.');
