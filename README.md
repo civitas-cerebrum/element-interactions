@@ -559,10 +559,10 @@ await steps.clickListedElement('tableRows', 'Users', {
 
 ### ⏳ Wait
 
-* **`waitForState(elementName, pageName, state?: 'visible' | 'attached' | 'hidden' | 'detached', options?)`** — Waits for an element to reach a specific DOM state. Defaults to `'visible'`. Returns `Promise<boolean>`. **Throws on timeout as of 0.4.0**; pass `{ optional: true }` to probe without failing (resolves `false` instead). `{ timeout: ms }` overrides the instance timeout per call.
+* **`waitForState(elementName, pageName, state?: 'visible' | 'attached' | 'hidden' | 'detached', options?)`** — Waits for an element to reach a specific DOM state. Defaults to `'visible'`. Returns `Promise<boolean>`. **Throws on timeout as of 0.3.7**; pass `{ optional: true }` to probe without failing (resolves `false` instead). `{ timeout: ms }` overrides the instance timeout per call.
 
   ```ts
-  await steps.waitForState('confirmationModal', 'CheckoutPage', 'visible');                        // throws on timeout (0.4.0+)
+  await steps.waitForState('confirmationModal', 'CheckoutPage', 'visible');                        // throws on timeout (0.3.7+)
   const open = await steps.waitForState('promoBanner', 'HomePage', 'visible', { optional: true }); // probe — false on timeout
   ```
 

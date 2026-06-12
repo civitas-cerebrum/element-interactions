@@ -246,7 +246,7 @@ export class Interactions {
         }
 
         if (options.xOffset !== undefined && options.yOffset !== undefined) {
-            // The `waitForState('visible')` above throws on timeout (0.4.0), so
+            // The `waitForState('visible')` above throws on timeout (0.3.7), so
             // the element is guaranteed visible here and elapsed time is bounded.
             const box = await element.boundingBox();
             if (!box) {

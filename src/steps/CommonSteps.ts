@@ -1236,7 +1236,7 @@ export class Steps {
 
     /**
      * Waits for an element to reach the specified state before proceeding.
-     * Throws on timeout as of 0.4.0; pass `{ optional: true }` to probe
+     * Throws on timeout as of 0.3.7; pass `{ optional: true }` to probe
      * without failing (resolves `false` instead).
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.

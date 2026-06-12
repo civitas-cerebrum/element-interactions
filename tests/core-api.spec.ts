@@ -139,7 +139,7 @@ test.describe('E2E Facade Implementation Suite', () => {
       await steps.navigateTo('/');
     });
 
-    await test.step('waitForState should throw when the state is never reached (0.4.0)', async () => {
+    await test.step('waitForState should throw when the state is never reached (0.3.7)', async () => {
       log('Intentionally waiting for a timeout to trigger the honest failure...');
       await expect(steps.waitForState( 'categories','HomePage', 'hidden'))
         .rejects.toThrow(/'HomePage\.categories' did not reach state 'hidden'/);

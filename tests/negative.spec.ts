@@ -87,7 +87,7 @@ test.describe('Negative Tests', () => {
     const fast = new ElementInteractions(page, { timeout: NEGATIVE_TIMEOUT });
     await steps.navigateTo('/table');
     const rows = await repo.get('rows', 'TablePage') as WebElement;
-    // 0.4.0: getListedElement's own visibility wait now throws instead of
+    // 0.3.7: getListedElement's own visibility wait now throws instead of
     // handing back a locator that points to nothing (the click used to be
     // the first place this surfaced).
     await expect(async () => {

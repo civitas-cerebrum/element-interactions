@@ -357,7 +357,7 @@ export interface StepOptions {
     timeout?: number;
     /**
      * For waitForState: do not throw on timeout — resolve `false` instead.
-     * Default `false` (timeouts throw as of 0.4.0).
+     * Default `false` (timeouts throw as of 0.3.7).
      */
     optional?: boolean;
 }

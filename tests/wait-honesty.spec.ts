@@ -4,7 +4,7 @@ import { createLogger } from '../src/logger/Logger';
 const log = createLogger('tests');
 
 // ══════════════════════════════════════════════════
-// WAIT HONESTY (0.4.0 BREAKING CHANGE)
+// WAIT HONESTY (0.3.7 BREAKING CHANGE)
 // waitForState throws on timeout by default;
 // { optional: true } restores the soft probe.
 // ══════════════════════════════════════════════════

@@ -20,7 +20,7 @@ export class Utils {
 
     /**
      * Standardized wait logic for element states.
-     * Throws on timeout as of 0.4.0; pass `optional: true` to get the
+     * Throws on timeout as of 0.3.7; pass `optional: true` to get the
      * pre-0.4 soft behavior (resolves `false`, logs a warning).
      * If the resolver yields multiple elements (strict mode violation),
      * the wait retries on the first matched element and logs loudly.

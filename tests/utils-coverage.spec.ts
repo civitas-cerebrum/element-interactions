@@ -15,7 +15,7 @@ test.describe('Utilities Coverage Tests', () => {
         expect(utils.getTimeout()).toBe(15000);
     });
 
-    test('Utils.waitForState - throws on timeout by default (0.4.0)', async ({ page }) => {
+    test('Utils.waitForState - throws on timeout by default (0.3.7)', async ({ page }) => {
         const utils = new Utils(1000);
         // An element that will never become visible
         const element = new WebElement(page.locator('#nonexistent-element-xyz123'));
