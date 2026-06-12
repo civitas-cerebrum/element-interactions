@@ -3,7 +3,7 @@ import { baseFixture } from '../src/fixture/BaseFixture';
 import type { Page } from '@playwright/test';
 
 // Fixture options are per-baseFixture() call, so the opt-out lives in its own
-// spec file (same pattern as the isolated fixture in email-filters.spec.ts).
+// spec file (same baseFixture(...) construction as tests/fixture/StepFixture.ts).
 // Short element timeout keeps the doomed click attempt fast.
 const test = baseFixture(base, 'tests/data/page-repository.json', {
     interceptionRetry: false,

@@ -1,4 +1,4 @@
-import { Page } from '@playwright/test';
+import { Page, test } from '@playwright/test';
 import { ClickOptions, DropdownSelectOptions, DropdownSelectType, DragAndDropOptions, ListedElementMatch, ActionTimeoutOptions, TextMatcher } from '../enum/Options';
 import { Utils } from '../utils/ElementUtilities';
 import { Element, WebElement } from '@civitas-cerebrum/element-repository';
@@ -122,11 +122,8 @@ export class Interactions {
      */
     private annotate(type: string, description: string): void {
         try {
-            // Lazy require: test.info() throws outside a running test, and
-            // importing it eagerly at module scope would also be fine — but
-            // the call itself must stay guarded for non-test contexts.
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const { test } = require('@playwright/test') as typeof import('@playwright/test');
+            // test.info() throws when no test is running; the try/catch is the
+            // guard that makes this a no-op for library consumers.
             test.info().annotations.push({ type, description });
         } catch {
             /* not in a test context — the log.warn above is the only signal */

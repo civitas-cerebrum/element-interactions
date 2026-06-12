@@ -1,5 +1,6 @@
 import { request as playwrightRequest } from '@playwright/test';
 import { test, expect } from '../fixture/InventoryFixture';
+import { Steps } from '../../src';
 import {
     truncateProjection,
     projectBook,
@@ -41,7 +42,7 @@ function email(prefix: string): string {
     return `inv+${prefix}+${uid()}@bh.test`;
 }
 
-async function signup(steps: { apiPost: Function }, username: string, emailAddr: string): Promise<{ token: string; userId: string; balance: number }> {
+async function signup(steps: Pick<Steps, 'apiPost'>, username: string, emailAddr: string): Promise<{ token: string; userId: string; balance: number }> {
     const res = await steps.apiPost<ApiUser & { token: string; balance: number }>(
         '/api/auth/signup',
         { username, email: emailAddr, password: 'password123' },
@@ -51,13 +52,13 @@ async function signup(steps: { apiPost: Function }, username: string, emailAddr:
     return { token: body.token, userId: body.userId, balance: body.balance };
 }
 
-async function getBook(steps: { apiGet: Function }, bookId: string): Promise<ApiBook> {
+async function getBook(steps: Pick<Steps, 'apiGet'>, bookId: string): Promise<ApiBook> {
     const res = await steps.apiGet<ApiBook>(`/api/books/${bookId}`);
     expect(res.status, `GET book ${bookId} failed`).toBe(200);
     return res.body as unknown as ApiBook;
 }
 
-async function getMe(steps: { apiGet: Function }, token: string): Promise<ApiUser & { balance: number }> {
+async function getMe(steps: Pick<Steps, 'apiGet'>, token: string): Promise<ApiUser & { balance: number }> {
     const res = await steps.apiGet<ApiUser & { balance: number }>('/api/auth/me', {
         headers: { Authorization: `Bearer ${token}` },
     });
@@ -87,7 +88,7 @@ test.describe('TC_INV: Inventory SQL Verification — bookhive + Postgres projec
 
     test.beforeEach(async ({ steps }) => {
         const res = await steps.apiPost<{ status: string }>('/api/reset');
-        expect(res.body.status).toBe('reset');
+        expect(res.body?.status).toBe('reset');
         await truncateProjection(steps);
     });
 
@@ -551,7 +552,7 @@ test.describe('TC_INV: Inventory SQL Verification — bookhive + Postgres projec
 
         // re-read the listing from the marketplace (post-rejection) and project its REAL status
         const listings = await steps.apiGet<Array<{ id: string; sellerId: string; bookId: string; condition?: string; price: number; status: string; listedAt?: string }>>('/api/marketplace');
-        const live = listings.body.find((l) => l.id === listing.id);
+        const live = listings.body?.find((l) => l.id === listing.id);
         expect(live, 'listing should still be present in /api/marketplace after a rejected buy').toBeTruthy();
         await projectListing(steps, live!); // genuine post-op status
 
@@ -603,7 +604,7 @@ test.describe('TC_INV: Inventory SQL Verification — bookhive + Postgres projec
 
         // re-read the listing from the marketplace (post-rejection) and project its REAL status
         const listings = await steps.apiGet<Array<{ id: string; sellerId: string; bookId: string; condition?: string; price: number; status: string; listedAt?: string }>>('/api/marketplace');
-        const live = listings.body.find((l) => l.id === listing.id);
+        const live = listings.body?.find((l) => l.id === listing.id);
         expect(live, 'listing should still be present in /api/marketplace after a rejected buy').toBeTruthy();
         await projectListing(steps, live!); // genuine post-op status
 

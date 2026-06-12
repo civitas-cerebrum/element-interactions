@@ -89,11 +89,11 @@ test.describe('E2E Facade Implementation Suite', () => {
 
     await test.step('Drag Item A to the Second List', async () => {
       await steps.waitForState( 'dropZones','SortablePage');
-      const dropZone = await repo.getByText('dropZones', 'SortablePage', 'Second List');
+      const dropZone = await repo.getByText('dropZones', 'SortablePage', 'Second List') as WebElement;
 
-      await steps.dragAndDropListedElement( 'sortableItems','SortablePage', 'Item A', { target: dropZone! });
+      await steps.dragAndDropListedElement( 'sortableItems','SortablePage', 'Item A', { target: dropZone });
 
-      await interactions.verify.textContains(dropZone!, 'Item A');
+      await interactions.verify.textContains(dropZone, 'Item A');
     });
 
     log('TC_002 Drag and Drop Interactions — passed');

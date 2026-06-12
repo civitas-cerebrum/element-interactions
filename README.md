@@ -229,7 +229,7 @@ test('Per-call timeout override', async ({ steps }) => {
 });
 ```
 
-**Field matchers:** `text`, `value`, `count`, `visible`, `enabled`, `attributes`, `css(prop)`. Each carries `.not` for negation. Snapshot fields available in predicates: `text`, `value`, `attributes`, `visible`, `enabled`, `count`. See the [API reference](https://github.com/civitas-cerebrum/achilles/blob/main/skills/element-interactions/references/api-reference.md#expect-matcher-tree) for the full surface.
+**Field matchers:** `text`, `value`, `count`, `visible`, `enabled`, `attributes`, `css(prop)`, `html`, `outerHtml`. Each carries `.not` for negation. Snapshot fields available in predicates: `text`, `value`, `attributes`, `visible`, `enabled`, `count`. See the [API reference](https://github.com/civitas-cerebrum/achilles/blob/main/skills/element-interactions/references/api-reference.md#expect-matcher-tree) for the full surface.
 
 ### StepOptions
 
@@ -445,7 +445,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 
 ### 📊 Data Extraction
 
-* **`getText(elementName, pageName)`** — Returns the trimmed text content of an element, or an empty string if null.
+* **`getText(elementName, pageName)`** — Returns the trimmed text content of an element, or `null` when the element has no text content.
 * **`getAttribute(elementName, pageName, attributeName: string)`** — Returns the value of an HTML attribute (e.g. `href`, `aria-pressed`), or `null` if it doesn't exist.
 * **`getLocalStorage(key: string)`** — Reads `window.localStorage[key]`. Returns the stored string or `null` if the key is absent (matches the native `getItem` contract). Use for state the framework cannot reach through the DOM — persisted theme, dismissed-banner flag, feature toggles, auth tokens.
 * **`getSessionStorage(key: string)`** — Same shape, against `window.sessionStorage`.
@@ -456,7 +456,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 * **`verifyAllPresent(targets: Array<{ elementName, pageName, options? }>)`** — Asserts presence of multiple independent elements in parallel via `Promise.all`. Equivalent to sequential `verifyPresence` calls but resolves all assertions concurrently — useful when a page has many content blocks to assert at once. Example: `await steps.verifyAllPresent([{ elementName: 'title', pageName: 'PDP' }, { elementName: 'price', pageName: 'PDP' }])`.
 * **`verifyAbsence(elementName, pageName)`** — Asserts that an element is hidden or detached from the DOM.
 * **`verifyText(elementName, pageName, expectedText?)`** — Asserts element text. Provide `expectedText` for an exact match, or call with no args to assert not empty.
-* **`verifyCount(elementName, pageName, options: CountVerifyOptions)`** — Asserts element count. Accepts `{ exactly: number }`, `{ greaterThan: number }`, or `{ lessThan: number }`.
+* **`verifyCount(elementName, pageName, options: CountVerifyOptions)`** — Asserts element count. Accepts `{ exactly: number }`, `{ greaterThan: number }`, `{ lessThan: number }` (combinable with `greaterThan` for a range), `{ greaterThanOrEqual: number }`, or `{ lessThanOrEqual: number }` (combinable with `greaterThanOrEqual` for an inclusive range).
 * **`verifyImages(elementName, pageName, scroll?: boolean, options?: StepOptions & { verifyDecoded?: boolean })`** — Verifies image rendering: checks visibility, valid `src`, and `naturalWidth > 0`. Pass `{ verifyDecoded: true }` in `options` to also run the browser's native `decode()` round-trip (more thorough, adds a CDP round-trip per image; off by default). Scrolls into view by default.
 * **`verifyTextContains(elementName, pageName, expectedText: string)`** — Asserts that an element's text contains the expected substring.
 * **`verifyState(elementName, pageName, state)`** — Asserts the state of an element. Supported states: `'enabled'`, `'disabled'`, `'editable'`, `'checked'`, `'focused'`, `'visible'`, `'hidden'`, `'attached'`, `'inViewport'`.
@@ -639,25 +639,32 @@ await steps.verifyVisualMatch('dashboard.png', {
 
 ## 🧱 Advanced: Raw Interactions API
 
-To bypass the repository or work with dynamically generated locators, use `ElementInteractions` directly. All methods accept both Playwright `Locator` and `Element` types:
+To bypass the `Steps` facade, use `ElementInteractions` directly. All methods take a `WebElement` — the element type the repository resolves. Raw Playwright `Locator`s are not accepted; wrap one in `new WebElement(locator)` at the seam if you must bridge:
 
 ```ts
 import { ElementInteractions } from '@civitas-cerebrum/element-interactions';
+import { WebElement } from '@civitas-cerebrum/element-repository';
 
 const interactions = new ElementInteractions(page);
 
-// Works with Playwright Locators
-const customLocator = page.locator('button.dynamic-class');
-await interactions.interact.click(customLocator, { withoutScrolling: true });
-await interactions.verify.count(customLocator, { greaterThan: 2 });
-
-// Also works with Element from the repository
-const element = await repo.get('submitButton', 'LoginPage');
-await interactions.interact.click(element);
+// Elements come from the repository (the `repo` fixture)
+const element = await repo.get('submitButton', 'LoginPage') as WebElement;
+await interactions.interact.click(element, { withoutScrolling: true });
 await interactions.verify.presence(element);
+
+// Bridging a hand-built locator (one-off escape hatch — prefer a repository entry)
+const custom = new WebElement(page.locator('button.dynamic-class'));
+await interactions.verify.count(custom, { greaterThan: 2 });
 ```
 
 All `interact`, `verify`, `extract`, and `navigate` methods are available on `ElementInteractions`.
+
+**Sanctioned escape hatches.** When the facade genuinely doesn't cover what you need:
+
+- **Element-level** — `(element as WebElement).locator` exposes the underlying Playwright `Locator` of a repository-resolved element, e.g. for a raw Playwright expectation: `expect((element as WebElement).locator).toHaveScreenshot()`.
+- **Page-level** — use the `page` fixture directly for page-scoped Playwright APIs the facade doesn't wrap (dialogs, downloads, `page.on(...)` events).
+
+If you reach for either of these more than once for the same need, that's an API gap — file an issue so the capability can land in the framework properly.
 
 ---
 
@@ -954,5 +961,7 @@ PRs that skip step 1 will not be merged.
 **Logging.** Core interaction methods must not contain any logs. `Steps` wrappers are responsible for logging what action is being performed.
 
 **Unit tests.** Every new method must include a unit test. Tests run against the [Vue test app](https://github.com/civitas-cerebrum/vue-test-app), which is built from its Docker image during CI. If the component you need doesn't exist in the test app, open a PR there first and wait for it to merge before updating this repository.
+
+**Coverage.** CI gates on the report produced by `@civitas-cerebrum/test-coverage` (`npm run test:coverage` writes `test-coverage-report.txt`; `test:with-coverage` prints the CI-friendly variant). Note what that number means: it is **API (method-invocation) coverage** — every public method on `Steps`, `ElementAction`, the matcher classes, and the interaction layers is exercised by at least one test — **not** line/branch coverage.
 
 **Documentation.** Every new `Steps` method must be added to the [API Reference](#️-api-reference-steps) section of this README, following the existing format. PRs without documentation will not be merged.

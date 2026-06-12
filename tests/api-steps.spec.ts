@@ -53,7 +53,7 @@ test.describe('TC_API_001: HTTP API Steps — BookHive integration', () => {
     test('apiGet — default provider, no query', async ({ steps }) => {
         const res = await steps.apiGet<{ content: unknown[] }>('/api/books');
         await steps.verifyApiStatus(res, 200);
-        expect(Array.isArray(res.body.content)).toBe(true);
+        expect(Array.isArray(res.body?.content)).toBe(true);
     });
 
     test('apiGet — default provider, with query params', async ({ steps }) => {
@@ -61,7 +61,7 @@ test.describe('TC_API_001: HTTP API Steps — BookHive integration', () => {
             query: { genre: 'Fiction', size: '5' },
         });
         await steps.verifyApiStatus(res, 200);
-        expect(res.body.content.length).toBeGreaterThan(0);
+        expect(res.body?.content.length).toBeGreaterThan(0);
     });
 
     test('apiGet — named provider (bookhive)', async ({ steps }) => {
@@ -87,13 +87,13 @@ test.describe('TC_API_001: HTTP API Steps — BookHive integration', () => {
             password: 'Test1234!',
         });
         await steps.verifyApiStatus(res, 200);
-        expect(typeof res.body.token).toBe('string');
+        expect(typeof res.body?.token).toBe('string');
     });
 
     test('apiPost — named provider, no body', async ({ steps }) => {
         const res = await steps.apiPost<{ status: string }>('bookhive', '/api/reset');
         await steps.verifyApiStatus(res, 200);
-        expect(res.body.status).toBe('reset');
+        expect(res.body?.status).toBe('reset');
     });
 
     test('apiPut — exercises wrapper (401 unauthenticated)', async ({ steps }) => {
