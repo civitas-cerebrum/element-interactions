@@ -242,9 +242,10 @@ await steps.click('element', 'Page', { strategy: 'index', index: 2 });
 await steps.click('element', 'Page', { strategy: 'text', text: 'Submit' });
 
 // Interaction modifiers
-await steps.click('element', 'Page', { withoutScrolling: true });  // bypass actionability checks
+await steps.click('element', 'Page', { withoutScrolling: true });  // dispatches a DOM 'click' event without scrolling into view (alias semantics of force)
 await steps.click('element', 'Page', { ifPresent: true });         // skip if not visible
-await steps.click('element', 'Page', { force: true });             // native DOM click (bypasses overlays)
+await steps.click('element', 'Page', { force: true });             // dispatches a DOM 'click' event directly — NOT Playwright's force: true
+                                                                   // (no pointer simulation, no actionability checks; rename pending in a future major)
 
 // Combine both
 await steps.click('element', 'Page', { strategy: 'random', withoutScrolling: true });
@@ -295,6 +296,9 @@ import { baseFixture } from '@civitas-cerebrum/element-interactions';
 export const test = baseFixture(base, 'tests/data/page-repository.json', {
   timeout: 60000,                   // element timeout for Steps/Interactions (default: 30000)
   repoTimeout: 15000,               // element resolution timeout for repo (default: 15000)
+  interceptionRetry: true,          // intercepted clicks fall back to a dispatched DOM click event (default: true);
+                                    // set false so genuine overlay bugs (stuck modals, cookie walls) fail the
+                                    // click — recommended for adversarial/bug-discovery suites
   blockedOrigins: /(analytics\.com|tracking\.io)/,  // auto-abort matching routes
   screenshotOnFailure: true,        // auto-capture on test failure (default: true)
   // screenshotOnFailure: { fullPage: false },  // viewport-only screenshots
@@ -421,7 +425,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 
 ### 🖱️ Interaction
 
-* **`click(elementName, pageName, options?: StepOptions)`** — Clicks an element. Supports `{ strategy, withoutScrolling, ifPresent, force }`. Auto-retries with native DOM event on pointer interception.
+* **`click(elementName, pageName, options?: StepOptions)`** — Clicks an element. Supports `{ strategy, withoutScrolling, ifPresent, force }`. On pointer interception it falls back to a dispatched DOM `'click'` event, logs a warning, and pushes a report-visible `interception-fallback` test annotation naming `PageName.elementName`; set `interceptionRetry: false` on the fixture to rethrow the original error instead. Note: `force` dispatches a DOM `'click'` event directly (no pointer simulation, no actionability checks — NOT Playwright's `force: true`); `withoutScrolling` has alias semantics of `force` (no scroll into view). Rename pending in a future major.
 * **`clickIfPresent(elementName, pageName)`** — Clicks only if visible; skips silently. Returns `boolean`.
 * **`clickRandom(elementName, pageName, options?: StepOptions)`** — Clicks a random element from all matches. Supports `{ withoutScrolling }`.
 * **`rightClick(elementName, pageName)`** — Right-clicks an element to trigger a context menu.

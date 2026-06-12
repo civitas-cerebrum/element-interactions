@@ -28,6 +28,13 @@ export interface BaseFixtureOptions {
      */
     repoTimeout?: number;
     /**
+     * When a click is intercepted by an overlaying element, retry it as a
+     * dispatched DOM click event. Default `true` (compat). Set `false` so
+     * genuine overlay bugs (stuck modals, cookie walls) fail the click —
+     * recommended for adversarial/bug-discovery suites.
+     */
+    interceptionRetry?: boolean;
+    /**
      * Regex pattern of origins to block. Routes matching this pattern are aborted
      * before each test. Useful for blocking tracking, analytics, or third-party scripts
      * that slow down tests.
@@ -112,6 +119,7 @@ export function baseFixture<T extends {}>(
             const steps = new Steps(repo, {
                 emailCredentials: options?.emailCredentials,
                 timeout: options?.timeout,
+                interceptionRetry: options?.interceptionRetry,
                 apiBaseUrl: options?.apiBaseUrl,
                 apiProviders: options?.apiProviders,
                 dbUrl: options?.dbUrl,
@@ -121,7 +129,7 @@ export function baseFixture<T extends {}>(
             await steps.closeDbConnections();
         },
         interactions: async ({ page }, use) => {
-            await use(new ElementInteractions(page, { emailCredentials: options?.emailCredentials, timeout: options?.timeout }));
+            await use(new ElementInteractions(page, { emailCredentials: options?.emailCredentials, timeout: options?.timeout, interceptionRetry: options?.interceptionRetry }));
         },
         contextStore: async ({ }, use) => {
             await use(new ContextStore());

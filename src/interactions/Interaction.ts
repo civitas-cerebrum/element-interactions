@@ -39,7 +39,7 @@ export class Interactions {
     private ELEMENT_TIMEOUT: number;
     private utils: Utils;
 
-    constructor(private page: Page, timeout: number = 30000) {
+    constructor(private page: Page, timeout: number = 30000, private interceptionRetry: boolean = true) {
         this.ELEMENT_TIMEOUT = timeout;
         this.utils = new Utils(this.ELEMENT_TIMEOUT);
     }
@@ -57,7 +57,7 @@ export class Interactions {
                 if (useDispatch) {
                     await this.dispatchClick(element, timeout);
                 } else {
-                    await this.clickWithInterceptionRetry(element, timeout);
+                    await this.clickWithInterceptionRetry(element, timeout, options?.subject);
                 }
                 return true;
             }
@@ -70,7 +70,7 @@ export class Interactions {
         }
 
         await this.utils.waitForState(element, 'visible', timeout);
-        await this.clickWithInterceptionRetry(element, timeout);
+        await this.clickWithInterceptionRetry(element, timeout, options?.subject);
     }
 
     /**
@@ -83,20 +83,53 @@ export class Interactions {
     }
 
     /**
-     * Attempts a standard click. If interception is reported, retries by
-     * dispatching a native click event on the element instead.
+     * Attempts a standard click. If interception is reported and
+     * `interceptionRetry` is enabled (default), retries by dispatching a
+     * native click event on the element instead — and surfaces the fallback
+     * via a `log.warn` line plus a report-visible Playwright test annotation
+     * (`interception-fallback`). When `interceptionRetry` is `false`, the
+     * original interception error is rethrown so genuine overlay bugs
+     * (stuck modals, cookie walls) fail the click.
+     *
+     * @param subject - Optional element identity (`PageName.elementName`)
+     *   threaded down from the Steps/ElementAction layer, which is where the
+     *   names are known. Included in the log line and the annotation.
      */
-    private async clickWithInterceptionRetry(element: WebElement, timeout: number): Promise<void> {
+    private async clickWithInterceptionRetry(element: WebElement, timeout: number, subject?: string): Promise<void> {
         try {
             await element.click({ timeout: Math.min(timeout, 5000) });
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error);
             if (message.includes('intercepts pointer events')) {
-                log.warn('click intercepted by another element — retrying via dispatchEvent(\'click\')');
+                if (!this.interceptionRetry) throw error;
+                const lines = message.split('\n');
+                const interceptLine = lines.find(l => l.includes('intercepts pointer events'))?.trim();
+                const detail = `click on ${subject ?? 'element'} intercepted by another element — fell back to dispatchEvent('click'). `
+                    + `${lines[0]}${interceptLine ? ` — ${interceptLine}` : ''}`;
+                log.warn(detail);
+                this.annotate('interception-fallback', detail);
                 await element.dispatchEvent('click');
             } else {
                 await element.click({ timeout });
             }
+        }
+    }
+
+    /**
+     * Pushes a report-visible annotation when running inside a Playwright
+     * test. No-ops outside a test-runner context (library consumers driving
+     * a raw Page), where the `log.warn` line is the only signal.
+     */
+    private annotate(type: string, description: string): void {
+        try {
+            // Lazy require: test.info() throws outside a running test, and
+            // importing it eagerly at module scope would also be fine — but
+            // the call itself must stay guarded for non-test contexts.
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const { test } = require('@playwright/test') as typeof import('@playwright/test');
+            test.info().annotations.push({ type, description });
+        } catch {
+            /* not in a test context — the log.warn above is the only signal */
         }
     }
 

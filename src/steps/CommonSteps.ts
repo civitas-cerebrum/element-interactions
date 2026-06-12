@@ -27,18 +27,25 @@ export class Steps {
     private apiClients: Map<string, WasapiClient>;
     private dbClients: Map<string, SqlClient>;
     private timeout?: number;
+    private interceptionRetry?: boolean;
 
     /**
      * Initializes the Steps class with the element repository.
      * The Playwright Page is obtained from the repository's driver.
      * @param repo - An initialized instance of `ElementRepository` containing your locators and the bound driver.
-     * @param options - Optional configuration: emailCredentials, timeout, apiBaseUrl, and/or apiProviders.
+     * @param options - Optional configuration: emailCredentials, timeout, interceptionRetry, apiBaseUrl, and/or apiProviders.
      */
     constructor(
         private repo: ElementRepository,
         options?: {
             emailCredentials?: EmailClientConfig;
             timeout?: number;
+            /**
+             * When a click is intercepted by an overlaying element, retry it as a
+             * dispatched DOM click event. Default `true` (compat). Set `false` so
+             * genuine overlay bugs (stuck modals, cookie walls) fail the click.
+             */
+            interceptionRetry?: boolean;
             apiBaseUrl?: string;
             apiProviders?: Record<string, string>;
             dbUrl?: string;
@@ -46,8 +53,9 @@ export class Steps {
         }
     ) {
         this.page = repo.driver;
-        const { emailCredentials, timeout, apiBaseUrl, apiProviders } = options ?? {};
-        const interactions = new ElementInteractions(this.page, { emailCredentials, timeout });
+        const { emailCredentials, timeout, interceptionRetry, apiBaseUrl, apiProviders } = options ?? {};
+        const interactions = new ElementInteractions(this.page, { emailCredentials, timeout, interceptionRetry });
+        this.interceptionRetry = interceptionRetry;
         this.interact = interactions.interact;
         this.navigate = interactions.navigate;
         this.extract = interactions.extract;
@@ -170,7 +178,7 @@ export class Steps {
      * ```
      */
     on(elementName: string, pageName: string): ElementAction {
-        const interactions = new ElementInteractions(this.page, { timeout: this.timeout });
+        const interactions = new ElementInteractions(this.page, { timeout: this.timeout, interceptionRetry: this.interceptionRetry });
         return new ElementAction(this.repo, elementName, pageName, interactions, this.timeout);
     }
 
@@ -268,6 +276,7 @@ export class Steps {
             withoutScrolling: options?.withoutScrolling,
             ifPresent: options?.ifPresent,
             force: options?.force,
+            subject: `${pageName}.${elementName}`,
         });
     }
 
@@ -284,6 +293,7 @@ export class Steps {
         if (!element) throw new Error(`No visible element found for "${elementName}" in "${pageName}"`);
         await this.interact.click(element as WebElement, {
             withoutScrolling: options?.withoutScrolling,
+            subject: `${pageName}.${elementName}`,
         });
     }
 
@@ -298,7 +308,7 @@ export class Steps {
     async clickIfPresent(elementName: string, pageName: string, options?: StepOptions): Promise<boolean> {
         log.interact('Clicking on "%s" in "%s" (if present)', elementName, pageName);
         const element = await this.getWebElement(elementName, pageName, options);
-        return await this.interact.click(element, { ifPresent: true }) as boolean;
+        return await this.interact.click(element, { ifPresent: true, subject: `${pageName}.${elementName}` }) as boolean;
     }
 
     /**
@@ -1101,7 +1111,7 @@ export class Steps {
      *   .throws('price must be above $10');
      */
     expect(elementName: string, pageName: string): ExpectBuilder {
-        const interactions = new ElementInteractions(this.page, { timeout: this.timeout });
+        const interactions = new ElementInteractions(this.page, { timeout: this.timeout, interceptionRetry: this.interceptionRetry });
         const action = new ElementAction(this.repo, elementName, pageName, interactions, this.timeout);
         log.verify('Building matcher tree for "%s" in "%s"', elementName, pageName);
         return new ExpectBuilder(action.buildExpectContext());
@@ -1169,7 +1179,7 @@ export class Steps {
         log.interact('Clicking listed element in "%s" > "%s" with options: %O', pageName, elementName, options);
         const baseElement = await this.getAllWebElement(elementName, pageName);
         const target = await this.interact.getListedElement(baseElement, options, this.repo);
-        await this.interact.click(target);
+        await this.interact.click(target, { subject: `${pageName}.${elementName}` });
     }
 
     /**
@@ -1275,7 +1285,7 @@ export class Steps {
         // missing element must throw — soft-skipping the wait would just defer
         // the failure to the click with a less precise error.
         await this.utils.waitForState(element, state, options?.timeout);
-        await this.interact.click(element);
+        await this.interact.click(element, { subject: `${pageName}.${elementName}` });
     }
 
     /**
@@ -1289,7 +1299,7 @@ export class Steps {
         log.interact('Clicking element at index %d of "%s" in "%s"', index, elementName, pageName);
         const element = await this.repo.getByIndex(elementName, pageName, index);
         if (!element) throw new Error(`No element at index ${index} for "${elementName}" in "${pageName}"`);
-        await this.interact.click(element as WebElement);
+        await this.interact.click(element as WebElement, { subject: `${pageName}.${elementName}` });
     }
 
     // ==========================================
