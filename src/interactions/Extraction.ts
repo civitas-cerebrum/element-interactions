@@ -21,30 +21,36 @@ export class Extractions {
         this.utils = new Utils(this.ELEMENT_TIMEOUT);
     }
 
+    private async softProbe(element: WebElement): Promise<void> {
+        await this.utils.softProbe(element, 'attached', this.ELEMENT_TIMEOUT);
+    }
+
     /** Safely retrieves and trims the text content of an element. */
     async getText(target: WebElement): Promise<string | null> {
-        await this.utils.waitForState(target, 'attached');
-        const text = await target.textContent();
+        await this.softProbe(target);
+        const text = await target.locator.textContent({ timeout: this.ELEMENT_TIMEOUT });
         return text?.trim() ?? null;
     }
 
     /** Retrieves the value of a specified attribute. */
     async getAttribute(target: WebElement, attributeName: string): Promise<string | null> {
-        await this.utils.waitForState(target, 'attached');
-        return target.getAttribute(attributeName);
+        await this.softProbe(target);
+        return target.locator.getAttribute(attributeName, { timeout: this.ELEMENT_TIMEOUT });
     }
 
     /** Retrieves the trimmed text content of every element matching the locator. */
     async getAllTexts(target: WebElement): Promise<string[]> {
         const all = await target.all();
-        const texts = await Promise.all(all.map(e => e.textContent()));
+        const texts = await Promise.all(
+            all.map(e => (e as WebElement).locator.textContent({ timeout: this.ELEMENT_TIMEOUT })),
+        );
         return texts.map(t => (t ?? '').trim());
     }
 
     /** Retrieves the current value of an input, textarea, or select element. */
     async getInputValue(target: WebElement): Promise<string> {
-        await this.utils.waitForState(target, 'attached');
-        return target.inputValue();
+        await this.softProbe(target);
+        return target.locator.inputValue({ timeout: this.ELEMENT_TIMEOUT });
     }
 
     /** Returns the number of DOM elements matching the target. */
@@ -54,8 +60,11 @@ export class Extractions {
 
     /** Retrieves a computed CSS property value from an element. */
     async getCssProperty(target: WebElement, property: string): Promise<string> {
-        await this.utils.waitForState(target, 'attached');
-        return target.getCssProperty(property);
+        await this.softProbe(target);
+        return target.locator.evaluate(
+            (el: Element, prop: string) => window.getComputedStyle(el).getPropertyValue(prop),
+            property,
+        );
     }
 
     /**
@@ -67,12 +76,12 @@ export class Extractions {
      * read than the standard verification family.
      */
     async getHtml(target: WebElement, options?: { outer?: boolean }): Promise<string> {
-        await this.utils.waitForState(target, 'attached');
+        await this.softProbe(target);
         const locator = target.locator.first();
         if (options?.outer) {
             return await locator.evaluate((el: Element) => el.outerHTML);
         }
-        return await locator.innerHTML();
+        return await locator.innerHTML({ timeout: this.ELEMENT_TIMEOUT });
     }
 
     /**
