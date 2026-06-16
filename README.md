@@ -229,7 +229,7 @@ test('Per-call timeout override', async ({ steps }) => {
 });
 ```
 
-**Field matchers:** `text`, `value`, `count`, `visible`, `enabled`, `attributes`, `css(prop)`. Each carries `.not` for negation. Snapshot fields available in predicates: `text`, `value`, `attributes`, `visible`, `enabled`, `count`. See the [API reference](https://github.com/civitas-cerebrum/achilles/blob/main/skills/element-interactions/references/api-reference.md#expect-matcher-tree) for the full surface.
+**Field matchers:** `text`, `value`, `count`, `visible`, `enabled`, `attributes`, `css(prop)`, `html`, `outerHtml`. Each carries `.not` for negation. Snapshot fields available in predicates: `text`, `value`, `attributes`, `visible`, `enabled`, `count`. See the [API reference](https://github.com/civitas-cerebrum/achilles/blob/main/skills/element-interactions/references/api-reference.md#expect-matcher-tree) for the full surface.
 
 ### StepOptions
 
@@ -242,9 +242,10 @@ await steps.click('element', 'Page', { strategy: 'index', index: 2 });
 await steps.click('element', 'Page', { strategy: 'text', text: 'Submit' });
 
 // Interaction modifiers
-await steps.click('element', 'Page', { withoutScrolling: true });  // bypass actionability checks
+await steps.click('element', 'Page', { withoutScrolling: true });  // dispatches a DOM 'click' event without scrolling into view (alias semantics of force)
 await steps.click('element', 'Page', { ifPresent: true });         // skip if not visible
-await steps.click('element', 'Page', { force: true });             // native DOM click (bypasses overlays)
+await steps.click('element', 'Page', { force: true });             // dispatches a DOM 'click' event directly — NOT Playwright's force: true
+                                                                   // (no pointer simulation, no actionability checks; rename pending in a future major)
 
 // Combine both
 await steps.click('element', 'Page', { strategy: 'random', withoutScrolling: true });
@@ -295,6 +296,9 @@ import { baseFixture } from '@civitas-cerebrum/element-interactions';
 export const test = baseFixture(base, 'tests/data/page-repository.json', {
   timeout: 60000,                   // element timeout for Steps/Interactions (default: 30000)
   repoTimeout: 15000,               // element resolution timeout for repo (default: 15000)
+  interceptionRetry: true,          // intercepted clicks fall back to a dispatched DOM click event (default: true);
+                                    // set false so genuine overlay bugs (stuck modals, cookie walls) fail the
+                                    // click — recommended for adversarial/bug-discovery suites
   blockedOrigins: /(analytics\.com|tracking\.io)/,  // auto-abort matching routes
   screenshotOnFailure: true,        // auto-capture on test failure (default: true)
   // screenshotOnFailure: { fullPage: false },  // viewport-only screenshots
@@ -421,7 +425,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 
 ### 🖱️ Interaction
 
-* **`click(elementName, pageName, options?: StepOptions)`** — Clicks an element. Supports `{ strategy, withoutScrolling, ifPresent, force }`. Auto-retries with native DOM event on pointer interception.
+* **`click(elementName, pageName, options?: StepOptions)`** — Clicks an element. Supports `{ strategy, withoutScrolling, ifPresent, force }`. On pointer interception it falls back to a dispatched DOM `'click'` event, logs a warning, and pushes a report-visible `interception-fallback` test annotation naming `PageName.elementName`; set `interceptionRetry: false` on the fixture to rethrow the original error instead. Note: `force` dispatches a DOM `'click'` event directly (no pointer simulation, no actionability checks — NOT Playwright's `force: true`); `withoutScrolling` has alias semantics of `force` (no scroll into view). Rename pending in a future major.
 * **`clickIfPresent(elementName, pageName)`** — Clicks only if visible; skips silently. Returns `boolean`.
 * **`clickRandom(elementName, pageName, options?: StepOptions)`** — Clicks a random element from all matches. Supports `{ withoutScrolling }`.
 * **`rightClick(elementName, pageName)`** — Right-clicks an element to trigger a context menu.
@@ -442,7 +446,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 
 ### 📊 Data Extraction
 
-* **`getText(elementName, pageName)`** — Returns the trimmed text content of an element, or an empty string if null.
+* **`getText(elementName, pageName)`** — Returns the trimmed text content of an element, or `null` when the element has no text content.
 * **`getAttribute(elementName, pageName, attributeName: string)`** — Returns the value of an HTML attribute (e.g. `href`, `aria-pressed`), or `null` if it doesn't exist.
 * **`getLocalStorage(key: string)`** — Reads `window.localStorage[key]`. Returns the stored string or `null` if the key is absent (matches the native `getItem` contract). Use for state the framework cannot reach through the DOM — persisted theme, dismissed-banner flag, feature toggles, auth tokens.
 * **`getSessionStorage(key: string)`** — Same shape, against `window.sessionStorage`.
@@ -453,7 +457,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 * **`verifyAllPresent(targets: Array<{ elementName, pageName, options? }>)`** — Asserts presence of multiple independent elements in parallel via `Promise.all`. Equivalent to sequential `verifyPresence` calls but resolves all assertions concurrently — useful when a page has many content blocks to assert at once. Example: `await steps.verifyAllPresent([{ elementName: 'title', pageName: 'PDP' }, { elementName: 'price', pageName: 'PDP' }])`.
 * **`verifyAbsence(elementName, pageName)`** — Asserts that an element is hidden or detached from the DOM.
 * **`verifyText(elementName, pageName, expectedText?)`** — Asserts element text. Provide `expectedText` for an exact match, or call with no args to assert not empty.
-* **`verifyCount(elementName, pageName, options: CountVerifyOptions)`** — Asserts element count. Accepts `{ exactly: number }`, `{ greaterThan: number }`, or `{ lessThan: number }`.
+* **`verifyCount(elementName, pageName, options: CountVerifyOptions)`** — Asserts element count. Accepts `{ exactly: number }`, `{ greaterThan: number }`, `{ lessThan: number }` (combinable with `greaterThan` for a range), `{ greaterThanOrEqual: number }`, or `{ lessThanOrEqual: number }` (combinable with `greaterThanOrEqual` for an inclusive range).
 * **`verifyImages(elementName, pageName, scroll?: boolean, options?: StepOptions & { verifyDecoded?: boolean })`** — Verifies image rendering: checks visibility, valid `src`, and `naturalWidth > 0`. Pass `{ verifyDecoded: true }` in `options` to also run the browser's native `decode()` round-trip (more thorough, adds a CDP round-trip per image; off by default). Scrolls into view by default.
 * **`verifyTextContains(elementName, pageName, expectedText: string)`** — Asserts that an element's text contains the expected substring.
 * **`verifyState(elementName, pageName, state)`** — Asserts the state of an element. Supported states: `'enabled'`, `'disabled'`, `'editable'`, `'checked'`, `'focused'`, `'visible'`, `'hidden'`, `'attached'`, `'inViewport'`.
@@ -556,10 +560,16 @@ await steps.clickListedElement('tableRows', 'Users', {
 
 ### ⏳ Wait
 
-* **`waitForState(elementName, pageName, state?: 'visible' | 'attached' | 'hidden' | 'detached')`** — Waits for an element to reach a specific DOM state. Defaults to `'visible'`.
+* **`waitForState(elementName, pageName, state?: 'visible' | 'attached' | 'hidden' | 'detached', options?)`** — Waits for an element to reach a specific DOM state. Defaults to `'visible'`. Returns `Promise<boolean>`. **Throws on timeout as of 0.3.7**; pass `{ optional: true }` to probe without failing (resolves `false` instead). `{ timeout: ms }` overrides the instance timeout per call.
+
+  ```ts
+  await steps.waitForState('confirmationModal', 'CheckoutPage', 'visible');                        // throws on timeout (0.3.7+)
+  const open = await steps.waitForState('promoBanner', 'HomePage', 'visible', { optional: true }); // probe — false on timeout
+  ```
+
 * **`waitForNetworkIdle()`** — Waits until there are no in-flight network requests for at least 500ms.
 * **`waitForResponse(urlPattern: string | RegExp, action: () => Promise<void>)`** — Executes an action and waits for a matching network response. Returns the `Response` object.
-* **`waitAndClick(elementName, pageName, state?: string)`** — Waits for an element to reach a state (default `'visible'`), then clicks it.
+* **`waitAndClick(elementName, pageName, state?: string, options?)`** — Waits for an element to reach a state (default `'visible'`), then clicks it. Throws when the element never reaches the state — `optional` softness is deliberately not inherited here.
 
 ### 🧩 Composite / Workflow
 
@@ -630,25 +640,32 @@ await steps.verifyVisualMatch('dashboard.png', {
 
 ## 🧱 Advanced: Raw Interactions API
 
-To bypass the repository or work with dynamically generated locators, use `ElementInteractions` directly. All methods accept both Playwright `Locator` and `Element` types:
+To bypass the `Steps` facade, use `ElementInteractions` directly. All methods take a `WebElement` — the element type the repository resolves. Raw Playwright `Locator`s are not accepted; wrap one in `new WebElement(locator)` at the seam if you must bridge:
 
 ```ts
 import { ElementInteractions } from '@civitas-cerebrum/element-interactions';
+import { WebElement } from '@civitas-cerebrum/element-repository';
 
 const interactions = new ElementInteractions(page);
 
-// Works with Playwright Locators
-const customLocator = page.locator('button.dynamic-class');
-await interactions.interact.click(customLocator, { withoutScrolling: true });
-await interactions.verify.count(customLocator, { greaterThan: 2 });
-
-// Also works with Element from the repository
-const element = await repo.get('submitButton', 'LoginPage');
-await interactions.interact.click(element);
+// Elements come from the repository (the `repo` fixture)
+const element = await repo.get('submitButton', 'LoginPage') as WebElement;
+await interactions.interact.click(element, { withoutScrolling: true });
 await interactions.verify.presence(element);
+
+// Bridging a hand-built locator (one-off escape hatch — prefer a repository entry)
+const custom = new WebElement(page.locator('button.dynamic-class'));
+await interactions.verify.count(custom, { greaterThan: 2 });
 ```
 
 All `interact`, `verify`, `extract`, and `navigate` methods are available on `ElementInteractions`.
+
+**Sanctioned escape hatches.** When the facade genuinely doesn't cover what you need:
+
+- **Element-level** — `(element as WebElement).locator` exposes the underlying Playwright `Locator` of a repository-resolved element, e.g. for a raw Playwright expectation: `expect((element as WebElement).locator).toHaveScreenshot()`.
+- **Page-level** — use the `page` fixture directly for page-scoped Playwright APIs the facade doesn't wrap (dialogs, downloads, `page.on(...)` events).
+
+If you reach for either of these more than once for the same need, that's an API gap — file an issue so the capability can land in the framework properly.
 
 ---
 
@@ -820,6 +837,87 @@ await steps.cleanEmails();
 
 ---
 
+## SQL Database Steps
+
+Query a SQL database directly in your tests — the natural oracle for verifying that a UI or API
+mutation actually persisted. Backed by `@civitas-cerebrum/sql-client` (Postgres). All values are
+parametrised; never interpolate values into SQL.
+
+### Fixture configuration
+
+```ts
+export const test = baseFixture(base, 'tests/data/page-repository.json', {
+  dbUrl: process.env.DB_URL,            // default connection
+  dbProviders: {                        // optional named connections
+    analytics: process.env.ANALYTICS_DB_URL,
+  },
+});
+```
+
+Pools open lazily on first use and are closed automatically when the test finishes.
+
+### Reading (SELECT)
+
+```ts
+const res = await steps.sqlQuery<{ title: string }>(
+  'SELECT title FROM books WHERE genre = $1 ORDER BY title', ['Fiction']);
+await steps.verifySqlRowCount(res, 5);
+await steps.verifySqlValue(res, 0, 'title', '1984');
+```
+
+### Writing (INSERT/UPDATE/DELETE)
+
+```ts
+const ins = await steps.sqlExecute(
+  'INSERT INTO cart_items (cart_item_id,user_id,book_id,quantity,added_at) VALUES ($1,$2,$3,$4,$5)',
+  ['cart-1','user-1','book-1',2,'2026-01-01T00:00:00Z']);
+// ins.rowCount === 1
+```
+
+### Fluent builder
+
+```ts
+const top = await steps.sqlSelect('books')
+  .columns('title', 'price')
+  .where('price < ?', 15)
+  .orderBy('price', 'desc')
+  .limit(5)
+  .run();
+
+await steps.sqlInsert('cart_items').values({ cart_item_id: 'c1', user_id: 'u1', book_id: 'b1', quantity: 1, added_at: '2026-01-01T00:00:00Z' }).run();
+await steps.sqlUpdate('books').set({ stock: 14 }).where('book_id = ?', 'book-001').run();
+await steps.sqlDelete('cart_items').where('cart_item_id = ?', 'c1').run();
+```
+
+### Transactions
+
+```ts
+await steps.sqlTransaction(async (tx) => {
+  await tx.execute('UPDATE books SET stock = stock - 1 WHERE book_id = $1', ['book-001']);
+  await tx.execute('INSERT INTO orders (...) VALUES (...)');
+}); // auto-COMMIT, or auto-ROLLBACK if the callback throws
+```
+
+### Verification matchers
+
+| Method | Asserts |
+|---|---|
+| `verifySqlRowCount(res, n \| {min,max})` | exact or bounded row count |
+| `verifySqlValue(res, rowIndex, column, expected)` | a single cell's value |
+| `verifySqlContains(res, partialRow)` | ≥1 row matches a column subset |
+| `verifySqlColumn(res, column, expectedOrdered[])` | a column's ordered values (ORDER BY) |
+| `verifySqlEmpty(res)` / `verifySqlNotEmpty(res)` | zero / ≥1 rows |
+
+### Running the bookhive Postgres fixture
+
+```bash
+docker compose -f docker-compose.sql.yml up -d --wait
+npx playwright test tests/sql-steps.spec.ts
+docker compose -f docker-compose.sql.yml down -v
+```
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please read the guidelines below before opening a PR.
@@ -864,5 +962,7 @@ PRs that skip step 1 will not be merged.
 **Logging.** Core interaction methods must not contain any logs. `Steps` wrappers are responsible for logging what action is being performed.
 
 **Unit tests.** Every new method must include a unit test. Tests run against the [Vue test app](https://github.com/civitas-cerebrum/vue-test-app), which is built from its Docker image during CI. If the component you need doesn't exist in the test app, open a PR there first and wait for it to merge before updating this repository.
+
+**Coverage.** CI gates on the report produced by `@civitas-cerebrum/test-coverage` (`npm run test:coverage` writes `test-coverage-report.txt`; `test:with-coverage` prints the CI-friendly variant). Note what that number means: it is **API (method-invocation) coverage** — every public method on `Steps`, `ElementAction`, the matcher classes, and the interaction layers is exercised by at least one test — **not** line/branch coverage.
 
 **Documentation.** Every new `Steps` method must be added to the [API Reference](#️-api-reference-steps) section of this README, following the existing format. PRs without documentation will not be merged.

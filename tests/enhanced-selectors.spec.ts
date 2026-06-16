@@ -356,7 +356,7 @@ test.describe('Enhanced Selectors — Issue Fixes #61-#65', () => {
 
     // void action-method proxies
     await chain().clearInput();
-    await chain().dragAndDrop({ target: { x: 0, y: 0 } });
+    await chain().dragAndDrop({ xOffset: 0, yOffset: 0 });
     await chain().setSliderValue(50);
     await chain().typeSequentially('ignored', 10);
     await chain().uploadFile('/tmp/ignored.txt');

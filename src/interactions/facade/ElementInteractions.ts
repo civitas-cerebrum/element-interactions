@@ -24,11 +24,13 @@ export class ElementInteractions {
     /**
      * Initializes the ElementInteractions facade.
      * @param page - The current Playwright Page object.
-     * @param options - Optional configuration: emailCredentials and/or timeout.
+     * @param options - Optional configuration: emailCredentials, timeout,
+     *   and/or interceptionRetry (default `true` — intercepted clicks fall
+     *   back to a dispatched DOM click event).
      */
-    constructor(page: Page, options?: { emailCredentials?: EmailClientConfig; timeout?: number }) {
-        const { emailCredentials, timeout } = options ?? {};
-        this.interact = new Interactions(page, timeout);
+    constructor(page: Page, options?: { emailCredentials?: EmailClientConfig; timeout?: number; interceptionRetry?: boolean }) {
+        const { emailCredentials, timeout, interceptionRetry } = options ?? {};
+        this.interact = new Interactions(page, timeout, interceptionRetry);
         this.verify = new Verifications(page, timeout);
         this.navigate = new Navigation(page);
         this.extract = new Extractions(page, timeout);

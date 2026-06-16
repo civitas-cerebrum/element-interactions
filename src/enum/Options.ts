@@ -306,14 +306,25 @@ export interface IsVisibleOptions {
  * Modifiers for click actions.
  */
 export interface ClickOptions {
-    /** Dispatch a native 'click' event bypassing Playwright actionability checks. */
+    /** Alias semantics of `force`: dispatches a DOM 'click' event without
+     *  scrolling the element into view. */
     withoutScrolling?: boolean;
     /** Skip silently if element is not visible instead of throwing. */
     ifPresent?: boolean;
-    /** Force the click, bypassing Playwright's pointer-interception checks. Useful for elements obscured by parent overlays. */
+    /** Dispatches a DOM 'click' event directly (no pointer simulation, no
+     *  actionability checks). NOT Playwright's `force: true` — no scrolling,
+     *  no hover, no pointer coordinates. Rename pending in a future major. */
     force?: boolean;
     /** Per-call timeout override in milliseconds. Falls back to the Interactions default when omitted. */
     timeout?: number;
+    /**
+     * Element identity (`PageName.elementName`) used in the log line and the
+     * `interception-fallback` test annotation when the interception-retry
+     * fallback fires. Threaded automatically by the Steps / ElementAction
+     * layers; set it manually when calling `interactions.interact.click`
+     * directly with a custom element.
+     */
+    subject?: string;
 }
 
 /**
@@ -330,10 +341,23 @@ export interface StepOptions {
     attribute?: string;
     /** Attribute value to match (used with strategy 'text' or 'attribute'). */
     value?: string;
-    /** Dispatch native click event bypassing Playwright actionability checks. */
+    /** Alias semantics of `force`: dispatches a DOM 'click' event without
+     *  scrolling the element into view. */
     withoutScrolling?: boolean;
     /** Skip silently if element is not visible. */
     ifPresent?: boolean;
-    /** Force the click, bypassing Playwright's pointer-interception checks. */
+    /** Dispatches a DOM 'click' event directly (no pointer simulation, no
+     *  actionability checks). NOT Playwright's `force: true` — no scrolling,
+     *  no hover, no pointer coordinates. Rename pending in a future major. */
     force?: boolean;
+    /**
+     * Per-call timeout override in milliseconds. Applies to the wait/action
+     * this options bag is passed to. Falls back to the instance timeout.
+     */
+    timeout?: number;
+    /**
+     * For waitForState: do not throw on timeout — resolve `false` instead.
+     * Default `false` (timeouts throw as of 0.3.7).
+     */
+    optional?: boolean;
 }

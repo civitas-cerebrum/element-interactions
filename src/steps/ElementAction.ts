@@ -147,6 +147,7 @@ export class ElementAction {
             withoutScrolling: options?.withoutScrolling,
             force: options?.force,
             timeout: this._timeout,
+            subject: `${this._pageName}.${this._elementName}`,
         });
     }
 
@@ -159,6 +160,7 @@ export class ElementAction {
                 ifPresent: true,
                 force: options?.force,
                 timeout: this._timeout,
+                subject: `${this._pageName}.${this._elementName}`,
             });
             return true;
         }

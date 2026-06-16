@@ -1,5 +1,6 @@
 import { test, expect } from './fixture/StepFixture';
 import { createLogger } from '../src/logger/Logger';
+import { WebElement } from '@civitas-cerebrum/element-repository';
 
 const log = createLogger('tests');
 
@@ -62,7 +63,7 @@ test.describe('TC_028: Droppable Page', () => {
     });
 
     await test.step('Drag red item to red zone — correct drop', async () => {
-      const redZone = await repo.get('redZone', 'DroppablePage');
+      const redZone = await repo.get('redZone', 'DroppablePage') as WebElement;
       await steps.dragAndDrop( 'redItem1','DroppablePage', { target: redZone });
       await steps.verifyTextContains( 'redZoneCount','DroppablePage', '1');
     });

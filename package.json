@@ -1,6 +1,6 @@
 {
   "name": "@civitas-cerebrum/element-interactions",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "A robust, readable interaction and assertion Facade for Playwright. Abstract away boilerplate into semantic, English-like methods, making your test automation framework cleaner, easier to maintain, and accessible to non-developers.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -9,10 +9,12 @@
     "build": "npm run clean && tsc",
     "test": "npm run test:unit",
     "test:all": "npm run test:unit && npm run test:email",
-    "test:unit": "npx playwright test --grep-invert 'Email Integration Tests'",
+    "typecheck:tests": "tsc -p tsconfig.tests.json",
+    "test:unit": "npm run typecheck:tests && npx playwright test --grep-invert 'Email Integration Tests'",
     "test:email": "npx playwright test --grep 'Email Integration Tests'",
     "test:ui": "npx playwright test --headed",
-    "prepublishOnly": "npm run build",
+    "check:publishable": "node -e \"const d={...require('./package.json').dependencies,...require('./package.json').devDependencies}; const bad=Object.entries(d).filter(([,v])=>/^(file|link):/.test(v)); if(bad.length){console.error('Unpublishable deps:',bad);process.exit(1)}\"",
+    "prepublishOnly": "npm run check:publishable && npm run build",
     "test:quiet": "TESTER_DEBUG=false npx playwright test",
     "test:coverage": "npx test-coverage",
     "test:with-coverage": "npx playwright test --grep-invert 'Email Integration Tests' && npx test-coverage --format github-plain"
@@ -54,8 +56,10 @@
     "@civitas-cerebrum/context-store": "^0.0.2",
     "@civitas-cerebrum/element-repository": "^0.2.1",
     "@civitas-cerebrum/email-client": "^0.0.7",
+    "@civitas-cerebrum/sql-client": "^0.1.0",
     "@civitas-cerebrum/wasapi": "^0.0.3",
     "debug": "^4.4.3",
-    "dotenv": "^17.3.1"
+    "dotenv": "^17.3.1",
+    "pg": "^8.13.0"
   }
 }

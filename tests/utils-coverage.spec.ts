@@ -2,6 +2,7 @@ import { test, expect } from './fixture/StepFixture';
 import { Steps } from '../src/steps/CommonSteps';
 import { Utils } from '../src/utils/ElementUtilities';
 import { reformatDateString } from '../src/utils/DateUtilities';
+import { WebElement } from '@civitas-cerebrum/element-repository';
 
 test.describe('Utilities Coverage Tests', () => {
     test('Utils.getTimeout - returns default timeout', () => {
@@ -14,16 +15,21 @@ test.describe('Utilities Coverage Tests', () => {
         expect(utils.getTimeout()).toBe(15000);
     });
 
-    test('Utils.waitForState - handles timeout gracefully (async)', async ({ page }) => {
+    test('Utils.waitForState - throws on timeout by default (0.3.7)', async ({ page }) => {
         const utils = new Utils(1000);
-        // Create a locator that will never become visible
-        const locator = page.locator('#nonexistent-element-xyz123');
+        // An element that will never become visible
+        const element = new WebElement(page.locator('#nonexistent-element-xyz123'));
 
-        // This should not throw, just log a warning
-        await utils.waitForState(locator, 'visible');
+        await expect(utils.waitForState(element, 'visible'))
+            .rejects.toThrow(/did not reach state 'visible'/);
+    });
 
-        // Verify the test passes without error
-        expect(true).toBe(true);
+    test('Utils.waitForState - optional wait resolves false on timeout', async ({ page }) => {
+        const utils = new Utils(1000);
+        const element = new WebElement(page.locator('#nonexistent-element-xyz123'));
+
+        const reached = await utils.waitForState(element, 'visible', undefined, true);
+        expect(reached).toBe(false);
     });
 
     test('Steps.waitForState - calls utils.waitForState internally', async ({ steps }) => {

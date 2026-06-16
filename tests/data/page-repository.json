@@ -80,6 +80,12 @@
           }
         },
         {
+          "elementName": "missingElement",
+          "selector": {
+            "css": "[data-testid='does-not-exist']"
+          }
+        },
+        {
           "elementName": "componentCount",
           "selector": {
             "text": "37 components"

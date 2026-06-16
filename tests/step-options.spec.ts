@@ -35,7 +35,9 @@ test.describe('StepOptions — element resolution + modifiers', () => {
 
   test('hover with StepOptions', async ({ steps }) => {
     await steps.hover( 'primaryButton','ButtonsPage', { strategy: 'first' });
-    await steps.verifyState( 'primaryButton','ButtonsPage', 'visible', { strategy: 'first' });
+    // verifyState's 4th parameter is a timeout (number), not StepOptions —
+    // it does not take a resolution strategy.
+    await steps.verifyState( 'primaryButton','ButtonsPage', 'visible');
   });
 
   test('verifyPresence with StepOptions', async ({ steps }) => {
@@ -68,6 +70,8 @@ test.describe('StepOptions — element resolution + modifiers', () => {
     await steps.navigateTo('/');
     await steps.click( 'checkboxesLink','SidebarNav');
     await steps.check( 'uncheckedCheckbox','CheckboxesPage', { strategy: 'first' });
-    await steps.verifyState( 'uncheckedCheckbox','CheckboxesPage', 'checked', { strategy: 'first' });
+    // verifyState's 4th parameter is a timeout (number), not StepOptions —
+    // it does not take a resolution strategy.
+    await steps.verifyState( 'uncheckedCheckbox','CheckboxesPage', 'checked');
   });
 });

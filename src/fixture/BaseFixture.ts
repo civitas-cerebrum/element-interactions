@@ -28,6 +28,13 @@ export interface BaseFixtureOptions {
      */
     repoTimeout?: number;
     /**
+     * When a click is intercepted by an overlaying element, retry it as a
+     * dispatched DOM click event. Default `true` (compat). Set `false` so
+     * genuine overlay bugs (stuck modals, cookie walls) fail the click —
+     * recommended for adversarial/bug-discovery suites.
+     */
+    interceptionRetry?: boolean;
+    /**
      * Regex pattern of origins to block. Routes matching this pattern are aborted
      * before each test. Useful for blocking tracking, analytics, or third-party scripts
      * that slow down tests.
@@ -67,6 +74,18 @@ export interface BaseFixtureOptions {
      * ```
      */
     apiProviders?: Record<string, string>;
+    /**
+     * Connection string for the default SQL client. When set, `steps.sqlQuery/
+     * sqlExecute/...` can be called without a provider name.
+     *
+     * @example `dbUrl: 'postgres://bookhive:bookhive@localhost:5432/bookhive'`
+     */
+    dbUrl?: string;
+    /**
+     * Named SQL connections for multi-database testing. Each entry creates a
+     * separate `SqlClient` accessible by name: `steps.sqlQuery('analytics', sql)`.
+     */
+    dbProviders?: Record<string, string>;
 }
 
 /**
@@ -97,15 +116,20 @@ export function baseFixture<T extends {}>(
             await use(new ElementRepository(page, locatorPath, options?.repoTimeout));
         },
         steps: async ({ repo }, use) => {
-            await use(new Steps(repo, {
+            const steps = new Steps(repo, {
                 emailCredentials: options?.emailCredentials,
                 timeout: options?.timeout,
+                interceptionRetry: options?.interceptionRetry,
                 apiBaseUrl: options?.apiBaseUrl,
                 apiProviders: options?.apiProviders,
-            }));
+                dbUrl: options?.dbUrl,
+                dbProviders: options?.dbProviders,
+            });
+            await use(steps);
+            await steps.closeDbConnections();
         },
         interactions: async ({ page }, use) => {
-            await use(new ElementInteractions(page, { emailCredentials: options?.emailCredentials, timeout: options?.timeout }));
+            await use(new ElementInteractions(page, { emailCredentials: options?.emailCredentials, timeout: options?.timeout, interceptionRetry: options?.interceptionRetry }));
         },
         contextStore: async ({ }, use) => {
             await use(new ContextStore());

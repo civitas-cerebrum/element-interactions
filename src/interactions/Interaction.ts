@@ -1,4 +1,4 @@
-import { Page } from '@playwright/test';
+import { Page, test } from '@playwright/test';
 import { ClickOptions, DropdownSelectOptions, DropdownSelectType, DragAndDropOptions, ListedElementMatch, ActionTimeoutOptions, TextMatcher } from '../enum/Options';
 import { Utils } from '../utils/ElementUtilities';
 import { Element, WebElement } from '@civitas-cerebrum/element-repository';
@@ -39,9 +39,13 @@ export class Interactions {
     private ELEMENT_TIMEOUT: number;
     private utils: Utils;
 
-    constructor(private page: Page, timeout: number = 30000) {
+    constructor(private page: Page, timeout: number = 30000, private interceptionRetry: boolean = true) {
         this.ELEMENT_TIMEOUT = timeout;
         this.utils = new Utils(this.ELEMENT_TIMEOUT);
+    }
+
+    private async softProbe(element: WebElement, state: 'visible' | 'attached', timeout?: number): Promise<void> {
+        await this.utils.softProbe(element, state, timeout);
     }
 
     /**
@@ -57,7 +61,7 @@ export class Interactions {
                 if (useDispatch) {
                     await this.dispatchClick(element, timeout);
                 } else {
-                    await this.clickWithInterceptionRetry(element, timeout);
+                    await this.clickWithInterceptionRetry(element, timeout, options?.subject);
                 }
                 return true;
             }
@@ -70,7 +74,7 @@ export class Interactions {
         }
 
         await this.utils.waitForState(element, 'visible', timeout);
-        await this.clickWithInterceptionRetry(element, timeout);
+        await this.clickWithInterceptionRetry(element, timeout, options?.subject);
     }
 
     /**
@@ -78,25 +82,55 @@ export class Interactions {
      * actionability checks. Used for both `force` and `withoutScrolling`.
      */
     private async dispatchClick(element: WebElement, timeout: number): Promise<void> {
-        await this.utils.waitForState(element, 'attached', timeout);
+        await this.softProbe(element, 'attached', timeout);
         await element.dispatchEvent('click');
     }
 
     /**
-     * Attempts a standard click. If interception is reported, retries by
-     * dispatching a native click event on the element instead.
+     * Attempts a standard click. If interception is reported and
+     * `interceptionRetry` is enabled (default), retries by dispatching a
+     * native click event on the element instead — and surfaces the fallback
+     * via a `log.warn` line plus a report-visible Playwright test annotation
+     * (`interception-fallback`). When `interceptionRetry` is `false`, the
+     * original interception error is rethrown so genuine overlay bugs
+     * (stuck modals, cookie walls) fail the click.
+     *
+     * @param subject - Optional element identity (`PageName.elementName`)
+     *   threaded down from the Steps/ElementAction layer, which is where the
+     *   names are known. Included in the log line and the annotation.
      */
-    private async clickWithInterceptionRetry(element: WebElement, timeout: number): Promise<void> {
+    private async clickWithInterceptionRetry(element: WebElement, timeout: number, subject?: string): Promise<void> {
         try {
             await element.click({ timeout: Math.min(timeout, 5000) });
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error);
             if (message.includes('intercepts pointer events')) {
-                log.warn('click intercepted by another element — retrying via dispatchEvent(\'click\')');
+                if (!this.interceptionRetry) throw error;
+                const lines = message.split('\n');
+                const interceptLine = lines.find(l => l.includes('intercepts pointer events'))?.trim();
+                const detail = `click on ${subject ?? 'element'} intercepted by another element — fell back to dispatchEvent('click'). `
+                    + `${lines[0]}${interceptLine ? ` — ${interceptLine}` : ''}`;
+                log.warn(detail);
+                this.annotate('interception-fallback', detail);
                 await element.dispatchEvent('click');
             } else {
                 await element.click({ timeout });
             }
+        }
+    }
+
+    /**
+     * Pushes a report-visible annotation when running inside a Playwright
+     * test. No-ops outside a test-runner context (library consumers driving
+     * a raw Page), where the `log.warn` line is the only signal.
+     */
+    private annotate(type: string, description: string): void {
+        try {
+            // test.info() throws when no test is running; the try/catch is the
+            // guard that makes this a no-op for library consumers.
+            test.info().annotations.push({ type, description });
+        } catch {
+            /* not in a test context — the log.warn above is the only signal */
         }
     }
 
@@ -109,13 +143,13 @@ export class Interactions {
     }
 
     async fill(element: WebElement, text: string): Promise<void> {
-        await this.utils.waitForState(element, 'visible');
+        await this.softProbe(element, 'visible');
         await element.fill(text, { timeout: this.ELEMENT_TIMEOUT });
     }
 
     async uploadFile(element: WebElement, filePath: string | string[], options?: ActionTimeoutOptions): Promise<void> {
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
-        await this.utils.waitForState(element, 'attached', timeout);
+        await this.softProbe(element, 'attached', timeout);
         // TODO: remove cast when element-repository ships widened setInputFiles(string | string[]) type (companion PR #47)
         await (element as any).setInputFiles(filePath, { timeout });
     }
@@ -126,10 +160,9 @@ export class Interactions {
         options?: { mimeType?: string } & ActionTimeoutOptions,
     ): Promise<void> {
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
-        await this.utils.waitForState(element, 'attached', timeout);
+        await this.softProbe(element, 'attached', timeout);
         // TODO: remove cast when element-repository ships WebElement.dropFiles (companion PR #47)
         await (element as any).dropFiles(filenames, { mimeType: options?.mimeType, timeout });
-    }
 
     /**
      * Unified method to interact with `<select>` dropdown elements based on the specified `DropdownSelectType`.
@@ -140,7 +173,7 @@ export class Interactions {
         options: DropdownSelectOptions = { type: DropdownSelectType.RANDOM }
     ): Promise<string> {
         const timeout = options.timeout ?? this.ELEMENT_TIMEOUT;
-        await this.utils.waitForState(element, 'visible', timeout);
+        await this.softProbe(element, 'visible', timeout);
         const type = options.type ?? DropdownSelectType.RANDOM;
 
         if (type === DropdownSelectType.VALUE) {
@@ -162,7 +195,9 @@ export class Interactions {
         // Random path — look for enabled, non-empty <option> descendants.
         const enabledOptions = element.locateChild('option:not([disabled]):not([value=""])');
 
-        await this.utils.waitForState(enabledOptions.first() as WebElement, 'attached', timeout).catch(() => { });
+        // Optional probe: absence of enabled options is handled by the explicit
+        // count check below, which produces the clearer domain error.
+        await this.utils.waitForState(enabledOptions.first() as WebElement, 'attached', timeout, true);
 
         const count = await enabledOptions.count();
         if (count === 0) {
@@ -181,12 +216,12 @@ export class Interactions {
     }
 
     async hover(element: WebElement): Promise<void> {
-        await this.utils.waitForState(element, 'visible');
+        await this.softProbe(element, 'visible');
         await element.hover({ timeout: this.ELEMENT_TIMEOUT });
     }
 
     async scrollIntoView(element: WebElement): Promise<void> {
-        await this.utils.waitForState(element, 'attached');
+        await this.softProbe(element, 'attached');
         await element.scrollIntoView({ timeout: this.ELEMENT_TIMEOUT });
     }
 
@@ -197,6 +232,8 @@ export class Interactions {
      */
     async dragAndDrop(element: WebElement, options: DragAndDropOptions): Promise<void> {
         const timeout = options.timeout ?? this.ELEMENT_TIMEOUT;
+        // Hard waits: both drag paths read boundingBox / drive page.mouse,
+        // which need the elements actually visible and elapsed time bounded.
         await this.utils.waitForState(element, 'visible', timeout);
 
         if (options.target) {
@@ -226,11 +263,8 @@ export class Interactions {
         }
 
         if (options.xOffset !== undefined && options.yOffset !== undefined) {
-            // The mouse-drag path has no action method with a built-in timeout,
-            // so enforce `timeout` here by requiring the element to actually be
-            // visible before reading its bounding box. `Utils.waitForState` only
-            // log-warns; this throws, keeping elapsed time bounded.
-            await element.waitFor({ state: 'visible', timeout });
+            // The `waitForState('visible')` above throws on timeout (0.3.7), so
+            // the element is guaranteed visible here and elapsed time is bounded.
             const box = await element.boundingBox();
             if (!box) {
                 throw new Error('[Action] Error -> Unable to get bounding box for element to perform drag action.');
@@ -280,35 +314,35 @@ export class Interactions {
     }
 
     async typeSequentially(element: WebElement, text: string, delay: number = 100): Promise<void> {
-        await this.utils.waitForState(element, 'visible');
+        await this.softProbe(element, 'visible');
         await element.pressSequentially(text, delay, { timeout: this.ELEMENT_TIMEOUT });
     }
 
     /** Right-click (context menu) on the given element. Web-only. */
     async rightClick(element: WebElement, options?: ActionTimeoutOptions): Promise<void> {
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
-        await this.utils.waitForState(element, 'visible', timeout);
+        await this.softProbe(element, 'visible', timeout);
         await element.rightClick({ timeout });
     }
 
     async doubleClick(element: WebElement): Promise<void> {
-        await this.utils.waitForState(element, 'visible');
+        await this.softProbe(element, 'visible');
         await element.doubleClick({ timeout: this.ELEMENT_TIMEOUT });
     }
 
     async check(element: WebElement): Promise<void> {
-        await this.utils.waitForState(element, 'visible');
+        await this.softProbe(element, 'visible');
         await element.check({ timeout: this.ELEMENT_TIMEOUT });
     }
 
     async uncheck(element: WebElement): Promise<void> {
-        await this.utils.waitForState(element, 'visible');
+        await this.softProbe(element, 'visible');
         await element.uncheck({ timeout: this.ELEMENT_TIMEOUT });
     }
 
     async setSliderValue(element: WebElement, value: number, options?: ActionTimeoutOptions): Promise<void> {
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
-        await this.utils.waitForState(element, 'visible', timeout);
+        await this.softProbe(element, 'visible', timeout);
         await element.fill(String(value), { timeout });
     }
 
@@ -317,13 +351,13 @@ export class Interactions {
     }
 
     async clearInput(element: WebElement): Promise<void> {
-        await this.utils.waitForState(element, 'visible');
+        await this.softProbe(element, 'visible');
         await element.clear({ timeout: this.ELEMENT_TIMEOUT });
     }
 
     async selectMultiple(element: WebElement, values: string[], options?: ActionTimeoutOptions): Promise<string[]> {
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
-        await this.utils.waitForState(element, 'visible', timeout);
+        await this.softProbe(element, 'visible', timeout);
         return element.selectOption(values.map(v => ({ value: v })), { timeout });
     }
 
@@ -414,6 +448,8 @@ export class Interactions {
         // Always take the first match after all filters compose.
         const matched = narrowed.first() as WebElement;
 
+        // Hard wait (0.3.7): a non-matching listed element must fail here with
+        // a clear wait error, not hand back a locator that points to nothing.
         await this.utils.waitForState(matched, 'visible');
 
         // Stage 3 — optionally drill into a child for the returned locator.
