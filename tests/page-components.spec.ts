@@ -288,7 +288,7 @@ test.describe('TC_015: File Upload Page', () => {
     log('TC_015 File Upload Page (multi) — passed');
   });
 
-  test.fixme('drop-zone — blocked on element-repository #47', async ({ steps }) => {
+  test('drop-zone — files appear in the drop list', async ({ steps }) => {
     await steps.navigateTo('/');
     await steps.click( 'fileUploadLink','SidebarNav');
     await steps.verifyUrlContains('/file-upload');

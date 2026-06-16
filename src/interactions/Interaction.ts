@@ -150,8 +150,7 @@ export class Interactions {
     async uploadFile(element: WebElement, filePath: string | string[], options?: ActionTimeoutOptions): Promise<void> {
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
         await this.softProbe(element, 'attached', timeout);
-        // TODO: remove cast when element-repository ships widened setInputFiles(string | string[]) type (companion PR #47)
-        await (element as any).setInputFiles(filePath, { timeout });
+        await element.setInputFiles(filePath, { timeout });
     }
 
     async dropFiles(
@@ -161,8 +160,8 @@ export class Interactions {
     ): Promise<void> {
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
         await this.softProbe(element, 'attached', timeout);
-        // TODO: remove cast when element-repository ships WebElement.dropFiles (companion PR #47)
-        await (element as any).dropFiles(filenames, { mimeType: options?.mimeType, timeout });
+        await element.dropFiles(filenames, { mimeType: options?.mimeType, timeout });
+    }
 
     /**
      * Unified method to interact with `<select>` dropdown elements based on the specified `DropdownSelectType`.

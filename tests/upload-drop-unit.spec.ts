@@ -6,16 +6,15 @@ import { WebElement } from '@civitas-cerebrum/element-repository';
 
 // Unit tests for the two methods introduced in the upload/drop-files PR:
 //   - Interactions.uploadFile(element, string | string[])
-//   - Interactions.dropFiles(element, filenames[], options?)    ← requires element-repository companion PR #47
+//   - Interactions.dropFiles(element, filenames[], options?)
 //   - Steps.uploadFile delegation (string and string[])
-//   - Steps.dropFiles delegation                               ← requires element-repository companion PR #47
+//   - Steps.dropFiles delegation
 //
-// Interactions.uploadFile tests use page.setContent() — no server required.
-// Steps.uploadFile tests navigate to the GitHub Pages app directly.
-// dropFiles tests are marked fixme until WebElement.dropFiles lands in a
-// published element-repository release (companion PR #47).
+// Interactions.uploadFile/dropFiles tests use page.setContent() — no server required.
+// Steps.* tests navigate to the local vue-test-site's /file-upload page
+// (served by docker-compose at the configured baseURL).
 
-const GITHUB_FILE_UPLOAD = 'https://civitas-cerebrum.github.io/vue-test-app/file-upload';
+const FILE_UPLOAD_PATH = '/file-upload';
 
 const FILE1 = path.resolve(__dirname, 'test-files/test-upload.txt');
 const FILE2 = path.resolve(__dirname, 'fixture/StepFixture.ts');
@@ -119,12 +118,11 @@ test.describe('Interactions.uploadFile', () => {
 });
 
 // ── Interactions.dropFiles ─────────────────────────────────────────────────
-// Blocked on element-repository companion PR #47 (WebElement.dropFiles).
-// Tests are written and ready; un-fixme when ^0.2.x ships with the method.
+// Backed by WebElement.dropFiles (element-repository >= 0.3.0).
 
 test.describe('Interactions.dropFiles', () => {
 
-    test.fixme('dispatches drop event with correct filenames', async ({ page }) => {
+    test('dispatches drop event with correct filenames', async ({ page }) => {
         const element = await pageWithDropZone(page);
         const interact = new Interactions(page);
 
@@ -136,7 +134,7 @@ test.describe('Interactions.dropFiles', () => {
         expect(names).toContain('photo.png');
     });
 
-    test.fixme('single filename — drop event carries exactly one file', async ({ page }) => {
+    test('single filename — drop event carries exactly one file', async ({ page }) => {
         const element = await pageWithDropZone(page);
         const interact = new Interactions(page);
 
@@ -147,7 +145,7 @@ test.describe('Interactions.dropFiles', () => {
         expect(items[0]).toContain('document.txt');
     });
 
-    test.fixme('default mimeType is application/octet-stream', async ({ page }) => {
+    test('default mimeType is application/octet-stream', async ({ page }) => {
         const element = await pageWithDropZone(page);
         const interact = new Interactions(page);
 
@@ -157,7 +155,7 @@ test.describe('Interactions.dropFiles', () => {
         expect(items[0]).toContain('application/octet-stream');
     });
 
-    test.fixme('custom mimeType is forwarded to the DataTransfer', async ({ page }) => {
+    test('custom mimeType is forwarded to the DataTransfer', async ({ page }) => {
         const element = await pageWithDropZone(page);
         const interact = new Interactions(page);
 
@@ -167,7 +165,7 @@ test.describe('Interactions.dropFiles', () => {
         expect(items[0]).toContain('application/pdf');
     });
 
-    test.fixme('empty filenames[] — no-op drop event does not throw', async ({ page }) => {
+    test('empty filenames[] — no-op drop event does not throw', async ({ page }) => {
         const element = await pageWithDropZone(page);
         const interact = new Interactions(page);
 
@@ -180,13 +178,12 @@ test.describe('Interactions.dropFiles', () => {
 });
 
 // ── Steps.uploadFile ───────────────────────────────────────────────────────
-// Navigate directly to GitHub Pages — bypasses the localhost baseURL in
-// playwright.config so no local dev server is required.
+// Navigate to the local vue-test-site /file-upload page (resolved against baseURL).
 
 test.describe('Steps.uploadFile', () => {
 
     test('single string — filename appears after upload', async ({ page, steps }) => {
-        await page.goto(GITHUB_FILE_UPLOAD);
+        await page.goto(FILE_UPLOAD_PATH);
 
         await steps.uploadFile('singleFileInput', 'FileUploadPage', FILE1);
 
@@ -194,7 +191,7 @@ test.describe('Steps.uploadFile', () => {
     });
 
     test('string[] — both filenames appear in the multi-file list', async ({ page, steps }) => {
-        await page.goto(GITHUB_FILE_UPLOAD);
+        await page.goto(FILE_UPLOAD_PATH);
 
         await steps.uploadFile('multipleFileInput', 'FileUploadPage', [FILE1, FILE2]);
 
@@ -205,12 +202,11 @@ test.describe('Steps.uploadFile', () => {
 });
 
 // ── Steps.dropFiles ────────────────────────────────────────────────────────
-// Blocked on element-repository companion PR #47 (same reason as above).
 
 test.describe('Steps.dropFiles', () => {
 
-    test.fixme('filenames appear in the drop list', async ({ page, steps }) => {
-        await page.goto(GITHUB_FILE_UPLOAD);
+    test('filenames appear in the drop list', async ({ page, steps }) => {
+        await page.goto(FILE_UPLOAD_PATH);
 
         await steps.dropFiles('dropZone', 'FileUploadPage', ['report.pdf', 'photo.png']);
 
@@ -218,8 +214,8 @@ test.describe('Steps.dropFiles', () => {
         await steps.verifyTextContains('dropList', 'FileUploadPage', 'photo.png');
     });
 
-    test.fixme('custom mimeType does not break the drop', async ({ page, steps }) => {
-        await page.goto(GITHUB_FILE_UPLOAD);
+    test('custom mimeType does not break the drop', async ({ page, steps }) => {
+        await page.goto(FILE_UPLOAD_PATH);
 
         await steps.dropFiles('dropZone', 'FileUploadPage', ['data.bin'], { mimeType: 'application/octet-stream' });
 

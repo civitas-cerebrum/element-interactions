@@ -280,7 +280,7 @@ test.describe('Fluent API — steps.on()', () => {
       await steps.verifyTextContains( 'multipleFileList','FileUploadPage', 'StepFixture');
     });
 
-    test.fixme('dropFiles() — dispatches drop events with named files — blocked on element-repository #47', async ({ steps }) => {
+    test('dropFiles() — dispatches drop events with named files', async ({ steps }) => {
       await steps.navigateTo('/');
       await steps.click( 'fileUploadLink','SidebarNav');
       await steps.on('dropZone', 'FileUploadPage').dropFiles(['report.pdf', 'photo.png']);
