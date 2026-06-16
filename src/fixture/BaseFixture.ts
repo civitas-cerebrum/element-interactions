@@ -86,6 +86,13 @@ export interface BaseFixtureOptions {
      * separate `SqlClient` accessible by name: `steps.sqlQuery('analytics', sql)`.
      */
     dbProviders?: Record<string, string>;
+    /**
+     * Connect-timeout (ms) applied to every SQL client, so an unreachable `dbUrl`
+     * fails fast in CI instead of hanging on the first query.
+     *
+     * @example `dbConnectTimeoutMs: 5000`
+     */
+    dbConnectTimeoutMs?: number;
 }
 
 /**
@@ -124,6 +131,7 @@ export function baseFixture<T extends {}>(
                 apiProviders: options?.apiProviders,
                 dbUrl: options?.dbUrl,
                 dbProviders: options?.dbProviders,
+                dbConnectTimeoutMs: options?.dbConnectTimeoutMs,
             });
             await use(steps);
             await steps.closeDbConnections();

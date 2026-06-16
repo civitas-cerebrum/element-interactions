@@ -50,6 +50,11 @@ export class Steps {
             apiProviders?: Record<string, string>;
             dbUrl?: string;
             dbProviders?: Record<string, string>;
+            /**
+             * Connect-timeout (ms) applied to every SQL client, so a wrong/unreachable
+             * `dbUrl` fails fast in CI instead of hanging on the first query.
+             */
+            dbConnectTimeoutMs?: number;
         }
     ) {
         this.page = repo.driver;
@@ -73,14 +78,14 @@ export class Steps {
                 this.apiClients.set(name, new WasapiClient.Builder().setBaseUrl(url).setLogHeaders(false).buildRaw());
             }
         }
-        const { dbUrl, dbProviders } = options ?? {};
+        const { dbUrl, dbProviders, dbConnectTimeoutMs } = options ?? {};
         this.dbClients = new Map();
         if (dbUrl) {
-            this.dbClients.set('default', new SqlClient({ connectionString: dbUrl }));
+            this.dbClients.set('default', new SqlClient({ connectionString: dbUrl, connectTimeoutMs: dbConnectTimeoutMs }));
         }
         if (dbProviders) {
             for (const [name, url] of Object.entries(dbProviders)) {
-                this.dbClients.set(name, new SqlClient({ connectionString: url }));
+                this.dbClients.set(name, new SqlClient({ connectionString: url, connectTimeoutMs: dbConnectTimeoutMs }));
             }
         }
     }
@@ -1829,6 +1834,33 @@ export class Steps {
         }
         log.sql('TRANSACTION (default)');
         return await this.getDbClient().transaction(fnOrProvider);
+    }
+
+    /**
+     * Connectivity probe against the default (or named) SQL client — runs the
+     * engine-correct `SELECT 1` and throws if the database is unreachable. Use in
+     * a Playwright `globalSetup` so a misconfigured `dbUrl` fails the run up front
+     * with a clear error instead of a hung first query.
+     */
+    async sqlPing(provider?: string): Promise<void> {
+        log.sql('PING (provider=%s)', provider ?? 'default');
+        await this.getDbClient(provider).ping();
+    }
+
+    /**
+     * Execute a multi-statement SQL script (schema/seed file) against the default
+     * or named client. The script is split with the engine's rules (Oracle `/`,
+     * SQL Server `GO`, comment/quote aware) and each statement runs in order.
+     * Provider-overloaded like {@link sqlQuery}:
+     * `steps.sqlScript(readFileSync('seed.sql','utf8'))` or
+     * `steps.sqlScript('analytics', schemaSql)`.
+     */
+    async sqlScript(sqlTextOrProvider: string, maybeSqlText?: string): Promise<void> {
+        const usingProvider = typeof maybeSqlText === 'string';
+        const client = usingProvider ? this.getDbClient(sqlTextOrProvider) : this.getDbClient();
+        const sqlText = usingProvider ? maybeSqlText : sqlTextOrProvider;
+        log.sql('SCRIPT (provider=%s, %d chars)', usingProvider ? sqlTextOrProvider : 'default', sqlText.length);
+        await client.runScript(sqlText);
     }
 
     /** Begin a fluent SELECT builder pre-bound to the default (or named) client. */
