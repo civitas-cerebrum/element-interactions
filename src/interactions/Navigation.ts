@@ -230,9 +230,14 @@ export class Navigation {
         const matches: string[] = [];
 
         // page.route uses Playwright's own URL matcher — same semantics as
-        // page.waitForResponse / page.waitForRequest. We pass route.continue()
-        // straight through so this stays a passive observer; the only effect
-        // on traffic is the unavoidable per-match route round-trip.
+        // page.waitForResponse / page.waitForRequest. We call route.fallback()
+        // (NOT route.continue()) so this stays a genuinely passive observer:
+        // fallback() defers to the next matching handler, so a consumer's own
+        // mock on an overlapping pattern still runs — and absent one, Playwright
+        // performs the default action (the request proceeds to the network).
+        // route.continue() would instead send the request to the network
+        // *itself*, silently skipping every other matching handler and
+        // clobbering the consumer's mocks for the duration of the window.
         const handler = async (route: Route): Promise<void> => {
             const request = route.request();
             const method = request.method().toUpperCase() as ExpectRequestMethod;
@@ -241,10 +246,10 @@ export class Navigation {
                 matches.push(`${method} ${url}`);
             }
             // Teardown race: if the page navigated away or the route was
-            // already handled by another handler, route.continue() rejects.
-            // Swallow — our observation already happened and the original
-            // request is no longer ours to influence.
-            try { await route.continue(); } catch { /* request already handled */ }
+            // already consumed, fallback() rejects. Swallow — our observation
+            // already happened and the original request is no longer ours to
+            // influence.
+            try { await route.fallback(); } catch { /* request already handled */ }
         };
 
         await this.page.route(urlPattern, handler);
@@ -252,7 +257,9 @@ export class Navigation {
             await action();
             await this.page.waitForTimeout(timeout);
         } finally {
-            await this.page.unroute(urlPattern, handler);
+            // Guard the teardown: a failed unroute (page/context already closed)
+            // must never replace a real error thrown by `action`.
+            await this.page.unroute(urlPattern, handler).catch(() => { /* page already gone */ });
         }
 
         if (matches.length > 0) {

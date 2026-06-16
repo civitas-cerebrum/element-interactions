@@ -421,8 +421,9 @@ test.describe('TC_072: expectNoRequest — HTML5 form block', () => {
     );
     // Stub the form's submit endpoint so the POST has somewhere to land.
     // Registered before expectNoRequest so its handler runs AFTER ours
-    // (Playwright dispatches last-added first) — our observer calls
-    // route.continue() and this handler then fulfills.
+    // (Playwright dispatches last-added first) — our observer records the
+    // match and then calls route.fallback(), which defers to this handler so
+    // it still fulfills. (route.continue() would have bypassed it.)
     await page.route('**/api/signup', (route) =>
       route.fulfill({ status: 200, contentType: 'text/plain', body: 'ok' }),
     );
@@ -532,6 +533,74 @@ test.describe('TC_072: expectNoRequest — HTML5 form block', () => {
     });
 
     log('TC_072 expectNoRequest (redactQuery) — passed');
+  });
+
+  test('preserves a consumer mock on an overlapping pattern (fallback, not continue)', async ({ page, steps }) => {
+    // Regression guard: the observer must defer to a consumer-registered
+    // handler via route.fallback(), NOT swallow the request via continue().
+    // If continue() were used, the fetch below would skip this stub and hit
+    // the real network — the response would not be the stubbed 'mocked-ok'.
+    await test.step('Mount the form and stub the endpoint with a sentinel body', async () => {
+      await mountForm(page);
+      await page.route('**/api/sentinel', (route) =>
+        route.fulfill({ status: 200, contentType: 'text/plain', body: 'mocked-ok' }),
+      );
+    });
+
+    await test.step('A matching request fires — assertion rejects AND the mock still served it', async () => {
+      let captured: Error | undefined;
+      let body: string | undefined;
+      try {
+        await steps.expectNoRequest('**/api/sentinel', async () => {
+          body = await page.evaluate(() =>
+            fetch('/api/sentinel').then((r) => r.text()),
+          );
+        }, { timeout: 300 });
+      } catch (e) {
+        captured = e as Error;
+      }
+      // The request fired, so the assertion must reject...
+      expect(captured, 'expectNoRequest should reject when the matching request fires').toBeDefined();
+      // ...and crucially the consumer's mock must still have served it.
+      expect(body, 'the consumer mock must serve the request (fallback, not continue)').toBe('mocked-ok');
+    });
+
+    log('TC_072 expectNoRequest (consumer-mock preserved) — passed');
+  });
+
+  test('observation window catches a request that fires after the action resolves', async ({ page, steps }) => {
+    // The window (`timeout`) is the feature's headline option. Fire a request
+    // on a delay so it lands AFTER `action` resolves: a long-enough window
+    // must catch it; too-short a window must not.
+    await test.step('Mount the form', async () => {
+      await mountForm(page);
+    });
+
+    await test.step('Request fires 200ms after action returns — a 600ms window catches it', async () => {
+      let captured: Error | undefined;
+      try {
+        await steps.expectNoRequest('**/api/delayed', async () => {
+          // schedule, do not await — the fetch lands during the window
+          await page.evaluate(() => {
+            setTimeout(() => { void fetch('/api/delayed'); }, 200);
+          });
+        }, { timeout: 600 });
+      } catch (e) {
+        captured = e as Error;
+      }
+      expect(captured, 'a request inside the observation window must be caught').toBeDefined();
+      expect(captured!.message).toMatch(/GET .*\/api\/delayed/);
+    });
+
+    await test.step('Same delayed request, but a 50ms window is too short — assertion passes', async () => {
+      await steps.expectNoRequest('**/api/delayed-2', async () => {
+        await page.evaluate(() => {
+          setTimeout(() => { void fetch('/api/delayed-2'); }, 200);
+        });
+      }, { timeout: 50 });
+    });
+
+    log('TC_072 expectNoRequest (observation window) — passed');
   });
 });
 
