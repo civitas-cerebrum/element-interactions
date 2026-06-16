@@ -1,0 +1,22 @@
+# Postgres fixture for SQL-step coverage. Kept separate from docker-compose.yml
+# (the mongo/bookhive-backend stack) so the two datastores never interfere.
+# Up:   docker compose -f docker-compose.sql.yml up -d --wait
+# Down: docker compose -f docker-compose.sql.yml down -v
+services:
+  bookhive-postgres:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_DB: bookhive
+      POSTGRES_USER: bookhive
+      POSTGRES_PASSWORD: bookhive
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./tests/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./tests/sql/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookhive -d bookhive"]
+      interval: 2s
+      timeout: 3s
+      retries: 15

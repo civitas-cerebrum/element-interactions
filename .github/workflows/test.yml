@@ -39,6 +39,11 @@ jobs:
         run: |
           docker compose up --build -d
 
+      - name: 🐘 Start SQL Fixtures
+        run: |
+          docker compose -f docker-compose.sql.yml up -d --wait
+          docker compose -f docker-compose.inventory.yml up -d --wait
+
       - name: 🧪 Run Unit Tests
         run: npm run test:unit -- --update-snapshots
 

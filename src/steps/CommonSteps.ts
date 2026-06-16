@@ -4,6 +4,7 @@ import { ElementInteractions } from '../interactions/facade/ElementInteractions'
 import { Utils } from '../utils/ElementUtilities';
 import { EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
+import { SqlClient, SqlResult, QueryBuilder } from '@civitas-cerebrum/sql-client';
 import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions, StorageVerifyOptions, VisualMatchOptions, VisualMaskTarget } from '../enum/Options';
 import { ExpectNoRequestOptions } from '../interactions/Navigation';
 import { stepLog as log } from '../logger/Logger';
@@ -25,26 +26,37 @@ export class Steps {
     private utils;
     private email;
     private apiClients: Map<string, WasapiClient>;
+    private dbClients: Map<string, SqlClient>;
     private timeout?: number;
+    private interceptionRetry?: boolean;
 
     /**
      * Initializes the Steps class with the element repository.
      * The Playwright Page is obtained from the repository's driver.
      * @param repo - An initialized instance of `ElementRepository` containing your locators and the bound driver.
-     * @param options - Optional configuration: emailCredentials, timeout, apiBaseUrl, and/or apiProviders.
+     * @param options - Optional configuration: emailCredentials, timeout, interceptionRetry, apiBaseUrl, and/or apiProviders.
      */
     constructor(
         private repo: ElementRepository,
         options?: {
             emailCredentials?: EmailClientConfig;
             timeout?: number;
+            /**
+             * When a click is intercepted by an overlaying element, retry it as a
+             * dispatched DOM click event. Default `true` (compat). Set `false` so
+             * genuine overlay bugs (stuck modals, cookie walls) fail the click.
+             */
+            interceptionRetry?: boolean;
             apiBaseUrl?: string;
             apiProviders?: Record<string, string>;
+            dbUrl?: string;
+            dbProviders?: Record<string, string>;
         }
     ) {
         this.page = repo.driver;
-        const { emailCredentials, timeout, apiBaseUrl, apiProviders } = options ?? {};
-        const interactions = new ElementInteractions(this.page, { emailCredentials, timeout });
+        const { emailCredentials, timeout, interceptionRetry, apiBaseUrl, apiProviders } = options ?? {};
+        const interactions = new ElementInteractions(this.page, { emailCredentials, timeout, interceptionRetry });
+        this.interceptionRetry = interceptionRetry;
         this.interact = interactions.interact;
         this.navigate = interactions.navigate;
         this.extract = interactions.extract;
@@ -60,6 +72,16 @@ export class Steps {
         if (apiProviders) {
             for (const [name, url] of Object.entries(apiProviders)) {
                 this.apiClients.set(name, new WasapiClient.Builder().setBaseUrl(url).setLogHeaders(false).buildRaw());
+            }
+        }
+        const { dbUrl, dbProviders } = options ?? {};
+        this.dbClients = new Map();
+        if (dbUrl) {
+            this.dbClients.set('default', new SqlClient({ connectionString: dbUrl }));
+        }
+        if (dbProviders) {
+            for (const [name, url] of Object.entries(dbProviders)) {
+                this.dbClients.set(name, new SqlClient({ connectionString: url }));
             }
         }
     }
@@ -157,7 +179,7 @@ export class Steps {
      * ```
      */
     on(elementName: string, pageName: string): ElementAction {
-        const interactions = new ElementInteractions(this.page, { timeout: this.timeout });
+        const interactions = new ElementInteractions(this.page, { timeout: this.timeout, interceptionRetry: this.interceptionRetry });
         return new ElementAction(this.repo, elementName, pageName, interactions, this.timeout);
     }
 
@@ -255,6 +277,7 @@ export class Steps {
             withoutScrolling: options?.withoutScrolling,
             ifPresent: options?.ifPresent,
             force: options?.force,
+            subject: `${pageName}.${elementName}`,
         });
     }
 
@@ -271,6 +294,7 @@ export class Steps {
         if (!element) throw new Error(`No visible element found for "${elementName}" in "${pageName}"`);
         await this.interact.click(element as WebElement, {
             withoutScrolling: options?.withoutScrolling,
+            subject: `${pageName}.${elementName}`,
         });
     }
 
@@ -285,7 +309,7 @@ export class Steps {
     async clickIfPresent(elementName: string, pageName: string, options?: StepOptions): Promise<boolean> {
         log.interact('Clicking on "%s" in "%s" (if present)', elementName, pageName);
         const element = await this.getWebElement(elementName, pageName, options);
-        return await this.interact.click(element, { ifPresent: true }) as boolean;
+        return await this.interact.click(element, { ifPresent: true, subject: `${pageName}.${elementName}` }) as boolean;
     }
 
     /**
@@ -1088,7 +1112,7 @@ export class Steps {
      *   .throws('price must be above $10');
      */
     expect(elementName: string, pageName: string): ExpectBuilder {
-        const interactions = new ElementInteractions(this.page, { timeout: this.timeout });
+        const interactions = new ElementInteractions(this.page, { timeout: this.timeout, interceptionRetry: this.interceptionRetry });
         const action = new ElementAction(this.repo, elementName, pageName, interactions, this.timeout);
         log.verify('Building matcher tree for "%s" in "%s"', elementName, pageName);
         return new ExpectBuilder(action.buildExpectContext());
@@ -1156,7 +1180,7 @@ export class Steps {
         log.interact('Clicking listed element in "%s" > "%s" with options: %O', pageName, elementName, options);
         const baseElement = await this.getAllWebElement(elementName, pageName);
         const target = await this.interact.getListedElement(baseElement, options, this.repo);
-        await this.interact.click(target);
+        await this.interact.click(target, { subject: `${pageName}.${elementName}` });
     }
 
     /**
@@ -1213,23 +1237,33 @@ export class Steps {
 
     /**
      * Waits for an element to reach the specified state before proceeding.
+     * Throws on timeout as of 0.3.7; pass `{ optional: true }` to probe
+     * without failing (resolves `false` instead).
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param state - The desired state to wait for.
-     * @param options - Optional step options for element resolution.
+     * @param options - Optional step options: element resolution, `timeout` (per-call override), `optional` (soft probe).
+     * @returns `true` when the state was reached; `false` only when `optional` and the wait timed out.
      */
     async waitForState(
         elementName: string,
         pageName: string,
         state: 'visible' | 'attached' | 'hidden' | 'detached' = 'visible',
         options?: StepOptions
-    ): Promise<void> {
+    ): Promise<boolean> {
         log.wait('Waiting for "%s" in "%s" to be "%s"', elementName, pageName, state);
         const element = await this.getWebElement(elementName, pageName, options);
+        const timeout = options?.timeout ?? this.timeout;
         try {
-            await element.waitFor({ state, timeout: this.timeout });
-        } catch {
-            log.wait('Element failed to reach state \'%s\' within %dms...', state, this.timeout ?? 30000);
+            await element.waitFor({ state, timeout });
+            return true;
+        } catch (error) {
+            if (options?.optional) {
+                log.wait("Element '%s.%s' did not reach state '%s' within %dms (optional wait — continuing)", pageName, elementName, state, timeout);
+                return false;
+            }
+            const causeMsg = error instanceof Error ? error.message : String(error);
+            throw new Error(`waitForState: '${pageName}.${elementName}' did not reach state '${state}' within ${timeout}ms. ${causeMsg}`);
         }
     }
 
@@ -1248,8 +1282,11 @@ export class Steps {
     ): Promise<void> {
         log.interact('Waiting for "%s" in "%s" to be "%s", then clicking', elementName, pageName, state);
         const element = await this.getWebElement(elementName, pageName, options);
-        await this.utils.waitForState(element, state);
-        await this.interact.click(element);
+        // Deliberately NOT forwarding `options.optional`: a wait-then-click on a
+        // missing element must throw — soft-skipping the wait would just defer
+        // the failure to the click with a less precise error.
+        await this.utils.waitForState(element, state, options?.timeout);
+        await this.interact.click(element, { subject: `${pageName}.${elementName}` });
     }
 
     /**
@@ -1263,7 +1300,7 @@ export class Steps {
         log.interact('Clicking element at index %d of "%s" in "%s"', index, elementName, pageName);
         const element = await this.repo.getByIndex(elementName, pageName, index);
         if (!element) throw new Error(`No element at index ${index} for "${elementName}" in "${pageName}"`);
-        await this.interact.click(element as WebElement);
+        await this.interact.click(element as WebElement, { subject: `${pageName}.${elementName}` });
     }
 
     // ==========================================
@@ -1784,6 +1821,175 @@ export class Steps {
 
         if (expectedValue !== undefined && actual[1] !== expectedValue) {
             throw new Error(`Expected header "${headerName}" to be "${expectedValue}" but got "${actual[1]}"`);
+        }
+    }
+
+    /**
+     * Resolves the named `SqlClient` from the internal registry. Defaults to the
+     * `'default'` client (configured via `dbUrl`). Named connections come from
+     * `dbProviders` on the fixture options.
+     */
+    private getDbClient(name?: string): SqlClient {
+        const clientName = name ?? 'default';
+        const client = this.dbClients.get(clientName);
+        if (!client) {
+            if (clientName === 'default') {
+                throw new Error('SQL client is not configured. Pass dbUrl to baseFixture() options when setting up your test fixture.');
+            }
+            throw new Error(`SQL provider "${clientName}" is not configured. Pass it in dbProviders to baseFixture() options. Available: ${[...this.dbClients.keys()].join(', ')}`);
+        }
+        return client;
+    }
+
+    /**
+     * Splits `(sqlOrProvider, sql?, params?)` into a resolved client + sql + params.
+     * If the second arg is a string, the first is treated as a provider name.
+     */
+    private resolveSqlArgs(sqlOrProvider: string, sql?: string | unknown[], params?: unknown[]): { client: SqlClient; sql: string; params: unknown[] } {
+        if (typeof sql === 'string') {
+            return { client: this.getDbClient(sqlOrProvider), sql, params: params ?? [] };
+        }
+        return { client: this.getDbClient(), sql: sqlOrProvider, params: (sql as unknown[]) ?? [] };
+    }
+
+    /**
+     * Runs a parametrised read query (SELECT) against the default SQL client, or
+     * the named provider when the first argument matches a key in `dbProviders`.
+     *
+     * @example
+     * ```ts
+     * const res = await steps.sqlQuery<{ title: string }>('SELECT title FROM books WHERE genre = $1', ['Fiction']);
+     * const res = await steps.sqlQuery('analytics', 'SELECT count(*) FROM orders');
+     * ```
+     */
+    async sqlQuery<T = Record<string, unknown>>(sqlOrProvider: string, sql?: string | unknown[], params?: unknown[]): Promise<SqlResult<T>> {
+        const resolved = this.resolveSqlArgs(sqlOrProvider, sql, params);
+        log.sql('QUERY %s %o', resolved.sql, resolved.params);
+        return await resolved.client.query<T>(resolved.sql, resolved.params);
+    }
+
+    /**
+     * Runs a parametrised write statement (INSERT/UPDATE/DELETE) and returns the
+     * affected `rowCount`. Same provider-overload as {@link sqlQuery}.
+     */
+    async sqlExecute(sqlOrProvider: string, sql?: string | unknown[], params?: unknown[]): Promise<SqlResult> {
+        const resolved = this.resolveSqlArgs(sqlOrProvider, sql, params);
+        log.sql('EXECUTE %s %o', resolved.sql, resolved.params);
+        return await resolved.client.execute(resolved.sql, resolved.params);
+    }
+
+    /**
+     * Runs `fn` inside a transaction (BEGIN/COMMIT, auto-ROLLBACK on throw).
+     * Pass a provider name as the first argument to target a named connection:
+     * `steps.sqlTransaction('analytics', async (tx) => { ... })`.
+     */
+    async sqlTransaction<R>(fnOrProvider: string | ((tx: import('@civitas-cerebrum/sql-client').SqlTransaction) => Promise<R>), fn?: (tx: import('@civitas-cerebrum/sql-client').SqlTransaction) => Promise<R>): Promise<R> {
+        if (typeof fnOrProvider === 'string') {
+            log.sql('TRANSACTION (provider=%s)', fnOrProvider);
+            return await this.getDbClient(fnOrProvider).transaction(fn!);
+        }
+        log.sql('TRANSACTION (default)');
+        return await this.getDbClient().transaction(fnOrProvider);
+    }
+
+    /** Begin a fluent SELECT builder pre-bound to the default (or named) client. */
+    sqlSelect(table: string, provider?: string): QueryBuilder & { run<T = Record<string, unknown>>(): Promise<SqlResult<T>> } {
+        return this.bindBuilder(QueryBuilder.select(table), provider);
+    }
+    /** Begin a fluent INSERT builder. Call `.values({...}).run()`. */
+    sqlInsert(table: string, provider?: string): QueryBuilder & { run<T = Record<string, unknown>>(): Promise<SqlResult<T>> } {
+        return this.bindBuilder(QueryBuilder.insert(table), provider);
+    }
+    /** Begin a fluent UPDATE builder. Call `.set({...}).where(...).run()`. */
+    sqlUpdate(table: string, provider?: string): QueryBuilder & { run<T = Record<string, unknown>>(): Promise<SqlResult<T>> } {
+        return this.bindBuilder(QueryBuilder.update(table), provider);
+    }
+    /** Begin a fluent DELETE builder. Call `.where(...).run()`. */
+    sqlDelete(table: string, provider?: string): QueryBuilder & { run<T = Record<string, unknown>>(): Promise<SqlResult<T>> } {
+        return this.bindBuilder(QueryBuilder.delete(table), provider);
+    }
+
+    /**
+     * Rebinds a builder's `.run()` so the test author needs no client argument:
+     * `.run()` dispatches through the resolved SqlClient.
+     */
+    private bindBuilder(builder: QueryBuilder, provider?: string): QueryBuilder & { run<T = Record<string, unknown>>(): Promise<SqlResult<T>> } {
+        const client = this.getDbClient(provider);
+        const bound = builder as QueryBuilder & { run<T = Record<string, unknown>>(): Promise<SqlResult<T>> };
+        bound.run = (<T = Record<string, unknown>>() => {
+            const { text, values } = builder.toSql(client.dialect);
+            log.sql('BUILD %s %o', text, values);
+            // QueryBuilder only emits plain SELECT/INSERT/UPDATE/DELETE; a leading SELECT → read path.
+            // If the builder ever gains CTEs (WITH ... SELECT) or RETURNING, revisit this dispatch.
+            return /^\s*select/i.test(text) ? client.query<T>(text, values) : (client.execute(text, values) as Promise<SqlResult<T>>);
+        }) as QueryBuilder['run'] & (<T>() => Promise<SqlResult<T>>);
+        return bound;
+    }
+
+    /** Closes all open SQL connection pools. Called by the fixture in teardown. Safe to call more than once. */
+    async closeDbConnections(): Promise<void> {
+        const clients = [...this.dbClients.values()];
+        this.dbClients.clear();
+        for (const client of clients) {
+            await client.end();
+        }
+    }
+
+    /** Asserts the result row count equals `expected`, or falls within `{min,max}`. */
+    async verifySqlRowCount(result: SqlResult<unknown>, expected: number | { min?: number; max?: number }): Promise<void> {
+        const actual = result.rowCount;
+        if (typeof expected === 'number') {
+            log.sql('verify rowCount === %d (actual %d)', expected, actual);
+            if (actual !== expected) throw new Error(`Expected SQL row count ${expected} but got ${actual}.`);
+            return;
+        }
+        if (expected.min !== undefined && actual < expected.min) throw new Error(`Expected SQL row count >= ${expected.min} but got ${actual}.`);
+        if (expected.max !== undefined && actual > expected.max) throw new Error(`Expected SQL row count <= ${expected.max} but got ${actual}.`);
+    }
+
+    /** Asserts a single cell at `rowIndex`/`column` equals `expected` (loose `==` after String()). */
+    async verifySqlValue(result: SqlResult<Record<string, unknown>>, rowIndex: number, column: string, expected: unknown): Promise<void> {
+        const row = result.rows[rowIndex];
+        if (!row) throw new Error(`Expected a row at index ${rowIndex} but the result has ${result.rows.length} row(s).`);
+        const actual = row[column];
+        log.sql('verify row[%d].%s === %o (actual %o)', rowIndex, column, expected, actual);
+        if (String(actual) !== String(expected)) {
+            throw new Error(`Expected row[${rowIndex}].${column} to be "${expected}" but got "${actual}".`);
+        }
+    }
+
+    /** Asserts at least one row matches every column/value pair in `partialRow`. */
+    async verifySqlContains(result: SqlResult<Record<string, unknown>>, partialRow: Record<string, unknown>): Promise<void> {
+        const entries = Object.entries(partialRow);
+        const found = result.rows.some((row) => entries.every(([k, v]) => String(row[k]) === String(v)));
+        log.sql('verify contains %o (found=%s)', partialRow, found);
+        if (!found) {
+            throw new Error(`Expected a row matching ${JSON.stringify(partialRow)} but none of the ${result.rows.length} row(s) did.`);
+        }
+    }
+
+    /** Asserts the ordered values of `column` across all rows equal `expected`. */
+    async verifySqlColumn(result: SqlResult<Record<string, unknown>>, column: string, expected: unknown[]): Promise<void> {
+        const actual = result.rows.map((r) => r[column]);
+        log.sql('verify column %s order %o (actual %o)', column, expected, actual);
+        if (actual.length !== expected.length || actual.some((v, i) => String(v) !== String(expected[i]))) {
+            throw new Error(`Expected column "${column}" to be [${expected.join(', ')}] but got [${actual.join(', ')}].`);
+        }
+    }
+
+    /** Asserts the result has zero rows. */
+    async verifySqlEmpty(result: SqlResult<unknown>): Promise<void> {
+        log.sql('verify empty (actual %d)', result.rowCount);
+        if (result.rowCount !== 0 || result.rows.length !== 0) {
+            throw new Error(`Expected an empty SQL result but got ${result.rowCount} row(s).`);
+        }
+    }
+
+    /** Asserts the result has at least one row. */
+    async verifySqlNotEmpty(result: SqlResult<unknown>): Promise<void> {
+        log.sql('verify not empty (actual %d)', result.rowCount);
+        if (result.rows.length === 0) {
+            throw new Error('Expected a non-empty SQL result but got 0 rows.');
         }
     }
 }

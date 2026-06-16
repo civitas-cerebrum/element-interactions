@@ -1,5 +1,6 @@
 import { test, expect } from './fixture/StepFixture';
 import path from 'path';
+import { WebElement } from '@civitas-cerebrum/element-repository';
 
 test.describe('Fluent API — steps.on()', () => {
 
@@ -277,7 +278,7 @@ test.describe('Fluent API — steps.on()', () => {
       await steps.navigateTo('/');
       await steps.click( 'droppableLink','SidebarNav');
       await steps.verifyTextContains( 'redZoneCount','DroppablePage', '0');
-      const redZone = await repo.get('redZone', 'DroppablePage');
+      const redZone = await repo.get('redZone', 'DroppablePage') as WebElement;
       await steps.on('redItem1', 'DroppablePage').dragAndDrop({ target: redZone });
       await steps.verifyTextContains( 'redZoneCount','DroppablePage', '1');
     });
