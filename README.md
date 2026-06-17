@@ -437,7 +437,8 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 * **`dragAndDrop(elementName, pageName, options: DragAndDropOptions)`** — Drags an element to a target element (`{ target: Locator | Element }`), by coordinate offset (`{ xOffset, yOffset }`), or both.
 * **`dragAndDropListedElement(elementName, pageName, elementText, options: DragAndDropOptions)`** — Finds a specific element by its text from a list, then drags it to a destination.
 * **`fill(elementName, pageName, text: string)`** — Clears and fills an input field with the provided text.
-* **`uploadFile(elementName, pageName, filePath: string)`** — Uploads a file to an `<input type="file">` element.
+* **`uploadFile(elementName, pageName, filePath: string | string[])`** — Uploads one or more files to an `<input type="file">` element. Pass a string array to attach multiple files in a single call.
+* **`dropFiles(elementName, pageName, filenames: string[], options?: { mimeType?: string })`** — Simulates dropping files onto a drop-zone by dispatching `dragenter`, `dragover`, and `drop` events with a populated `DataTransfer`. Filenames are basenames only — no real file is read from disk.
 * **`selectDropdown(elementName, pageName, options?: DropdownSelectOptions)`** — Selects an option from a `<select>` element and returns its `value`. Defaults to `{ type: DropdownSelectType.RANDOM }`. Also supports `VALUE` (exact match) and `INDEX` (zero-based).
 * **`setSliderValue(elementName, pageName, value: number)`** — Sets a range input (`<input type="range">`) to the specified numeric value.
 * **`pressKey(key: string)`** — Presses a keyboard key at the page level (e.g. `'Enter'`, `'Escape'`, `'Tab'`).
@@ -466,6 +467,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 * **`verifyTabCount(expectedCount: number)`** — Asserts the number of currently open tabs/pages in the browser context.
 * **`verifyLocalStorage(key: string, options: StorageVerifyOptions)`** — Asserts a property of `localStorage[key]`. Pick exactly one matcher in the options: `{ equals: string }` (exact match), `{ contains: string }` (substring), `{ matches: RegExp }`, or `{ present: boolean }` (existence). All four forms also accept `negated`, `timeout`, and `errorMessage`. Polls until the predicate holds or the timeout expires, so it survives the race between a UI action firing and its persistence side-effect landing.
 * **`verifySessionStorage(key: string, options: StorageVerifyOptions)`** — Same shape, against `window.sessionStorage`.
+* **`expectNoRequest(urlPattern: string | RegExp, action, options?: { timeout?: number; methods?: ('GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS')[]; redactQuery?: boolean })`** — Negative companion to `waitForResponse`. Asserts that **no** request matching `urlPattern` fires during `action` (and an observation window after, default `1000`ms). Use to prove a client-side block — HTML5 `required`, native `type=email` validation, custom JS guards — short-circuits before the XHR is issued. Strings are Playwright globs (same semantics as `waitForResponse`); reach for a RegExp for contains-style matches. Throws with the offending `method url` lines when a matching request did fire. **Secret-leak surface**: the offender URL is included verbatim in the thrown error (which flows into runner output and Playwright traces) — pass `{ redactQuery: true }` when your URLs may carry tokens or API keys in query parameters.
 
 ```ts
 // Examples
@@ -567,7 +569,7 @@ await steps.clickListedElement('tableRows', 'Users', {
   ```
 
 * **`waitForNetworkIdle()`** — Waits until there are no in-flight network requests for at least 500ms.
-* **`waitForResponse(urlPattern: string | RegExp, action: () => Promise<void>)`** — Executes an action and waits for a matching network response. Returns the `Response` object.
+* **`waitForResponse(urlPattern: string | RegExp, action: () => Promise<void>)`** — Executes an action and waits for a matching network response. Returns the `Response` object. For the negative companion (asserting **no** matching request fires), see `expectNoRequest` in the Verification section.
 * **`waitAndClick(elementName, pageName, state?: string, options?)`** — Waits for an element to reach a state (default `'visible'`), then clicks it. Throws when the element never reaches the state — `optional` softness is deliberately not inherited here.
 
 ### 🧩 Composite / Workflow

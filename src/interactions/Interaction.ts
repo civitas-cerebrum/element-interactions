@@ -147,10 +147,20 @@ export class Interactions {
         await element.fill(text, { timeout: this.ELEMENT_TIMEOUT });
     }
 
-    async uploadFile(element: WebElement, filePath: string, options?: ActionTimeoutOptions): Promise<void> {
+    async uploadFile(element: WebElement, filePath: string | string[], options?: ActionTimeoutOptions): Promise<void> {
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
         await this.softProbe(element, 'attached', timeout);
         await element.setInputFiles(filePath, { timeout });
+    }
+
+    async dropFiles(
+        element: WebElement,
+        filenames: string[],
+        options?: { mimeType?: string } & ActionTimeoutOptions,
+    ): Promise<void> {
+        const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
+        await this.softProbe(element, 'attached', timeout);
+        await element.dropFiles(filenames, { mimeType: options?.mimeType, timeout });
     }
 
     /**
