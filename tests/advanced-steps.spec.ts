@@ -612,7 +612,7 @@ test.describe('TC_072: expectNoRequest — HTML5 form block', () => {
 // No `route.fulfill` on the API endpoint — only the form-host page is routed,
 // because BookHive is API-only and has no signup/login UI of its own.
 //
-// This proves `expectNoRequest` behaves correctly when route.continue() hands
+// This proves `expectNoRequest` behaves correctly when route.fallback() hands
 // the request off to a live backend, not a stub — catching any regression
 // where the observer accidentally suppresses or alters traffic.
 //
