@@ -398,16 +398,36 @@ export class Steps {
     }
 
     /**
-     * Uploads a file to a file input element.
+     * Uploads one or more files to a file input element.
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
-     * @param filePath - The path to the file to upload.
+     * @param filePath - Path to the file, or an array of paths for multi-file inputs.
      * @param options - Optional step options for element resolution.
      */
-    async uploadFile(elementName: string, pageName: string, filePath: string, options?: StepOptions): Promise<void> {
-        log.interact('Uploading file "%s" to "%s" in "%s"', filePath, elementName, pageName);
+    async uploadFile(elementName: string, pageName: string, filePath: string | string[], options?: StepOptions): Promise<void> {
+        const label = Array.isArray(filePath) ? filePath.join(', ') : filePath;
+        log.interact('Uploading file "%s" to "%s" in "%s"', label, elementName, pageName);
         const element = await this.getWebElement(elementName, pageName, options);
         await this.interact.uploadFile(element, filePath);
+    }
+
+    /**
+     * Simulates dropping files onto a drop-zone element by dispatching
+     * `dragenter`, `dragover`, and `drop` events with a populated `DataTransfer`.
+     * @param elementName - The element name as defined under the given page.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param filenames - File name(s) to include in the drop (basename only; no real file is read).
+     * @param options - Optional `mimeType` (default `'application/octet-stream'`) and step options.
+     */
+    async dropFiles(
+        elementName: string,
+        pageName: string,
+        filenames: string[],
+        options?: { mimeType?: string } & StepOptions,
+    ): Promise<void> {
+        log.interact('Dropping files "%s" onto "%s" in "%s"', filenames.join(', '), elementName, pageName);
+        const element = await this.getWebElement(elementName, pageName, options);
+        await this.interact.dropFiles(element, filenames, { mimeType: options?.mimeType });
     }
 
     /**
