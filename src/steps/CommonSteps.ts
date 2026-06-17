@@ -4,7 +4,7 @@ import { ElementInteractions } from '../interactions/facade/ElementInteractions'
 import { Utils } from '../utils/ElementUtilities';
 import { EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
-import { SqlClient, SqlResult, QueryBuilder } from '@civitas-cerebrum/sql-client';
+import { SqlClient, SqlResult, QueryBuilder, UnsupportedEngineException } from '@civitas-cerebrum/sql-client';
 import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions, StorageVerifyOptions, VisualMatchOptions, VisualMaskTarget } from '../enum/Options';
 import { ExpectNoRequestOptions } from '../interactions/Navigation';
 import { stepLog as log } from '../logger/Logger';
@@ -26,7 +26,11 @@ export class Steps {
     private utils;
     private email;
     private apiClients: Map<string, WasapiClient>;
+    /** Lazily-built SqlClient cache, keyed by provider name (constructed on first DB step). */
     private dbClients: Map<string, SqlClient>;
+    /** Provider name → connection string. Clients are built on first use so a missing driver fails at the first DB step, not at fixture setup. */
+    private dbConfigs: Map<string, string>;
+    private dbConnectTimeoutMs?: number;
     private timeout?: number;
     private interceptionRetry?: boolean;
 
@@ -51,6 +55,11 @@ export class Steps {
             apiProviders?: Record<string, string>;
             dbUrl?: string;
             dbProviders?: Record<string, string>;
+            /**
+             * Connect-timeout (ms) applied to every SQL client, so a wrong/unreachable
+             * `dbUrl` fails fast in CI instead of hanging on the first query.
+             */
+            dbConnectTimeoutMs?: number;
         }
     ) {
         this.page = repo.driver;
@@ -74,14 +83,19 @@ export class Steps {
                 this.apiClients.set(name, new WasapiClient.Builder().setBaseUrl(url).setLogHeaders(false).buildRaw());
             }
         }
-        const { dbUrl, dbProviders } = options ?? {};
+        const { dbUrl, dbProviders, dbConnectTimeoutMs } = options ?? {};
+        // Register connection strings only — clients are constructed lazily on the
+        // first DB step so a missing engine driver surfaces a clear, actionable error
+        // at the call site (not at fixture setup, before any SQL is run).
         this.dbClients = new Map();
+        this.dbConfigs = new Map();
+        this.dbConnectTimeoutMs = dbConnectTimeoutMs;
         if (dbUrl) {
-            this.dbClients.set('default', new SqlClient({ connectionString: dbUrl }));
+            this.dbConfigs.set('default', dbUrl);
         }
         if (dbProviders) {
             for (const [name, url] of Object.entries(dbProviders)) {
-                this.dbClients.set(name, new SqlClient({ connectionString: url }));
+                this.dbConfigs.set(name, url);
             }
         }
     }
@@ -1851,13 +1865,34 @@ export class Steps {
      */
     private getDbClient(name?: string): SqlClient {
         const clientName = name ?? 'default';
-        const client = this.dbClients.get(clientName);
-        if (!client) {
+        const cached = this.dbClients.get(clientName);
+        if (cached) return cached;
+
+        const connectionString = this.dbConfigs.get(clientName);
+        if (!connectionString) {
             if (clientName === 'default') {
                 throw new Error('SQL client is not configured. Pass dbUrl to baseFixture() options when setting up your test fixture.');
             }
-            throw new Error(`SQL provider "${clientName}" is not configured. Pass it in dbProviders to baseFixture() options. Available: ${[...this.dbClients.keys()].join(', ')}`);
+            throw new Error(`SQL provider "${clientName}" is not configured. Pass it in dbProviders to baseFixture() options. Available: ${[...this.dbConfigs.keys()].join(', ')}`);
         }
+
+        // Built lazily on first use. element-interactions does not bundle SQL engine
+        // drivers (pg/mysql2/better-sqlite3/mssql/oracledb) — the agent/project must
+        // install the one for the engine it targets. Surface that as an actionable
+        // error at the first DB step rather than an opaque MODULE_NOT_FOUND.
+        let client: SqlClient;
+        try {
+            client = new SqlClient({ connectionString, connectTimeoutMs: this.dbConnectTimeoutMs });
+        } catch (err) {
+            if (err instanceof UnsupportedEngineException) {
+                throw new UnsupportedEngineException(
+                    `SQL steps need a database driver that is not installed. ${err.message} ` +
+                    `element-interactions does not bundle SQL drivers — install the one for your engine and re-run.`
+                );
+            }
+            throw err;
+        }
+        this.dbClients.set(clientName, client);
         return client;
     }
 
@@ -1910,6 +1945,33 @@ export class Steps {
         }
         log.sql('TRANSACTION (default)');
         return await this.getDbClient().transaction(fnOrProvider);
+    }
+
+    /**
+     * Connectivity probe against the default (or named) SQL client — runs the
+     * engine-correct `SELECT 1` and throws if the database is unreachable. Use in
+     * a Playwright `globalSetup` so a misconfigured `dbUrl` fails the run up front
+     * with a clear error instead of a hung first query.
+     */
+    async sqlPing(provider?: string): Promise<void> {
+        log.sql('PING (provider=%s)', provider ?? 'default');
+        await this.getDbClient(provider).ping();
+    }
+
+    /**
+     * Execute a multi-statement SQL script (schema/seed file) against the default
+     * or named client. The script is split with the engine's rules (Oracle `/`,
+     * SQL Server `GO`, comment/quote aware) and each statement runs in order.
+     * Provider-overloaded like {@link sqlQuery}:
+     * `steps.sqlScript(readFileSync('seed.sql','utf8'))` or
+     * `steps.sqlScript('analytics', schemaSql)`.
+     */
+    async sqlScript(sqlTextOrProvider: string, maybeSqlText?: string): Promise<void> {
+        const usingProvider = typeof maybeSqlText === 'string';
+        const client = usingProvider ? this.getDbClient(sqlTextOrProvider) : this.getDbClient();
+        const sqlText = usingProvider ? maybeSqlText : sqlTextOrProvider;
+        log.sql('SCRIPT (provider=%s, %d chars)', usingProvider ? sqlTextOrProvider : 'default', sqlText.length);
+        await client.runScript(sqlText);
     }
 
     /** Begin a fluent SELECT builder pre-bound to the default (or named) client. */

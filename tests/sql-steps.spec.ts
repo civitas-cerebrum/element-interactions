@@ -186,6 +186,39 @@ test.describe('TC_SQL_001: SQL Database Steps — bookhive integration', () => {
         await expect(steps.sqlQuery('nope', 'SELECT 1')).rejects.toThrow(/SQL provider "nope" is not configured/);
     });
 
+    test('sqlPing — default and named-provider connectivity probe', async ({ steps }) => {
+        await steps.sqlPing();             // default client — resolves without throwing
+        await steps.sqlPing('analytics');  // named provider
+    });
+
+    test('Negative: sqlPing on unconfigured provider throws helpful error', async ({ steps }) => {
+        await expect(steps.sqlPing('nope')).rejects.toThrow(/SQL provider "nope" is not configured/);
+    });
+
+    test('sqlScript — runs a multi-statement schema/seed script', async ({ steps }) => {
+        await steps.sqlScript(`
+            CREATE TABLE IF NOT EXISTS _sql_script_tmp (id INT PRIMARY KEY, label TEXT);
+            INSERT INTO _sql_script_tmp (id, label) VALUES (1, 'one'), (2, 'two');
+        `);
+        try {
+            const res = await steps.sqlQuery('SELECT label FROM _sql_script_tmp ORDER BY id');
+            await steps.verifySqlColumn(res, 'label', ['one', 'two']);
+        } finally {
+            await steps.sqlExecute('DROP TABLE IF EXISTS _sql_script_tmp');
+        }
+    });
+
+    test('sqlScript — provider-routed (analytics)', async ({ steps }) => {
+        await steps.sqlScript('analytics',
+            'CREATE TABLE IF NOT EXISTS _sql_script_tmp2 (n INT); INSERT INTO _sql_script_tmp2 VALUES (7);');
+        try {
+            const res = await steps.sqlQuery('SELECT n FROM _sql_script_tmp2');
+            await steps.verifySqlValue(res, 0, 'n', 7);
+        } finally {
+            await steps.sqlExecute('DROP TABLE IF EXISTS _sql_script_tmp2');
+        }
+    });
+
     test('closeDbConnections — idempotent pool shutdown', async ({ steps }) => {
         // First call drains the pools; second call must not throw (idempotent).
         await steps.closeDbConnections();
