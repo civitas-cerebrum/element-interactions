@@ -467,6 +467,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 * **`verifyTabCount(expectedCount: number)`** — Asserts the number of currently open tabs/pages in the browser context.
 * **`verifyLocalStorage(key: string, options: StorageVerifyOptions)`** — Asserts a property of `localStorage[key]`. Pick exactly one matcher in the options: `{ equals: string }` (exact match), `{ contains: string }` (substring), `{ matches: RegExp }`, or `{ present: boolean }` (existence). All four forms also accept `negated`, `timeout`, and `errorMessage`. Polls until the predicate holds or the timeout expires, so it survives the race between a UI action firing and its persistence side-effect landing.
 * **`verifySessionStorage(key: string, options: StorageVerifyOptions)`** — Same shape, against `window.sessionStorage`.
+* **`expectNoRequest(urlPattern: string | RegExp, action, options?: { timeout?: number; methods?: ('GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS')[]; redactQuery?: boolean })`** — Negative companion to `waitForResponse`. Asserts that **no** request matching `urlPattern` fires during `action` (and an observation window after, default `1000`ms). Use to prove a client-side block — HTML5 `required`, native `type=email` validation, custom JS guards — short-circuits before the XHR is issued. Strings are Playwright globs (same semantics as `waitForResponse`); reach for a RegExp for contains-style matches. Throws with the offending `method url` lines when a matching request did fire. **Secret-leak surface**: the offender URL is included verbatim in the thrown error (which flows into runner output and Playwright traces) — pass `{ redactQuery: true }` when your URLs may carry tokens or API keys in query parameters.
 
 ```ts
 // Examples
@@ -568,7 +569,7 @@ await steps.clickListedElement('tableRows', 'Users', {
   ```
 
 * **`waitForNetworkIdle()`** — Waits until there are no in-flight network requests for at least 500ms.
-* **`waitForResponse(urlPattern: string | RegExp, action: () => Promise<void>)`** — Executes an action and waits for a matching network response. Returns the `Response` object.
+* **`waitForResponse(urlPattern: string | RegExp, action: () => Promise<void>)`** — Executes an action and waits for a matching network response. Returns the `Response` object. For the negative companion (asserting **no** matching request fires), see `expectNoRequest` in the Verification section.
 * **`waitAndClick(elementName, pageName, state?: string, options?)`** — Waits for an element to reach a state (default `'visible'`), then clicks it. Throws when the element never reaches the state — `optional` softness is deliberately not inherited here.
 
 ### 🧩 Composite / Workflow
