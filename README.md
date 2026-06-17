@@ -841,8 +841,26 @@ await steps.cleanEmails();
 ## SQL Database Steps
 
 Query a SQL database directly in your tests — the natural oracle for verifying that a UI or API
-mutation actually persisted. Backed by `@civitas-cerebrum/sql-client` (Postgres). All values are
-parametrised; never interpolate values into SQL.
+mutation actually persisted. Backed by `@civitas-cerebrum/sql-client`, which speaks
+Postgres, MySQL/MariaDB, SQLite, SQL Server, and Oracle. All values are parametrised; never
+interpolate values into SQL.
+
+### Install the engine driver
+
+element-interactions does **not** bundle SQL drivers — install the one for the engine you target,
+alongside this package:
+
+```sh
+npm install pg              # Postgres
+npm install mysql2          # MySQL / MariaDB
+npm install better-sqlite3  # SQLite
+npm install mssql           # SQL Server
+npm install oracledb        # Oracle
+```
+
+Drivers load lazily: a `steps.sql*` call against an engine whose driver isn't installed throws a
+clear `UnsupportedEngineException` naming the package to install — at the first DB step, not at
+fixture setup. Tests that never touch SQL need no driver at all.
 
 ### Fixture configuration
 

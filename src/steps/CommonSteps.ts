@@ -4,7 +4,7 @@ import { ElementInteractions } from '../interactions/facade/ElementInteractions'
 import { Utils } from '../utils/ElementUtilities';
 import { EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
-import { SqlClient, SqlResult, QueryBuilder } from '@civitas-cerebrum/sql-client';
+import { SqlClient, SqlResult, QueryBuilder, UnsupportedEngineException } from '@civitas-cerebrum/sql-client';
 import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions, StorageVerifyOptions, VisualMatchOptions, VisualMaskTarget } from '../enum/Options';
 import { ExpectNoRequestOptions } from '../interactions/Navigation';
 import { stepLog as log } from '../logger/Logger';
@@ -26,7 +26,11 @@ export class Steps {
     private utils;
     private email;
     private apiClients: Map<string, WasapiClient>;
+    /** Lazily-built SqlClient cache, keyed by provider name (constructed on first DB step). */
     private dbClients: Map<string, SqlClient>;
+    /** Provider name → connection string. Clients are built on first use so a missing driver fails at the first DB step, not at fixture setup. */
+    private dbConfigs: Map<string, string>;
+    private dbConnectTimeoutMs?: number;
     private timeout?: number;
     private interceptionRetry?: boolean;
 
@@ -80,13 +84,18 @@ export class Steps {
             }
         }
         const { dbUrl, dbProviders, dbConnectTimeoutMs } = options ?? {};
+        // Register connection strings only — clients are constructed lazily on the
+        // first DB step so a missing engine driver surfaces a clear, actionable error
+        // at the call site (not at fixture setup, before any SQL is run).
         this.dbClients = new Map();
+        this.dbConfigs = new Map();
+        this.dbConnectTimeoutMs = dbConnectTimeoutMs;
         if (dbUrl) {
-            this.dbClients.set('default', new SqlClient({ connectionString: dbUrl, connectTimeoutMs: dbConnectTimeoutMs }));
+            this.dbConfigs.set('default', dbUrl);
         }
         if (dbProviders) {
             for (const [name, url] of Object.entries(dbProviders)) {
-                this.dbClients.set(name, new SqlClient({ connectionString: url, connectTimeoutMs: dbConnectTimeoutMs }));
+                this.dbConfigs.set(name, url);
             }
         }
     }
@@ -1856,13 +1865,34 @@ export class Steps {
      */
     private getDbClient(name?: string): SqlClient {
         const clientName = name ?? 'default';
-        const client = this.dbClients.get(clientName);
-        if (!client) {
+        const cached = this.dbClients.get(clientName);
+        if (cached) return cached;
+
+        const connectionString = this.dbConfigs.get(clientName);
+        if (!connectionString) {
             if (clientName === 'default') {
                 throw new Error('SQL client is not configured. Pass dbUrl to baseFixture() options when setting up your test fixture.');
             }
-            throw new Error(`SQL provider "${clientName}" is not configured. Pass it in dbProviders to baseFixture() options. Available: ${[...this.dbClients.keys()].join(', ')}`);
+            throw new Error(`SQL provider "${clientName}" is not configured. Pass it in dbProviders to baseFixture() options. Available: ${[...this.dbConfigs.keys()].join(', ')}`);
         }
+
+        // Built lazily on first use. element-interactions does not bundle SQL engine
+        // drivers (pg/mysql2/better-sqlite3/mssql/oracledb) — the agent/project must
+        // install the one for the engine it targets. Surface that as an actionable
+        // error at the first DB step rather than an opaque MODULE_NOT_FOUND.
+        let client: SqlClient;
+        try {
+            client = new SqlClient({ connectionString, connectTimeoutMs: this.dbConnectTimeoutMs });
+        } catch (err) {
+            if (err instanceof UnsupportedEngineException) {
+                throw new UnsupportedEngineException(
+                    `SQL steps need a database driver that is not installed. ${err.message} ` +
+                    `element-interactions does not bundle SQL drivers — install the one for your engine and re-run.`
+                );
+            }
+            throw err;
+        }
+        this.dbClients.set(clientName, client);
         return client;
     }
 
