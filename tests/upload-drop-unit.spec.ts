@@ -33,10 +33,12 @@ async function pageWithDropZone(page: Page) {
         <script>
             const dz = document.getElementById('dz');
             const log = document.getElementById('log');
+            window.__dropCount = 0;
             ['dragenter','dragover','drop'].forEach(evt => {
                 dz.addEventListener(evt, e => {
                     e.preventDefault();
                     if (evt === 'drop') {
+                        window.__dropCount++;
                         Array.from(e.dataTransfer.files).forEach(f => {
                             const li = document.createElement('li');
                             li.textContent = f.name + '|' + f.type;
@@ -171,6 +173,10 @@ test.describe('Interactions.dropFiles', () => {
 
         await interact.dropFiles(element, []);
 
+        // The drop event must still fire (proving dropFiles isn't a silent
+        // no-op for the empty case) — it just carries zero files.
+        const dropCount = await page.evaluate(() => (window as unknown as { __dropCount: number }).__dropCount);
+        expect(dropCount).toBe(1);
         const items = await page.locator('#log li').allTextContents();
         expect(items).toHaveLength(0);
     });
