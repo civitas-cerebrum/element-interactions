@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "@civitas-cerebrum/test-coverage": "^0.1.0",
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.61.0",
     "@types/debug": "^4.1.13",
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0"
@@ -54,12 +54,15 @@
   "license": "MIT",
   "dependencies": {
     "@civitas-cerebrum/context-store": "^0.0.2",
-    "@civitas-cerebrum/element-repository": "^0.2.1",
+    "@civitas-cerebrum/element-repository": "^0.3.1",
     "@civitas-cerebrum/email-client": "^0.0.7",
     "@civitas-cerebrum/sql-client": "^0.1.0",
     "@civitas-cerebrum/wasapi": "^0.0.3",
     "debug": "^4.4.3",
     "dotenv": "^17.3.1",
     "pg": "^8.13.0"
+  },
+  "overrides": {
+    "nodemailer": "^8.0.11"
   }
 }
