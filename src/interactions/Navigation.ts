@@ -1,7 +1,44 @@
-import { Page, Response, Route } from '@playwright/test';
+import { Page, Response, Route, errors } from '@playwright/test';
 import { logger } from '../logger/Logger';
 
 const log = logger('navigate');
+
+/**
+ * The page lifecycle state a navigation waits for before resolving. Mirrors the
+ * `waitUntil` values accepted by Playwright's `page.goto` / `page.waitForURL`.
+ *
+ * - `'load'` (default) — the `load` event fired: full load incl. images and
+ *   sub-resources. Robust, but blocks on slow analytics/images and can stall
+ *   on a cold WebKit/Safari first paint.
+ * - `'domcontentloaded'` — the `DOMContentLoaded` event fired: HTML parsed,
+ *   deferred scripts run, but sub-resources may still be loading. The
+ *   WebKit-safe choice for SPA navigations.
+ * - `'networkidle'` — no network connections for at least 500ms. Discouraged
+ *   for assertions; useful after background-fetch flows.
+ * - `'commit'` — the navigation response was received and the document started
+ *   loading. The earliest signal.
+ */
+export type WaitUntilState = 'load' | 'domcontentloaded' | 'networkidle' | 'commit';
+
+/**
+ * Options accepted by {@link Navigation.waitForNetworkIdle}.
+ */
+export interface WaitForNetworkIdleOptions {
+    /**
+     * Maximum time to wait for the network to go idle, in milliseconds. When
+     * omitted, Playwright's default timeout applies (configurable via
+     * `page.setDefaultTimeout` or the test config).
+     */
+    timeout?: number;
+    /**
+     * When true, a `TimeoutError` resolves quietly instead of throwing — use
+     * after best-effort settling where lingering long-poll / analytics traffic
+     * should not fail the test. Only the idle timeout is swallowed; real
+     * failures (page/context closed, navigation interrupted) still throw.
+     * Defaults to false (timeout throws).
+     */
+    optional?: boolean;
+}
 
 /**
  * HTTP methods recognized by {@link Navigation.expectNoRequest}'s `methods` filter.
@@ -71,23 +108,75 @@ export class Navigation {
 
     /**
     * Navigates the active browser page to the specified URL.
-    * Automatically waits for the page to reach the default 'load' state.
     * @param url - The absolute or relative URL to navigate to.
     * Absolute URLs are used as-is. Relative URLs are resolved against
     * `baseURL` from playwright.config.ts, preserving the base path.
+    * @param waitUntil - The page lifecycle state to wait for before resolving.
+    * Defaults to `'load'` (unchanged behaviour). Pass `'domcontentloaded'` for
+    * SPA navigations that stall a cold WebKit/Safari on the full `load` event.
     */
-    async toUrl(url: string): Promise<void> {
+    async toUrl(url: string, waitUntil?: WaitUntilState): Promise<void> {
+        const options = waitUntil ? { waitUntil } : undefined;
         if (url.startsWith('http://') || url.startsWith('https://')) {
-            await this.page.goto(url);
+            await this.page.goto(url, options);
             return;
         }
         const baseURL = (this.page.context() as any)._options?.baseURL;
         if (!baseURL) {
-            await this.page.goto(url);
+            await this.page.goto(url, options);
             return;
         }
         const resolved = new URL('.' + (url.startsWith('/') ? url : '/' + url), baseURL).href;
-        await this.page.goto(resolved);
+        await this.page.goto(resolved, options);
+    }
+
+    /**
+     * Returns the current page URL (the full href), synchronously. The
+     * value-returning companion to the `verifyUrlContains` assertion — use it
+     * when a test needs the live URL to compute a path, diff against a start
+     * URL, or build a pattern.
+     */
+    getUrl(): string {
+        return this.page.url();
+    }
+
+    /**
+     * Returns the `pathname` of the current page URL (no origin, query, or
+     * hash). Convenience over `new URL(getUrl()).pathname`, which the call
+     * sites that compare routes overwhelmingly want.
+     */
+    getCurrentPath(): string {
+        return new URL(this.page.url()).pathname;
+    }
+
+    /**
+     * Waits until the page URL matches `url`, then resolves. Mirrors
+     * Playwright's `page.waitForURL`: a string is a glob pattern, a RegExp is a
+     * contains-style match, and a predicate receives the live `URL` and returns
+     * whether it matches.
+     *
+     * Pass `action` to arm the wait **before** the navigation-triggering action
+     * runs — the wait and the action are issued concurrently (via `Promise.all`)
+     * so a fast client-side route change cannot complete in the gap between
+     * acting and starting to wait. This is the race-safe form for rapid
+     * navigations (e.g. swatch switches firing several navigations in a row).
+     *
+     * @param url - Glob string, RegExp, or `(url: URL) => boolean` predicate.
+     * @param action - Optional action that triggers the navigation. When given,
+     *   it is run concurrently with the wait.
+     * @param options - Optional `{ timeout, waitUntil }`. `waitUntil` defaults to
+     *   `'load'` per Playwright.
+     */
+    async waitForUrl(
+        url: string | RegExp | ((url: URL) => boolean),
+        action?: () => Promise<void>,
+        options?: { timeout?: number; waitUntil?: WaitUntilState },
+    ): Promise<void> {
+        if (action) {
+            await Promise.all([this.page.waitForURL(url, options), action()]);
+            return;
+        }
+        await this.page.waitForURL(url, options);
     }
 
     /**
@@ -163,9 +252,28 @@ export class Navigation {
     /**
      * Waits until there are no in-flight network requests for at least 500ms.
      * Useful after actions that trigger background API calls, lazy loading, or analytics.
+     *
+     * @param options - Optional `{ timeout, optional }`. `timeout` bounds the
+     *   wait; `optional: true` resolves quietly on timeout instead of throwing
+     *   (best-effort settling where lingering analytics/long-poll traffic should
+     *   not fail the test). With no options, behaviour is unchanged.
      */
-    async waitForNetworkIdle(): Promise<void> {
-        await this.page.waitForLoadState('networkidle');
+    async waitForNetworkIdle(options?: WaitForNetworkIdleOptions): Promise<void> {
+        const loadStateOptions = options?.timeout !== undefined ? { timeout: options.timeout } : undefined;
+        if (options?.optional) {
+            try {
+                await this.page.waitForLoadState('networkidle', loadStateOptions);
+            } catch (error) {
+                // Best-effort settle: swallow only a genuine idle-timeout. Real
+                // failures (page/context closed, navigation interrupted) must
+                // still surface — swallowing them would hide bugs and make a
+                // broken test pass silently.
+                if (error instanceof errors.TimeoutError) return;
+                throw error;
+            }
+            return;
+        }
+        await this.page.waitForLoadState('networkidle', loadStateOptions);
     }
 
     /**

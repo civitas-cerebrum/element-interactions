@@ -2,6 +2,13 @@
 
 ## 0.3.7 — 2026-06-12
 
+### Security
+
+- Bump the `nodemailer` override `^8.0.11` → `^9.0.1`. The earlier pin fell inside
+  the GHSA-p6gq-j5cr-w38f advisory range (`nodemailer <= 9.0.0` — message-level
+  `raw` option bypasses `disableFileAccess`/`disableUrlAccess`, enabling file read
+  / SSRF); `9.0.1` is the patched release. Clears `npm audit --audit-level=high`.
+
 ### Breaking
 
 - `steps.waitForState` / `Utils.waitForState` now **throw on timeout** instead of
@@ -20,6 +27,36 @@
 
 ### Added
 
+- `steps.navigateTo(url, { waitUntil })` — the navigation now accepts a
+  `waitUntil` lifecycle state (`'load'` default, `'domcontentloaded'`,
+  `'networkidle'`, `'commit'`), threaded into `page.goto`. Pass
+  `'domcontentloaded'` for SPA navigations that stall a cold WebKit/Safari on the
+  full `load` event (the WebKit-hang root cause). Default behaviour is unchanged.
+  New exported type `WaitUntilState`. Mirrored on `Navigation.toUrl(url, waitUntil?)`.
+- `steps.getUrl()` / `steps.getCurrentPath()` — synchronous getters for the live
+  page URL (full href) and its `pathname`. The value-returning companions to
+  `verifyUrlContains`. Mirrored on `Navigation.getUrl()` / `getCurrentPath()`.
+- `steps.waitForUrl(url, action?, options?)` — waits until the page URL matches a
+  glob string, RegExp, or `(url: URL) => boolean` predicate. When `action` is
+  given, the wait is armed concurrently with the action (`Promise.all`) so a fast
+  client-side route change cannot complete in the act→wait gap — the race-safe
+  form for rapid navigations. `options` is `{ timeout?, waitUntil? }`. Mirrored on
+  `Navigation.waitForUrl`.
+- `steps.setLocalStorage(key, value)` / `steps.setSessionStorage(key, value)` —
+  the mutating companions to `getLocalStorage` / `getSessionStorage`. Seed
+  persisted state a test depends on, or drive resilience checks with deliberately
+  malformed values (e.g. corrupt JSON). Matches the native `setItem` contract.
+  Mirrored on `Extractions.setLocalStorage` / `setSessionStorage`.
+- `steps.removeLocalStorage(key)` / `steps.removeSessionStorage(key)` and
+  `steps.clearLocalStorage()` / `steps.clearSessionStorage()` — complete the
+  storage surface: drop a single key (no-op when absent) or empty a store.
+  Match the native `removeItem` / `clear` contracts. Mirrored on `Extractions`.
+- `steps.waitForNetworkIdle({ timeout, optional })` — the idle wait now accepts a
+  per-call `timeout` override (previously it relied on Playwright's default
+  timeout) and `optional: true`, which resolves quietly on a `TimeoutError`
+  instead of throwing (best-effort settling where lingering long-poll/analytics
+  traffic should not fail the test; real failures still throw). No-arg behaviour
+  is unchanged. New exported type `WaitForNetworkIdleOptions`.
 - `StepOptions.timeout` — per-call timeout override on `waitForState` (falls back to
   the instance timeout), and `StepOptions.optional` — the soft-probe switch above.
 - `BaseFixtureOptions.interceptionRetry` (default `true`) — set `false` so clicks
