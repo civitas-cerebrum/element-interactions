@@ -63,6 +63,6 @@
     "dotenv": "^17.3.1"
   },
   "overrides": {
-    "nodemailer": "^8.0.11"
+    "nodemailer": "^9.0.1"
   }
 }
