@@ -1,6 +1,22 @@
 # Changelog
 
-## Unreleased
+## 0.3.7 — 2026-06-12
+
+### Breaking
+
+- `steps.waitForState` / `Utils.waitForState` now **throw on timeout** instead of
+  logging a warning and continuing. Both return `Promise<boolean>` (`true` = state
+  reached; `false` only in optional mode).
+  **Migration:** intentional probes ("is the banner there?") add `{ optional: true }`
+  to keep the soft behavior — the call then resolves `false` instead of rejecting:
+  ```ts
+  await steps.waitForState('confirmationModal', 'CheckoutPage', 'visible');                       // throws on timeout
+  const open = await steps.waitForState('promoBanner', 'HomePage', 'visible', { optional: true }); // probe
+  ```
+  Internal pre-action waits (`click`, `fill`, `hover`, drag, extraction attached-waits,
+  `getListedElement`, `waitAndClick`) now fail earlier with an element-qualified
+  `did not reach state '<state>'` error instead of falling through to the primitive's
+  opaque timeout. `waitAndClick` deliberately does not forward `optional`.
 
 ### Added
 
@@ -29,34 +45,11 @@
   storage surface: drop a single key (no-op when absent) or empty a store.
   Match the native `removeItem` / `clear` contracts. Mirrored on `Extractions`.
 - `steps.waitForNetworkIdle({ timeout, optional })` — the idle wait now accepts a
-  `timeout` bound (previously unbounded) and `optional: true`, which resolves
-  quietly on timeout instead of throwing (best-effort settling where lingering
-  long-poll/analytics traffic should not fail the test). No-arg behaviour is
-  unchanged. New exported type `WaitForNetworkIdleOptions`.
-
-All additions are additive and backward-compatible — existing call sites and
-defaults are unchanged.
-
-## 0.3.7 — 2026-06-12
-
-### Breaking
-
-- `steps.waitForState` / `Utils.waitForState` now **throw on timeout** instead of
-  logging a warning and continuing. Both return `Promise<boolean>` (`true` = state
-  reached; `false` only in optional mode).
-  **Migration:** intentional probes ("is the banner there?") add `{ optional: true }`
-  to keep the soft behavior — the call then resolves `false` instead of rejecting:
-  ```ts
-  await steps.waitForState('confirmationModal', 'CheckoutPage', 'visible');                       // throws on timeout
-  const open = await steps.waitForState('promoBanner', 'HomePage', 'visible', { optional: true }); // probe
-  ```
-  Internal pre-action waits (`click`, `fill`, `hover`, drag, extraction attached-waits,
-  `getListedElement`, `waitAndClick`) now fail earlier with an element-qualified
-  `did not reach state '<state>'` error instead of falling through to the primitive's
-  opaque timeout. `waitAndClick` deliberately does not forward `optional`.
-
-### Added
-
+  per-call `timeout` override (previously it relied on Playwright's default
+  timeout) and `optional: true`, which resolves quietly on a `TimeoutError`
+  instead of throwing (best-effort settling where lingering long-poll/analytics
+  traffic should not fail the test; real failures still throw). No-arg behaviour
+  is unchanged. New exported type `WaitForNetworkIdleOptions`.
 - `StepOptions.timeout` — per-call timeout override on `waitForState` (falls back to
   the instance timeout), and `StepOptions.optional` — the soft-probe switch above.
 - `BaseFixtureOptions.interceptionRetry` (default `true`) — set `false` so clicks

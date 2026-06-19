@@ -1,4 +1,4 @@
-import { Page, Response, Route } from '@playwright/test';
+import { Page, Response, Route, errors } from '@playwright/test';
 import { logger } from '../logger/Logger';
 
 const log = logger('navigate');
@@ -25,14 +25,17 @@ export type WaitUntilState = 'load' | 'domcontentloaded' | 'networkidle' | 'comm
  */
 export interface WaitForNetworkIdleOptions {
     /**
-     * Maximum time to wait for the network to go idle, in milliseconds.
-     * When omitted, Playwright's default navigation timeout applies.
+     * Maximum time to wait for the network to go idle, in milliseconds. When
+     * omitted, Playwright's default timeout applies (configurable via
+     * `page.setDefaultTimeout` or the test config).
      */
     timeout?: number;
     /**
-     * When true, a timeout resolves quietly instead of throwing. Use after
-     * best-effort settling where lingering long-poll / analytics traffic should
-     * not fail the test. Defaults to false (timeout throws).
+     * When true, a `TimeoutError` resolves quietly instead of throwing — use
+     * after best-effort settling where lingering long-poll / analytics traffic
+     * should not fail the test. Only the idle timeout is swallowed; real
+     * failures (page/context closed, navigation interrupted) still throw.
+     * Defaults to false (timeout throws).
      */
     optional?: boolean;
 }
@@ -258,7 +261,16 @@ export class Navigation {
     async waitForNetworkIdle(options?: WaitForNetworkIdleOptions): Promise<void> {
         const loadStateOptions = options?.timeout !== undefined ? { timeout: options.timeout } : undefined;
         if (options?.optional) {
-            await this.page.waitForLoadState('networkidle', loadStateOptions).catch(() => { /* best-effort settle */ });
+            try {
+                await this.page.waitForLoadState('networkidle', loadStateOptions);
+            } catch (error) {
+                // Best-effort settle: swallow only a genuine idle-timeout. Real
+                // failures (page/context closed, navigation interrupted) must
+                // still surface — swallowing them would hide bugs and make a
+                // broken test pass silently.
+                if (error instanceof errors.TimeoutError) return;
+                throw error;
+            }
             return;
         }
         await this.page.waitForLoadState('networkidle', loadStateOptions);

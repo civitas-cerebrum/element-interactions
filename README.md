@@ -577,7 +577,7 @@ await steps.clickListedElement('tableRows', 'Users', {
   const open = await steps.waitForState('promoBanner', 'HomePage', 'visible', { optional: true }); // probe — false on timeout
   ```
 
-* **`waitForNetworkIdle(options?: { timeout?: number; optional?: boolean })`** — Waits until there are no in-flight network requests for at least 500ms. `timeout` bounds the wait (otherwise unbounded — perpetual long-poll/analytics traffic can hang it). `optional: true` resolves quietly on timeout instead of throwing, for best-effort settling where lingering traffic should not fail the test. With no options, behaviour is unchanged.
+* **`waitForNetworkIdle(options?: { timeout?: number; optional?: boolean })`** — Waits until there are no in-flight network requests for at least 500ms. `timeout` sets a per-call bound (without it, Playwright's default timeout applies — configurable via `page.setDefaultTimeout` / the test config). `optional: true` resolves quietly on a `TimeoutError` instead of throwing, for best-effort settling where lingering traffic should not fail the test (real failures still throw). With no options, behaviour is unchanged.
 * **`waitForResponse(urlPattern: string | RegExp, action: () => Promise<void>)`** — Executes an action and waits for a matching network response. Returns the `Response` object. For the negative companion (asserting **no** matching request fires), see `expectNoRequest` in the Verification section.
 * **`waitAndClick(elementName, pageName, state?: string, options?)`** — Waits for an element to reach a state (default `'visible'`), then clicks it. Throws when the element never reaches the state — `optional` softness is deliberately not inherited here.
 
