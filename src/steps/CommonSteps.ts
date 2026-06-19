@@ -215,7 +215,13 @@ export class Steps {
         let targetUrl = url;
         if (options?.query) {
             const params = new URLSearchParams(options.query).toString();
-            targetUrl = `${url}${url.includes('?') ? '&' : '?'}${params}`;
+            // Insert the query *before* any hash fragment and preserve the
+            // fragment — appending after it (`/path#a?x=y`) would fold the query
+            // into the fragment and break SPA routing.
+            const hashIndex = url.indexOf('#');
+            const base = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
+            const fragment = hashIndex >= 0 ? url.slice(hashIndex) : '';
+            targetUrl = `${base}${base.includes('?') ? '&' : '?'}${params}${fragment}`;
         }
         log.navigate('Navigating to URL: "%s"', targetUrl);
         await this.navigate.toUrl(targetUrl, options?.waitUntil);

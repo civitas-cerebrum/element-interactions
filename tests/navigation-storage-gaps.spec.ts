@@ -2,7 +2,7 @@ import { test, expect } from './fixture/StepFixture';
 import { gotoButtons } from './fixture/pageHelpers';
 
 /**
- * Coverage for the Steps-API gaps closed in 0.4.0 — the surface a consumer
+ * Coverage for the Steps-API gaps closed in 0.3.7 — the surface a consumer
  * suite (Mr Marvis e2e) previously had to drop to raw Playwright `page.*` for:
  *
  * - `steps.navigateTo(url, { waitUntil })`            — non-`'load'` lifecycle wait
@@ -35,6 +35,16 @@ test.describe('navigateTo — waitUntil option', () => {
         await steps.navigateTo('/buttons', { query: { foo: 'bar' }, waitUntil: 'domcontentloaded' });
         expect(steps.getUrl()).toContain('foo=bar');
         await steps.verifyUrlContains('/buttons');
+    });
+
+    test('query is inserted before a hash fragment, preserving the fragment', async ({ steps }) => {
+        await steps.navigateTo('/buttons#section', { query: { foo: 'bar' } });
+        const url = steps.getUrl();
+        expect(url).toContain('foo=bar');
+        expect(url).toContain('#section');
+        // The query must land BEFORE the fragment (`?foo=bar#section`), never
+        // folded into it (`#section?foo=bar`).
+        expect(url.indexOf('foo=bar')).toBeLessThan(url.indexOf('#section'));
     });
 });
 
