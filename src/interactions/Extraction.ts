@@ -119,6 +119,26 @@ export class Extractions {
         return await this.page.evaluate((k) => window.sessionStorage.getItem(k), key);
     }
 
+    /**
+     * Writes a value to the browser's `window.localStorage` — the mutating
+     * companion to {@link getLocalStorage}. Use to seed persisted state a test
+     * depends on (a feature toggle, a dismissed-banner flag) or to drive
+     * resilience checks with deliberately malformed values (e.g. corrupt JSON).
+     * Matches the native `localStorage.setItem` contract (value coerced to string).
+     */
+    async setLocalStorage(key: string, value: string): Promise<void> {
+        await this.page.evaluate(([k, v]) => window.localStorage.setItem(k, v), [key, value]);
+    }
+
+    /**
+     * Writes a value to the browser's `window.sessionStorage` — the mutating
+     * companion to {@link getSessionStorage}. Matches the native
+     * `sessionStorage.setItem` contract (value coerced to string).
+     */
+    async setSessionStorage(key: string, value: string): Promise<void> {
+        await this.page.evaluate(([k, v]) => window.sessionStorage.setItem(k, v), [key, value]);
+    }
+
     /** Captures a screenshot of the full page or a specific element. */
     async screenshot(target?: WebElement, options?: ScreenshotOptions): Promise<Buffer> {
         if (target) {
