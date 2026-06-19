@@ -455,6 +455,10 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 * **`getSessionStorage(key: string)`** — Same shape, against `window.sessionStorage`.
 * **`setLocalStorage(key: string, value: string)`** — Writes `window.localStorage[key]` (matches the native `setItem` contract; value coerced to string). The mutating companion to `getLocalStorage`. Use to seed persisted state a test depends on, or to drive resilience checks with deliberately malformed values (e.g. corrupt JSON the app must tolerate).
 * **`setSessionStorage(key: string, value: string)`** — Same shape, against `window.sessionStorage`.
+* **`removeLocalStorage(key: string)`** — Removes a single key from `window.localStorage` (no-op when absent — native `removeItem` contract). The mutating companion to `getLocalStorage`; clears one piece of persisted state without disturbing the rest.
+* **`removeSessionStorage(key: string)`** — Same shape, against `window.sessionStorage`.
+* **`clearLocalStorage()`** — Removes every key from `window.localStorage` (native `clear` contract). Reset persisted state between phases of a test.
+* **`clearSessionStorage()`** — Same shape, against `window.sessionStorage`.
 
 ### ✅ Verification
 

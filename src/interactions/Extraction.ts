@@ -139,6 +139,38 @@ export class Extractions {
         await this.page.evaluate(([k, v]) => window.sessionStorage.setItem(k, v), [key, value]);
     }
 
+    /**
+     * Removes a single key from `window.localStorage`. No-op when the key is
+     * absent — matches the native `localStorage.removeItem` contract.
+     */
+    async removeLocalStorage(key: string): Promise<void> {
+        await this.page.evaluate((k) => window.localStorage.removeItem(k), key);
+    }
+
+    /**
+     * Removes a single key from `window.sessionStorage`. No-op when the key is
+     * absent — matches the native `sessionStorage.removeItem` contract.
+     */
+    async removeSessionStorage(key: string): Promise<void> {
+        await this.page.evaluate((k) => window.sessionStorage.removeItem(k), key);
+    }
+
+    /**
+     * Removes every key from `window.localStorage`. Matches the native
+     * `localStorage.clear` contract.
+     */
+    async clearLocalStorage(): Promise<void> {
+        await this.page.evaluate(() => window.localStorage.clear());
+    }
+
+    /**
+     * Removes every key from `window.sessionStorage`. Matches the native
+     * `sessionStorage.clear` contract.
+     */
+    async clearSessionStorage(): Promise<void> {
+        await this.page.evaluate(() => window.sessionStorage.clear());
+    }
+
     /** Captures a screenshot of the full page or a specific element. */
     async screenshot(target?: WebElement, options?: ScreenshotOptions): Promise<Buffer> {
         if (target) {

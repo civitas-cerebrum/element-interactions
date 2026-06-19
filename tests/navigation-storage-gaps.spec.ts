@@ -9,6 +9,8 @@ import { gotoButtons } from './fixture/pageHelpers';
  * - `steps.getUrl()` / `steps.getCurrentPath()`       — current-URL getters
  * - `steps.waitForUrl(url, action?, options?)`        — URL predicate / race wait
  * - `steps.setLocalStorage` / `steps.setSessionStorage` — storage setters
+ * - `steps.removeLocalStorage` / `removeSessionStorage` / `clearLocalStorage` /
+ *   `clearSessionStorage`                              — storage removers / clears
  * - `steps.waitForNetworkIdle({ timeout, optional })`  — bounded / optional idle wait
  *
  * All run against the live Vue test app. Storage state is prepared / inspected
@@ -148,6 +150,49 @@ test.describe('setLocalStorage / setSessionStorage', () => {
         await steps.setSessionStorage('only', 'session');
         expect(await steps.getLocalStorage('only')).toBe('local');
         expect(await steps.getSessionStorage('only')).toBe('session');
+    });
+});
+
+test.describe('removeLocalStorage / removeSessionStorage / clear*', () => {
+    test.beforeEach(async ({ steps, page }) => {
+        await gotoButtons(steps);
+        await page.evaluate(() => {
+            window.localStorage.clear();
+            window.sessionStorage.clear();
+            window.localStorage.setItem('theme', 'dark');
+            window.localStorage.setItem('user.name', 'Ada');
+            window.sessionStorage.setItem('cart.count', '3');
+        });
+    });
+
+    test('removeLocalStorage drops one key and leaves the rest', async ({ steps }) => {
+        await steps.removeLocalStorage('theme');
+        expect(await steps.getLocalStorage('theme')).toBeNull();
+        expect(await steps.getLocalStorage('user.name')).toBe('Ada');
+    });
+
+    test('removeLocalStorage is a no-op for an absent key', async ({ steps }) => {
+        await steps.removeLocalStorage('does-not-exist');
+        expect(await steps.getLocalStorage('theme')).toBe('dark');
+    });
+
+    test('removeSessionStorage drops the key', async ({ steps }) => {
+        await steps.removeSessionStorage('cart.count');
+        expect(await steps.getSessionStorage('cart.count')).toBeNull();
+    });
+
+    test('clearLocalStorage empties localStorage but not sessionStorage', async ({ steps }) => {
+        await steps.clearLocalStorage();
+        expect(await steps.getLocalStorage('theme')).toBeNull();
+        expect(await steps.getLocalStorage('user.name')).toBeNull();
+        // sessionStorage is a separate store — untouched by clearLocalStorage.
+        expect(await steps.getSessionStorage('cart.count')).toBe('3');
+    });
+
+    test('clearSessionStorage empties sessionStorage but not localStorage', async ({ steps }) => {
+        await steps.clearSessionStorage();
+        expect(await steps.getSessionStorage('cart.count')).toBeNull();
+        expect(await steps.getLocalStorage('theme')).toBe('dark');
     });
 });
 

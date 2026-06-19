@@ -24,6 +24,10 @@
   persisted state a test depends on, or drive resilience checks with deliberately
   malformed values (e.g. corrupt JSON). Matches the native `setItem` contract.
   Mirrored on `Extractions.setLocalStorage` / `setSessionStorage`.
+- `steps.removeLocalStorage(key)` / `steps.removeSessionStorage(key)` and
+  `steps.clearLocalStorage()` / `steps.clearSessionStorage()` — complete the
+  storage surface: drop a single key (no-op when absent) or empty a store.
+  Match the native `removeItem` / `clear` contracts. Mirrored on `Extractions`.
 - `steps.waitForNetworkIdle({ timeout, optional })` — the idle wait now accepts a
   `timeout` bound (previously unbounded) and `optional: true`, which resolves
   quietly on timeout instead of throwing (best-effort settling where lingering

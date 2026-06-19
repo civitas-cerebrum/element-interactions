@@ -757,6 +757,42 @@ export class Steps {
     }
 
     /**
+     * Removes a single key from `window.localStorage` (no-op when absent —
+     * native `removeItem` contract). Use to clear one piece of persisted state
+     * without disturbing the rest.
+     */
+    async removeLocalStorage(key: string): Promise<void> {
+        log.extract('Removing localStorage[%s]', JSON.stringify(key));
+        await this.extract.removeLocalStorage(key);
+    }
+
+    /**
+     * Removes a single key from `window.sessionStorage` (no-op when absent —
+     * native `removeItem` contract).
+     */
+    async removeSessionStorage(key: string): Promise<void> {
+        log.extract('Removing sessionStorage[%s]', JSON.stringify(key));
+        await this.extract.removeSessionStorage(key);
+    }
+
+    /**
+     * Removes every key from `window.localStorage` (native `clear` contract).
+     * Use to reset persisted state between phases of a test.
+     */
+    async clearLocalStorage(): Promise<void> {
+        log.extract('Clearing localStorage');
+        await this.extract.clearLocalStorage();
+    }
+
+    /**
+     * Removes every key from `window.sessionStorage` (native `clear` contract).
+     */
+    async clearSessionStorage(): Promise<void> {
+        log.extract('Clearing sessionStorage');
+        await this.extract.clearSessionStorage();
+    }
+
+    /**
      * Extracts text content or attribute values from all elements matching the locator.
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
