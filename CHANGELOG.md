@@ -2,6 +2,13 @@
 
 ## 0.3.7 — 2026-06-12
 
+### Security
+
+- Bump the `nodemailer` override `^8.0.11` → `^9.0.1`. The earlier pin fell inside
+  the GHSA-p6gq-j5cr-w38f advisory range (`nodemailer <= 9.0.0` — message-level
+  `raw` option bypasses `disableFileAccess`/`disableUrlAccess`, enabling file read
+  / SSRF); `9.0.1` is the patched release. Clears `npm audit --audit-level=high`.
+
 ### Breaking
 
 - `steps.waitForState` / `Utils.waitForState` now **throw on timeout** instead of
