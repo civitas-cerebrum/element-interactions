@@ -415,7 +415,10 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 
 ### 🧭 Navigation
 
-* **`navigateTo(url: string)`** — Navigates the browser to the specified absolute or relative URL.
+* **`navigateTo(url: string, options?: { query?: Record<string, string>; waitUntil?: WaitUntilState })`** — Navigates the browser to the specified absolute or relative URL. `query` appends key-value pairs as query parameters. `waitUntil` chooses the page lifecycle state to wait for before resolving — `'load'` (default, unchanged), `'domcontentloaded'`, `'networkidle'`, or `'commit'`. Pass `'domcontentloaded'` for SPA navigations that stall a cold WebKit/Safari on the full `load` event.
+* **`getUrl()`** — Returns the current page URL (the full href) synchronously. The value-returning companion to `verifyUrlContains` — use it when a test needs the live URL to compute a path, diff against a start URL, or build a pattern.
+* **`getCurrentPath()`** — Returns the `pathname` of the current page URL (no origin, query, or hash). Convenience over `new URL(steps.getUrl()).pathname`.
+* **`waitForUrl(url: string | RegExp | ((url: URL) => boolean), action?: () => Promise<void>, options?: { timeout?: number; waitUntil?: WaitUntilState })`** — Waits until the page URL matches `url`. A string is a glob pattern, a RegExp is a contains-style match, and a predicate receives the live `URL`. Pass `action` to arm the wait **before** the navigation-triggering action runs (issued concurrently via `Promise.all`) so a fast client-side route change cannot complete in the gap between acting and waiting — the race-safe form for rapid navigations.
 * **`refresh()`** — Reloads the current page.
 * **`backOrForward(direction: 'back' | 'forward')`** — Navigates the browser history stack in the given direction.
 * **`setViewport(width: number, height: number)`** — Resizes the browser viewport to the specified pixel dimensions.
@@ -450,6 +453,12 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 * **`getAttribute(elementName, pageName, attributeName: string)`** — Returns the value of an HTML attribute (e.g. `href`, `aria-pressed`), or `null` if it doesn't exist.
 * **`getLocalStorage(key: string)`** — Reads `window.localStorage[key]`. Returns the stored string or `null` if the key is absent (matches the native `getItem` contract). Use for state the framework cannot reach through the DOM — persisted theme, dismissed-banner flag, feature toggles, auth tokens.
 * **`getSessionStorage(key: string)`** — Same shape, against `window.sessionStorage`.
+* **`setLocalStorage(key: string, value: string)`** — Writes `window.localStorage[key]` (matches the native `setItem` contract; value coerced to string). The mutating companion to `getLocalStorage`. Use to seed persisted state a test depends on, or to drive resilience checks with deliberately malformed values (e.g. corrupt JSON the app must tolerate).
+* **`setSessionStorage(key: string, value: string)`** — Same shape, against `window.sessionStorage`.
+* **`removeLocalStorage(key: string)`** — Removes a single key from `window.localStorage` (no-op when absent — native `removeItem` contract). The mutating companion to `getLocalStorage`; clears one piece of persisted state without disturbing the rest.
+* **`removeSessionStorage(key: string)`** — Same shape, against `window.sessionStorage`.
+* **`clearLocalStorage()`** — Removes every key from `window.localStorage` (native `clear` contract). Reset persisted state between phases of a test.
+* **`clearSessionStorage()`** — Same shape, against `window.sessionStorage`.
 
 ### ✅ Verification
 
@@ -568,7 +577,7 @@ await steps.clickListedElement('tableRows', 'Users', {
   const open = await steps.waitForState('promoBanner', 'HomePage', 'visible', { optional: true }); // probe — false on timeout
   ```
 
-* **`waitForNetworkIdle()`** — Waits until there are no in-flight network requests for at least 500ms.
+* **`waitForNetworkIdle(options?: { timeout?: number; optional?: boolean })`** — Waits until there are no in-flight network requests for at least 500ms. `timeout` sets a per-call bound (without it, Playwright's default timeout applies — configurable via `page.setDefaultTimeout` / the test config). `optional: true` resolves quietly on a `TimeoutError` instead of throwing, for best-effort settling where lingering traffic should not fail the test (real failures still throw). With no options, behaviour is unchanged.
 * **`waitForResponse(urlPattern: string | RegExp, action: () => Promise<void>)`** — Executes an action and waits for a matching network response. Returns the `Response` object. For the negative companion (asserting **no** matching request fires), see `expectNoRequest` in the Verification section.
 * **`waitAndClick(elementName, pageName, state?: string, options?)`** — Waits for an element to reach a state (default `'visible'`), then clicks it. Throws when the element never reaches the state — `optional` softness is deliberately not inherited here.
 

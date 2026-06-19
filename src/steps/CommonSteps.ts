@@ -6,7 +6,7 @@ import { EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
 import { SqlClient, SqlResult, QueryBuilder, UnsupportedEngineException } from '@civitas-cerebrum/sql-client';
 import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions, StorageVerifyOptions, VisualMatchOptions, VisualMaskTarget } from '../enum/Options';
-import { ExpectNoRequestOptions } from '../interactions/Navigation';
+import { ExpectNoRequestOptions, WaitUntilState, WaitForNetworkIdleOptions } from '../interactions/Navigation';
 import { stepLog as log } from '../logger/Logger';
 import { ElementAction } from './ElementAction';
 import { ExpectBuilder } from './ExpectMatchers';
@@ -203,18 +203,69 @@ export class Steps {
 
     /**
      * Navigates the browser to the specified URL.
-     * Optionally appends query parameters from an options object.
+     * Optionally appends query parameters and/or chooses the lifecycle state to
+     * wait for.
      * @param url - The URL or path to navigate to (e.g. `'/dashboard'` or `'https://example.com'`).
-     * @param options - Optional settings. `query` is a key-value map appended as query parameters.
+     * @param options - Optional settings. `query` is a key-value map appended as
+     *   query parameters. `waitUntil` chooses the page lifecycle state to wait
+     *   for (default `'load'`); pass `'domcontentloaded'` for SPA navigations
+     *   that stall a cold WebKit/Safari on the full `load` event.
      */
-    async navigateTo(url: string, options?: { query?: Record<string, string> }): Promise<void> {
+    async navigateTo(url: string, options?: { query?: Record<string, string>; waitUntil?: WaitUntilState }): Promise<void> {
         let targetUrl = url;
         if (options?.query) {
             const params = new URLSearchParams(options.query).toString();
-            targetUrl = `${url}${url.includes('?') ? '&' : '?'}${params}`;
+            // Insert the query *before* any hash fragment and preserve the
+            // fragment — appending after it (`/path#a?x=y`) would fold the query
+            // into the fragment and break SPA routing.
+            const hashIndex = url.indexOf('#');
+            const base = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
+            const fragment = hashIndex >= 0 ? url.slice(hashIndex) : '';
+            targetUrl = `${base}${base.includes('?') ? '&' : '?'}${params}${fragment}`;
         }
         log.navigate('Navigating to URL: "%s"', targetUrl);
-        await this.navigate.toUrl(targetUrl);
+        await this.navigate.toUrl(targetUrl, options?.waitUntil);
+    }
+
+    /**
+     * Returns the current page URL (the full href). The value-returning
+     * companion to {@link verifyUrlContains} — use it when a test needs the live
+     * URL to compute a path, diff against a start URL, or build a pattern.
+     */
+    getUrl(): string {
+        log.navigate('Getting current URL');
+        return this.navigate.getUrl();
+    }
+
+    /**
+     * Returns the `pathname` of the current page URL (no origin, query, or hash).
+     * Convenience over `new URL(steps.getUrl()).pathname`.
+     */
+    getCurrentPath(): string {
+        log.navigate('Getting current path');
+        return this.navigate.getCurrentPath();
+    }
+
+    /**
+     * Waits until the page URL matches `url`. A string is a glob pattern, a
+     * RegExp is a contains-style match, and a predicate receives the live `URL`.
+     *
+     * Pass `action` to arm the wait **before** the navigation-triggering action
+     * runs (issued concurrently via `Promise.all`) so a fast client-side route
+     * change cannot complete in the gap between acting and waiting — the
+     * race-safe form for rapid navigations.
+     *
+     * @param url - Glob string, RegExp, or `(url: URL) => boolean` predicate.
+     * @param action - Optional navigation-triggering action, run concurrently.
+     * @param options - Optional `{ timeout, waitUntil }`.
+     */
+    async waitForUrl(
+        url: string | RegExp | ((url: URL) => boolean),
+        action?: () => Promise<void>,
+        options?: { timeout?: number; waitUntil?: WaitUntilState },
+    ): Promise<void> {
+        log.wait('Waiting for URL to match');
+        await this.navigate.waitForUrl(url, action, options);
     }
 
     /**
@@ -682,6 +733,69 @@ export class Steps {
     async getSessionStorage(key: string): Promise<string | null> {
         log.extract('Getting sessionStorage[%s]', JSON.stringify(key));
         return await this.extract.getSessionStorage(key);
+    }
+
+    /**
+     * Writes a value to the browser's `window.localStorage` — the mutating
+     * companion to {@link getLocalStorage}. Use to seed persisted state a test
+     * depends on, or to drive resilience checks with deliberately malformed
+     * values (e.g. corrupt JSON the app must tolerate).
+     *
+     * @example
+     * ```ts
+     * await steps.setLocalStorage('wishlist', 'not-json-{[bogus');
+     * await steps.refresh();
+     * await steps.verifyPresence('wishlistEmptyState', 'WishlistPage');
+     * ```
+     */
+    async setLocalStorage(key: string, value: string): Promise<void> {
+        log.extract('Setting localStorage[%s]', JSON.stringify(key));
+        await this.extract.setLocalStorage(key, value);
+    }
+
+    /**
+     * Writes a value to the browser's `window.sessionStorage` — the mutating
+     * companion to {@link getSessionStorage}.
+     */
+    async setSessionStorage(key: string, value: string): Promise<void> {
+        log.extract('Setting sessionStorage[%s]', JSON.stringify(key));
+        await this.extract.setSessionStorage(key, value);
+    }
+
+    /**
+     * Removes a single key from `window.localStorage` (no-op when absent —
+     * native `removeItem` contract). Use to clear one piece of persisted state
+     * without disturbing the rest.
+     */
+    async removeLocalStorage(key: string): Promise<void> {
+        log.extract('Removing localStorage[%s]', JSON.stringify(key));
+        await this.extract.removeLocalStorage(key);
+    }
+
+    /**
+     * Removes a single key from `window.sessionStorage` (no-op when absent —
+     * native `removeItem` contract).
+     */
+    async removeSessionStorage(key: string): Promise<void> {
+        log.extract('Removing sessionStorage[%s]', JSON.stringify(key));
+        await this.extract.removeSessionStorage(key);
+    }
+
+    /**
+     * Removes every key from `window.localStorage` (native `clear` contract).
+     * Use to reset persisted state between phases of a test.
+     */
+    async clearLocalStorage(): Promise<void> {
+        log.extract('Clearing localStorage');
+        await this.extract.clearLocalStorage();
+    }
+
+    /**
+     * Removes every key from `window.sessionStorage` (native `clear` contract).
+     */
+    async clearSessionStorage(): Promise<void> {
+        log.extract('Clearing sessionStorage');
+        await this.extract.clearSessionStorage();
     }
 
     /**
@@ -1359,10 +1473,13 @@ export class Steps {
 
     /**
      * Waits until there are no in-flight network requests for at least 500ms.
+     * @param options - Optional `{ timeout, optional }`. `timeout` bounds the
+     *   wait; `optional: true` resolves quietly on timeout instead of throwing
+     *   (best-effort settling). With no options, behaviour is unchanged.
      */
-    async waitForNetworkIdle(): Promise<void> {
+    async waitForNetworkIdle(options?: WaitForNetworkIdleOptions): Promise<void> {
         log.wait('Waiting for network idle');
-        await this.navigate.waitForNetworkIdle();
+        await this.navigate.waitForNetworkIdle(options);
     }
 
     /**
