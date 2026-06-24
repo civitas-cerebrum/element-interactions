@@ -3,6 +3,7 @@ import { Interactions } from '../Interaction';
 import { Navigation } from '../Navigation';
 import { Verifications } from '../Verification';
 import { Extractions } from '../Extraction';
+import { BrowserRequest } from '../BrowserRequest';
 import { EmailClient, EmailClientConfig } from '@civitas-cerebrum/email-client';
 import { Utils } from '../../utils/ElementUtilities';
 import { logger } from '../../logger/Logger';
@@ -16,6 +17,7 @@ export class ElementInteractions {
     public interact: Interactions;
     public verify: Verifications;
     public extract: Extractions;
+    public request: BrowserRequest;
     public navigate: Navigation;
     public email: EmailClient | null = null;
     private utils: Utils;
@@ -34,6 +36,7 @@ export class ElementInteractions {
         this.verify = new Verifications(page, timeout);
         this.navigate = new Navigation(page);
         this.extract = new Extractions(page, timeout);
+        this.request = new BrowserRequest(page);
         this.email = emailCredentials ? new EmailClient(emailCredentials) : null;
         this.utils = new Utils(timeout);
         this.log = {
