@@ -156,13 +156,13 @@ export class ElementAction {
     }
 
     /**
-     * Apply this chain's strategy selectors (`.first()` / `.nth()`) to a scoped
-     * child locator. Mirrors how the repository narrows a resolved element so
-     * `findByRole(...).nth(2)` and the default `.first()` behave consistently
-     * between repo-resolved and scoped chains. RANDOM / TEXT / ATTRIBUTE
-     * strategies fall through to `.first()` — the scoped builders already carry
-     * their own role/text/selector filter, so a second repo-style filter would
-     * be redundant; use `.nth(i)` to disambiguate a scoped match.
+     * Apply this chain's strategy selectors to a scoped child locator. `.nth(i)`
+     * narrows by index, the collection strategy returns the whole set, and the
+     * default / `.first()` resolves the first match. RANDOM / TEXT / ATTRIBUTE
+     * are rejected: a scoped `findBy*` query already carries its own
+     * role/text/selector filter, so layering a second repo-style strategy on top
+     * is ambiguous — we fail fast rather than silently behave like `.first()`.
+     * Use `.nth(i)` (or a more specific `findBy*` query) to disambiguate.
      */
     private narrowScoped(child: Locator): Locator {
         const opts = this.resolutionOptions;
@@ -171,6 +171,13 @@ export class ElementAction {
         }
         if (opts.strategy === SelectionStrategy.ALL) {
             return child;
+        }
+        if (opts.strategy) {
+            throw new Error(
+                `Strategy '${opts.strategy}' is not supported on a scoped findBy*() chain — ` +
+                `the scoped query already filters by role/text/selector. ` +
+                `Use .first() / .nth(i), or a more specific findBy*() query, to disambiguate.`,
+            );
         }
         return child.first();
     }
@@ -182,8 +189,12 @@ export class ElementAction {
      * with every existing terminal (`.count`, `.verifyState`, `.click`,
      * `.getText`, `.first()` / `.nth()`, the matcher tree, …).
      */
-    private spawnScoped(childFactory: (parent: Locator) => Locator): ElementAction {
-        const scoped = new ElementAction(this.repo, this.elementName, this.pageName, this.interactions, this._timeout);
+    private spawnScoped(label: string, childFactory: (parent: Locator) => Locator): ElementAction {
+        // Stamp a descriptive name so logs / click subjects / matcher failures point
+        // at the scoped query (e.g. "cookieDialog › findByRole(button)"), not the
+        // parent. Safe: scoped chains resolve via `scopedChild`, never `repo.get`.
+        const scopedName = `${this.elementName} › ${label}`;
+        const scoped = new ElementAction(this.repo, scopedName, this.pageName, this.interactions, this._timeout);
         scoped.scopedChild = async () => {
             const parent = await this.resolve();
             return childFactory(parent.locator);
@@ -206,7 +217,8 @@ export class ElementAction {
      * await steps.on('table', 'TablePage').findByRole('cell', { name: 'Alice Martin' }).getText();
      */
     findByRole(role: Parameters<Locator['getByRole']>[0], options?: { name?: string | RegExp; exact?: boolean }): ElementAction {
-        return this.spawnScoped(parent => parent.getByRole(role, options));
+        const label = options?.name !== undefined ? `findByRole(${role}, name=${String(options.name)})` : `findByRole(${role})`;
+        return this.spawnScoped(label, parent => parent.getByRole(role, options));
     }
 
     /**
@@ -215,7 +227,7 @@ export class ElementAction {
      * await steps.on('cartDrawer', 'CartDrawer').findByText('Je winkelwagen is leeg').verifyState('visible');
      */
     findByText(text: string | RegExp, options?: { exact?: boolean }): ElementAction {
-        return this.spawnScoped(parent => parent.getByText(text, options));
+        return this.spawnScoped(`findByText(${String(text)})`, parent => parent.getByText(text, options));
     }
 
     /**
@@ -224,7 +236,7 @@ export class ElementAction {
      * await steps.on('panel', 'Page').findBySelector("input[name='email']").fill('a@b.com');
      */
     findBySelector(css: string): ElementAction {
-        return this.spawnScoped(parent => parent.locator(css));
+        return this.spawnScoped(`findBySelector(${css})`, parent => parent.locator(css));
     }
 
     // -- Terminal actions: interactions --

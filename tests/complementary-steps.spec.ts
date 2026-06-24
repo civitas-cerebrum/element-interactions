@@ -150,4 +150,12 @@ test.describe('Scoped child queries — findByRole / findByText / findBySelector
         const action = new ElementAction(repo, 'table', 'TablePage', fast, FAST_TIMEOUT);
         await action.findByText('UI Components').count.toBe(0);
     });
+
+    test('scoped chain rejects an unsupported strategy (.random) with a clear error', async ({ steps }) => {
+        // A scoped findBy* already filters by role/text/selector — layering RANDOM
+        // on top must fail fast, not silently behave like .first().
+        await expect(
+            steps.on('table', 'TablePage').findByRole('row').random().verifyState('visible'),
+        ).rejects.toThrow(/not supported on a scoped findBy\*\(\) chain/);
+    });
 });
