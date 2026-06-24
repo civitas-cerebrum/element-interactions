@@ -101,6 +101,34 @@ export class Extractions {
     }
 
     /**
+     * Retrieves the rendered text of the current page (`document.body.innerText`).
+     * The text companion to {@link getPageHtml}. Use for page-level text
+     * assertions where no single element is the natural scope — e.g. confirming
+     * a 404 body renders known copy.
+     */
+    async getPageText(): Promise<string> {
+        return await this.page.evaluate(() => document.body.innerText);
+    }
+
+    /**
+     * Returns every key currently set in `window.localStorage`. The enumerating
+     * companion to {@link getLocalStorage} — use when the test needs to know
+     * *which* keys exist (e.g. asserting a logout cleared all persisted state)
+     * rather than reading a single known key.
+     */
+    async getLocalStorageKeys(): Promise<string[]> {
+        return await this.page.evaluate(() => Object.keys(window.localStorage));
+    }
+
+    /**
+     * Returns every key currently set in `window.sessionStorage`. The enumerating
+     * companion to {@link getSessionStorage}.
+     */
+    async getSessionStorageKeys(): Promise<string[]> {
+        return await this.page.evaluate(() => Object.keys(window.sessionStorage));
+    }
+
+    /**
      * Reads a value from the browser's `window.localStorage`. Returns `null` if
      * the key is missing — matches the native `localStorage.getItem` contract.
      *
