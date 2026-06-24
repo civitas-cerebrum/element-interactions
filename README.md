@@ -191,8 +191,16 @@ test('Fluent checkout flow', async ({ steps }) => {
 
   // Gate with text filter — only click when the banner shows "50% off"
   await steps.isVisible('promo', 'ProductDetailsPage', { containsText: '50% off' }).click();
+
+  // Strategy selector: pick the VISIBLE duplicate among responsive copies, then
+  // compose terminals like .first() does. Throws if none visible (unlike the
+  // skip-if-hidden .ifVisible()/.isVisible() gates). Resolves via repo.getVisible().
+  await steps.on('navMenu', 'HomePage').visible().click();
+  await steps.on('cta', 'HomePage').visible().verifyState('visible');
 });
 ```
+
+> **`.visible()` vs `.visible` vs `.isVisible()`.** `steps.on(el, page).visible()` (a **call**) is the *visible-selection strategy*: among duplicate matches it resolves the visible one via `repo.getVisible(...)` and **throws if none is visible** — use it to disambiguate responsive desktop/mobile duplicate elements. `steps.on(el, page).visible` (no call) is the *matcher-tree boolean field* (`.visible.toBeTrue()`). Both coexist on the same chain. Distinct again from `.ifVisible()` / `.isVisible()`, which *conditionally skip* when the element is hidden rather than selecting and proceeding.
 
 ### Expect Matcher Tree
 
@@ -415,7 +423,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 
 ### 🧭 Navigation
 
-* **`navigateTo(url: string, options?: { query?: Record<string, string>; waitUntil?: WaitUntilState })`** — Navigates the browser to the specified absolute or relative URL. `query` appends key-value pairs as query parameters. `waitUntil` chooses the page lifecycle state to wait for before resolving — `'load'` (default, unchanged), `'domcontentloaded'`, `'networkidle'`, or `'commit'`. Pass `'domcontentloaded'` for SPA navigations that stall a cold WebKit/Safari on the full `load` event.
+* **`navigateTo(url: string, options?: { query?: Record<string, string>; waitUntil?: WaitUntilState })`** — Navigates the browser to the specified absolute or relative URL. `query` appends key-value pairs as query parameters. `waitUntil` chooses the page lifecycle state to wait for before resolving — `'load'` (default, unchanged), `'domcontentloaded'`, `'networkidle'`, or `'commit'`. Pass `'domcontentloaded'` for SPA navigations that stall a cold WebKit/Safari on the full `load` event. **Returns the navigation `Response`** (the last redirect's response), or `null` when navigation triggered no network request (same-document hash nav). Read `res.status()` to assert 404 / redirect contracts without dropping to raw `page.goto`; callers that ignore the return value are unaffected.
 * **`getUrl()`** — Returns the current page URL (the full href) synchronously. The value-returning companion to `verifyUrlContains` — use it when a test needs the live URL to compute a path, diff against a start URL, or build a pattern.
 * **`getCurrentPath()`** — Returns the `pathname` of the current page URL (no origin, query, or hash). Convenience over `new URL(steps.getUrl()).pathname`.
 * **`waitForUrl(url: string | RegExp | ((url: URL) => boolean), action?: () => Promise<void>, options?: { timeout?: number; waitUntil?: WaitUntilState })`** — Waits until the page URL matches `url`. A string is a glob pattern, a RegExp is a contains-style match, and a predicate receives the live `URL`. Pass `action` to arm the wait **before** the navigation-triggering action runs (issued concurrently via `Promise.all`) so a fast client-side route change cannot complete in the gap between acting and waiting — the race-safe form for rapid navigations.
@@ -453,6 +461,8 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 * **`getAttribute(elementName, pageName, attributeName: string)`** — Returns the value of an HTML attribute (e.g. `href`, `aria-pressed`), or `null` if it doesn't exist.
 * **`getLocalStorage(key: string)`** — Reads `window.localStorage[key]`. Returns the stored string or `null` if the key is absent (matches the native `getItem` contract). Use for state the framework cannot reach through the DOM — persisted theme, dismissed-banner flag, feature toggles, auth tokens.
 * **`getSessionStorage(key: string)`** — Same shape, against `window.sessionStorage`.
+* **`getLocalStorageKeys()`** — Returns every key currently set in `window.localStorage` as a `string[]`. The enumerating companion to `getLocalStorage` — use when the test needs to know *which* keys exist (e.g. asserting a logout cleared all persisted state) rather than reading one known key.
+* **`getSessionStorageKeys()`** — Same shape, against `window.sessionStorage`.
 * **`setLocalStorage(key: string, value: string)`** — Writes `window.localStorage[key]` (matches the native `setItem` contract; value coerced to string). The mutating companion to `getLocalStorage`. Use to seed persisted state a test depends on, or to drive resilience checks with deliberately malformed values (e.g. corrupt JSON the app must tolerate).
 * **`setSessionStorage(key: string, value: string)`** — Same shape, against `window.sessionStorage`.
 * **`removeLocalStorage(key: string)`** — Removes a single key from `window.localStorage` (no-op when absent — native `removeItem` contract). The mutating companion to `getLocalStorage`; clears one piece of persisted state without disturbing the rest.
@@ -578,6 +588,7 @@ await steps.clickListedElement('tableRows', 'Users', {
   ```
 
 * **`waitForNetworkIdle(options?: { timeout?: number; optional?: boolean })`** — Waits until there are no in-flight network requests for at least 500ms. `timeout` sets a per-call bound (without it, Playwright's default timeout applies — configurable via `page.setDefaultTimeout` / the test config). `optional: true` resolves quietly on a `TimeoutError` instead of throwing, for best-effort settling where lingering traffic should not fail the test (real failures still throw). With no options, behaviour is unchanged.
+* **`waitForLoadState(state: LoadState, options?: { timeout?: number })`** — Waits for the page to reach the given lifecycle `state` (`'load'`, `'domcontentloaded'`, or `'networkidle'`). The general-purpose lifecycle-wait companion to `waitForNetworkIdle` (which is fixed to `'networkidle'`): use it for a standalone wait **after an action** that does not navigate — e.g. waiting for `'domcontentloaded'` once a client-side view swap finishes. `options.timeout` bounds the wait.
 * **`waitForResponse(urlPattern: string | RegExp, action: () => Promise<void>)`** — Executes an action and waits for a matching network response. Returns the `Response` object. For the negative companion (asserting **no** matching request fires), see `expectNoRequest` in the Verification section.
 * **`waitAndClick(elementName, pageName, state?: string, options?)`** — Waits for an element to reach a state (default `'visible'`), then clicks it. Throws when the element never reaches the state — `optional` softness is deliberately not inherited here.
 
@@ -595,6 +606,7 @@ await steps.clickListedElement('tableRows', 'Users', {
 * **`getCount(elementName, pageName)`** — Returns the number of DOM elements matching the locator.
 * **`getInputValue(elementName, pageName)`** — Returns the current `value` property of an input, textarea, or select element.
 * **`getCssProperty(elementName, pageName, property: string)`** — Returns a computed CSS property value (e.g. `'rgb(255, 0, 0)'`).
+* **`getPageText()`** — Returns the rendered text of the current page (`document.body.innerText`). The page-level text companion to `getPageHtml` — use for page-level text assertions where no single element is the natural scope (e.g. confirming a 404 body renders known copy).
 
 ### ✅ Additional Verification
 
