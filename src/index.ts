@@ -3,7 +3,7 @@ export * from './enum/Options';
 
 // Supporting Action Classes
 export { Navigation } from './interactions/Navigation';
-export type { ExpectNoRequestOptions, ExpectRequestMethod, WaitUntilState, WaitForNetworkIdleOptions } from './interactions/Navigation';
+export type { ExpectNoRequestOptions, ExpectRequestMethod, WaitUntilState, WaitForNetworkIdleOptions, LoadState } from './interactions/Navigation';
 export { Verifications } from './interactions/Verification';
 export { Interactions } from './interactions/Interaction';
 export { Extractions } from './interactions/Extraction';

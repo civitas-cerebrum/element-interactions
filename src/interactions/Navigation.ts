@@ -21,6 +21,18 @@ const log = logger('navigate');
 export type WaitUntilState = 'load' | 'domcontentloaded' | 'networkidle' | 'commit';
 
 /**
+ * The page lifecycle state {@link Navigation.waitForLoadState} waits for.
+ * Mirrors the states accepted by Playwright's `page.waitForLoadState` — note
+ * this is a strict subset of {@link WaitUntilState}: `'commit'` is NOT a valid
+ * load state (it is a navigation-only signal), so it is excluded here.
+ *
+ * - `'load'` (default) — the `load` event fired (full load incl. sub-resources).
+ * - `'domcontentloaded'` — the `DOMContentLoaded` event fired (HTML parsed).
+ * - `'networkidle'` — no network connections for at least 500ms.
+ */
+export type LoadState = 'load' | 'domcontentloaded' | 'networkidle';
+
+/**
  * Options accepted by {@link Navigation.waitForNetworkIdle}.
  */
 export interface WaitForNetworkIdleOptions {
@@ -114,20 +126,23 @@ export class Navigation {
     * @param waitUntil - The page lifecycle state to wait for before resolving.
     * Defaults to `'load'` (unchanged behaviour). Pass `'domcontentloaded'` for
     * SPA navigations that stall a cold WebKit/Safari on the full `load` event.
+    * @returns The navigation `Response` (the response of the last redirect), or
+    * `null` when navigation did not trigger a network request (e.g. same-document
+    * hash navigation, or `about:blank`). Callers asserting status codes on
+    * 404 / redirect contracts read `res.status()` from this; callers that ignore
+    * the return value are unaffected.
     */
-    async toUrl(url: string, waitUntil?: WaitUntilState): Promise<void> {
+    async toUrl(url: string, waitUntil?: WaitUntilState): Promise<Response | null> {
         const options = waitUntil ? { waitUntil } : undefined;
         if (url.startsWith('http://') || url.startsWith('https://')) {
-            await this.page.goto(url, options);
-            return;
+            return await this.page.goto(url, options);
         }
         const baseURL = (this.page.context() as any)._options?.baseURL;
         if (!baseURL) {
-            await this.page.goto(url, options);
-            return;
+            return await this.page.goto(url, options);
         }
         const resolved = new URL('.' + (url.startsWith('/') ? url : '/' + url), baseURL).href;
-        await this.page.goto(resolved, options);
+        return await this.page.goto(resolved, options);
     }
 
     /**
@@ -274,6 +289,21 @@ export class Navigation {
             return;
         }
         await this.page.waitForLoadState('networkidle', loadStateOptions);
+    }
+
+    /**
+     * Waits for the page to reach the given lifecycle `state`. Thin wrapper over
+     * Playwright's `page.waitForLoadState`. Unlike {@link waitForNetworkIdle}
+     * (which is hard-wired to `'networkidle'`), this exposes the full set of
+     * load states for standalone lifecycle waits **after an action** that does
+     * not navigate — e.g. waiting for `'domcontentloaded'` after a client-side
+     * render swap.
+     *
+     * @param state - `'load'`, `'domcontentloaded'`, or `'networkidle'`.
+     * @param options - Optional `{ timeout }` bounding the wait.
+     */
+    async waitForLoadState(state: LoadState, options?: { timeout?: number }): Promise<void> {
+        await this.page.waitForLoadState(state, options);
     }
 
     /**
