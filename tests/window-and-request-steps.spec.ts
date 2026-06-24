@@ -119,22 +119,24 @@ test.describe('Session-aware HTTP request family', () => {
         // verb hits page.request and returns a typed BrowserResponse), host-
         // agnostically: a short per-request timeout means a non-responding host
         // surfaces as a fast request error instead of hanging the test.
-        const verbs = [
-            () => steps.requestPost(root, { timeout: 8000 }),
-            () => steps.requestPut(root, { timeout: 8000 }),
-            () => steps.requestPatch(root, { timeout: 8000 }),
-            () => steps.requestDelete(root, { timeout: 8000 }),
-        ];
-        for (const call of verbs) {
-            try {
-                const res = await call();
-                expect(typeof res.status).toBe('number');
-                expect(typeof res.url).toBe('string');
-                await steps.verifyRequestStatus(res, res.status);
-            } catch (err) {
-                // The host didn't answer this verb within the timeout — the wrapper
+        // Fire all four concurrently so total wall-time is ~one timeout, not the
+        // sum — a host that hangs every write verb would otherwise blow the 30s
+        // test budget (4 × 8s).
+        const results = await Promise.allSettled([
+            steps.requestPost(root, { timeout: 8000 }),
+            steps.requestPut(root, { timeout: 8000 }),
+            steps.requestPatch(root, { timeout: 8000 }),
+            steps.requestDelete(root, { timeout: 8000 }),
+        ]);
+        for (const r of results) {
+            if (r.status === 'fulfilled') {
+                expect(typeof r.value.status).toBe('number');
+                expect(typeof r.value.url).toBe('string');
+                await steps.verifyRequestStatus(r.value, r.value.status);
+            } else {
+                // Host didn't answer this verb within the timeout — the wrapper
                 // still ran and propagated the Playwright request error.
-                expect(String(err)).toMatch(/timeout|ECONN|socket|request|Test ended/i);
+                expect(String(r.reason)).toMatch(/timeout|ECONN|socket|request|Test ended/i);
             }
         }
     });
