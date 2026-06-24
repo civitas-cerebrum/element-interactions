@@ -113,7 +113,7 @@ interface WindowVerifyModifiers {
  * `equals`, `contains`, `matches`, `present`, `truthy`, `greaterThan`, or
  * `lessThan` — TypeScript enforces the choice via `?: never` on the others.
  *
- * - `equals` — strict deep-ish equality (`===` for primitives).
+ * - `equals` — strict equality via `===` (reference equality for objects/arrays; no deep compare).
  * - `contains` — substring of the value's `String(...)` form, or array membership.
  * - `matches` — `RegExp.test` against the value's `String(...)` form.
  * - `present` — the dotted path resolves to a non-`undefined` value (`false` asserts absence).

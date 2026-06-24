@@ -23,7 +23,11 @@ const FAST_TIMEOUT = 1500;
 // host-agnostic: we read the URL the browser already loaded rather than
 // hard-coding the sub-path.
 async function servedRoot(steps: import('../src').Steps): Promise<string> {
-    return await steps.getWindowProperty<string>('location.href');
+    const href = await steps.getWindowProperty<string>('location.href');
+    // `location.href` is always present on a loaded page; assert to satisfy the
+    // `T | undefined` contract of getWindowProperty.
+    expect(href).toBeDefined();
+    return href as string;
 }
 
 test.describe('Window/script family', () => {
@@ -45,7 +49,7 @@ test.describe('Window/script family', () => {
         // App-agnostic: the page has SOME non-empty title; assert the contract,
         // not a specific string.
         expect(typeof title).toBe('string');
-        expect(title.length).toBeGreaterThan(0);
+        expect((title as string).length).toBeGreaterThan(0);
     });
 
     test('verifyWindowProperty — equals / truthy / present / negated on a value we set', async ({ steps }) => {

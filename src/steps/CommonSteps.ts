@@ -13,6 +13,20 @@ import { ElementAction } from './ElementAction';
 import { ExpectBuilder } from './ExpectMatchers';
 
 /**
+ * `JSON.stringify` that never throws — `bigint` and circular references would
+ * otherwise blow up a verifier's description string before its poll even runs.
+ * Falls back to `String(value)` on any serialisation error.
+ */
+function safeStringify(value: unknown): string {
+    try {
+        const json = JSON.stringify(value);
+        return json === undefined ? String(value) : json;
+    } catch {
+        return String(value);
+    }
+}
+
+/**
  * The `Steps` class serves as a unified Facade for test orchestration.
  * It combines element acquisition (via `@civitas-cerebrum/element-repository`) with
  * Playwright interactions, navigation, and verifications to keep test files clean,
@@ -725,7 +739,7 @@ export class Steps {
      * const title = await steps.getWindowProperty<string>('document.title');
      * ```
      */
-    async getWindowProperty<T = unknown>(path: string): Promise<T> {
+    async getWindowProperty<T = unknown>(path: string): Promise<T | undefined> {
         log.extract('Getting window property "%s"', path);
         return await this.extract.getWindowProperty<T>(path);
     }
@@ -757,7 +771,7 @@ export class Steps {
      * const links = await steps.evaluateScript<number>(() => document.querySelectorAll('a').length);
      * ```
      */
-    async evaluateScript<T = unknown>(fn: (arg?: unknown) => T, arg?: unknown): Promise<T> {
+    async evaluateScript<T = unknown>(fn: (arg?: unknown) => T | Promise<T>, arg?: unknown): Promise<T> {
         log.extract('Evaluating script (escape hatch)');
         return await this.extract.evaluateScript<T>(fn, arg);
     }
@@ -1279,19 +1293,26 @@ export class Steps {
      */
     async verifyWindowProperty(path: string, options: WindowVerifyOptions): Promise<void> {
         const modifiers = { negated: options.negated, timeout: options.timeout, errorMessage: options.errorMessage };
-        if ('equals' in options && options.equals !== undefined) {
+        // Dispatch on PROPERTY PRESENCE, not `!== undefined`: the union types
+        // `equals`/`contains` as `unknown`, so a caller may legally pass an
+        // explicit `undefined` — keying on `'x' in options` keeps that on the
+        // intended branch instead of silently falling through to `present`.
+        if ('equals' in options) {
             log.verify('Verifying window.%s equals %o', path, options.equals);
             const expected = options.equals;
-            await this.verify.windowProperty(path, v => v === expected, `to equal ${JSON.stringify(expected)}`, modifiers);
+            await this.verify.windowProperty(path, v => v === expected, `to equal ${safeStringify(expected)}`, modifiers);
             return;
         }
-        if ('contains' in options && options.contains !== undefined) {
+        if ('contains' in options) {
             log.verify('Verifying window.%s contains %o', path, options.contains);
             const needle = options.contains;
             await this.verify.windowProperty(
                 path,
-                v => Array.isArray(v) ? v.includes(needle) : String(v).includes(String(needle)),
-                `to contain ${JSON.stringify(needle)}`,
+                // Gate on the value being defined first — otherwise a missing
+                // path stringifies to "undefined" and `{ contains: 'undef' }`
+                // would falsely pass (the storage verifiers fail on absence).
+                v => v !== undefined && (Array.isArray(v) ? v.includes(needle) : String(v).includes(String(needle))),
+                `to contain ${safeStringify(needle)}`,
                 modifiers,
             );
             return;
@@ -1341,37 +1362,37 @@ export class Steps {
 
     /** Session-aware `GET`. Shares the browser context's cookies. */
     async requestGet(url: string, opts?: BrowserRequestOptions): Promise<BrowserResponse> {
-        log.navigate('Request GET %s', url);
+        log.api('Request GET %s', url);
         return await this.request.get(url, opts);
     }
 
     /** Session-aware `POST`. Shares the browser context's cookies. */
     async requestPost(url: string, opts?: BrowserRequestOptions): Promise<BrowserResponse> {
-        log.navigate('Request POST %s', url);
+        log.api('Request POST %s', url);
         return await this.request.post(url, opts);
     }
 
     /** Session-aware `PUT`. Shares the browser context's cookies. */
     async requestPut(url: string, opts?: BrowserRequestOptions): Promise<BrowserResponse> {
-        log.navigate('Request PUT %s', url);
+        log.api('Request PUT %s', url);
         return await this.request.put(url, opts);
     }
 
     /** Session-aware `PATCH`. Shares the browser context's cookies. */
     async requestPatch(url: string, opts?: BrowserRequestOptions): Promise<BrowserResponse> {
-        log.navigate('Request PATCH %s', url);
+        log.api('Request PATCH %s', url);
         return await this.request.patch(url, opts);
     }
 
     /** Session-aware `DELETE`. Shares the browser context's cookies. */
     async requestDelete(url: string, opts?: BrowserRequestOptions): Promise<BrowserResponse> {
-        log.navigate('Request DELETE %s', url);
+        log.api('Request DELETE %s', url);
         return await this.request.delete(url, opts);
     }
 
     /** Session-aware `HEAD`. Shares the browser context's cookies. */
     async requestHead(url: string, opts?: BrowserRequestOptions): Promise<BrowserResponse> {
-        log.navigate('Request HEAD %s', url);
+        log.api('Request HEAD %s', url);
         return await this.request.head(url, opts);
     }
 
@@ -1392,23 +1413,23 @@ export class Steps {
      * string asserts exact (case-insensitive) equality; a RegExp asserts match.
      */
     async verifyRequestHeader(res: BrowserResponse, name: string, value?: string | RegExp): Promise<void> {
-        log.verify('Verifying request header "%s"', name);
+        log.verify('Verifying response header "%s"', name);
         const lower = name.toLowerCase();
         // Playwright lower-cases header keys, but normalise defensively.
         const entry = Object.entries(res.headers).find(([k]) => k.toLowerCase() === lower);
         if (!entry) {
-            throw new Error(`expected request to ${res.url} to have header "${name}", but it was absent`);
+            throw new Error(`expected response from ${res.url} to have header "${name}", but it was absent`);
         }
         const actual = entry[1];
         if (value === undefined) return;
         if (value instanceof RegExp) {
             if (!value.test(actual)) {
-                throw new Error(`expected request header "${name}" to match ${value}, got "${actual}"`);
+                throw new Error(`expected response header "${name}" to match ${value}, got "${actual}"`);
             }
             return;
         }
         if (actual.toLowerCase() !== value.toLowerCase()) {
-            throw new Error(`expected request header "${name}" to be "${value}", got "${actual}"`);
+            throw new Error(`expected response header "${name}" to be "${value}", got "${actual}"`);
         }
     }
 

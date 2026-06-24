@@ -180,11 +180,11 @@ export class Extractions {
      * Use for asserting window-level JS state the DOM doesn't surface: analytics
      * layers, injected flags, feature toggles, XSS-fired sentinels, etc.
      */
-    async getWindowProperty<T = unknown>(path: string): Promise<T> {
+    async getWindowProperty<T = unknown>(path: string): Promise<T | undefined> {
         return await this.page.evaluate(
             (p) => p.split('.').reduce((o: unknown, k: string) => (o == null ? o : (o as Record<string, unknown>)[k]), window as unknown),
             path,
-        ) as T;
+        ) as T | undefined;
     }
 
     /**
@@ -213,16 +213,17 @@ export class Extractions {
     }
 
     /**
-     * The single labelled escape hatch for arbitrary in-page JavaScript:
-     * `page.evaluate(fn, arg)`, typed and logged. This is the LAST RESORT —
-     * prefer the targeted steps (`getWindowProperty`, `verifyWindowProperty`,
-     * the matcher tree, scoped queries) which stay named, retrying, and
-     * grep-able. Reach here only when no targeted step expresses the read.
+     * The single typed escape hatch for arbitrary in-page JavaScript:
+     * `page.evaluate(fn, arg)`. This raw interaction does NOT log — the logged
+     * wrapper is `Steps.evaluateScript`; prefer it (and the targeted steps
+     * `getWindowProperty`, `verifyWindowProperty`, the matcher tree, scoped
+     * queries) which stay named, retrying, and grep-able. Reach here only when
+     * no targeted step expresses the read. `fn` may be sync or `async`.
      *
      * @param fn  A function serialised and run in the browser context.
      * @param arg An optional, serialisable argument passed to `fn`.
      */
-    async evaluateScript<T = unknown>(fn: (arg?: unknown) => T, arg?: unknown): Promise<T> {
+    async evaluateScript<T = unknown>(fn: (arg?: unknown) => T | Promise<T>, arg?: unknown): Promise<T> {
         return await this.page.evaluate(fn, arg);
     }
 
