@@ -506,7 +506,7 @@ Backed by Playwright's `page.request` (`APIRequestContext`), which **shares the 
 import { BrowserResponse, BrowserRequestOptions } from '@civitas-cerebrum/element-interactions';
 ```
 
-* **`requestGet(url, opts?)`** / **`requestPost`** / **`requestPut`** / **`requestPatch`** / **`requestDelete`** / **`requestHead`** — Thin wrappers over `page.request.<verb>`. `opts: { maxRedirects?, headers?, params?, data?, form?, failOnStatusCode? }` pass through to Playwright's request options. Return a `BrowserResponse`: `{ status, ok, url, headers, statusText, json<T>(), text(), body() }`.
+* **`requestGet(url, opts?)`** / **`requestPost`** / **`requestPut`** / **`requestPatch`** / **`requestDelete`** / **`requestHead`** — Thin wrappers over `page.request.<verb>`. `opts: { maxRedirects?, headers?, params?, data?, form?, failOnStatusCode?, timeout? }` pass through to Playwright's request options. Return a `BrowserResponse`: `{ status, ok, url, headers, statusText, json<T>(), text(), body() }`.
 * **`verifyRequestStatus(res: BrowserResponse, code: number)`** — Asserts the response status equals `code` (simple throw helper; the response is already resolved).
 * **`verifyRequestHeader(res: BrowserResponse, name: string, value?: string | RegExp)`** — Asserts a header is present (name match is case-insensitive). Omit `value` for presence only; a string asserts case-insensitive equality; a `RegExp` asserts a match.
 * **`verifyRequestOk(res: BrowserResponse)`** — Asserts the response is a 2xx success.

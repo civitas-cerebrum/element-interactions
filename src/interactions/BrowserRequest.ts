@@ -22,6 +22,8 @@ export interface BrowserRequestOptions {
      * responses instead of throwing before the assertion.
      */
     failOnStatusCode?: boolean;
+    /** Per-request timeout in ms (0 = no timeout). Defaults to Playwright's request timeout. */
+    timeout?: number;
 }
 
 /**
@@ -83,6 +85,7 @@ export class BrowserRequest {
             data: opts?.data,
             form: opts?.form,
             failOnStatusCode: opts?.failOnStatusCode ?? false,
+            timeout: opts?.timeout,
         };
     }
 

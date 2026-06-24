@@ -24,7 +24,7 @@
   context's cookies/session (distinct from the wasapi `api*` external-service client):
   - `steps.requestGet/Post/Put/Patch/Delete/Head(url, opts?)` — thin wrappers over
     `page.request.<verb>`. `opts: { maxRedirects?, headers?, params?, data?, form?,
-    failOnStatusCode? }` (default `failOnStatusCode: false` so status assertions work
+    failOnStatusCode?, timeout? }` (default `failOnStatusCode: false` so status assertions work
     on 4xx/5xx). Return a typed `BrowserResponse` (`{ status, ok, url, headers,
     statusText, json<T>(), text(), body() }`).
   - `steps.verifyRequestStatus(res, code)`, `steps.verifyRequestHeader(res, name,
