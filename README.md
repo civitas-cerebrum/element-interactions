@@ -194,6 +194,29 @@ test('Fluent checkout flow', async ({ steps }) => {
 });
 ```
 
+#### Scoped child queries: `findByRole` / `findByText` / `findBySelector`
+
+Query "X within a named element" without ever exposing the parent `Locator` to your test. Each resolves the parent (`steps.on(name, page)`) and returns a **scoped `ElementAction`** querying inside it — composing with every existing terminal (`.count`, `.verifyState`, `.click`, `.getText`, `.first()` / `.nth()`, the matcher tree, …). They mirror Playwright's `getByRole` / `getByText` / `locator`, but as an explicit within-parent sub-query distinguished from top-level repository resolution.
+
+* **`findByRole(role, options?: { name?: string | RegExp; exact?: boolean })`** — scopes `parent.getByRole(role, options)`.
+* **`findByText(text: string | RegExp, options?: { exact?: boolean })`** — scopes `parent.getByText(text, options)`.
+* **`findBySelector(css: string)`** — scopes `parent.locator(css)`.
+
+```ts
+// Count the buttons inside a named dialog — no parent selector in the test.
+await steps.on('cookieDialog', 'CookieBanner').findByRole('button').count.toBe(2);
+await steps.on('cookieDialog', 'CookieBanner').findByRole('button', { name: /voorkeuren|manage/i }).count.toBe(0);
+
+// Assert text that lives inside a named drawer is visible.
+await steps.on('cartDrawer', 'CartDrawer').findByText('Je winkelwagen is leeg').verifyState('visible');
+
+// Fill an input scoped to a named panel; .first() / .nth() narrowing composes.
+await steps.on('panel', 'Page').findBySelector("input[name='email']").fill('a@b.com');
+await steps.on('table', 'TablePage').findByRole('row').nth(1).getText();
+```
+
+`.first()` / `.nth(i)` narrow the scoped match the same way they narrow a repo-resolved element; count / order terminals see the whole scoped set.
+
 ### Expect Matcher Tree
 
 A chain-style assertion API for the common case where you want to verify multiple things about a single element. Available at both `steps.expect(el, page)` (top-level) and as field getters on `steps.on(el, page)` (fluent). Each matcher call queues an assertion; awaiting flushes the queue and short-circuits on the first failure.
@@ -472,6 +495,9 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 * **`verifyState(elementName, pageName, state)`** — Asserts the state of an element. Supported states: `'enabled'`, `'disabled'`, `'editable'`, `'checked'`, `'focused'`, `'visible'`, `'hidden'`, `'attached'`, `'inViewport'`.
 * **`verifyAttribute(elementName, pageName, attributeName: string, expectedValue: string)`** — Asserts that an element has a specific HTML attribute with an exact value.
 * **`verifyUrlContains(text: string)`** — Asserts that the current URL contains the expected substring.
+* **`verifyPageContainsText(text: string | RegExp, options?: { timeout?: number; errorMessage?: string })`** — Page-level mirror of `verifyTextContains`. Asserts the document body contains `text` (substring or RegExp), with web-first retry. Use for page-wide copy where no single element is the natural scope. Example: `await steps.verifyPageContainsText(/404|niet gevonden/i)`.
+* **`verifyPageNotContainsText(text: string | RegExp, options?: { timeout?: number; errorMessage?: string })`** — Negated companion. Asserts the body does **not** contain `text`. Closes XSS "no raw `<script>`" and "not a 404" body checks. Example: `await steps.verifyPageNotContainsText('<script>alert')`.
+* **`verifyPageTitle(title: string | RegExp, options?: { timeout?: number; errorMessage?: string })`** — Asserts the page `<title>` equals the string or matches the RegExp. Wraps `expect(page).toHaveTitle`.
 * **`verifyInputValue(elementName, pageName, expectedValue: string)`** — Asserts that an input, textarea, or select element has the expected value.
 * **`verifyTabCount(expectedCount: number)`** — Asserts the number of currently open tabs/pages in the browser context.
 * **`verifyLocalStorage(key: string, options: StorageVerifyOptions)`** — Asserts a property of `localStorage[key]`. Pick exactly one matcher in the options: `{ equals: string }` (exact match), `{ contains: string }` (substring), `{ matches: RegExp }`, or `{ present: boolean }` (existence). All four forms also accept `negated`, `timeout`, and `errorMessage`. Polls until the predicate holds or the timeout expires, so it survives the race between a UI action firing and its persistence side-effect landing.

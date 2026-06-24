@@ -1,3 +1,4 @@
+import { Locator } from '@playwright/test';
 import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
 import { ElementInteractions } from '../interactions/facade/ElementInteractions';
 import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ScreenshotOptions, IsVisibleOptions } from '../enum/Options';
@@ -23,6 +24,15 @@ export class ElementAction {
     private _timeout: number;
     private conditionalVisible: boolean = false;
     private visibilityTimeout: number = 2000;
+    /**
+     * When set, this chain queries WITHIN a parent element instead of resolving
+     * `elementName`/`pageName` against the repository. The factory takes the
+     * resolved parent `Locator` and returns the un-narrowed child `Locator`
+     * (e.g. `parent.getByRole(...)`). Seeded by `findByRole` / `findByText` /
+     * `findBySelector`; `resolve()` / `resolveAll()` apply the chain's strategy
+     * selectors to the returned locator so every existing terminal composes.
+     */
+    private scopedChild?: () => Promise<Locator>;
 
     constructor(
         private _repo: ElementRepository,
@@ -130,11 +140,103 @@ export class ElementAction {
     }
 
     private async resolve(): Promise<WebElement> {
+        if (this.scopedChild) {
+            return new WebElement(this.narrowScoped(await this.scopedChild()));
+        }
         return (await this.repo.get(this.elementName, this.pageName, this.resolutionOptions)) as WebElement;
     }
 
     private async resolveAll(): Promise<WebElement> {
+        if (this.scopedChild) {
+            // Collection-level: ignore any .first()/.nth() narrowing, return the
+            // whole child set so count / order / image terminals see every match.
+            return new WebElement(await this.scopedChild());
+        }
         return (await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL })) as WebElement;
+    }
+
+    /**
+     * Apply this chain's strategy selectors to a scoped child locator. `.nth(i)`
+     * narrows by index, the collection strategy returns the whole set, and the
+     * default / `.first()` resolves the first match. RANDOM / TEXT / ATTRIBUTE
+     * are rejected: a scoped `findBy*` query already carries its own
+     * role/text/selector filter, so layering a second repo-style strategy on top
+     * is ambiguous — we fail fast rather than silently behave like `.first()`.
+     * Use `.nth(i)` (or a more specific `findBy*` query) to disambiguate.
+     */
+    private narrowScoped(child: Locator): Locator {
+        const opts = this.resolutionOptions;
+        if (opts.strategy === SelectionStrategy.INDEX && opts.index !== undefined) {
+            return child.nth(opts.index);
+        }
+        if (opts.strategy === SelectionStrategy.ALL) {
+            return child;
+        }
+        if (opts.strategy) {
+            throw new Error(
+                `Strategy '${opts.strategy}' is not supported on a scoped findBy*() chain — ` +
+                `the scoped query already filters by role/text/selector. ` +
+                `Use .first() / .nth(i), or a more specific findBy*() query, to disambiguate.`,
+            );
+        }
+        return child.first();
+    }
+
+    /**
+     * Spawn a fresh `ElementAction` that queries WITHIN this element. The new
+     * chain reuses the same repo / interactions / timeout but resolves through
+     * the given child-locator factory instead of the repository, so it composes
+     * with every existing terminal (`.count`, `.verifyState`, `.click`,
+     * `.getText`, `.first()` / `.nth()`, the matcher tree, …).
+     */
+    private spawnScoped(label: string, childFactory: (parent: Locator) => Locator): ElementAction {
+        // Stamp a descriptive name so logs / click subjects / matcher failures point
+        // at the scoped query (e.g. "cookieDialog › findByRole(button)"), not the
+        // parent. Safe: scoped chains resolve via `scopedChild`, never `repo.get`.
+        const scopedName = `${this.elementName} › ${label}`;
+        const scoped = new ElementAction(this.repo, scopedName, this.pageName, this.interactions, this._timeout);
+        scoped.scopedChild = async () => {
+            const parent = await this.resolve();
+            return childFactory(parent.locator);
+        };
+        return scoped;
+    }
+
+    // -- Scoped child queries --
+    //
+    // "X within a named element" without ever exposing the parent Locator to the
+    // test. Each resolves the parent (`steps.on(name, page)`) and returns a NEW
+    // scoped `ElementAction` querying inside it. They mirror Playwright's
+    // `getByRole` / `getByText` / `locator`, but as an explicit within-parent
+    // sub-query distinguished from top-level repository resolution.
+
+    /**
+     * Query by ARIA role WITHIN this element. Scopes `parent.getByRole(role, options)`.
+     * @example
+     * await steps.on('cookieDialog', 'CookieBanner').findByRole('button').count.toBe(2);
+     * await steps.on('table', 'TablePage').findByRole('cell', { name: 'Alice Martin' }).getText();
+     */
+    findByRole(role: Parameters<Locator['getByRole']>[0], options?: { name?: string | RegExp; exact?: boolean }): ElementAction {
+        const label = options?.name !== undefined ? `findByRole(${role}, name=${String(options.name)})` : `findByRole(${role})`;
+        return this.spawnScoped(label, parent => parent.getByRole(role, options));
+    }
+
+    /**
+     * Query by text content WITHIN this element. Scopes `parent.getByText(text, options)`.
+     * @example
+     * await steps.on('cartDrawer', 'CartDrawer').findByText('Je winkelwagen is leeg').verifyState('visible');
+     */
+    findByText(text: string | RegExp, options?: { exact?: boolean }): ElementAction {
+        return this.spawnScoped(`findByText(${String(text)})`, parent => parent.getByText(text, options));
+    }
+
+    /**
+     * Query by raw CSS selector WITHIN this element. Scopes `parent.locator(css)`.
+     * @example
+     * await steps.on('panel', 'Page').findBySelector("input[name='email']").fill('a@b.com');
+     */
+    findBySelector(css: string): ElementAction {
+        return this.spawnScoped(`findBySelector(${css})`, parent => parent.locator(css));
     }
 
     // -- Terminal actions: interactions --

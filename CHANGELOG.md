@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Page-level verification family** — document-scoped mirrors of the element
+  verification surface, so page-wide copy / title / XSS checks no longer drop to
+  raw Playwright `page.*`:
+  - `steps.verifyPageContainsText(text: string | RegExp, options?)` — web-first
+    assert the document body contains `text`. Mirrored on
+    `Verifications.pageContainsText`.
+  - `steps.verifyPageNotContainsText(text: string | RegExp, options?)` — negated
+    companion; closes XSS "no raw `<script>`" / "not a 404" body checks.
+    Mirrored on `Verifications.pageNotContainsText`.
+  - `steps.verifyPageTitle(title: string | RegExp, options?)` — wraps
+    `expect(page).toHaveTitle`. Mirrored on `Verifications.pageTitle`.
+  All three accept `{ timeout?, errorMessage? }`.
+- **Scoped child queries on the fluent builder** — query "X within a named
+  element" without exposing the parent `Locator`. Each resolves the parent
+  (`steps.on(name, page)`) and returns a scoped `ElementAction` that composes
+  with every existing terminal (`.count`, `.verifyState`, `.click`, `.getText`,
+  `.first()` / `.nth()`, the matcher tree, …):
+  - `steps.on(el, page).findByRole(role, options?: { name?, exact? })` — scopes
+    `parent.getByRole(role, options)`.
+  - `steps.on(el, page).findByText(text: string | RegExp, options?: { exact? })`
+    — scopes `parent.getByText(text, options)`.
+  - `steps.on(el, page).findBySelector(css: string)` — scopes
+    `parent.locator(css)`.
+
 ## 0.3.7 — 2026-06-12
 
 ### Security
