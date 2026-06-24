@@ -7,6 +7,8 @@ export type { ExpectNoRequestOptions, ExpectRequestMethod, WaitUntilState, WaitF
 export { Verifications } from './interactions/Verification';
 export { Interactions } from './interactions/Interaction';
 export { Extractions } from './interactions/Extraction';
+export { BrowserRequest } from './interactions/BrowserRequest';
+export type { BrowserResponse, BrowserRequestOptions } from './interactions/BrowserRequest';
 
 // Utilities
 export { reformatDateString } from './utils/DateUtilities';

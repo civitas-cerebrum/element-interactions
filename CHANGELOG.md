@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Window/script family (complementary-steps RFC, phase 2) — controlled access to
+  window-level JS state without dropping to raw `page.evaluate`:
+  - `steps.getWindowProperty<T>(path)` — read a `window` value by dotted path
+    (e.g. `'__XSS_FIRED'`, `'dataLayer.length'`, `'document.title'`); returns
+    `undefined` for a missing path. Mirrored on `Extractions.getWindowProperty`.
+  - `steps.setWindowProperty(path, value)` — set a `window` value by dotted path,
+    creating intermediate objects as needed. Mirrored on `Extractions.setWindowProperty`.
+  - `steps.verifyWindowProperty(path, options)` — retrying (`expect.poll`)
+    assertion; pick one matcher: `equals` | `contains` | `matches` (RegExp) |
+    `present` | `truthy` | `greaterThan` | `lessThan`, with
+    `{ negated?, timeout?, errorMessage? }` modifiers. New exported type
+    `WindowVerifyOptions`. Backed by `Verifications.windowProperty`.
+  - `steps.evaluateScript<T>(fn, arg?)` — the single labelled escape hatch over
+    `page.evaluate`, typed and logged; prefer the targeted steps. Mirrored on
+    `Extractions.evaluateScript`.
+- Session-aware HTTP request family (complementary-steps RFC, phase 2) — backed by
+  Playwright's `page.request` (`APIRequestContext`), which shares the browser
+  context's cookies/session (distinct from the wasapi `api*` external-service client):
+  - `steps.requestGet/Post/Put/Patch/Delete/Head(url, opts?)` — thin wrappers over
+    `page.request.<verb>`. `opts: { maxRedirects?, headers?, params?, data?, form?,
+    failOnStatusCode?, timeout? }` (default `failOnStatusCode: false` so status assertions work
+    on 4xx/5xx). Return a typed `BrowserResponse` (`{ status, ok, url, headers,
+    statusText, json<T>(), text(), body() }`).
+  - `steps.verifyRequestStatus(res, code)`, `steps.verifyRequestHeader(res, name,
+    value?)` (case-insensitive name; presence when value omitted), and
+    `steps.verifyRequestOk(res)` (2xx) — simple throw helpers.
+  - New `BrowserRequest` class wired through `ElementInteractions.request`; new
+    exported types `BrowserResponse` and `BrowserRequestOptions`.
+
 ## 0.3.7 — 2026-06-12
 
 ### Security

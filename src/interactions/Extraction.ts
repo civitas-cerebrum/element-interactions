@@ -171,6 +171,62 @@ export class Extractions {
         await this.page.evaluate(() => window.sessionStorage.clear());
     }
 
+    /**
+     * Reads a value from the `window` object by dotted path — e.g.
+     * `'__XSS_FIRED'`, `'dataLayer.length'`, `'document.title'`. Walks the path
+     * key-by-key, returning `undefined` the moment any intermediate segment is
+     * `null`/`undefined` (so a missing path is `undefined`, never a thrown error).
+     *
+     * Use for asserting window-level JS state the DOM doesn't surface: analytics
+     * layers, injected flags, feature toggles, XSS-fired sentinels, etc.
+     */
+    async getWindowProperty<T = unknown>(path: string): Promise<T | undefined> {
+        return await this.page.evaluate(
+            (p) => p.split('.').reduce((o: unknown, k: string) => (o == null ? o : (o as Record<string, unknown>)[k]), window as unknown),
+            path,
+        ) as T | undefined;
+    }
+
+    /**
+     * Writes a value onto the `window` object by dotted path, creating any
+     * missing intermediate objects along the way — e.g.
+     * `setWindowProperty('__test.flag', true)` ensures `window.__test` exists
+     * then sets `.flag`. The mutating companion to {@link getWindowProperty};
+     * use to seed window-level state a test depends on.
+     */
+    async setWindowProperty(path: string, value: unknown): Promise<void> {
+        await this.page.evaluate(
+            ({ p, v }) => {
+                const keys = p.split('.');
+                const last = keys.pop() as string;
+                let obj = window as unknown as Record<string, unknown>;
+                for (const k of keys) {
+                    if (obj[k] == null || typeof obj[k] !== 'object') {
+                        obj[k] = {};
+                    }
+                    obj = obj[k] as Record<string, unknown>;
+                }
+                obj[last] = v;
+            },
+            { p: path, v: value },
+        );
+    }
+
+    /**
+     * The single typed escape hatch for arbitrary in-page JavaScript:
+     * `page.evaluate(fn, arg)`. This raw interaction does NOT log — the logged
+     * wrapper is `Steps.evaluateScript`; prefer it (and the targeted steps
+     * `getWindowProperty`, `verifyWindowProperty`, the matcher tree, scoped
+     * queries) which stay named, retrying, and grep-able. Reach here only when
+     * no targeted step expresses the read. `fn` may be sync or `async`.
+     *
+     * @param fn  A function serialised and run in the browser context.
+     * @param arg An optional, serialisable argument passed to `fn`.
+     */
+    async evaluateScript<T = unknown>(fn: (arg?: unknown) => T | Promise<T>, arg?: unknown): Promise<T> {
+        return await this.page.evaluate(fn, arg);
+    }
+
     /** Captures a screenshot of the full page or a specific element. */
     async screenshot(target?: WebElement, options?: ScreenshotOptions): Promise<Buffer> {
         if (target) {

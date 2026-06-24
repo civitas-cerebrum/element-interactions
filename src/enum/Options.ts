@@ -95,6 +95,52 @@ export type StorageVerifyOptions =
     | (StorageVerifyModifiers & { equals?: never;   contains?: never; matches?: never; present: boolean });
 
 /**
+ * Shared modifiers every window-property assertion accepts. Mirrors
+ * {@link StorageVerifyModifiers} so the window family reads identically to the
+ * storage family.
+ */
+interface WindowVerifyModifiers {
+    /** When `true`, flips the assertion. */
+    negated?: boolean;
+    /** Override the class-level timeout for this single assertion. */
+    timeout?: number;
+    /** Custom message prepended to the failure header. */
+    errorMessage?: string;
+}
+
+/**
+ * Discriminated matcher for `verifyWindowProperty`. Pick EXACTLY ONE of
+ * `equals`, `contains`, `matches`, `present`, `truthy`, `greaterThan`, or
+ * `lessThan` — TypeScript enforces the choice via `?: never` on the others.
+ *
+ * - `equals` — strict equality via `===` (reference equality for objects/arrays; no deep compare).
+ * - `contains` — substring of the value's `String(...)` form, or array membership.
+ * - `matches` — `RegExp.test` against the value's `String(...)` form.
+ * - `present` — the dotted path resolves to a non-`undefined` value (`false` asserts absence).
+ * - `truthy` — JS-truthiness of the value (`false` asserts falsy).
+ * - `greaterThan` / `lessThan` — numeric comparison (value coerced via `Number(...)`).
+ *
+ * Steps stays lightweight (one `verifyWindowProperty`) by accepting this union;
+ * the polling lives in `Verifications.windowProperty`.
+ *
+ * @example
+ * ```ts
+ * await steps.verifyWindowProperty('dataLayer.length', { greaterThan: 0 });
+ * await steps.verifyWindowProperty('__test.flag', { equals: true });
+ * await steps.verifyWindowProperty('__XSS_FIRED', { present: false });
+ * await steps.verifyWindowProperty('document.title', { matches: /Vue/i });
+ * ```
+ */
+export type WindowVerifyOptions =
+    | (WindowVerifyModifiers & { equals: unknown; contains?: never; matches?: never; present?: never; truthy?: never; greaterThan?: never; lessThan?: never })
+    | (WindowVerifyModifiers & { equals?: never; contains: unknown; matches?: never; present?: never; truthy?: never; greaterThan?: never; lessThan?: never })
+    | (WindowVerifyModifiers & { equals?: never; contains?: never; matches: RegExp; present?: never; truthy?: never; greaterThan?: never; lessThan?: never })
+    | (WindowVerifyModifiers & { equals?: never; contains?: never; matches?: never; present: boolean; truthy?: never; greaterThan?: never; lessThan?: never })
+    | (WindowVerifyModifiers & { equals?: never; contains?: never; matches?: never; present?: never; truthy: boolean; greaterThan?: never; lessThan?: never })
+    | (WindowVerifyModifiers & { equals?: never; contains?: never; matches?: never; present?: never; truthy?: never; greaterThan: number; lessThan?: never })
+    | (WindowVerifyModifiers & { equals?: never; contains?: never; matches?: never; present?: never; truthy?: never; greaterThan?: never; lessThan: number });
+
+/**
  * Configuration options for the `count` verification method.
  * At least one constraint is required: exactly, greaterThan, or lessThan.
  */

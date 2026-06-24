@@ -505,6 +505,56 @@ export class Verifications {
         );
     }
 
+    // ==========================================
+    // Window property (window-level JS state)
+    // ==========================================
+    //
+    // Mirrors the storage poll: read the dotted-path window value on each tick,
+    // run the caller's predicate, and retry until it holds (or its negation) or
+    // the timeout expires. The matcher selection (equals/contains/.../lessThan)
+    // is resolved on the Steps side into a single predicate passed in here.
+
+    /**
+     * Polls a `window` value (read by dotted path) against a predicate until it
+     * holds (or its negation) or the timeout expires. The single source of
+     * truth behind `steps.verifyWindowProperty`. The `describe` string is the
+     * human-readable tail of the failure header (e.g. `to be greater than 0`).
+     */
+    async windowProperty(
+        path: string,
+        predicate: (value: unknown) => boolean,
+        describe: string,
+        options?: VerifyOptions,
+    ): Promise<void> {
+        const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
+        const negated = options?.negated ?? false;
+        const neg = negated ? 'not ' : '';
+        const header = options?.errorMessage ?? `expected window.${path} ${neg}${describe}`;
+
+        let lastValue: unknown;
+        let captured = false;
+        try {
+            await expect.poll(async () => {
+                try {
+                    const value = await this.page.evaluate(
+                        (p) => p.split('.').reduce((o: unknown, k: string) => (o == null ? o : (o as Record<string, unknown>)[k]), window as unknown),
+                        path,
+                    );
+                    lastValue = value;
+                    captured = true;
+                    return predicate(value) !== negated;
+                } catch {
+                    return false;
+                }
+            }, { timeout, message: header }).toBe(true);
+        } catch {
+            const actual = !captured ? '<unavailable>' : (() => {
+                try { return JSON.stringify(lastValue); } catch { return String(lastValue); }
+            })();
+            throw new Error(`${header}\n  actual: ${actual}`);
+        }
+    }
+
     /**
      * Asserts that an element has a specific HTML attribute with an exact value.
      * @param target - A Playwright Locator or Element pointing to the target element.
