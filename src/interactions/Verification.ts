@@ -183,6 +183,47 @@ export class Verifications {
     }
 
     // ==========================================
+    // Page-level Assertions
+    // ==========================================
+    //
+    // Document-scoped mirrors of the element verification family. They target
+    // the whole page rather than a single repository element, so they live as
+    // direct Playwright `expect(page|locator)` assertions here (no Element
+    // resolution) — the single implementation behind `steps.verifyPage*`.
+
+    /**
+     * Asserts the document body contains the given text (substring or RegExp).
+     * Web-first: retries until the body text matches or the timeout expires.
+     * @param text - Substring or RegExp expected somewhere in the rendered body text.
+     */
+    async pageContainsText(text: string | RegExp, options?: VerifyOptions): Promise<void> {
+        const { matcher, timeout } = this.prepare(this.page.locator('body'), options);
+        await matcher.toContainText(text, { timeout });
+    }
+
+    /**
+     * Asserts the document body does NOT contain the given text — the negated
+     * companion to {@link pageContainsText}. Closes XSS "no raw `<script>`" and
+     * "not a 404" checks.
+     * @param text - Substring or RegExp expected to be absent from the body text.
+     */
+    async pageNotContainsText(text: string | RegExp, options?: VerifyOptions): Promise<void> {
+        await this.pageContainsText(text, { ...options, negated: !(options?.negated ?? false) });
+    }
+
+    /**
+     * Asserts the page `<title>` equals the given string or matches the RegExp.
+     * Wraps Playwright's `expect(page).toHaveTitle`.
+     * @param title - Exact title string or a RegExp the title must match.
+     */
+    async pageTitle(title: string | RegExp, options?: VerifyOptions): Promise<void> {
+        const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
+        const base = options?.errorMessage ? expect(this.page, options.errorMessage) : expect(this.page);
+        const matcher = options?.negated ? base.not : base;
+        await matcher.toHaveTitle(title, { timeout });
+    }
+
+    // ==========================================
     // HTML Assertions
     // ==========================================
     //

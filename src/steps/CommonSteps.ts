@@ -1217,6 +1217,62 @@ export class Steps {
     }
 
     /**
+     * Asserts the document body contains the given text — the page-level mirror
+     * of {@link verifyTextContains}. Accepts a substring or a RegExp and retries
+     * with web-first semantics until the body matches or the timeout expires.
+     *
+     * Use for page-wide copy checks where no single element is the natural scope
+     * (a flash message anywhere on the page, a "404 / niet gevonden" body, etc.).
+     *
+     * @param text - Substring or RegExp expected somewhere in the rendered body text.
+     * @param options - `{ timeout?, errorMessage? }`.
+     * @example
+     * ```ts
+     * await steps.verifyPageContainsText('Wishlist');
+     * await steps.verifyPageContainsText(/404|niet gevonden/i);
+     * ```
+     */
+    async verifyPageContainsText(text: string | RegExp, options?: { timeout?: number; errorMessage?: string }): Promise<void> {
+        log.verify('Verifying page body contains: %s', text instanceof RegExp ? text.toString() : `"${text}"`);
+        await this.verify.pageContainsText(text, options);
+    }
+
+    /**
+     * Asserts the document body does NOT contain the given text — the negated
+     * companion to {@link verifyPageContainsText}. Closes XSS "no raw `<script>`"
+     * and "not a 404" body checks.
+     *
+     * @param text - Substring or RegExp expected to be absent from the body text.
+     * @param options - `{ timeout?, errorMessage? }`.
+     * @example
+     * ```ts
+     * await steps.verifyPageNotContainsText('<script>alert');
+     * await steps.verifyPageNotContainsText(/server error/i);
+     * ```
+     */
+    async verifyPageNotContainsText(text: string | RegExp, options?: { timeout?: number; errorMessage?: string }): Promise<void> {
+        log.verify('Verifying page body does NOT contain: %s', text instanceof RegExp ? text.toString() : `"${text}"`);
+        await this.verify.pageNotContainsText(text, options);
+    }
+
+    /**
+     * Asserts the page `<title>` equals the given string or matches the RegExp.
+     * Wraps Playwright's `expect(page).toHaveTitle`.
+     *
+     * @param title - Exact title string or a RegExp the title must match.
+     * @param options - `{ timeout?, errorMessage? }`.
+     * @example
+     * ```ts
+     * await steps.verifyPageTitle('Dashboard');
+     * await steps.verifyPageTitle(/Wishlist/i);
+     * ```
+     */
+    async verifyPageTitle(title: string | RegExp, options?: { timeout?: number; errorMessage?: string }): Promise<void> {
+        log.verify('Verifying page title: %s', title instanceof RegExp ? title.toString() : `"${title}"`);
+        await this.verify.pageTitle(title, options);
+    }
+
+    /**
      * Asserts that an input, textarea, or select element has the expected value.
      *
      * Equivalent to `steps.on(elementName, pageName).verifyInputValue(expectedValue)`.
