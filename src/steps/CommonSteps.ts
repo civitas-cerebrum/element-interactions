@@ -6,7 +6,7 @@ import { EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
 import { SqlClient, SqlResult, QueryBuilder, UnsupportedEngineException } from '@civitas-cerebrum/sql-client';
 import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions, StorageVerifyOptions, VisualMatchOptions, VisualMaskTarget } from '../enum/Options';
-import { ExpectNoRequestOptions, WaitUntilState, WaitForNetworkIdleOptions } from '../interactions/Navigation';
+import { ExpectNoRequestOptions, WaitUntilState, WaitForNetworkIdleOptions, LoadState } from '../interactions/Navigation';
 import { stepLog as log } from '../logger/Logger';
 import { ElementAction } from './ElementAction';
 import { ExpectBuilder } from './ExpectMatchers';
@@ -210,8 +210,12 @@ export class Steps {
      *   query parameters. `waitUntil` chooses the page lifecycle state to wait
      *   for (default `'load'`); pass `'domcontentloaded'` for SPA navigations
      *   that stall a cold WebKit/Safari on the full `load` event.
+     * @returns The navigation `Response` (last redirect's response), or `null`
+     *   when navigation triggered no network request (same-document hash nav).
+     *   Read `res.status()` to assert 404 / redirect contracts; ignore the
+     *   return value when you only care about side-effects.
      */
-    async navigateTo(url: string, options?: { query?: Record<string, string>; waitUntil?: WaitUntilState }): Promise<void> {
+    async navigateTo(url: string, options?: { query?: Record<string, string>; waitUntil?: WaitUntilState }): Promise<Response | null> {
         let targetUrl = url;
         if (options?.query) {
             const params = new URLSearchParams(options.query).toString();
@@ -224,7 +228,7 @@ export class Steps {
             targetUrl = `${base}${base.includes('?') ? '&' : '?'}${params}${fragment}`;
         }
         log.navigate('Navigating to URL: "%s"', targetUrl);
-        await this.navigate.toUrl(targetUrl, options?.waitUntil);
+        return await this.navigate.toUrl(targetUrl, options?.waitUntil);
     }
 
     /**
@@ -709,6 +713,22 @@ export class Steps {
     }
 
     /**
+     * Retrieves the rendered text of the current page (`document.body.innerText`).
+     * The text companion to {@link getPageHtml} — use for page-level text
+     * assertions where no single element is the natural scope (e.g. a 404 body).
+     *
+     * @example
+     * ```ts
+     * await steps.navigateTo('/no-such-route');
+     * expect(await steps.getPageText()).toContain('Page not found');
+     * ```
+     */
+    async getPageText(): Promise<string> {
+        log.extract('Getting page text');
+        return await this.extract.getPageText();
+    }
+
+    /**
      * Reads a value from the browser's `window.localStorage`. Returns `null`
      * when the key is absent — same contract as the native `getItem`.
      *
@@ -733,6 +753,32 @@ export class Steps {
     async getSessionStorage(key: string): Promise<string | null> {
         log.extract('Getting sessionStorage[%s]', JSON.stringify(key));
         return await this.extract.getSessionStorage(key);
+    }
+
+    /**
+     * Returns every key currently set in `window.localStorage`. The enumerating
+     * companion to {@link getLocalStorage} — use when the test needs to know
+     * *which* keys exist (e.g. asserting a logout cleared persisted state)
+     * rather than reading one known key.
+     *
+     * @example
+     * ```ts
+     * await steps.click('logout', 'NavBar');
+     * expect(await steps.getLocalStorageKeys()).not.toContain('authToken');
+     * ```
+     */
+    async getLocalStorageKeys(): Promise<string[]> {
+        log.extract('Getting localStorage keys');
+        return await this.extract.getLocalStorageKeys();
+    }
+
+    /**
+     * Returns every key currently set in `window.sessionStorage`. The
+     * enumerating companion to {@link getSessionStorage}.
+     */
+    async getSessionStorageKeys(): Promise<string[]> {
+        log.extract('Getting sessionStorage keys');
+        return await this.extract.getSessionStorageKeys();
     }
 
     /**
@@ -1480,6 +1526,20 @@ export class Steps {
     async waitForNetworkIdle(options?: WaitForNetworkIdleOptions): Promise<void> {
         log.wait('Waiting for network idle');
         await this.navigate.waitForNetworkIdle(options);
+    }
+
+    /**
+     * Waits for the page to reach the given lifecycle `state`. The general
+     * lifecycle-wait companion to {@link waitForNetworkIdle} (which is fixed to
+     * `'networkidle'`): exposes `'load'` and `'domcontentloaded'` too. Use for a
+     * standalone wait **after an action** that does not navigate — e.g. waiting
+     * for `'domcontentloaded'` once a client-side view swap finishes.
+     * @param state - `'load'`, `'domcontentloaded'`, or `'networkidle'`.
+     * @param options - Optional `{ timeout }` bounding the wait.
+     */
+    async waitForLoadState(state: LoadState, options?: { timeout?: number }): Promise<void> {
+        log.wait('Waiting for load state "%s"', state);
+        await this.navigate.waitForLoadState(state, options);
     }
 
     /**
