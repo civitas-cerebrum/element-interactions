@@ -13,8 +13,8 @@
   - `steps.repeat(action, times, { intervalMs? })` — runs `action` `times` times in
     sequence (passing the zero-based index), collects each result, and with
     `intervalMs` paces BETWEEN iterations (never before the first or after the
-    last). The intent-revealing form of "do X rapidly N times". Throws on a
-    non-negative-integer count. Mirrored on `Utils.repeat`.
+    last). The intent-revealing form of "do X rapidly N times". Throws when
+    `times` is not a non-negative integer. Mirrored on `Utils.repeat`.
 - Dispatch / keys / geometry (complementary-steps RFC, phase 3):
   - `steps.dispatchEvent(element, page, type, eventInit?)` — dispatches a synthetic
     DOM event on a named element WITHOUT actionability checks (custom events,

@@ -99,7 +99,10 @@ export class Utils {
         const results: T[] = [];
         for (let i = 0; i < times; i++) {
             results.push(await fn(i));
-            if (options?.intervalMs && i < times - 1) {
+            // `!== undefined` (not truthiness) so `intervalMs: 0` is honoured as
+            // an intentional zero-pause and `intervalMs: NaN` reaches `pace` and
+            // throws, rather than both being silently skipped.
+            if (options?.intervalMs !== undefined && i < times - 1) {
                 await this.pace(options.intervalMs);
             }
         }

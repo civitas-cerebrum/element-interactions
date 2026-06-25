@@ -572,6 +572,11 @@ export class Steps {
      * @param keys - The keys to press together, e.g. `['Meta', 'K']` or `['Control', 'Shift', 'P']`.
      */
     async pressKeys(keys: string[]): Promise<void> {
+        // Enforce the contract before logging so an empty chord never produces a
+        // misleading `Pressing keys: ""` line ahead of the throw.
+        if (keys.length === 0) {
+            throw new Error('pressKeys(keys) requires at least one key');
+        }
         log.interact('Pressing keys: "%s"', keys.join('+'));
         await this.interact.pressKeys(keys);
     }

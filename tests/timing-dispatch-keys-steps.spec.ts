@@ -43,10 +43,19 @@ test.describe('Timing family — pace / repeat', () => {
     });
 
     test('repeat with intervalMs paces BETWEEN iterations (not after the last)', async ({ steps }) => {
-        const start = Date.now();
-        await steps.repeat(() => undefined, 3, { intervalMs: 100 });
-        // 3 iterations → 2 gaps of ~100ms. Lower-bound the two gaps only.
-        expect(Date.now() - start).toBeGreaterThanOrEqual(180);
+        // Stamp each iteration so we can assert the gaps directly rather than
+        // just lower-bounding the total — which alone could not catch an extra
+        // pace tacked on after the final iteration.
+        const stamps: number[] = [];
+        await steps.repeat(() => { stamps.push(Date.now()); }, 3, { intervalMs: 100 });
+        const end = Date.now();
+        expect(stamps).toHaveLength(3);
+        // Two ~100ms gaps BETWEEN the three iterations (lower-bounded for CI jitter).
+        expect(stamps[1] - stamps[0]).toBeGreaterThanOrEqual(90);
+        expect(stamps[2] - stamps[1]).toBeGreaterThanOrEqual(90);
+        // No trailing pace: repeat returns promptly after the last iteration —
+        // well under one interval, which an extra `pace(100)` would blow past.
+        expect(end - stamps[2]).toBeLessThan(80);
     });
 
     test('repeat drives a real action N times — counter reflects the count', async ({ steps }) => {
