@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `steps.navigateTo(url, options?)` now **returns the navigation `Response`**
+  (`Promise<Response | null>`) — the last redirect's response, or `null` when no
+  network request was triggered (same-document hash nav). Consumers asserting
+  `res.status()` on 404 / redirect contracts no longer need raw `page.goto`.
+  Backward compatible — callers that ignore the return value are unaffected.
+  Also surfaced on `Navigation.toUrl`.
+- `steps.waitForLoadState(state, options?)` — a standalone page-lifecycle wait
+  for use **after an action** that does not navigate. Accepts the new exported
+  `LoadState` type (`'load' | 'domcontentloaded' | 'networkidle'`) and an
+  optional `{ timeout }`. Complements `waitForNetworkIdle` (which is fixed to
+  `'networkidle'`). Also surfaced on `Navigation.waitForLoadState`.
+- `steps.getLocalStorageKeys()` / `steps.getSessionStorageKeys()` — return every
+  key currently set in `window.localStorage` / `window.sessionStorage` as a
+  `string[]`. The enumerating companions to `getLocalStorage` / `getSessionStorage`,
+  completing the storage surface (get/set/remove/clear already existed). Also on
+  `Extractions`.
+- `steps.getPageText()` — returns the rendered page text (`document.body.innerText`),
+  the text companion to `getPageHtml`, for page-level text assertions (e.g. a 404
+  body) without dropping to `page.locator('body').innerText()`. Also on `Extractions`.
+- `steps.on(el, page).visible()` — a new strategy selector on the fluent
+  `ElementAction` builder that resolves to the visible match among duplicates
+  (via `repo.getVisible(..., true)`), then composes with terminal actions /
+  verifications exactly like `.first()`. Throws if no visible match exists.
+  Distinct from `.ifVisible()` / `.isVisible()` (which conditionally skip when
+  hidden) — `.visible()` selects the visible one and proceeds. Disambiguates
+  responsive duplicate elements.
+
 ## 0.3.7 — 2026-06-12
 
 ### Security

@@ -5,8 +5,38 @@ import {
     ElementSnapshot,
     ExpectBuilder,
     ExpectContext,
+    BooleanMatcher,
 } from './ExpectMatchers';
 import { VisibleChain } from './VisibleChain';
+
+/**
+ * The shape returned by the `ElementAction.visible` getter: it is BOTH the
+ * matcher-tree boolean field (`.visible.toBeTrue()`, `.visible.not.toBe(false)`)
+ * AND callable as the visible-selection strategy (`.visible().click()`). The
+ * matcher form is property access; the strategy form is a call. This dual shape
+ * exists because `.visible` was already the established matcher-tree getter when
+ * the visible-selection strategy was added — overloading the single name keeps
+ * both call sites working without a breaking rename.
+ *
+ * The members are spelled out (rather than `BooleanMatcher & callable`) so the
+ * type matches the runtime exactly: `timeout` and `not` step OFF the callable
+ * and onto a plain `BooleanMatcher` — mirroring the implementation, which
+ * returns the underlying matcher there. Modelling them as a callable
+ * `VisibleField` would let `.visible.timeout(500)()` typecheck and then throw at
+ * runtime (the matcher is not callable).
+ */
+export type VisibleField = (() => ElementAction) & {
+    /** Assert the resolved boolean equals `expected`. */
+    toBe(expected: boolean): ExpectBuilder;
+    /** Assert the element is visible. */
+    toBeTrue(): ExpectBuilder;
+    /** Assert the element is not visible. */
+    toBeFalse(): ExpectBuilder;
+    /** Apply a per-assertion timeout; resolves to a plain `BooleanMatcher` (no longer the strategy callable). */
+    timeout(ms: number): BooleanMatcher;
+    /** Negate the assertion; a plain `BooleanMatcher` (no longer the strategy callable). */
+    readonly not: BooleanMatcher;
+};
 
 /**
  * Fluent builder for performing actions on a repository element.
@@ -23,6 +53,7 @@ export class ElementAction {
     private _timeout: number;
     private conditionalVisible: boolean = false;
     private visibilityTimeout: number = 2000;
+    private visibleStrategy: boolean = false;
 
     constructor(
         private _repo: ElementRepository,
@@ -62,30 +93,63 @@ export class ElementAction {
     /** Select the first matching element (default behavior). */
     first(): this {
         this.resolutionOptions = {};
+        this.visibleStrategy = false;
+        return this;
+    }
+
+    /**
+     * Strategy selector: among duplicate matches, select the *visible* one, then
+     * compose with any terminal action / verification — exactly like `.first()`,
+     * but skipping hidden matches. Resolves via the repository's `getVisible(...)`
+     * with `strict: true`, so it throws when no visible match exists — consistent
+     * with every other strategy selector.
+     *
+     * Distinct from {@link ifVisible} / {@link isVisible}, which *conditionally
+     * skip* when the element is hidden — this *selects* the visible duplicate and
+     * proceeds. Use it to disambiguate responsive duplicate elements (e.g. a
+     * desktop/mobile pair where only one is rendered at the current viewport).
+     *
+     * Reached as `steps.on(el, page).visible()`. Note `steps.on(el, page).visible`
+     * (no call) is the matcher-tree boolean field — `.visible.toBeTrue()`; calling
+     * it (`.visible()`) switches the chain into visible-selection mode.
+     *
+     * @example
+     * ```ts
+     * await steps.on('navMenu', 'HomePage').visible().click();
+     * await steps.on('cta', 'HomePage').visible().verifyState('visible');
+     * ```
+     */
+    private selectVisible(): this {
+        this.visibleStrategy = true;
+        this.resolutionOptions = {};
         return this;
     }
 
     /** Select a random matching element. */
     random(): this {
         this.resolutionOptions = { strategy: SelectionStrategy.RANDOM };
+        this.visibleStrategy = false;
         return this;
     }
 
     /** Select the element at the given zero-based index. */
     nth(index: number): this {
         this.resolutionOptions = { strategy: SelectionStrategy.INDEX, index };
+        this.visibleStrategy = false;
         return this;
     }
 
     /** Select the first element matching the given text content. */
     byText(text: string): this {
         this.resolutionOptions = { strategy: SelectionStrategy.TEXT, value: text };
+        this.visibleStrategy = false;
         return this;
     }
 
     /** Select the first element matching the given attribute name-value pair. */
     byAttribute(name: string, value: string): this {
         this.resolutionOptions = { strategy: SelectionStrategy.ATTRIBUTE, attribute: name, value };
+        this.visibleStrategy = false;
         return this;
     }
 
@@ -130,6 +194,11 @@ export class ElementAction {
     }
 
     private async resolve(): Promise<WebElement> {
+        if (this.visibleStrategy) {
+            // strict: true → throws when no visible match exists, matching the
+            // throw-on-miss contract of every other strategy selector.
+            return (await this.repo.getVisible(this.elementName, this.pageName, true)) as WebElement;
+        }
         return (await this.repo.get(this.elementName, this.pageName, this.resolutionOptions)) as WebElement;
     }
 
@@ -551,7 +620,31 @@ export class ElementAction {
     get text() { return this.expectBuilder().text; }
     get value() { return this.expectBuilder().value; }
     get count() { return this.expectBuilder().count; }
-    get visible() { return this.expectBuilder().visible; }
+    /**
+     * Dual-purpose: the matcher-tree boolean field AND the visible-selection
+     * strategy. As property access (`.visible.toBeTrue()`) it is the
+     * `BooleanMatcher`. Called (`.visible().click()`) it switches the chain into
+     * visible-selection mode (see {@link selectVisible}) and returns `this` so
+     * terminal actions/verifications compose like `.first()`.
+     */
+    get visible(): VisibleField {
+        const matcher = this.expectBuilder().visible;
+        const select = (): ElementAction => this.selectVisible();
+        // Merge the matcher's FULL surface onto the callable so both the
+        // assertion form and the strategy-call form resolve. `timeout` and `not`
+        // return the underlying matcher (not the callable), so chaining past them
+        // (`.visible.timeout(100).toBeTrue()`, `.visible.not.toBe(false)`) lands
+        // on a real `BooleanMatcher` — matching what the `VisibleField` type
+        // promises. `not` stays a lazy getter so it never freezes a pre-timeout
+        // matcher instance.
+        return Object.assign(select, {
+            toBe: matcher.toBe.bind(matcher),
+            toBeTrue: matcher.toBeTrue.bind(matcher),
+            toBeFalse: matcher.toBeFalse.bind(matcher),
+            timeout: (ms: number) => matcher.timeout(ms),
+            get not() { return matcher.not; },
+        }) as VisibleField;
+    }
     get enabled() { return this.expectBuilder().enabled; }
     get attributes() { return this.expectBuilder().attributes; }
     get html() { return this.expectBuilder().html; }
