@@ -165,4 +165,24 @@ test.describe('visible() strategy selector', () => {
         await gotoButtons(steps);
         await steps.on('primaryButton', 'ButtonsPage').visible.toBeTrue();
     });
+
+    test('the matcher-tree .visible field delegates the full BooleanMatcher surface (timeout / not)', async ({ steps }) => {
+        // VisibleField is typed as the full BooleanMatcher; the runtime object
+        // must honour `.timeout()` and `.not` on the `steps.on(...)` path too,
+        // not only `.toBe*`. Both chains resolve to a real BooleanMatcher.
+        await gotoButtons(steps);
+        await steps.on('primaryButton', 'ButtonsPage').visible.timeout(5000).toBeTrue();
+        await steps.on('primaryButton', 'ButtonsPage').visible.not.toBe(false);
+    });
+});
+
+test.describe('waitForUrl — value-returning action', () => {
+    test('accepts an action that returns a value (navigateTo Response) — assignable, ignored', async ({ steps }) => {
+        await steps.navigateTo('/');
+        // navigateTo now resolves Promise<Response | null>; passing it directly as
+        // the concurrent action must typecheck (action widened to Promise<unknown>)
+        // and the wait still resolves on the route change.
+        await steps.waitForUrl('**/text-inputs', () => steps.navigateTo('/text-inputs'));
+        await steps.verifyUrlContains('/text-inputs');
+    });
 });

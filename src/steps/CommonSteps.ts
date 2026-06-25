@@ -261,11 +261,14 @@ export class Steps {
      *
      * @param url - Glob string, RegExp, or `(url: URL) => boolean` predicate.
      * @param action - Optional navigation-triggering action, run concurrently.
+     *   Its return value is ignored, so a value-returning call (e.g.
+     *   `() => steps.navigateTo('/x')`, which now resolves a `Response | null`)
+     *   is accepted without a `void`-assignability error.
      * @param options - Optional `{ timeout, waitUntil }`.
      */
     async waitForUrl(
         url: string | RegExp | ((url: URL) => boolean),
-        action?: () => Promise<void>,
+        action?: () => Promise<unknown>,
         options?: { timeout?: number; waitUntil?: WaitUntilState },
     ): Promise<void> {
         log.wait('Waiting for URL to match');

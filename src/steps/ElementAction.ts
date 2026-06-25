@@ -612,12 +612,18 @@ export class ElementAction {
     get visible(): VisibleField {
         const matcher = this.expectBuilder().visible;
         const select = (): ElementAction => this.selectVisible();
-        // Merge the matcher's surface (toBe/toBeTrue/toBeFalse/not) onto the
-        // callable so both the assertion form and the strategy-call form resolve.
+        // Merge the matcher's FULL surface onto the callable so both the
+        // assertion form and the strategy-call form resolve. `timeout` and `not`
+        // return the underlying matcher (not the callable), so chaining past them
+        // (`.visible.timeout(100).toBeTrue()`, `.visible.not.toBe(false)`) lands
+        // on a real `BooleanMatcher` — matching what the `VisibleField` type
+        // promises. `not` stays a lazy getter so it never freezes a pre-timeout
+        // matcher instance.
         return Object.assign(select, {
             toBe: matcher.toBe.bind(matcher),
             toBeTrue: matcher.toBeTrue.bind(matcher),
             toBeFalse: matcher.toBeFalse.bind(matcher),
+            timeout: (ms: number) => matcher.timeout(ms),
             get not() { return matcher.not; },
         }) as VisibleField;
     }

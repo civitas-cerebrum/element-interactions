@@ -184,7 +184,7 @@ export class Navigation {
      */
     async waitForUrl(
         url: string | RegExp | ((url: URL) => boolean),
-        action?: () => Promise<void>,
+        action?: () => Promise<unknown>,
         options?: { timeout?: number; waitUntil?: WaitUntilState },
     ): Promise<void> {
         if (action) {
