@@ -66,6 +66,47 @@ export class Utils {
     }
 
     /**
+     * Deliberate pause for `ms` milliseconds. Named `pace` — NOT `wait` — to
+     * signal intentional timing control (settling a debounce, spacing
+     * rapid-fire actions) rather than a missing wait-for-state. Whenever you are
+     * actually waiting for the app to reach a condition, prefer `waitForState`
+     * or a web-first assertion; reach here only for genuinely time-based pacing.
+     */
+    async pace(ms: number): Promise<void> {
+        if (!Number.isFinite(ms) || ms < 0) {
+            throw new Error(`pace(ms) requires a non-negative, finite duration, got ${ms}`);
+        }
+        await new Promise<void>(resolve => setTimeout(resolve, ms));
+    }
+
+    /**
+     * Runs `fn` `times` times in sequence — passing the zero-based iteration
+     * index — and collects each result. With `intervalMs`, paces BETWEEN
+     * iterations (never before the first or after the last). The
+     * intent-revealing form of a hand-rolled "do X rapidly N times" loop
+     * (repeated swatch clicks, double-submit probes, retrying a flaky toggle).
+     *
+     * @returns the array of every iteration's resolved result, in order.
+     */
+    async repeat<T>(
+        fn: (index: number) => Promise<T> | T,
+        times: number,
+        options?: { intervalMs?: number },
+    ): Promise<T[]> {
+        if (!Number.isInteger(times) || times < 0) {
+            throw new Error(`repeat(fn, times) requires a non-negative integer count, got ${times}`);
+        }
+        const results: T[] = [];
+        for (let i = 0; i < times; i++) {
+            results.push(await fn(i));
+            if (options?.intervalMs && i < times - 1) {
+                await this.pace(options.intervalMs);
+            }
+        }
+        return results;
+    }
+
+    /**
      * Terminal handling for a timed-out wait: soft (warn + `false`) when the
      * wait was optional, an error carrying the original cause otherwise.
      */
