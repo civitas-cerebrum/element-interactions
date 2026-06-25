@@ -17,8 +17,26 @@ import { VisibleChain } from './VisibleChain';
  * exists because `.visible` was already the established matcher-tree getter when
  * the visible-selection strategy was added — overloading the single name keeps
  * both call sites working without a breaking rename.
+ *
+ * The members are spelled out (rather than `BooleanMatcher & callable`) so the
+ * type matches the runtime exactly: `timeout` and `not` step OFF the callable
+ * and onto a plain `BooleanMatcher` — mirroring the implementation, which
+ * returns the underlying matcher there. Modelling them as a callable
+ * `VisibleField` would let `.visible.timeout(500)()` typecheck and then throw at
+ * runtime (the matcher is not callable).
  */
-export type VisibleField = BooleanMatcher & (() => ElementAction);
+export type VisibleField = (() => ElementAction) & {
+    /** Assert the resolved boolean equals `expected`. */
+    toBe(expected: boolean): ExpectBuilder;
+    /** Assert the element is visible. */
+    toBeTrue(): ExpectBuilder;
+    /** Assert the element is not visible. */
+    toBeFalse(): ExpectBuilder;
+    /** Apply a per-assertion timeout; resolves to a plain `BooleanMatcher` (no longer the strategy callable). */
+    timeout(ms: number): BooleanMatcher;
+    /** Negate the assertion; a plain `BooleanMatcher` (no longer the strategy callable). */
+    readonly not: BooleanMatcher;
+};
 
 /**
  * Fluent builder for performing actions on a repository element.
