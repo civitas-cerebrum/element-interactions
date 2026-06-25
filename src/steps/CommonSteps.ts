@@ -566,6 +566,46 @@ export class Steps {
     }
 
     /**
+     * Presses a multi-key chord at the page level. Parts are joined with `+`, so
+     * `['Control', 'A']` presses `Control+A`. The intent-revealing companion to
+     * {@link pressKey} for shortcuts where listing the modifiers reads clearer.
+     * @param keys - The keys to press together, e.g. `['Meta', 'K']` or `['Control', 'Shift', 'P']`.
+     */
+    async pressKeys(keys: string[]): Promise<void> {
+        // Enforce the contract before logging so an empty chord never produces a
+        // misleading `Pressing keys: ""` line ahead of the throw.
+        if (keys.length === 0) {
+            throw new Error('pressKeys(keys) requires at least one key');
+        }
+        log.interact('Pressing keys: "%s"', keys.join('+'));
+        await this.interact.pressKeys(keys);
+    }
+
+    /**
+     * Dispatches a synthetic DOM event on a named element, optionally with an
+     * `eventInit` payload. Drives event handlers directly WITHOUT actionability
+     * checks — reach for it only when a real interaction can't express the case
+     * (custom events, firing `input`/`change` on a widget that swallows
+     * synthetic typing). Prefer `click` / `fill` / `pressKey` for real user input.
+     * @param elementName - The element name as defined under the given page.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param type - The DOM event type, e.g. `'click'`, `'input'`, `'focus'`.
+     * @param eventInit - Optional event properties, e.g. `{ key: 'Enter', bubbles: true }`.
+     * @param options - Optional step options for element resolution.
+     */
+    async dispatchEvent(
+        elementName: string,
+        pageName: string,
+        type: string,
+        eventInit?: Record<string, unknown>,
+        options?: StepOptions,
+    ): Promise<void> {
+        log.interact('Dispatching "%s" event on "%s" in "%s"', type, elementName, pageName);
+        const element = await this.getWebElement(elementName, pageName, options);
+        await this.interact.dispatchEvent(element, type, eventInit);
+    }
+
+    /**
      * Types text into an input field one character at a time with a delay between keystrokes.
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
@@ -680,6 +720,25 @@ export class Steps {
         log.extract('Getting CSS "%s" from "%s" in "%s"', property, elementName, pageName);
         const element = await this.getWebElement(elementName, pageName, options);
         return await this.extract.getCssProperty(element, property);
+    }
+
+    /**
+     * Returns the element's bounding box (`{ x, y, width, height }` in CSS
+     * pixels, relative to the main frame) or `null` when it is not rendered.
+     * Use for geometry the DOM doesn't surface: overlap, off-screen placement,
+     * collapsed (`0×0`) regions.
+     * @param elementName - The element name as defined under the given page.
+     * @param pageName - The page name as defined in `page-repository.json`.
+     * @param options - Optional step options for element resolution.
+     */
+    async getBoundingBox(
+        elementName: string,
+        pageName: string,
+        options?: StepOptions,
+    ): Promise<{ x: number; y: number; width: number; height: number } | null> {
+        log.extract('Getting bounding box of "%s" in "%s"', elementName, pageName);
+        const element = await this.getWebElement(elementName, pageName, options);
+        return await this.extract.getBoundingBox(element);
     }
 
     /**
@@ -1480,6 +1539,44 @@ export class Steps {
     async waitForNetworkIdle(options?: WaitForNetworkIdleOptions): Promise<void> {
         log.wait('Waiting for network idle');
         await this.navigate.waitForNetworkIdle(options);
+    }
+
+    /**
+     * Deliberate pause for `ms` milliseconds. Named `pace` — NOT `wait` — to
+     * signal intentional timing control (settling a debounce, spacing
+     * rapid-fire actions), never a substitute for a wait-for-state. Whenever you
+     * are actually waiting for the app to reach a condition, prefer
+     * {@link waitForState}, {@link waitForUrl}, or a web-first assertion.
+     * @param ms - Pause duration in milliseconds (non-negative).
+     */
+    async pace(ms: number): Promise<void> {
+        log.wait('Pacing for %dms', ms);
+        await this.utils.pace(ms);
+    }
+
+    /**
+     * Runs `action` `times` times in sequence, passing the zero-based index, and
+     * returns each result in order. With `intervalMs`, paces BETWEEN iterations
+     * (never before the first or after the last). The intent-revealing form of a
+     * hand-rolled "do X rapidly N times" loop — repeated swatch clicks,
+     * double-submit probes, hammering a flaky toggle.
+     *
+     * @example
+     * ```ts
+     * await steps.repeat(i => steps.on('swatch', 'PDP').nth(i).click(), 3, { intervalMs: 120 });
+     * ```
+     * @param action - Callback run per iteration; receives the zero-based index.
+     * @param times - Number of iterations (non-negative integer).
+     * @param options - Optional `{ intervalMs }` pacing between iterations.
+     * @returns The array of every iteration's resolved result, in order.
+     */
+    async repeat<T>(
+        action: (index: number) => Promise<T> | T,
+        times: number,
+        options?: { intervalMs?: number },
+    ): Promise<T[]> {
+        log.wait('Repeating action %d time(s)%s', times, options?.intervalMs ? ` (every ${options.intervalMs}ms)` : '');
+        return await this.utils.repeat(action, times, options);
     }
 
     /**

@@ -349,6 +349,31 @@ export class Interactions {
         await this.page.keyboard.press(key);
     }
 
+    /**
+     * Presses a key chord by joining the parts with `+` — `['Control', 'A']`
+     * becomes `Control+A`. The multi-key companion to {@link pressKey}; use for
+     * shortcuts (`['Meta', 'K']`) where listing modifiers reads clearer than a
+     * pre-joined string. Throws on an empty array.
+     */
+    async pressKeys(keys: string[]): Promise<void> {
+        if (keys.length === 0) {
+            throw new Error('pressKeys(keys) requires at least one key');
+        }
+        await this.page.keyboard.press(keys.join('+'));
+    }
+
+    /**
+     * Dispatches a synthetic DOM event on the element, optionally with an
+     * `eventInit` payload (e.g. `{ key: 'Enter' }`). Goes through the locator so
+     * it auto-waits for the element; unlike a real click/keypress it does NOT
+     * require actionability — use it to drive handlers directly (custom events,
+     * `input`/`change` on widgets that swallow synthetic typing).
+     */
+    async dispatchEvent(element: WebElement, type: string, eventInit?: Record<string, unknown>): Promise<void> {
+        await this.softProbe(element, 'attached');
+        await element.locator.dispatchEvent(type, eventInit);
+    }
+
     async clearInput(element: WebElement): Promise<void> {
         await this.softProbe(element, 'visible');
         await element.clear({ timeout: this.ELEMENT_TIMEOUT });

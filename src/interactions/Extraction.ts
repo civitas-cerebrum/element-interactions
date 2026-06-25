@@ -68,6 +68,23 @@ export class Extractions {
     }
 
     /**
+     * Returns the element's bounding box (`{ x, y, width, height }` in CSS
+     * pixels relative to the main frame), or `null` when the element is not
+     * rendered. Use for layout/geometry assertions the DOM doesn't otherwise
+     * surface: overlap, off-screen positioning, collapsed (`0×0`) regions.
+     */
+    async getBoundingBox(target: WebElement): Promise<{ x: number; y: number; width: number; height: number } | null> {
+        // Soft attach-probe so a present element is measured promptly; if it is
+        // not in the DOM at all, short-circuit to `null` rather than letting
+        // `boundingBox()` block on its own (much longer) auto-wait.
+        await this.softProbe(target);
+        if ((await target.count()) === 0) {
+            return null;
+        }
+        return target.boundingBox();
+    }
+
+    /**
      * Retrieves the raw HTML of an element. Defaults to `innerHTML`; set
      * `{ outer: true }` for `outerHTML` (the element tag plus its subtree).
      *

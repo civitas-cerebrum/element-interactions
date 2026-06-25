@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Timing family (complementary-steps RFC, phase 3) — deliberate, intent-revealing
+  timing control without dropping to raw `page.waitForTimeout` / hand-rolled loops:
+  - `steps.pace(ms)` — a deliberate pause, named `pace` (NOT `wait`) to signal
+    intentional timing rather than a missing wait-for-state; prefer `waitForState`
+    / `waitForUrl` / web-first assertions whenever you are actually waiting for a
+    condition. Throws on a negative/non-finite duration. Mirrored on `Utils.pace`.
+  - `steps.repeat(action, times, { intervalMs? })` — runs `action` `times` times in
+    sequence (passing the zero-based index), collects each result, and with
+    `intervalMs` paces BETWEEN iterations (never before the first or after the
+    last). The intent-revealing form of "do X rapidly N times". Throws when
+    `times` is not a non-negative integer. Mirrored on `Utils.repeat`.
+- Dispatch / keys / geometry (complementary-steps RFC, phase 3):
+  - `steps.dispatchEvent(element, page, type, eventInit?)` — dispatches a synthetic
+    DOM event on a named element WITHOUT actionability checks (custom events,
+    firing `input`/`change` on widgets that swallow synthetic typing); prefer
+    `click`/`fill`/`pressKey` for real user input. Mirrored on `Interactions.dispatchEvent`.
+  - `steps.pressKeys(keys)` — presses a multi-key chord, joining the parts with `+`
+    (`['Control', 'A']` → `Control+A`); the intent-revealing companion to
+    `pressKey` for shortcuts. Throws on an empty array. Mirrored on `Interactions.pressKeys`.
+  - `steps.getBoundingBox(element, page)` — returns the element's
+    `{ x, y, width, height }` (CSS pixels, main-frame relative) or `null` when it
+    is not rendered (short-circuits on zero matches rather than blocking on
+    `boundingBox()`'s own auto-wait). Mirrored on `Extractions.getBoundingBox`.
+
 ## 0.3.7 — 2026-06-12
 
 ### Security
