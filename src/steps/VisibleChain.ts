@@ -62,18 +62,24 @@ export class VisibleChain implements PromiseLike<boolean> {
      * Runs the visibility check (and optional `containsText` filter) without
      * throwing. Resolves the probe target through the action's `probeTarget()`
      * so scoped `findBy*` chains probe their child locator (the stamped scoped
-     * name has no repository entry) while repository chains keep the raw-selector
-     * construction where the caller-supplied `timeout` is the only wait —
-     * avoiding the 15s repository-resolution default that `repo.get(...)`
-     * would impose.
+     * name has no repository entry) while repository chains resolve the entry's
+     * FULL selector through the repository — role+name, regex text, fallback
+     * and frame scope — exactly as an action on the same entry would. The
+     * caller-supplied `timeout` is forwarded as the resolution budget, so the
+     * 15s repository-resolution default is never imposed on a probe.
      */
     private async probe(): Promise<boolean> {
         const { elementName: el, pageName: pg } = this.action;
         const timeout = this.options.timeout ?? 2000;
         const containsText = this.options.containsText;
         try {
-            const element = await this.action.probeTarget();
-            await element.waitFor({ state: 'visible', timeout });
+            // One budget for the whole probe: whatever the repository spent
+            // waiting for attachment is deducted from the visibility wait, so a
+            // missing element reports false after ~timeout, not 2 × timeout.
+            const started = Date.now();
+            const element = await this.action.probeTarget(timeout);
+            const remaining = Math.max(1, timeout - (Date.now() - started));
+            await element.waitFor({ state: 'visible', timeout: remaining });
             if (containsText) {
                 const text = await element.textContent().catch(() => null);
                 const ok = text !== null && text.includes(containsText);

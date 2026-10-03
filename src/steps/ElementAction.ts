@@ -228,20 +228,33 @@ export class ElementAction {
     }
 
     /**
-     * Raw, un-waited target for visibility probes (`VisibleChain`). Scoped
-     * chains resolve through `scopedChild` — the repository has no entry for
-     * the stamped scoped name; repository chains construct the `WebElement`
-     * straight from the raw selector so the probe's own `timeout` is the only
-     * wait applied (avoiding the repo-resolution default `repo.get` imposes).
+     * Target for visibility probes (`VisibleChain`). Scoped chains resolve
+     * through `scopedChild` — the repository has no entry for the stamped
+     * scoped name. Repository chains resolve through `repo.get(...)`, the same
+     * resolution every action and `verify*` uses, so role+name, regex-text,
+     * fallback and frame-scoped entries are probed exactly as they would be
+     * acted on. The probe's own `timeout` is passed as the per-call attach
+     * budget, so a missing element never pays the repository's default
+     * resolution wait before the probe reports false.
+     *
+     * Never builds a locator from `repo.getSelector(...)`: that returns the
+     * first plain-string strategy only — it drops an accessible `name`, cannot
+     * express a regex, and ignores the page's `frame` — so a probe built on it
+     * answers for a different element than the one the entry describes.
+     *
      * Note the scoped path resolves the PARENT via the repository first, so a
      * missing parent pays that resolution wait before the probe reports false.
+     *
+     * @param timeout - Attach budget in ms for the repository resolution.
+     *   Defaults to the chain's visibility timeout. Clamped to at least 1ms,
+     *   because a Playwright timeout of 0 means "wait forever".
      */
-    async probeTarget(): Promise<WebElement> {
+    async probeTarget(timeout?: number): Promise<WebElement> {
         if (this.scopedChild) {
             return new WebElement(this.narrowScoped(await this.scopedChild()));
         }
-        const selector = this.repo.getSelector(this.elementName, this.pageName);
-        return new WebElement(this.repo.driver.locator(selector).first());
+        const budget = Math.max(1, timeout ?? this.visibilityTimeout);
+        return (await this.repo.get(this.elementName, this.pageName, { timeout: budget })) as WebElement;
     }
 
     /**
@@ -483,10 +496,16 @@ export class ElementAction {
 
     /**
      * Assert the element is hidden or detached. Uses Playwright's
-     * `expect(locator).toBeHidden()` on the raw selector — never calls
-     * `repo.get(...)` because that would pay the 15s repo-resolution wait
-     * waiting for the element to become attached, which is the opposite of
-     * what we want when asserting absence.
+     * `expect(locator).toBeHidden()` on the entry's full match set, resolved
+     * through `repo.get(...)` with a 1ms attach budget — the full selector
+     * (role+name, regex text, frame scope) is honoured, and the 15s
+     * repo-resolution wait is never paid waiting for an element to become
+     * attached, which is the opposite of what we want when asserting absence.
+     *
+     * Never asserts on `repo.getSelector(...)`: for a role+name entry that
+     * selector matches every element of the role (a false failure while any
+     * sibling is shown), for a regex-text entry it matches nothing, and for a
+     * frame-scoped page it looks in the wrong document (both a silent pass).
      *
      * Scoped `findBy*` chains assert on the child locator itself (the stamped
      * scoped name has no repository entry). Resolving the PARENT still waits
@@ -497,8 +516,8 @@ export class ElementAction {
             await this.interactions.verify.absence(new WebElement(this.narrowScoped(await this.scopedChild())));
             return;
         }
-        const selector = this.repo.getSelector(this.elementName, this.pageName);
-        await this.interactions.verify.absence(selector);
+        const element = await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL, timeout: 1 });
+        await this.interactions.verify.absence(element as WebElement);
     }
 
     /**
