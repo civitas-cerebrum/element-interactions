@@ -570,7 +570,7 @@ expect(await res.text()).toContain('Sign in');
   - **awaitable as `Promise<boolean>`** — the probe, never throws. `await steps.isVisible(...)` resolves to `true` / `false`.
   - **chainable with action methods and the matcher tree** — the gate, silently skips when hidden.
   Options: `{ timeout?: number (default 2000), containsText?: string }`.
-  The probe resolves the entry through the repository exactly like an action does — role + accessible name, regex text, `fallback` chains and frame-scoped pages are all honoured — and uses `timeout` as its whole budget, so a missing element reports `false` after about `timeout` ms, never after the repository default.
+  The probe resolves the entry through the repository exactly like an action does — role + accessible name, regex text, `fallback` chains and frame-scoped pages are all honoured — and uses `timeout` as its whole budget, so a missing element reports `false` after about `timeout` ms, never after the repository default. The repository gets an attach slice of `timeout / 8` per `fallback` chain node, so a missing primary costs at most a quarter of the budget and a fallback hit keeps the rest to be seen visible.
 * **`isPresent(elementName, pageName)`** — Boolean presence check with the default element timeout. Equivalent to `await element.isVisible()` on the resolved element.
 
 ```ts

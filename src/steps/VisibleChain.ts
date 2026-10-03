@@ -76,8 +76,18 @@ export class VisibleChain implements PromiseLike<boolean> {
             // One budget for the whole probe: whatever the repository spent
             // waiting for attachment is deducted from the visibility wait, so a
             // missing element reports false after ~timeout, not 2 × timeout.
+            //
+            // The repository is given only an attach SLICE of the budget
+            // (timeout / 8 per chain node). It walks a `fallback` chain by
+            // attach-waiting each missing node (two waits per non-terminal
+            // node), so with the full budget a missing primary consumed it all
+            // and a visible fallback hit was left ~1ms to be seen. With the
+            // slice, a missing node costs at most a quarter of the budget and
+            // the node the walk lands on keeps the rest for the visibility
+            // wait. Entries without a fallback return a lazy locator, so their
+            // outcome and total time are unchanged.
             const started = Date.now();
-            const element = await this.action.probeTarget(timeout);
+            const element = await this.action.probeTarget(Math.max(1, Math.floor(timeout / 8)));
             const remaining = Math.max(1, timeout - (Date.now() - started));
             await element.waitFor({ state: 'visible', timeout: remaining });
             if (containsText) {

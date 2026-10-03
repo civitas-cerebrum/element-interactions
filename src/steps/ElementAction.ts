@@ -496,8 +496,9 @@ export class ElementAction {
 
     /**
      * Assert the element is hidden or detached. Uses Playwright's
-     * `expect(locator).toBeHidden()` on the entry's full match set, resolved
-     * through `repo.get(...)` with a 1ms attach budget — the full selector
+     * `expect(locator).toBeHidden()` on the first VISIBLE match of the entry's
+     * full match set (so it holds for every match, never a strict-mode
+     * violation on a multi-match entry), resolved through `repo.get(...)` with a 1ms attach budget — the full selector
      * (role+name, regex text, frame scope) is honoured, and the 15s
      * repo-resolution wait is never paid waiting for an element to become
      * attached, which is the opposite of what we want when asserting absence.
@@ -516,8 +517,12 @@ export class ElementAction {
             await this.interactions.verify.absence(new WebElement(this.narrowScoped(await this.scopedChild())));
             return;
         }
-        const element = await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL, timeout: 1 });
-        await this.interactions.verify.absence(element as WebElement);
+        const element = (await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL, timeout: 1 })) as WebElement;
+        // `toBeHidden()` is strict: on the ALL match set it throws "resolved to
+        // N elements" as soon as two nodes match, even when every one is hidden.
+        // Assert on the first VISIBLE match instead — hidden (passes) when every
+        // match is hidden or none exists, visible (fails) when any match shows.
+        await this.interactions.verify.absence(new WebElement(element.locator.filter({ visible: true }).first()));
     }
 
     /**
