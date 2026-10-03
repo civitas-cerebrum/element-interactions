@@ -89,6 +89,31 @@ base.describe('forwardMutationInjection', () => {
         log('mutation injection: re-applied on every load — passed');
     });
 
+    base('attaches the CSS on `load` — after slow subresources, not at DOMContentLoaded', async ({ browser }) => {
+        const context = await browser.newContext();
+        try {
+            let releaseImage!: () => void;
+            const imageHeld = new Promise<void>((resolve) => { releaseImage = resolve; });
+            await context.route(`${ORIGIN}/slow.png`, async (route) => {
+                await imageHeld; // `load` cannot fire until this resolves
+                await route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.alloc(0) });
+            });
+            await context.route(`${ORIGIN}/`, (route) => route.fulfill({ contentType: 'text/html', body: `${SHOP}<img src="/slow.png">` }));
+            await forwardMutationInjection(context, { css: CSS });
+            const page = await context.newPage();
+            await page.goto(`${ORIGIN}/`, { waitUntil: 'domcontentloaded' });
+            const display = () => page.evaluate(() => getComputedStyle(document.querySelector("[data-testid='title']")!).display);
+            expect(await page.evaluate(() => document.readyState)).not.toBe('complete');
+            expect(await display(), 'before load: CSS not attached yet').toBe('block');
+            releaseImage();
+            await page.waitForLoadState('load');
+            await expect.poll(display).toBe('none');
+        } finally {
+            await context.close();
+        }
+        log('mutation injection: CSS attached on load — passed');
+    });
+
     base('applies to a page that existed before forwarding', async ({ browser }) => {
         const context = await browser.newContext();
         try {

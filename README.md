@@ -334,6 +334,8 @@ export const test = baseFixture(base, 'tests/data/page-repository.json', {
   mutationInjection: true,          // forward E2E_MUTATION_INIT / E2E_MUTATION_CSS to every page of the
                                     // context, popups included (default: false; inert when both are unset) —
                                     // the hook behavioural mutation runners such as achilles-mutate need
+                                    // (the init script runs before page scripts; the CSS is attached on each
+                                    // `load`, so after slow subresources)
   // screenshotOnFailure: { fullPage: false },  // viewport-only screenshots
   // screenshotOnFailure: false,                 // disable screenshots
 });
