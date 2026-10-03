@@ -68,6 +68,41 @@ base.describe('forwardMutationInjection', () => {
         log('mutation injection: main page and popup — passed');
     });
 
+    base('re-applies the CSS on every load: after a reload and after a popup navigates', async ({ browser }) => {
+        const context = await browser.newContext();
+        try {
+            await serve(context);
+            await forwardMutationInjection(context, { init: INIT, css: CSS });
+            const page = await context.newPage();
+            await page.goto(`${ORIGIN}/`);
+            expect(await mutatedState(page)).toEqual({ init: 'init-applied', titleDisplay: 'none' });
+            await page.reload(); // a fresh document: the style tag must be attached again
+            expect(await mutatedState(page)).toEqual({ init: 'init-applied', titleDisplay: 'none' });
+
+            const [popup] = await Promise.all([context.waitForEvent('page'), page.click("[data-testid='open']")]);
+            await popup.waitForLoadState();
+            await popup.goto(`${ORIGIN}/second`);
+            expect(await mutatedState(popup)).toEqual({ init: 'init-applied', titleDisplay: 'none' });
+        } finally {
+            await context.close();
+        }
+        log('mutation injection: re-applied on every load — passed');
+    });
+
+    base('applies to a page that existed before forwarding', async ({ browser }) => {
+        const context = await browser.newContext();
+        try {
+            await serve(context);
+            const early = await context.newPage(); // created BEFORE the injection is forwarded
+            await forwardMutationInjection(context, { init: INIT, css: CSS });
+            await early.goto(`${ORIGIN}/`);
+            expect(await mutatedState(early)).toEqual({ init: 'init-applied', titleDisplay: 'none' });
+        } finally {
+            await context.close();
+        }
+        log('mutation injection: pre-existing page — passed');
+    });
+
     base('is inert when nothing is set (the noop control)', async ({ browser }) => {
         const context = await browser.newContext();
         try {
@@ -107,6 +142,10 @@ base.describe('baseFixture({ mutationInjection })', () => {
         await serve(context);
         await steps.navigateTo(`${ORIGIN}/`);
         expect(await mutatedState(page)).toEqual({ init: 'init-applied', titleDisplay: 'none' });
+        // popups opened from a fixture page receive the injection too
+        const [popup] = await Promise.all([context.waitForEvent('page'), page.click("[data-testid='open']")]);
+        await popup.waitForLoadState();
+        expect(await mutatedState(popup)).toEqual({ init: 'init-applied', titleDisplay: 'none' });
         log('mutation injection: fixture option on — passed');
     });
 
