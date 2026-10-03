@@ -55,7 +55,7 @@
   "license": "MIT",
   "dependencies": {
     "@civitas-cerebrum/context-store": "^0.0.2",
-    "@civitas-cerebrum/element-repository": "^0.3.1",
+    "@civitas-cerebrum/element-repository": "^0.4.0",
     "@civitas-cerebrum/email-client": "^0.0.9",
     "@civitas-cerebrum/sql-client": "^0.1.2",
     "@civitas-cerebrum/wasapi": "^0.0.3",

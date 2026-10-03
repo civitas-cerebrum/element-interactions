@@ -9,6 +9,7 @@ import {
     BooleanMatcher,
 } from './ExpectMatchers';
 import { VisibleChain } from './VisibleChain';
+import { isListEntry } from './listEntry';
 
 /**
  * The shape returned by the `ElementAction.visible` getter: it is BOTH the
@@ -476,9 +477,45 @@ export class ElementAction {
     // source of truth for retry/timeout/negation mechanics) or to the raw verification
     // layer when a specialized fast path exists (e.g. `verifyAbsence` via `toBeHidden`).
 
-    /** Assert the element is visible. Delegates to the matcher tree's `.visible.toBeTrue()`. */
+    /**
+     * Assert the element is visible. Delegates to the matcher tree's `.visible.toBeTrue()`.
+     *
+     * A repository entry declared `"list": true` is a collection: reached
+     * without a narrowing strategy (`.nth()`, `.random()`, `.byText()`,
+     * `.byAttribute()`, `.visible()`, a scoped `findBy*`), presence means
+     * "at least one match is visible" (count ≥ 1) — not "the first match is
+     * visible". A list whose first item is hidden (a collapsed row, an
+     * off-canvas duplicate) is still present when another item is shown.
+     */
     async verifyPresence(): Promise<void> {
+        if (this.isWholeListEntry()) {
+            await this.verifyListPresence();
+            return;
+        }
         await this.expectBuilder().visible.toBeTrue();
+    }
+
+    /** A `"list": true` entry reached without any narrowing strategy or gate. */
+    private isWholeListEntry(): boolean {
+        return !this.scopedChild
+            && !this.visibleStrategy
+            && !this.conditionalVisible
+            && this.resolutionOptions.strategy === undefined
+            && isListEntry(this.repo, this.elementName, this.pageName);
+    }
+
+    /** List presence: at least one match of the collection becomes visible within the chain timeout. */
+    private async verifyListPresence(): Promise<void> {
+        const all = await this.resolveAll();
+        try {
+            await all.locator.filter({ visible: true }).first().waitFor({ state: 'visible', timeout: this._timeout });
+        } catch {
+            const count = await all.locator.count();
+            throw new Error(
+                `verifyPresence: '${this.pageName}.${this.elementName}' is a list entry ("list": true) — ` +
+                `expected at least one visible match within ${this._timeout}ms, found ${count} match(es) and none visible.`,
+            );
+        }
     }
 
     /**
