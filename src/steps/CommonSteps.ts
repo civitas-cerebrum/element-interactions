@@ -49,6 +49,8 @@ export class Steps {
     private dbConnectTimeoutMs?: number;
     private timeout?: number;
     private interceptionRetry?: boolean;
+    /** Constructor options minus the client registries — re-applied by `forPage()`. */
+    private pageIndependentOptions: { emailCredentials?: EmailClientConfig; timeout?: number; interceptionRetry?: boolean; dbConnectTimeoutMs?: number };
 
     /**
      * Initializes the Steps class with the element repository.
@@ -80,6 +82,7 @@ export class Steps {
     ) {
         this.page = repo.driver;
         const { emailCredentials, timeout, interceptionRetry, apiBaseUrl, apiProviders } = options ?? {};
+        this.pageIndependentOptions = { emailCredentials, timeout, interceptionRetry, dbConnectTimeoutMs: options?.dbConnectTimeoutMs };
         const interactions = new ElementInteractions(this.page, { emailCredentials, timeout, interceptionRetry });
         this.interceptionRetry = interceptionRetry;
         this.interact = interactions.interact;
@@ -328,6 +331,50 @@ export class Steps {
     async switchToNewTab(action: () => Promise<void>): Promise<Page> {
         log.navigate('Switching to new tab...');
         return await this.navigate.switchToNewTab(action);
+    }
+
+    /**
+     * Returns a `Steps` bound to another `Page` of the same test — a popup, a
+     * new tab, or a second window — that shares everything except the page:
+     * the same repository data and resolution timeout, the same step timeout,
+     * interception-retry setting and email credentials, the same API and SQL
+     * clients (one connection pool, closed once by the owning fixture), and the
+     * same `tester:*` debug logging. Repository names resolve on the popup
+     * exactly as they do on the main page, so a test never has to construct an
+     * `ElementRepository` itself.
+     *
+     * The original `Steps` stays bound to its own page; nothing is switched.
+     *
+     * @param page - The page to bind, e.g. the `Page` returned by `switchToNewTab`.
+     * @returns A new `Steps` whose element steps act on `page`.
+     *
+     * @example
+     * ```ts
+     * const popup = await steps.switchToNewTab(() => steps.click('walletButton', 'CheckoutPage'));
+     * const popupSteps = steps.forPage(popup);
+     * await popupSteps.verifyPresence('heading', 'WalletPopup');
+     * await popupSteps.click('cancelLink', 'WalletPopup');
+     * ```
+     */
+    forPage(page: Page): Steps {
+        if (page === this.page) return this;
+        log.navigate('Binding Steps to another page: %s', page.url());
+        // Interim: a view of the same repository with only the driver replaced
+        // (end state: a public ElementRepository.withDriver(page)). Page data
+        // and the resolution timeout are read through the prototype chain from
+        // the original instance, so later `setDefaultTimeout` calls on the
+        // fixture's repo are shared too. `_driver` is the field behind the
+        // public `driver` getter; the check below fails loudly if that ever
+        // stops being true, instead of acting on the wrong page.
+        const repo = Object.create(this.repo, { _driver: { value: page, writable: true } }) as ElementRepository;
+        if (repo.driver !== page) {
+            throw new Error('forPage: cannot rebind repository driver — the repository does not expose its page through the "_driver" field.');
+        }
+        const bound = new Steps(repo, this.pageIndependentOptions);
+        bound.apiClients = this.apiClients;
+        bound.dbClients = this.dbClients;
+        bound.dbConfigs = this.dbConfigs;
+        return bound;
     }
 
     /**

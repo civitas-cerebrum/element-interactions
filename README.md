@@ -453,6 +453,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 * **`backOrForward(direction: 'back' | 'forward')`** — Navigates the browser history stack in the given direction.
 * **`setViewport(width: number, height: number)`** — Resizes the browser viewport to the specified pixel dimensions.
 * **`switchToNewTab(action: () => Promise<void>)`** — Executes an action that opens a new tab (e.g. clicking a link with `target="_blank"`), waits for the new tab, and returns the new `Page` object.
+* **`forPage(page: Page): Steps`** — Returns a `Steps` bound to another page of the same test (a popup, a new tab, a second window) that shares the repository, timeouts, API/SQL clients and logging with the original. Use it with `switchToNewTab`: `const popupSteps = steps.forPage(await steps.switchToNewTab(() => steps.click('openHelp', 'HomePage')))`. The original `Steps` stays bound to its own page.
 * **`closeTab(targetPage?: Page)`** — Closes the specified tab (or the current one) and returns the remaining active page.
 * **`getTabCount()`** — Returns the number of currently open tabs/pages in the browser context.
 
