@@ -3,7 +3,7 @@ import { ElementRepository } from '@civitas-cerebrum/element-repository';
 import { EmailClientConfig } from '@civitas-cerebrum/email-client';
 import { ContextStore } from '@civitas-cerebrum/context-store';
 
-import { test as base } from '@playwright/test';
+import { test as base, BrowserContext, Page } from '@playwright/test';
 import { Steps } from '../steps/CommonSteps';
 
 type StepFixture = {
@@ -93,6 +93,53 @@ export interface BaseFixtureOptions {
      * @example `dbConnectTimeoutMs: 5000`
      */
     dbConnectTimeoutMs?: number;
+    /**
+     * Forward browser-level mutation injection to every page of the test's
+     * browser context — the main page and any popup or new tab it opens.
+     * Behavioural mutation runners (e.g. `achilles-mutate`) set two
+     * environment variables per mutation run; with this option on, the fixture
+     * applies them so the project needs no hand-written hook:
+     *
+     * - `E2E_MUTATION_INIT` — a JS string, added with
+     *   `context.addInitScript({ content })` — the explicit object form the
+     *   mutation runner documents.
+     * - `E2E_MUTATION_CSS` — a CSS string, added with `page.addStyleTag` on
+     *   every `load` of every page in the context.
+     *
+     * Inert when both variables are unset or empty (the runner's `noop`
+     * control), so it is safe to leave on permanently. Default: `false`.
+     */
+    mutationInjection?: boolean;
+}
+
+/** Mutation injection read from the environment; empty or whitespace-only values are absent. */
+export interface MutationInjection {
+    init?: string;
+    css?: string;
+}
+
+/** Reads `E2E_MUTATION_INIT` / `E2E_MUTATION_CSS` from `env` (default `process.env`). */
+export function readMutationInjection(env: NodeJS.ProcessEnv = process.env): MutationInjection {
+    const init = env.E2E_MUTATION_INIT?.trim();
+    const css = env.E2E_MUTATION_CSS?.trim();
+    return { ...(init ? { init } : {}), ...(css ? { css } : {}) };
+}
+
+/**
+ * Applies mutation injection to a browser context: the init script to every
+ * page created from now on, and the CSS to every page (existing and future)
+ * on each `load`. A no-op when `injection` is empty.
+ */
+export async function forwardMutationInjection(context: BrowserContext, injection: MutationInjection = readMutationInjection()): Promise<void> {
+    const { init, css } = injection;
+    if (init) await context.addInitScript({ content: init });
+    if (css) {
+        const attach = (page: Page) => {
+            page.on('load', () => { page.addStyleTag({ content: css }).catch(() => {}); });
+        };
+        context.pages().forEach(attach);
+        context.on('page', attach);
+    }
 }
 
 /**
@@ -104,7 +151,8 @@ export interface BaseFixtureOptions {
  * @param locatorPath - Absolute or project-relative path to `page-repository.json`.
  * @param options - Optional fixture overrides: `timeout` (element-op default, 30000ms),
  *   `repoTimeout` (element resolution, 15000ms), `emailCredentials`,
- *   `blockedOrigins` (route filter), `screenshotOnFailure`.
+ *   `blockedOrigins` (route filter), `screenshotOnFailure`, `mutationInjection`
+ *   (forward `E2E_MUTATION_INIT` / `E2E_MUTATION_CSS` to every page of the context).
  * @returns A new Playwright `test` object exposing the StepFixture surface.
  */
 export function baseFixture<T extends {}>(
@@ -119,6 +167,10 @@ export function baseFixture<T extends {}>(
         : true;
 
     return (baseTest as typeof base).extend<StepFixture>({
+        context: async ({ context }, use) => {
+            if (options?.mutationInjection) await forwardMutationInjection(context);
+            await use(context);
+        },
         repo: async ({ page }, use) => {
             await use(new ElementRepository(page, locatorPath, options?.repoTimeout));
         },

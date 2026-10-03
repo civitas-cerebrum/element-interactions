@@ -331,6 +331,9 @@ export const test = baseFixture(base, 'tests/data/page-repository.json', {
                                     // click — recommended for adversarial/bug-discovery suites
   blockedOrigins: /(analytics\.com|tracking\.io)/,  // auto-abort matching routes
   screenshotOnFailure: true,        // auto-capture on test failure (default: true)
+  mutationInjection: true,          // forward E2E_MUTATION_INIT / E2E_MUTATION_CSS to every page of the
+                                    // context, popups included (default: false; inert when both are unset) —
+                                    // the hook behavioural mutation runners such as achilles-mutate need
   // screenshotOnFailure: { fullPage: false },  // viewport-only screenshots
   // screenshotOnFailure: false,                 // disable screenshots
 });

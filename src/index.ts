@@ -40,7 +40,8 @@ export {
 export type { ElementSnapshot, ExpectContext } from './steps/ExpectMatchers';
 
 // Test Fixture
-export { baseFixture, BaseFixtureOptions } from './fixture/BaseFixture';
+export { baseFixture, BaseFixtureOptions, forwardMutationInjection, readMutationInjection } from './fixture/BaseFixture';
+export type { MutationInjection } from './fixture/BaseFixture';
 
 // Re-exports from @civitas-cerebrum/email-client
 export { EmailClient } from '@civitas-cerebrum/email-client';
