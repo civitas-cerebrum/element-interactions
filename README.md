@@ -335,7 +335,8 @@ export const test = baseFixture(base, 'tests/data/page-repository.json', {
                                     // context, popups included (default: false; inert when both are unset) —
                                     // the hook behavioural mutation runners such as achilles-mutate need
                                     // (the init script runs before page scripts; the CSS is attached on each
-                                    // `load`, so after slow subresources)
+                                    // `load`, so after slow subresources; it is not injected into child
+                                    // iframes — the init script is)
   // screenshotOnFailure: { fullPage: false },  // viewport-only screenshots
   // screenshotOnFailure: false,                 // disable screenshots
 });

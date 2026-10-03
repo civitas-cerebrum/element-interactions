@@ -128,7 +128,8 @@ export function readMutationInjection(env: NodeJS.ProcessEnv = process.env): Mut
 /**
  * Applies mutation injection to a browser context: the init script to every
  * page created from now on, and the CSS to every page (existing and future)
- * on each `load`. A no-op when `injection` is empty.
+ * on each `load`. The CSS reaches top-level pages and popups, not child
+ * iframes (the init script does). A no-op when `injection` is empty.
  */
 export async function forwardMutationInjection(context: BrowserContext, injection: MutationInjection = readMutationInjection()): Promise<void> {
     const { init, css } = injection;
