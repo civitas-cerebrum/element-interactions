@@ -508,7 +508,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 
 ### ✅ Verification
 
-* **`verifyPresence(elementName, pageName)`** — Asserts that an element is attached to the DOM and visible.
+* **`verifyPresence(elementName, pageName)`** — Asserts that an element is attached to the DOM and visible. For an entry declared `"list": true` in the repository (and no narrowing `strategy`), asserts that **at least one** match is visible (count ≥ 1) rather than the first match.
 * **`verifyAllPresent(targets: Array<{ elementName, pageName, options? }>)`** — Asserts presence of multiple independent elements in parallel via `Promise.all`. Equivalent to sequential `verifyPresence` calls but resolves all assertions concurrently — useful when a page has many content blocks to assert at once. Example: `await steps.verifyAllPresent([{ elementName: 'title', pageName: 'PDP' }, { elementName: 'price', pageName: 'PDP' }])`.
 * **`verifyAbsence(elementName, pageName)`** — Asserts that an element is hidden or detached from the DOM.
 * **`verifyText(elementName, pageName, expectedText?)`** — Asserts element text. Provide `expectedText` for an exact match, or call with no args to assert not empty.
@@ -670,7 +670,7 @@ await steps.clickListedElement('tableRows', 'Users', {
 
 ### 📊 Additional Data Extraction
 
-* **`getAll(elementName, pageName, options?: GetAllOptions)`** — Extracts text (or attributes) from all matching elements. Supports `{ child }` and `{ extractAttribute }`.
+* **`getAll(elementName, pageName, options?: GetAllOptions)`** — Extracts text (or attributes) from all matching elements. Supports `{ child }` and `{ extractAttribute }`. For an entry declared `"list": true`, waits for at least one match and throws when there is none (count ≥ 1); other entries return `[]` when nothing matches.
 * **`getCount(elementName, pageName)`** — Returns the number of DOM elements matching the locator.
 * **`getInputValue(elementName, pageName)`** — Returns the current `value` property of an input, textarea, or select element.
 * **`getCssProperty(elementName, pageName, property: string)`** — Returns a computed CSS property value (e.g. `'rgb(255, 0, 0)'`).
