@@ -222,6 +222,31 @@ test.describe('steps.forPage — popup / new-tab binding', () => {
         log('forPage: shared dbConnectTimeoutMs — passed');
     });
 
+    test('carries emailCredentials over: the popup has an email client when the opener does', async ({ page }) => {
+        // An SMTP endpoint that drops every connection: sending fails fast, offline, for a reason other than configuration.
+        const server = net.createServer((s) => s.destroy());
+        await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+        try {
+            const port = (server.address() as AddressInfo).port;
+            const smtp = { email: 'sender@example.test', password: 'x', host: '127.0.0.1', port };
+            const steps = await checkoutSteps(page, { timeout: STEP_TIMEOUT, emailCredentials: { smtp } });
+            const popupSteps = steps.forPage(await openWallet(steps));
+            const send = popupSteps.sendEmail({ to: 'to@example.test', subject: 's', text: 't' });
+            await expect(send).rejects.toThrow();
+            await expect(send).rejects.not.toThrow(/not configured/);
+        } finally {
+            server.close();
+        }
+        log('forPage: shared emailCredentials — passed');
+    });
+
+    test('without emailCredentials the popup reports the email client as not configured (control)', async ({ page }) => {
+        const steps = await checkoutSteps(page);
+        const popupSteps = steps.forPage(await openWallet(steps));
+        await expect(popupSteps.sendEmail({ to: 'to@example.test', subject: 's', text: 't' })).rejects.toThrow(/Email client is not configured/);
+        log('forPage: no emailCredentials control — passed');
+    });
+
     test('carries interceptionRetry over: false makes an intercepted popup click fail, default falls back', async ({ page }) => {
         const strict = await checkoutSteps(page, { timeout: STEP_TIMEOUT, interceptionRetry: false });
         const strictPage = await openWallet(strict);
