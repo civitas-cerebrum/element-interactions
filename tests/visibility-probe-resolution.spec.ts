@@ -37,6 +37,8 @@ const SHOP = `
             <li class="row" style="display:none">first</li>
             <li class="row">second</li>
         </ul>
+        <span class="gone" style="display:none">one</span>
+        <span class="gone" style="display:none">two</span>
         <iframe title="Payment form"
                 srcdoc="<button type='button' data-testid='pay'>Pay now</button>"></iframe>
     </main>
@@ -54,6 +56,8 @@ const REPOSITORY = {
                 { elementName: 'applyCode', selector: { role: 'button', name: 'Apply code' } },
                 { elementName: 'secretButton', selector: { role: 'button', name: 'Secret' } },
                 { elementName: 'rows', selector: { css: '.row' } },
+                // Two matches, both display:none.
+                { elementName: 'goneRows', selector: { css: '.gone' } },
                 { elementName: 'lateHidden', selector: { css: '#late' } },
                 // Fallback chains attach-wait each node; neither node of ghostChain exists.
                 { elementName: 'ghostChain', selector: { css: '#ghost-1', fallback: { css: '#ghost-2' } } },
@@ -172,6 +176,25 @@ test.describe('Visibility probes resolve the full repository selector', () => {
         log('probe resolution: fallback chain — passed');
     });
 
+    test('fallback chain: a visible fallback hit is reported visible within the probe budget', async ({ page }) => {
+        const steps = await shopSteps(page);
+        // The primary (#nope) is missing; its attach waits must not consume the
+        // whole budget and leave the fallback hit no time to be seen visible.
+        for (const timeout of [PROBE_TIMEOUT, 1500]) {
+            const started = Date.now();
+            expect(await steps.isVisible('fallbackHit', 'ShopPage', { timeout }), `fallbackHit probe (timeout=${timeout})`).toBe(true);
+            expect(Date.now() - started, `fallbackHit probe elapsed (timeout=${timeout})`).toBeLessThan(timeout + 500);
+        }
+        expect(await steps.on('fallbackHit', 'ShopPage').isVisible({ timeout: PROBE_TIMEOUT })).toBe(true);
+        // The gate opens on the fallback hit and the action lands on it. The click
+        // itself resolves with the repository default (it walks a missing primary
+        // per that default, as every action does), so use a short one here.
+        const shortRepoSteps = new Steps(new ElementRepository(page, REPOSITORY, 500), { timeout: 2000 });
+        await shortRepoSteps.isVisible('fallbackHit', 'ShopPage', { timeout: PROBE_TIMEOUT }).click();
+        expect(await page.evaluate(() => (window as unknown as Record<string, number>).__applyClicks)).toBe(1);
+        log('probe resolution: fallback hit — passed');
+    });
+
     test('one budget: attach time is deducted from the visibility wait', async ({ page }) => {
         const steps = await shopSteps(page);
         // Attaches (hidden) after 1000ms; a probe with a 1500ms budget must give up at ~1500ms,
@@ -241,8 +264,19 @@ test.describe('verifyAbsence resolves the full repository selector', () => {
     test('multi-match entry: a visible later match fails the absence assertion', async ({ page }) => {
         const steps = await shopSteps(page);
         // First match hidden, second visible: asserting on the first match alone would pass.
-        await expect(steps.verifyAbsence('rows', 'ShopPage')).rejects.toThrow();
+        const error = await steps.verifyAbsence('rows', 'ShopPage').then(() => null, (e: unknown) => e);
+        expect(error, 'absence of a visible match must fail').toBeInstanceOf(Error);
+        // It must fail because a match is visible, not on a strict-mode violation.
+        expect((error as Error).message).not.toContain('strict mode violation');
         log('absence resolution: multi-match — passed');
+    });
+
+    test('multi-match entry: passes when every match is hidden', async ({ page }) => {
+        const steps = await shopSteps(page);
+        // Two display:none matches: absent. A strict single-element assertion
+        // would throw "resolved to 2 elements" instead.
+        await steps.verifyAbsence('goneRows', 'ShopPage');
+        log('absence resolution: multi-match all hidden — passed');
     });
 
     test('fails for present entries of every selector kind', async ({ page }) => {
