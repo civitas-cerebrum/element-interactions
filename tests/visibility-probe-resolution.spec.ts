@@ -61,6 +61,8 @@ const REPOSITORY = {
                 { elementName: 'lateHidden', selector: { css: '#late' } },
                 // Fallback chains attach-wait each node; neither node of ghostChain exists.
                 { elementName: 'ghostChain', selector: { css: '#ghost-1', fallback: { css: '#ghost-2' } } },
+                // Primary present and visible, fallback absent.
+                { elementName: 'primaryHit', selector: { css: "[data-testid='add']", fallback: { css: '#nope-fallback' } } },
                 { elementName: 'fallbackHit', selector: { css: '#nope', fallback: { role: 'button', name: 'Apply code' } } },
                 { elementName: 'totalLine', selector: { text: { regex: 'Total ¤[0-9.]+' } } },
                 { elementName: 'refundLine', selector: { text: { regex: 'Refund ¤[0-9.]+' } } },
@@ -259,6 +261,14 @@ test.describe('verifyAbsence resolves the full repository selector', () => {
         expect(Date.now() - started, 'ghost chain absence elapsed').toBeLessThan(2500);
         await expect(steps.verifyAbsence('fallbackHit', 'ShopPage')).rejects.toThrow();
         log('absence resolution: fallback chain — passed');
+    });
+
+    test('fallback chain: a visible primary fails the absence assertion', async ({ page }) => {
+        const steps = await shopSteps(page);
+        // A ~1ms attach check can miss the present primary, walk to the absent
+        // fallback and pass — a false PASS. The primary must be seen.
+        await expect(steps.verifyAbsence('primaryHit', 'ShopPage')).rejects.toThrow();
+        log('absence resolution: fallback chain, visible primary — passed');
     });
 
     test('multi-match entry: a visible later match fails the absence assertion', async ({ page }) => {
