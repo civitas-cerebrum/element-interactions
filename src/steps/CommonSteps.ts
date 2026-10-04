@@ -27,6 +27,80 @@ function safeStringify(value: unknown): string {
 }
 
 /**
+ * Marker for the resolution-target guard `Steps.forPage` installs on its
+ * derived repository view, so binding a `Steps` that is itself page-bound
+ * inherits the guard instead of stacking another layer of it.
+ */
+const RESOLUTION_GUARD = Symbol('element-interactions.resolutionGuard');
+
+/**
+ * The `ElementRepository` query methods that resolve one or more `Element`s
+ * through the driver. `getSelector`, `getSelectorRaw` and `getPagePlatform` are
+ * pure repository lookups that never touch the driver, so they need no guard.
+ */
+const RESOLVING_REPO_METHODS = ['get', 'getAll', 'getRandom', 'getByText', 'getByAttribute', 'getByIndex', 'getVisible', 'getByRole'] as const;
+
+/** `page.url()` for an error message, without letting a closed page mask the error. */
+function describePage(page: Page | undefined): string {
+    try {
+        return page ? page.url() : 'unknown';
+    } catch {
+        return 'unknown';
+    }
+}
+
+/**
+ * Throws unless every `Element` just resolved through `repo` belongs to the page
+ * `repo.driver` reports. This is the check that `forPage`'s rebinding actually
+ * worked: the `driver` getter alone only proves what the repository *says* its
+ * page is, while this proves where resolution *landed*. An element-repository
+ * that captured its driver at construction (instead of reading `_driver` on
+ * every resolution, as 0.3.x does) would otherwise hand back steps that act on
+ * the opener while reporting the popup.
+ *
+ * Non-Playwright elements carry no `locator`, and `Locator.page()` only exists
+ * from Playwright 1.19 while the peer range allows older drivers — both skip
+ * the check rather than fail a legitimate call.
+ */
+function assertResolvedOnDriver(repo: ElementRepository, method: string, args: unknown[], resolved: unknown): void {
+    const expectedPage = repo.driver as Page | undefined;
+    for (const element of Array.isArray(resolved) ? resolved : [resolved]) {
+        const locator = (element as WebElement | null | undefined)?.locator;
+        if (!locator || typeof locator.page !== 'function') continue;
+        const actualPage = locator.page();
+        if (actualPage === expectedPage) continue;
+        throw new Error(
+            `forPage: repository resolution escaped the bound page. "${String(args[1])}.${String(args[0])}" `
+            + `(via repo.${method}) resolved on ${describePage(actualPage)} instead of the bound ${describePage(expectedPage)}. `
+            + 'The installed @civitas-cerebrum/element-repository does not read its driver from "_driver" on every resolution, '
+            + 'so these steps would act on the opener; pin the dependency to a version whose resolution path does (0.3.1 is known good).'
+        );
+    }
+}
+
+/**
+ * Installs {@link assertResolvedOnDriver} on `view` for every driver-resolving
+ * repository method. The wrappers validate against the *receiver's* driver, not
+ * a captured page, so a view derived from a view (a popup opened from a popup)
+ * is guarded correctly by the inherited wrapper.
+ */
+function guardResolutionTarget(view: ElementRepository): void {
+    const members = view as unknown as Record<string, unknown>;
+    for (const name of RESOLVING_REPO_METHODS) {
+        const method = members[name];
+        if (typeof method !== 'function') continue;
+        if ((method as unknown as Record<symbol, unknown>)[RESOLUTION_GUARD]) continue;
+        const guarded = async function (this: ElementRepository, ...args: unknown[]): Promise<unknown> {
+            const resolved = await (method as (...callArgs: unknown[]) => Promise<unknown>).apply(this, args);
+            assertResolvedOnDriver(this, name, args, resolved);
+            return resolved;
+        };
+        Object.defineProperty(guarded, RESOLUTION_GUARD, { value: true });
+        Object.defineProperty(view, name, { value: guarded, writable: true, configurable: true, enumerable: false });
+    }
+}
+
+/**
  * The `Steps` class serves as a unified Facade for test orchestration.
  * It combines element acquisition (via `@civitas-cerebrum/element-repository`) with
  * Playwright interactions, navigation, and verifications to keep test files clean,
@@ -367,12 +441,19 @@ export class Steps {
         // and the resolution timeout are read through the prototype chain from
         // the original instance, so later `setDefaultTimeout` calls on the
         // fixture's repo are shared too. `_driver` is the field behind the
-        // public `driver` getter; the check below fails loudly if that ever
-        // stops being true, instead of acting on the wrong page.
+        // public `driver` getter.
         const repo = Object.create(this.repo, { _driver: { value: page, writable: true } }) as ElementRepository;
         if (repo.driver !== page) {
             throw new Error('forPage: cannot rebind repository driver — the repository does not expose its page through the "_driver" field.');
         }
+        // The getter check above only proves what the repository *reports*. The
+        // dependency range admits any 0.3.x, and a future one could capture the
+        // driver at construction while still answering the getter from
+        // `_driver` — the getter would agree and every element would quietly
+        // resolve on the opener. `guardResolutionTarget` therefore validates the
+        // resolution path itself: each resolved element must belong to the page
+        // the repository is bound to, checked where resolution happens.
+        guardResolutionTarget(repo);
         const bound = new Steps(repo, this.pageIndependentOptions);
         bound.apiClients = this.apiClients;
         bound.dbClients = this.dbClients;

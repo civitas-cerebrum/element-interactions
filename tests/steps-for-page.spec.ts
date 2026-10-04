@@ -1,6 +1,6 @@
 import { test, expect } from './fixture/StepFixture';
 import type { Page } from '@playwright/test';
-import { ElementRepository } from '@civitas-cerebrum/element-repository';
+import { Element, ElementRepository, WebElement } from '@civitas-cerebrum/element-repository';
 import * as http from 'http';
 import * as net from 'net';
 import type { AddressInfo } from 'net';
@@ -54,7 +54,10 @@ const REPOSITORY = {
                 { elementName: 'coveredButton', selector: { css: "[data-testid='covered']" } },
                 // Primary never renders: resolution probes it for the repository's timeout, then falls back.
                 { elementName: 'slowFallback', selector: { css: "[data-testid='never-rendered']", fallback: { css: "[data-testid='cancel']" } } },
-                { elementName: 'missing', selector: { css: "[data-testid='never-rendered']" } },
+                // Deliberately matches the OPENER's wallet link and nothing on the
+                // popup: a Steps mis-bound to the opener resolves it and the
+                // "rejects" assertions below fail instead of passing by accident.
+                { elementName: 'openerOnlyLink', selector: { css: "[data-testid='wallet']" } },
             ],
         },
     ],
@@ -116,7 +119,11 @@ test.describe('steps.forPage — popup / new-tab binding', () => {
         const steps = await checkoutSteps(page);
         const popup = await steps.switchToNewTab(() => steps.click('walletButton', 'CheckoutPage'));
         const started = Date.now();
-        await expect(steps.forPage(popup).verifyPresence('missing', 'WalletPopup')).rejects.toThrow();
+        // `openerOnlyLink` exists on the opener only, so this rejection is also
+        // proof of binding — and the reason is asserted, so a target-closed or
+        // rebind failure cannot stand in for the visibility timeout under test.
+        await expect(steps.forPage(popup).verifyPresence('openerOnlyLink', 'WalletPopup'))
+            .rejects.toThrow(/WalletPopup\.openerOnlyLink visible to be true[\s\S]*element\(s\) not found/);
         // STEP_TIMEOUT is shared (plus the 2s attach cap and CI jitter) — the
         // 30s package default would blow this ceiling.
         expect(Date.now() - started).toBeLessThan(STEP_TIMEOUT + 6000);
@@ -138,6 +145,36 @@ test.describe('steps.forPage — popup / new-tab binding', () => {
             await other.close();
         }
         log('forPage: unrebindable repository rejected — passed');
+    });
+
+    test('fails loudly when resolution ignores the rebound driver', async ({ page }) => {
+        // The getter check cannot see this one: `driver` still answers from
+        // `_driver`, so it reports the popup, while resolution goes through a
+        // driver captured at construction — the shape a future
+        // element-repository could take under the `^0.3.1` range. Unguarded,
+        // every element would quietly resolve on the OPENER.
+        class CapturedDriverRepository extends ElementRepository {
+            constructor(private readonly captured: Page) { super(captured, REPOSITORY, 5000); }
+            override async get(): Promise<Element> {
+                return new WebElement(this.captured.locator('h1').first(), 'h1', 5000);
+            }
+        }
+        await page.context().route(`${ORIGIN}/**`, (route) =>
+            route.fulfill({ contentType: 'text/html', body: new URL(route.request().url()).pathname === '/wallet' ? WALLET : SHOP }));
+        await page.goto(`${ORIGIN}/checkout`);
+        const steps = new Steps(new CapturedDriverRepository(page), { timeout: STEP_TIMEOUT });
+        const other = await page.context().newPage();
+        try {
+            await other.goto(`${ORIGIN}/wallet`);
+            // forPage itself succeeds — the driver getter agrees it was rebound.
+            const bound = steps.forPage(other);
+            expect((bound as any).repo.driver).toBe(other);
+            // The first resolution is where the lie is caught.
+            await expect(bound.getText('heading', 'WalletPopup')).rejects.toThrow(/resolution escaped the bound page/);
+        } finally {
+            await other.close();
+        }
+        log('forPage: resolution-path guard — passed');
     });
 
     test('forPage on the bound page returns the same Steps', async ({ page }) => {
