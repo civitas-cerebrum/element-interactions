@@ -269,7 +269,7 @@ test.describe('verifyAbsence resolves the full repository selector', () => {
         const steps = await shopSteps(page);
         const started = Date.now();
         await steps.verifyAbsence('ghostChain', 'ShopPage');
-        // 1ms attach budget per node; the 15s repository default per node would be 30s.
+        // a 250 ms attach slice per node (ABSENCE_ATTACH_SLICE_MS); the 15s repository default per node would be 30s.
         expect(Date.now() - started, 'ghost chain absence elapsed').toBeLessThan(2500);
         await expect(steps.verifyAbsence('fallbackHit', 'ShopPage')).rejects.toThrow();
         log('absence resolution: fallback chain — passed');
