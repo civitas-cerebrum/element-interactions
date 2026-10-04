@@ -414,16 +414,20 @@ export class Steps {
      * Returns a `Steps` bound to another `Page` of the same test — a popup, a
      * new tab, or a second window — that shares everything except the page:
      * the same repository data and resolution timeout, the same step timeout,
-     * interception-retry setting and email credentials, the same API and SQL
-     * clients (one connection pool, closed once by the owning fixture), and the
-     * same `tester:*` debug logging. Repository names resolve on the popup
-     * exactly as they do on the main page, so a test never has to construct an
+     * interception-retry setting, the same API and SQL clients (one connection
+     * pool, closed once by the owning fixture), the same email client (one
+     * instance, so `steps.cleanEmails()` and `popupSteps.receiveEmail(...)`
+     * speak to the same mailbox through the same configuration), and the same
+     * `tester:*` debug logging. Repository names resolve on the popup exactly as
+     * they do on the main page, so a test never has to construct an
      * `ElementRepository` itself.
      *
      * The original `Steps` stays bound to its own page; nothing is switched.
      *
      * @param page - The page to bind, e.g. the `Page` returned by `switchToNewTab`.
      * @returns A new `Steps` whose element steps act on `page`.
+     * @throws If `page` is already closed, or if the repository cannot be
+     *   rebound onto it.
      *
      * @example
      * ```ts
@@ -435,6 +439,13 @@ export class Steps {
      */
     forPage(page: Page): Steps {
         if (page === this.page) return this;
+        if (page.isClosed()) {
+            // Popups self-close routinely (`window.close()` on a "done" button),
+            // and a Steps bound to a dead page fails at its *next* step with
+            // Playwright's generic target-closed error, which reads as a problem
+            // with that element. Name the real cause here instead.
+            throw new Error('forPage: the given page is already closed, so no step could act on it. Bind the page (or read what you need from it) before it closes — a popup that calls window.close() is gone by the time forPage sees it.');
+        }
         log.navigate('Binding Steps to another page: %s', page.url());
         // Interim: a view of the same repository with only the driver replaced
         // (end state: a public ElementRepository.withDriver(page)). Page data
@@ -458,6 +469,11 @@ export class Steps {
         bound.apiClients = this.apiClients;
         bound.dbClients = this.dbClients;
         bound.dbConfigs = this.dbConfigs;
+        // One email client for the whole test, as the docstring promises: the
+        // constructor above built a second one from the same credentials, and
+        // two clients mean `cleanEmails()` on the opener and `receiveEmail()` on
+        // the popup are configured independently with nothing keeping them so.
+        bound.email = this.email;
         return bound;
     }
 

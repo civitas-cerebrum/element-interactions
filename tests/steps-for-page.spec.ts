@@ -177,6 +177,32 @@ test.describe('steps.forPage — popup / new-tab binding', () => {
         log('forPage: resolution-path guard — passed');
     });
 
+    test('refuses a page that is already closed', async ({ page }) => {
+        const steps = await checkoutSteps(page);
+        const popup = await openWallet(steps);
+        const closed = popup.waitForEvent('close');
+        await steps.forPage(popup).click('cancelLink', 'WalletPopup'); // the popup calls window.close()
+        await closed;
+
+        // Without this the next step would fail with Playwright's generic
+        // target-closed error, blamed on the element rather than the dead page.
+        expect(() => steps.forPage(popup)).toThrow(/already closed/);
+        log('forPage: closed page refused — passed');
+    });
+
+    test('shares one email client, not a second one built from the same credentials', async ({ page }) => {
+        const smtp = { email: 'sender@example.test', password: 'x', host: '127.0.0.1', port: 2525 };
+        const steps = await checkoutSteps(page, { timeout: STEP_TIMEOUT, emailCredentials: { smtp } });
+        const popupSteps = steps.forPage(await openWallet(steps));
+
+        // One client per test, as the docstring promises for API and SQL: a copy
+        // would give `steps.cleanEmails()` and `popupSteps.receiveEmail(...)`
+        // two independently configured clients with nothing keeping them equal.
+        expect((popupSteps as any).email).toBe((steps as any).email);
+        expect((steps as any).email).not.toBeNull();
+        log('forPage: shared email client — passed');
+    });
+
     test('forPage on the bound page returns the same Steps', async ({ page }) => {
         const steps = await checkoutSteps(page);
         expect(steps.forPage(page)).toBe(steps);
