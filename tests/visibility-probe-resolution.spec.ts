@@ -64,6 +64,13 @@ const REPOSITORY = {
                 { elementName: 'lateChain', selector: { css: '#late-primary', fallback: { css: '#late' } } },
                 // Fallback chains attach-wait each node; neither node of ghostChain exists.
                 { elementName: 'ghostChain', selector: { css: '#ghost-1', fallback: { css: '#ghost-2' } } },
+                // Primary attaches VISIBLE well after the first chain walk has
+                // already settled on the present-but-hidden fallback.
+                { elementName: 'latePrimary', selector: { css: '#late-visible', fallback: { css: '#hidden-primary' } } },
+                // Five-node chain. Every node but the last is absent; the last is visible.
+                { elementName: 'deepChain', selector: { css: '#d1', fallback: { css: '#d2', fallback: { css: '#d3', fallback: { css: '#d4', fallback: { css: '.summary' } } } } } },
+                // Five-node chain where nothing matches at all.
+                { elementName: 'deepGhost', selector: { css: '#g1', fallback: { css: '#g2', fallback: { css: '#g3', fallback: { css: '#g4', fallback: { css: '#g5' } } } } } },
                 // Primary present and visible, fallback absent.
                 // Primary exists but hidden; fallback visible.
                 { elementName: 'hiddenPrimary', selector: { css: '#hidden-primary', fallback: { css: '.summary' } } },
@@ -89,11 +96,63 @@ const REPOSITORY = {
 
 const PROBE_TIMEOUT = 400;
 
+/** The `Steps` element timeout every case below runs with. */
+const STEPS_TIMEOUT = 2000;
+
+/**
+ * The fixed per-node attach slice a probe gives the repository
+ * (`VisibleChain`'s `PROBE_SLICE_MS`), and the slice `verifyAbsence` derives
+ * from `STEPS_TIMEOUT` (an eighth of it, floored at 250ms).
+ */
+const SLICE_MS = 250;
+
+/**
+ * Jitter allowance. Deliberately small: these bounds exist to catch a probe or
+ * an absence assertion that has fallen back on the repository's 15s resolution
+ * default, or that pays a budget-proportional slice per chain node, and a
+ * generous allowance lets both through. Anything larger than one extra chain
+ * walk is not a margin, it is a hole.
+ */
+const JITTER_MS = 350;
+
+/**
+ * Wall-clock cost of ONE repository walk over an `nodes`-long `fallback` chain
+ * in which nothing matches: the repository attach-waits each non-terminal node
+ * twice (once inside the single-selector resolution, once in the chain walk)
+ * and the node it lands on once, each for a full slice.
+ *
+ * A walk is not interruptible, so this is the part of a probe's elapsed time
+ * that its `timeout` cannot bound — which is exactly why the slice is a fixed
+ * duration and not a fraction of the budget. A fraction makes the walk's cost
+ * scale with the budget and overrun it on any chain longer than a couple of
+ * nodes, which is how a five-node chain came to report a visible element hidden.
+ */
+const walkCost = (nodes: number) => (2 * nodes - 1) * SLICE_MS;
+
+/** Upper bound on a probe's elapsed time: its budget, or one walk, whichever dominates. */
+const probeBudget = (timeout: number, nodes = 1) => Math.max(timeout, walkCost(nodes)) + JITTER_MS;
+
+/**
+ * Upper bound on `verifyAbsence`'s elapsed time for an entry that is genuinely
+ * absent. It resolves the entry twice CONCURRENTLY (default + `ALL`), so the
+ * two walks cost one walk's wall clock, then spends one slice on the
+ * `elementHandle` probe used for the multi-match cross-check. `toBeHidden`
+ * itself returns immediately once nothing is visible.
+ */
+const absenceBudget = (nodes = 1) => walkCost(nodes) + SLICE_MS + JITTER_MS;
+
 async function shopSteps(page: Page): Promise<Steps> {
     await page.setContent(SHOP);
     await page.frameLocator("iframe[title='Payment form']").locator("[data-testid='pay']").waitFor();
     // Repository default of 15s: a probe that paid it would blow the budget assertions below.
-    return new Steps(new ElementRepository(page, REPOSITORY, 15000), { timeout: 2000 });
+    return new Steps(new ElementRepository(page, REPOSITORY, 15000), { timeout: STEPS_TIMEOUT });
+}
+
+/** Append a node to the body after `delay` ms. */
+function appendLater(page: Page, html: string, delay: number): Promise<unknown> {
+    return page.evaluate(([markup, ms]) => setTimeout(() => {
+        document.body.insertAdjacentHTML('beforeend', markup as string);
+    }, ms as number), [html, delay] as const);
 }
 
 test.describe('Visibility probes resolve the full repository selector', () => {
@@ -155,8 +214,8 @@ test.describe('Visibility probes resolve the full repository selector', () => {
         for (const [el, pg] of [['checkoutButton', 'ShopPage'], ['refundLine', 'ShopPage'], ['cancelButton', 'PaymentFrame']]) {
             const started = Date.now();
             expect(await steps.isVisible(el, pg, { timeout: PROBE_TIMEOUT })).toBe(false);
-            // Far below the 15s repository default, and (with the distinct-timeout test below) pins the probe to its own budget.
-            expect(Date.now() - started, `${pg}.${el} probe elapsed`).toBeLessThan(PROBE_TIMEOUT + 1500);
+            // Single-node entries: no chain to walk, so the budget is the bound.
+            expect(Date.now() - started, `${pg}.${el} probe elapsed`).toBeLessThan(probeBudget(PROBE_TIMEOUT));
         }
         log('probe resolution: short timeout honoured — passed');
     });
@@ -181,8 +240,9 @@ test.describe('Visibility probes resolve the full repository selector', () => {
         const steps = await shopSteps(page);
         const started = Date.now();
         expect(await steps.isVisible('ghostChain', 'ShopPage', { timeout: 300 })).toBe(false);
-        // Per-node attach waits at 300ms stay under 1800ms; the 15s repository default per node would not.
-        expect(Date.now() - started, 'ghost chain probe elapsed').toBeLessThan(1800);
+        // One walk over a two-node chain, nothing more: three attach waits of a
+        // slice each. The repository default per node would be 30s.
+        expect(Date.now() - started, 'ghost chain probe elapsed').toBeLessThan(probeBudget(300, 2));
         log('probe resolution: fallback chain — passed');
     });
 
@@ -193,7 +253,10 @@ test.describe('Visibility probes resolve the full repository selector', () => {
         for (const timeout of [PROBE_TIMEOUT, 1500]) {
             const started = Date.now();
             expect(await steps.isVisible('fallbackHit', 'ShopPage', { timeout }), `fallbackHit probe (timeout=${timeout})`).toBe(true);
-            expect(Date.now() - started, `fallbackHit probe elapsed (timeout=${timeout})`).toBeLessThan(timeout + 500);
+            // A hit is reported as soon as the walk reaches it, so the bound is
+            // the walk, NOT the budget — `timeout + slack` would pass even if
+            // the probe sat out its whole 1500ms before answering.
+            expect(Date.now() - started, `fallbackHit probe elapsed (timeout=${timeout})`).toBeLessThan(walkCost(2) + JITTER_MS);
         }
         expect(await steps.on('fallbackHit', 'ShopPage').isVisible({ timeout: PROBE_TIMEOUT })).toBe(true);
         // The gate opens on the fallback hit and the action lands on it. The click
@@ -207,24 +270,92 @@ test.describe('Visibility probes resolve the full repository selector', () => {
 
     test('one budget: attach time is deducted from the visibility wait', async ({ page }) => {
         const steps = await shopSteps(page);
-        // A fallback chain spends real attach time before the visibility wait
-        // starts: the probe gives the repository timeout / 8 = 375ms per node,
-        // and the missing primary (two waits) plus the not-yet-attached
-        // fallback (one wait) cost ~1125ms. The fallback then attaches HIDDEN
-        // at 2000ms. With the attach time deducted the probe gives up at
-        // ~3000ms; without it, it would wait a further full 3000ms (~4100ms).
-        await page.evaluate(() => setTimeout(() => {
-            const el = document.createElement('div');
-            el.id = 'late';
-            el.style.display = 'none';
-            document.body.appendChild(el);
-        }, 2000));
+        // A fallback chain spends real attach time before any visibility wait
+        // starts, and that time comes out of the ONE budget the caller gave:
+        // the probe must give up at ~3000ms, not spend ~1000ms walking the
+        // chain and then start a fresh 3000ms visibility wait on top (~4000ms).
+        // The fallback attaches HIDDEN at 2000ms, so the answer stays false and
+        // only the elapsed time distinguishes the two behaviours.
+        await appendLater(page, '<div id="late" style="display:none"></div>', 2000);
         const started = Date.now();
         expect(await steps.isVisible('lateChain', 'ShopPage', { timeout: 3000 })).toBe(false);
         const elapsed = Date.now() - started;
         expect(elapsed, 'probe elapsed').toBeGreaterThanOrEqual(2700);
-        expect(elapsed, 'probe elapsed').toBeLessThan(3600);
+        expect(elapsed, 'probe elapsed').toBeLessThan(probeBudget(3000, 2));
         log('probe resolution: single budget — passed');
+    });
+
+    test('a primary that attaches after the first chain walk is still seen visible', async ({ page }) => {
+        const steps = await shopSteps(page);
+        // THE silent-skip case. The repository commits to the first chain node
+        // that is attached while the walk is running, so a primary that hydrates
+        // a second into the probe is invisible to a single resolution — the walk
+        // has already settled on the present-but-hidden fallback and the probe
+        // then waits out its budget on the wrong node. Here #late-visible
+        // attaches VISIBLE at 1200ms, far beyond anything a slice of the budget
+        // would cover, but well inside the 3000ms the caller asked for.
+        await appendLater(page, '<button id="late-visible" type="button" onclick="window.__lateClicks = (window.__lateClicks || 0) + 1">Late</button>', 1200);
+        const started = Date.now();
+        expect(await steps.isVisible('latePrimary', 'ShopPage', { timeout: 3000 }), 'latePrimary probe').toBe(true);
+        const elapsed = Date.now() - started;
+        // Seen within one further walk of attaching, not at the end of the
+        // budget — the probe must notice it, not merely outlast it.
+        expect(elapsed, 'latePrimary probe elapsed').toBeGreaterThanOrEqual(1200);
+        expect(elapsed, 'latePrimary probe elapsed').toBeLessThan(1200 + walkCost(2) + JITTER_MS);
+        log('probe resolution: late primary — passed');
+    });
+
+    test('the gate acts on a primary that attaches after the first chain walk', async ({ page }) => {
+        const steps = await shopSteps(page);
+        // The probe reporting false here is not a visible failure — the gate
+        // just skips, the test goes green, and nothing was clicked. The action
+        // behind the gate resolves with the repository default and would have
+        // found #late-visible, so a skip is a straight disagreement with it.
+        await appendLater(page, '<button id="late-visible" type="button" onclick="window.__lateClicks = (window.__lateClicks || 0) + 1">Late</button>', 1200);
+        await steps.isVisible('latePrimary', 'ShopPage', { timeout: 3000 }).click();
+        expect(await page.evaluate(() => (window as unknown as Record<string, number>).__lateClicks), 'gated click on a late primary').toBe(1);
+        log('probe resolution: late primary gate — passed');
+    });
+
+    test('a five-node chain leaves the node it lands on a real visibility wait', async ({ page }) => {
+        const steps = await shopSteps(page);
+        // With a slice of budget / 8 per node, a five-node chain costs
+        // (2 x 5 - 1) x budget / 8 = 9/8 of the budget, so the node the walk
+        // lands on was left a 1ms visibility wait and `.summary` — visible
+        // since page load — was reported hidden. The slice must not scale with
+        // the budget, and the node the walk lands on must be looked at with no
+        // wait at all before any remaining budget is consulted.
+        const started = Date.now();
+        expect(await steps.isVisible('deepChain', 'ShopPage', { timeout: 2000 }), 'deepChain probe').toBe(true);
+        expect(Date.now() - started, 'deepChain probe elapsed').toBeLessThan(probeBudget(2000, 5));
+        log('probe resolution: five-node chain — passed');
+    });
+
+    test('a five-node chain that matches nothing still reports false within one walk', async ({ page }) => {
+        const steps = await shopSteps(page);
+        const started = Date.now();
+        expect(await steps.isVisible('deepGhost', 'ShopPage', { timeout: 2000 })).toBe(false);
+        // Nine attach waits of a fixed slice — not nine waits of the repository
+        // default (135s) and not a budget that grows with the chain.
+        expect(Date.now() - started, 'deepGhost probe elapsed').toBeLessThan(probeBudget(2000, 5));
+        log('probe resolution: five-node ghost chain — passed');
+    });
+
+    test('a strategy selector is probed, not the first match', async ({ page }) => {
+        const steps = await shopSteps(page);
+        // `rows` matches two <li>: the first is display:none, the second is
+        // visible. The probe used to resolve the entry without the chain's
+        // strategy selector, so every .nth(i) probe answered for the hidden
+        // first match — another silent skip, since .nth(1).click() resolves the
+        // visible second one perfectly well.
+        expect(await steps.on('rows', 'ShopPage').nth(0).isVisible({ timeout: PROBE_TIMEOUT }), 'nth(0) is hidden').toBe(false);
+        expect(await steps.on('rows', 'ShopPage').nth(1).isVisible({ timeout: PROBE_TIMEOUT }), 'nth(1) is visible').toBe(true);
+        // Out of bounds stays false rather than falling back to the first match.
+        expect(await steps.on('rows', 'ShopPage').nth(9).isVisible({ timeout: PROBE_TIMEOUT }), 'nth(9) does not exist').toBe(false);
+        // The action the nth(1) gate guards resolves the visible second match —
+        // which is what makes a false probe a silent skip rather than a failure.
+        expect(await steps.on('rows', 'ShopPage').nth(1).getText()).toBe('second');
+        log('probe resolution: strategy selector — passed');
     });
 
     test('timeout 0 is clamped, not "wait forever"', async ({ page }) => {
@@ -260,7 +391,7 @@ test.describe('verifyAbsence resolves the full repository selector', () => {
         for (const [el, pg] of [['checkoutButton', 'ShopPage'], ['refundLine', 'ShopPage'], ['cancelButton', 'PaymentFrame']]) {
             const started = Date.now();
             await steps.verifyAbsence(el, pg);
-            expect(Date.now() - started, `${pg}.${el} absence elapsed`).toBeLessThan(2500);
+            expect(Date.now() - started, `${pg}.${el} absence elapsed`).toBeLessThan(absenceBudget());
         }
         log('absence resolution: fast attach budget — passed');
     });
@@ -269,10 +400,41 @@ test.describe('verifyAbsence resolves the full repository selector', () => {
         const steps = await shopSteps(page);
         const started = Date.now();
         await steps.verifyAbsence('ghostChain', 'ShopPage');
-        // a 250 ms attach slice per node (ABSENCE_ATTACH_SLICE_MS); the 15s repository default per node would be 30s.
-        expect(Date.now() - started, 'ghost chain absence elapsed').toBeLessThan(2500);
+        // One two-node walk plus the handle probe; the 15s repository default per node would be 30s.
+        expect(Date.now() - started, 'ghost chain absence elapsed').toBeLessThan(absenceBudget(2));
         await expect(steps.verifyAbsence('fallbackHit', 'ShopPage')).rejects.toThrow();
         log('absence resolution: fallback chain — passed');
+    });
+
+    test('a long fallback chain is asserted absent in one walk, not one per resolution', async ({ page }) => {
+        const steps = await shopSteps(page);
+        const started = Date.now();
+        await steps.verifyAbsence('deepGhost', 'ShopPage');
+        // The default and ALL resolutions run concurrently, so a five-node chain
+        // costs one walk's wall clock, not two. Run back to back it would be
+        // double this — and the two walks would be looking at two different
+        // moments in the page's life, which is the misdiagnosis below.
+        expect(Date.now() - started, 'deep ghost chain absence elapsed').toBeLessThan(absenceBudget(5));
+        log('absence resolution: long chain — passed');
+    });
+
+    test('a single-match primary that attaches mid-resolution is not blamed on a multi-match selector', async ({ page }) => {
+        const steps = await shopSteps(page);
+        // `latePrimary` is `#late-visible` falling back to `#hidden-primary`.
+        // Resolving it twice back to back put the two walks in different
+        // moments: the first settled on the present-but-hidden fallback, the
+        // second — started a slice later — caught `#late-visible` as it
+        // attached. The two landed on different nodes, and the divergence was
+        // reported as "a fallback entry whose resolved selector matches several
+        // elements", which is a diagnosis of a selector neither node has.
+        //
+        // Attaching HIDDEN makes the correct answer unambiguous: every node of
+        // the chain is hidden, so the entry is absent and the assertion passes.
+        // 700ms lands inside the window the SECOND of two back-to-back walks
+        // would have been attach-waiting in, and after the first had given up.
+        await appendLater(page, '<div id="late-visible" style="display:none">late</div>', 700);
+        await steps.verifyAbsence('latePrimary', 'ShopPage');
+        log('absence resolution: late primary not misattributed — passed');
     });
 
     test('fallback chain: a visible primary fails the absence assertion', async ({ page }) => {
