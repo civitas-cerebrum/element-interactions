@@ -40,6 +40,18 @@ export type VisibleField = (() => ElementAction) & {
 };
 
 /**
+ * Attach slice, per `fallback` chain node, that `verifyAbsence` gives the
+ * repository. Long enough to reliably see a node that is already attached,
+ * so a visible primary is never walked past to an absent fallback (a false
+ * PASS): a 1ms wait missed a present node in 17 of 20 trials and walked past
+ * a visible primary 20/20; 50ms still did 2/20 on a loaded machine; 250ms
+ * held 20/20. A present node returns as soon as it is seen, so only an
+ * absent entry pays it: ~(2N-1) × 250ms for an N-node chain, 250ms without
+ * a fallback — never the repository default.
+ */
+const ABSENCE_ATTACH_SLICE_MS = 250;
+
+/**
  * Fluent builder for performing actions on a repository element.
  *
  * Usage:
@@ -498,7 +510,8 @@ export class ElementAction {
      * Assert the element is hidden or detached. Uses Playwright's
      * `expect(locator).toBeHidden()` on the first VISIBLE match of the entry's
      * full match set (so it holds for every match, never a strict-mode
-     * violation on a multi-match entry), resolved through `repo.get(...)` with a 1ms attach budget — the full selector
+     * violation on a multi-match entry), resolved through `repo.get(...)` with a
+     * short attach slice per `fallback` chain node — the full selector
      * (role+name, regex text, frame scope) is honoured, and the 15s
      * repo-resolution wait is never paid waiting for an element to become
      * attached, which is the opposite of what we want when asserting absence.
@@ -517,7 +530,7 @@ export class ElementAction {
             await this.interactions.verify.absence(new WebElement(this.narrowScoped(await this.scopedChild())));
             return;
         }
-        const element = (await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL, timeout: 1 })) as WebElement;
+        const element = (await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL, timeout: ABSENCE_ATTACH_SLICE_MS })) as WebElement;
         // `toBeHidden()` is strict: on the ALL match set it throws "resolved to
         // N elements" as soon as two nodes match, even when every one is hidden.
         // Assert on the first VISIBLE match instead — hidden (passes) when every
