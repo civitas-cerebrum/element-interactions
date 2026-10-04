@@ -257,7 +257,11 @@ export class ElementAction {
      * Note the scoped path resolves the PARENT via the repository first, so a
      * missing parent pays that resolution wait before the probe reports false.
      *
-     * @param timeout - Attach budget in ms for the repository resolution.
+     * @param timeout - Per-node attach budget in ms for the repository
+     *   resolution — NOT the probe's whole budget. The repository spends it
+     *   once per missing `fallback` chain node, so a caller that wants its
+     *   overall deadline respected must bound the number of nodes it is willing
+     *   to pay for (see `VisibleChain.probe`), not hand its whole budget over.
      *   Defaults to the chain's visibility timeout. Clamped to at least 1ms,
      *   because a Playwright timeout of 0 means "wait forever".
      */
