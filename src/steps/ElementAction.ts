@@ -40,16 +40,33 @@ export type VisibleField = (() => ElementAction) & {
 };
 
 /**
- * Attach slice, per `fallback` chain node, that `verifyAbsence` gives the
- * repository. Long enough to reliably see a node that is already attached,
+ * Floor and cap for the attach slice, per `fallback` chain node, that
+ * `verifyAbsence` gives the repository. See
+ * {@link ElementAction.absenceAttachSlice} for how the slice is derived.
+ *
+ * The floor is what it takes to reliably see a node that is ALREADY attached,
  * so a visible primary is never walked past to an absent fallback (a false
- * PASS): a 1ms wait missed a present node in 17 of 20 trials and walked past
- * a visible primary 20/20; 50ms still did 2/20 on a loaded machine; 250ms
- * held 20/20. A present node returns as soon as it is seen, so only an
- * absent entry pays it: ~(2N-1) × 250ms for an N-node chain, 250ms without
- * a fallback — never the repository default.
+ * PASS): a 1ms wait missed a present node in 17 of 20 trials and walked past a
+ * visible primary 20/20; 50ms still did 2/20 on a loaded machine; 250ms held
+ * 20/20.
+ *
+ * The cap bounds what a genuinely absent entry pays. A present node returns as
+ * soon as it is seen, so only an absent entry pays the slice at all —
+ * ~(2N-1) x slice for an N-node chain, one slice without a fallback — and
+ * never the repository's resolution default, which is the whole point of
+ * slicing rather than deferring to `repo.get`'s own budget.
  */
-const ABSENCE_ATTACH_SLICE_MS = 250;
+const ABSENCE_ATTACH_SLICE_FLOOR_MS = 250;
+const ABSENCE_ATTACH_SLICE_CAP_MS = 1000;
+
+/**
+ * How many times `verifyAbsence` resolves the entry before it blames a
+ * divergence between the default and `ALL` resolutions on a multi-match
+ * selector. One extra attempt is enough: a multi-match selector diverges on
+ * every attempt, whereas a node that attached while the two walks were in
+ * flight agrees on the retry.
+ */
+const ABSENCE_RESOLVE_ATTEMPTS = 2;
 
 /**
  * Fluent builder for performing actions on a repository element.
@@ -535,8 +552,12 @@ export class ElementAction {
      * A `fallback` entry is asserted on the variant the repository resolves —
      * the first chain node that exists — so a primary that exists but is
      * hidden is absent even when the fallback is visible, and a primary that
-     * takes longer than ABSENCE_ATTACH_SLICE_MS to attach is treated as
-     * missing. A resolved node that matches several elements throws (see body).
+     * takes longer than the attach slice to attach is treated as missing. The
+     * slice is derived from this chain's effective timeout
+     * ({@link absenceAttachSlice}), so `.timeout(ms)` and the `StepOptions`
+     * timeout buy a slow-hydrating primary more room instead of being ignored
+     * in favour of a hard-coded constant. A resolved node that matches several
+     * elements throws (see body).
      *
      * Scoped `findBy*` chains assert on the child locator itself (the stamped
      * scoped name has no repository entry). Resolving the PARENT still waits
@@ -544,35 +565,100 @@ export class ElementAction {
      */
     async verifyAbsence(): Promise<void> {
         if (this.scopedChild) {
-            await this.interactions.verify.absence(new WebElement(this.narrowScoped(await this.scopedChild())));
+            await this.interactions.verify.absence(
+                new WebElement(this.narrowScoped(await this.scopedChild())),
+                { timeout: this._timeout },
+            );
             return;
         }
-        // A `fallback` entry is asserted on the variant the repository resolves:
-        // the first chain node that exists, exactly as an action would target.
-        // The default (first-match) resolution walks the chain correctly. The
-        // ALL resolution does not when a node matches several elements: the
-        // repository's attach wait on that match set is strict, throws, and
-        // walks on to the next node — which, for an absent fallback, would be
-        // a false PASS. So resolve both and refuse to assert when they diverge.
-        const resolved = (await this.repo.get(this.elementName, this.pageName, { timeout: ABSENCE_ATTACH_SLICE_MS })) as WebElement;
-        const element = (await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL, timeout: ABSENCE_ATTACH_SLICE_MS })) as WebElement;
-        const handle = await resolved.locator.elementHandle({ timeout: ABSENCE_ATTACH_SLICE_MS }).catch(() => null);
-        if (handle) {
-            const inMatchSet = await element.locator.evaluateAll((els, target) => (els as unknown[]).includes(target), handle);
-            await handle.dispose();
-            if (!inMatchSet) {
-                throw new Error(
-                    `verifyAbsence: "${this.elementName}" on "${this.pageName}" is a fallback entry whose resolved selector matches several elements; ` +
-                    `the repository cannot resolve that node's full match set, so absence cannot be asserted reliably. ` +
-                    `Make the selector match a single element.`,
-                );
+        const slice = this.absenceAttachSlice();
+        let element!: WebElement;
+        let divergence: Error | undefined;
+        for (let attempt = 1; attempt <= ABSENCE_RESOLVE_ATTEMPTS; attempt++) {
+            const lastAttempt = attempt === ABSENCE_RESOLVE_ATTEMPTS;
+            divergence = undefined;
+            // A `fallback` entry is asserted on the variant the repository
+            // resolves: the first chain node that exists, exactly as an action
+            // would target. The default (first-match) resolution walks the
+            // chain correctly. The ALL resolution does not when a node matches
+            // several elements: the repository's attach wait on that match set
+            // is strict, throws, and walks on to the next node — which, for an
+            // absent fallback, would be a false PASS. So resolve both and
+            // refuse to assert when they diverge.
+            //
+            // The two resolutions run CONCURRENTLY, and a divergence is
+            // confirmed by a second round before it is blamed on a multi-match
+            // selector. Run back to back they were two walks over two different
+            // moments in the page's life, so a perfectly ordinary single-match
+            // primary that attached between them made the walks land on
+            // different nodes — and the mismatch was reported to the user as
+            // "a fallback entry whose resolved selector matches several
+            // elements", a diagnosis with nothing to do with the real cause.
+            const [resolved, all] = (await Promise.all([
+                this.repo.get(this.elementName, this.pageName, { timeout: slice }),
+                this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL, timeout: slice }),
+            ])) as [WebElement, WebElement];
+            element = all;
+            const handle = await resolved.locator.elementHandle({ timeout: slice }).catch(() => null);
+            if (!handle) break;
+            let inMatchSet: boolean;
+            try {
+                inMatchSet = await all.locator.evaluateAll((els, target) => (els as unknown[]).includes(target), handle);
+            } catch (error) {
+                // The membership check runs against a live handle, so it can
+                // fail for reasons that have nothing to do with the assertion
+                // (the node detached mid-evaluation, a navigation tore the
+                // execution context down). Retry rather than report a failure
+                // the page's own churn caused; on the final attempt let it
+                // surface — loudly wrong beats quietly passing.
+                if (lastAttempt) throw error;
+                continue;
+            } finally {
+                // `dispose()` must run on the throwing path too, or every failed
+                // membership check leaks a handle into the browser process for
+                // the lifetime of the page.
+                await handle.dispose().catch(() => undefined);
             }
+            if (inMatchSet) break;
+            divergence = new Error(
+                `verifyAbsence: "${this.elementName}" on "${this.pageName}" is a fallback entry whose resolved selector matches several elements; ` +
+                `the repository cannot resolve that node's full match set, so absence cannot be asserted reliably. ` +
+                `Make the selector match a single element.`,
+            );
         }
+        if (divergence) throw divergence;
         // `toBeHidden()` is strict: on the ALL match set it throws "resolved to
         // N elements" as soon as two nodes match, even when every one is hidden.
         // Assert on the first VISIBLE match instead — hidden (passes) when every
         // match is hidden or none exists, visible (fails) when any match shows.
-        await this.interactions.verify.absence(new WebElement(element.locator.filter({ visible: true }).first()));
+        await this.interactions.verify.absence(
+            new WebElement(element.locator.filter({ visible: true }).first()),
+            { timeout: this._timeout },
+        );
+    }
+
+    /**
+     * Attach slice, per `fallback` chain node, that {@link verifyAbsence} gives
+     * the repository.
+     *
+     * Derived from this chain's effective timeout — the `Steps` instance
+     * timeout, overridden by `.timeout(ms)` or the `StepOptions` timeout —
+     * rather than being a fixed constant, so a project that raised its element
+     * timeout because its pages hydrate slowly also buys its slow primaries
+     * more time to attach before the walk steps over them. An eighth of the
+     * budget leaves the bulk of it to `toBeHidden`, which is the part that
+     * actually decides the assertion.
+     *
+     * Clamped at both ends: below {@link ABSENCE_ATTACH_SLICE_FLOOR_MS} the
+     * walk starts stepping over nodes that are already in the DOM, and above
+     * {@link ABSENCE_ATTACH_SLICE_CAP_MS} a genuinely absent chain spends
+     * longer proving it than any absence assertion is worth.
+     */
+    private absenceAttachSlice(): number {
+        return Math.max(
+            ABSENCE_ATTACH_SLICE_FLOOR_MS,
+            Math.min(ABSENCE_ATTACH_SLICE_CAP_MS, Math.floor(this._timeout / 8)),
+        );
     }
 
     /**
