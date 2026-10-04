@@ -78,14 +78,14 @@ async function checkoutWithRepo(page: Page, options: ConstructorParameters<typeo
 }
 
 async function openWallet(steps: Steps): Promise<Page> {
-    return steps.switchToNewTab(() => steps.click('walletButton', 'CheckoutPage').then(() => {}));
+    return steps.switchToNewTab(() => steps.click('walletButton', 'CheckoutPage'));
 }
 
 test.describe('steps.forPage — popup / new-tab binding', () => {
 
     test('resolves repository entries on the popup by name', async ({ page }) => {
         const steps = await checkoutSteps(page);
-        const popup = await steps.switchToNewTab(() => steps.click('walletButton', 'CheckoutPage').then(() => {}));
+        const popup = await steps.switchToNewTab(() => steps.click('walletButton', 'CheckoutPage'));
         const popupSteps = steps.forPage(popup);
 
         await popupSteps.verifyPresence('heading', 'WalletPopup');
@@ -100,7 +100,7 @@ test.describe('steps.forPage — popup / new-tab binding', () => {
 
     test('acts on the popup and leaves the opener untouched', async ({ page }) => {
         const steps = await checkoutSteps(page);
-        const popup = await steps.switchToNewTab(() => steps.click('walletButton', 'CheckoutPage').then(() => {}));
+        const popup = await steps.switchToNewTab(() => steps.click('walletButton', 'CheckoutPage'));
         expect(steps.getTabCount()).toBe(2);
 
         const closed = popup.waitForEvent('close');
@@ -114,7 +114,7 @@ test.describe('steps.forPage — popup / new-tab binding', () => {
 
     test('shares the step timeout with the original Steps', async ({ page }) => {
         const steps = await checkoutSteps(page);
-        const popup = await steps.switchToNewTab(() => steps.click('walletButton', 'CheckoutPage').then(() => {}));
+        const popup = await steps.switchToNewTab(() => steps.click('walletButton', 'CheckoutPage'));
         const started = Date.now();
         await expect(steps.forPage(popup).verifyPresence('missing', 'WalletPopup')).rejects.toThrow();
         // STEP_TIMEOUT is shared (plus the 2s attach cap and CI jitter) — the
@@ -283,3 +283,24 @@ test.describe('steps.forPage — popup / new-tab binding', () => {
         log('forPage: live repository timeout — passed');
     });
 });
+
+/**
+ * Compile-only guard for the published copy-paste lines. `steps.click(...)`
+ * resolves `boolean | void`, so a `switchToNewTab(action: () => Promise<void>)`
+ * signature makes both of these fail `tsc --strict` with TS2322 — which is what
+ * a reader of the README or of the `forPage` JSDoc would hit on their first
+ * attempt. The body is never executed; it exists so `npm run typecheck:tests`
+ * fails if the parameter is ever narrowed back to `Promise<void>`.
+ */
+async function documentedUsageCompiles(steps: Steps): Promise<void> {
+    // Verbatim from the `forPage` JSDoc example in src/steps/CommonSteps.ts.
+    const popup = await steps.switchToNewTab(() => steps.click('walletButton', 'CheckoutPage'));
+    const popupSteps = steps.forPage(popup);
+    await popupSteps.verifyPresence('heading', 'WalletPopup');
+    await popupSteps.click('cancelLink', 'WalletPopup');
+
+    // Verbatim from the `forPage` bullet in the README API reference.
+    const inlineForm = steps.forPage(await steps.switchToNewTab(() => steps.click('openHelp', 'HomePage')));
+    void inlineForm;
+}
+void documentedUsageCompiles;

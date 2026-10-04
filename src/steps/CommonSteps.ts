@@ -326,9 +326,12 @@ export class Steps {
      * Executes an action that opens a new browser tab/window, waits for it to load,
      * and returns the new Page object.
      * @param action - An async function that triggers the new tab (e.g. a click).
+     *   Its return value is ignored, so a value-returning call (e.g.
+     *   `() => steps.click('walletButton', 'CheckoutPage')`, which resolves a
+     *   `boolean | void`) is accepted without a `void`-assignability error.
      * @returns The newly opened Page object.
      */
-    async switchToNewTab(action: () => Promise<void>): Promise<Page> {
+    async switchToNewTab(action: () => Promise<unknown>): Promise<Page> {
         log.navigate('Switching to new tab...');
         return await this.navigate.switchToNewTab(action);
     }
