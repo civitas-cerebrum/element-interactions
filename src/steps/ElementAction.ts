@@ -254,6 +254,13 @@ export class ElementAction {
      * express a regex, and ignores the page's `frame` — so a probe built on it
      * answers for a different element than the one the entry describes.
      *
+     * The chain's strategy selector is forwarded too, so `.nth(i)`,
+     * `.byText(...)` and `.byAttribute(...)` probe the element they narrow to.
+     * Without it the probe answered for the FIRST match while the gated action
+     * went on to resolve the narrowed one — `.nth(1).isVisible().click()` on a
+     * list whose first row is hidden reported false and skipped a click on a
+     * perfectly visible second row.
+     *
      * Note the scoped path resolves the PARENT via the repository first, so a
      * missing parent pays that resolution wait before the probe reports false.
      *
@@ -270,7 +277,7 @@ export class ElementAction {
             return new WebElement(this.narrowScoped(await this.scopedChild()));
         }
         const budget = Math.max(1, timeout ?? this.visibilityTimeout);
-        return (await this.repo.get(this.elementName, this.pageName, { timeout: budget })) as WebElement;
+        return (await this.repo.get(this.elementName, this.pageName, { ...this.resolutionOptions, timeout: budget })) as WebElement;
     }
 
     /**
