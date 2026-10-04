@@ -521,6 +521,12 @@ export class ElementAction {
      * sibling is shown), for a regex-text entry it matches nothing, and for a
      * frame-scoped page it looks in the wrong document (both a silent pass).
      *
+     * A `fallback` entry is asserted on the variant the repository resolves —
+     * the first chain node that exists — so a primary that exists but is
+     * hidden is absent even when the fallback is visible, and a primary that
+     * takes longer than ABSENCE_ATTACH_SLICE_MS to attach is treated as
+     * missing. A resolved node that matches several elements throws (see body).
+     *
      * Scoped `findBy*` chains assert on the child locator itself (the stamped
      * scoped name has no repository entry). Resolving the PARENT still waits
      * for it: asserting "child absent" requires the parent to exist.
@@ -530,7 +536,27 @@ export class ElementAction {
             await this.interactions.verify.absence(new WebElement(this.narrowScoped(await this.scopedChild())));
             return;
         }
+        // A `fallback` entry is asserted on the variant the repository resolves:
+        // the first chain node that exists, exactly as an action would target.
+        // The default (first-match) resolution walks the chain correctly. The
+        // ALL resolution does not when a node matches several elements: the
+        // repository's attach wait on that match set is strict, throws, and
+        // walks on to the next node — which, for an absent fallback, would be
+        // a false PASS. So resolve both and refuse to assert when they diverge.
+        const resolved = (await this.repo.get(this.elementName, this.pageName, { timeout: ABSENCE_ATTACH_SLICE_MS })) as WebElement;
         const element = (await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL, timeout: ABSENCE_ATTACH_SLICE_MS })) as WebElement;
+        const handle = await resolved.locator.elementHandle({ timeout: ABSENCE_ATTACH_SLICE_MS }).catch(() => null);
+        if (handle) {
+            const inMatchSet = await element.locator.evaluateAll((els, target) => (els as unknown[]).includes(target), handle);
+            await handle.dispose();
+            if (!inMatchSet) {
+                throw new Error(
+                    `verifyAbsence: "${this.elementName}" on "${this.pageName}" is a fallback entry whose resolved selector matches several elements; ` +
+                    `the repository cannot resolve that node's full match set, so absence cannot be asserted reliably. ` +
+                    `Make the selector match a single element.`,
+                );
+            }
+        }
         // `toBeHidden()` is strict: on the ALL match set it throws "resolved to
         // N elements" as soon as two nodes match, even when every one is hidden.
         // Assert on the first VISIBLE match instead — hidden (passes) when every
