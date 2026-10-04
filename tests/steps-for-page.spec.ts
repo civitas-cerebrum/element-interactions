@@ -203,6 +203,34 @@ test.describe('steps.forPage — popup / new-tab binding', () => {
         log('forPage: shared email client — passed');
     });
 
+    test('the fixture-built Steps (repository loaded from a file path) binds to a popup', async ({ page, steps }) => {
+        // Every other test here hand-builds an ElementRepository from an object.
+        // Real users get theirs from the `steps` fixture, which loads
+        // tests/data/page-repository.json by PATH — the only route the README
+        // sells, and so the one forPage has to work on. Documents are served by
+        // a route, so no test website is needed.
+        await page.context().route('**/for-page-*', (route) => {
+            const isPopup = new URL(route.request().url()).pathname.endsWith('popup');
+            return route.fulfill({
+                contentType: 'text/html',
+                body: isPopup
+                    ? '<main><h1>Home</h1><div data-testid="home-card-forms">Forms</div></main>'
+                    : '<main><h2>Alerts, Frame and Windows</h2><a href="/for-page-popup" target="_blank">New Tab</a></main>',
+            });
+        });
+        await steps.navigateTo('/for-page-opener');
+
+        const popupSteps = steps.forPage(await steps.switchToNewTab(() => steps.click('newTabButton', 'AlertsPage')));
+
+        // In the repository file HomePage.pageTitle is `h1` and AlertsPage.pageTitle
+        // is `h2`: the opener (h2 only) cannot satisfy the first assertion, so
+        // these resolve only if the fixture's file-loaded repository rebound.
+        await popupSteps.verifyPresence('pageTitle', 'HomePage');
+        await popupSteps.verifyPresence('formsCard', 'HomePage');
+        await steps.verifyPresence('pageTitle', 'AlertsPage');
+        log('forPage: fixture-built repository — passed');
+    });
+
     test('forPage on the bound page returns the same Steps', async ({ page }) => {
         const steps = await checkoutSteps(page);
         expect(steps.forPage(page)).toBe(steps);
