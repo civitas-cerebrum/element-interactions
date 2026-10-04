@@ -331,12 +331,12 @@ export const test = baseFixture(base, 'tests/data/page-repository.json', {
                                     // click — recommended for adversarial/bug-discovery suites
   blockedOrigins: /(analytics\.com|tracking\.io)/,  // auto-abort matching routes
   screenshotOnFailure: true,        // auto-capture on test failure (default: true)
-  mutationInjection: true,          // forward E2E_MUTATION_INIT / E2E_MUTATION_CSS to every page of the
-                                    // context, popups included (default: false; inert when both are unset) —
-                                    // the hook behavioural mutation runners such as achilles-mutate need
-                                    // (the init script runs before page scripts; the CSS is attached on each
-                                    // `load`, so after slow subresources; it is not injected into child
-                                    // iframes — the init script is)
+  mutationInjection: true,          // forward an opted-in E2E_MUTATION_INIT / E2E_MUTATION_CSS payload to
+                                    // every page and frame of the context, popups included (default: false;
+                                    // inert without the E2E_MUTATION_RUN opt-in) — the hook behavioural
+                                    // mutation runners such as achilles-mutate need. See "6. Mutation
+                                    // injection" below
+  // mutationInjection: { strict: true },  // fail the test when the injection cannot be proven to have applied
   // screenshotOnFailure: { fullPage: false },  // viewport-only screenshots
   // screenshotOnFailure: false,                 // disable screenshots
 });
@@ -441,6 +441,61 @@ test('Authenticated flow', async ({ steps, authService }) => {
   await authService.login('user@test.com', 'secret');
   await steps.verifyUrlContains('/dashboard');
 });
+```
+
+### 6. Mutation injection (for behavioural mutation runners)
+
+A behavioural mutation runner (e.g. `achilles-mutate`) breaks the page on purpose and
+then asks whether your suite noticed. `mutationInjection` is the hook it needs, so the
+project writes none itself. Three environment variables drive it:
+
+| Variable | Meaning |
+|---|---|
+| `E2E_MUTATION_RUN` | **The opt-in.** Nothing is injected unless this is `1` / `true` / `yes`. |
+| `E2E_MUTATION_INIT` | A JS string, run before the page's own scripts in every page and child frame (`context.addInitScript`). |
+| `E2E_MUTATION_CSS` | A CSS string, adopted as a constructable stylesheet from an init script of its own. |
+
+The opt-in exists because the payload variables are ambient: a value left behind by an
+earlier mutation run in the same CI job, exported by a shell profile, or committed to a
+`.env` (this package calls `dotenv`) would otherwise mutate a perfectly normal run and
+the resulting failure would be blamed on your application.
+
+The CSS goes through CSSOM rather than an injected `<style>` element on purpose. A
+`Content-Security-Policy: style-src 'self'` header blocks an inline `<style>` — the
+element lands, the rules never apply — while leaving CSSOM alone; and running from an
+init script puts the rules in place before the document's first script, instead of on
+`load`, which never fires while a subresource hangs. An already-open page gets the CSS
+applied to its current document immediately; `E2E_MUTATION_INIT` cannot reach a document
+that has already run its scripts, so for such a page it lands on the next navigation.
+
+**A mutated run is never silent.** Activation logs a warning and pushes a
+`mutation-injection` annotation onto the test; every page load is sampled for proof that
+the injection applied; anything unprovable (malformed init JS — caught in Node, not only
+inside the page — CSS that parses to no rules, a stylesheet the browser refused, no
+document reporting the injection at all) is reported as a `mutation-injection-error`
+annotation, and CSS that applied but matched no element as a `mutation-injection-warning`.
+With `mutationInjection: { strict: true }` the unprovable cases *fail* the test instead,
+so an injection that never applied cannot be scored as a surviving mutant — a coverage
+gap that was never real.
+
+The helpers are exported for suites that drive a context themselves:
+
+```ts
+import {
+  forwardMutationInjection,
+  readMutationInjection,
+  MUTATION_RUN_VAR,          // 'E2E_MUTATION_RUN'
+  type MutationInjection,    // { init?: string; css?: string }
+  type MutationInjectionOptions,
+  type MutationInjectionHandle,
+} from '@civitas-cerebrum/element-interactions';
+
+readMutationInjection();                      // {} unless E2E_MUTATION_RUN is set
+readMutationInjection(someEnvObject);          // same, from an explicit env
+
+// Explicit payloads need no opt-in — passing them *is* the opt-in.
+const mutation = await forwardMutationInjection(context, { css: '.cart { display: none }' }, { strict: true });
+const problems = await mutation.verify();      // [] once the injection is proven applied
 ```
 
 ---
