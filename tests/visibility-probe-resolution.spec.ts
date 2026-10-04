@@ -39,6 +39,7 @@ const SHOP = `
         </ul>
         <span class="gone" style="display:none">one</span>
         <span class="gone" style="display:none">two</span>
+        <span id="hidden-primary" style="display:none">Total (old layout)</span>
         <iframe title="Payment form"
                 srcdoc="<button type='button' data-testid='pay'>Pay now</button>"></iframe>
     </main>
@@ -58,10 +59,17 @@ const REPOSITORY = {
                 { elementName: 'rows', selector: { css: '.row' } },
                 // Two matches, both display:none.
                 { elementName: 'goneRows', selector: { css: '.gone' } },
-                { elementName: 'lateHidden', selector: { css: '#late' } },
+                // Missing primary; the fallback attaches late, hidden. Resolving it
+                // really spends attach time (the repository walks the chain).
+                { elementName: 'lateChain', selector: { css: '#late-primary', fallback: { css: '#late' } } },
                 // Fallback chains attach-wait each node; neither node of ghostChain exists.
                 { elementName: 'ghostChain', selector: { css: '#ghost-1', fallback: { css: '#ghost-2' } } },
                 // Primary present and visible, fallback absent.
+                // Primary exists but hidden; fallback visible.
+                { elementName: 'hiddenPrimary', selector: { css: '#hidden-primary', fallback: { css: '.summary' } } },
+                // Multi-match primaries: two hidden matches / one of two visible; fallback absent.
+                { elementName: 'hiddenMultiPrimary', selector: { css: '.gone', fallback: { css: '#nope-fallback' } } },
+                { elementName: 'visibleMultiPrimary', selector: { css: '.row', fallback: { css: '#nope-fallback' } } },
                 { elementName: 'primaryHit', selector: { css: "[data-testid='add']", fallback: { css: '#nope-fallback' } } },
                 { elementName: 'fallbackHit', selector: { css: '#nope', fallback: { role: 'button', name: 'Apply code' } } },
                 { elementName: 'totalLine', selector: { text: { regex: 'Total ¤[0-9.]+' } } },
@@ -199,19 +207,23 @@ test.describe('Visibility probes resolve the full repository selector', () => {
 
     test('one budget: attach time is deducted from the visibility wait', async ({ page }) => {
         const steps = await shopSteps(page);
-        // Attaches (hidden) after 1000ms; a probe with a 1500ms budget must give up at ~1500ms,
-        // not 1000 + 1500 = 2500ms.
+        // A fallback chain spends real attach time before the visibility wait
+        // starts: the probe gives the repository timeout / 8 = 375ms per node,
+        // and the missing primary (two waits) plus the not-yet-attached
+        // fallback (one wait) cost ~1125ms. The fallback then attaches HIDDEN
+        // at 2000ms. With the attach time deducted the probe gives up at
+        // ~3000ms; without it, it would wait a further full 3000ms (~4100ms).
         await page.evaluate(() => setTimeout(() => {
             const el = document.createElement('div');
             el.id = 'late';
             el.style.display = 'none';
             document.body.appendChild(el);
-        }, 1000));
+        }, 2000));
         const started = Date.now();
-        expect(await steps.isVisible('lateHidden', 'ShopPage', { timeout: 1500 })).toBe(false);
+        expect(await steps.isVisible('lateChain', 'ShopPage', { timeout: 3000 })).toBe(false);
         const elapsed = Date.now() - started;
-        expect(elapsed, 'probe elapsed').toBeGreaterThanOrEqual(1300);
-        expect(elapsed, 'probe elapsed').toBeLessThan(2100);
+        expect(elapsed, 'probe elapsed').toBeGreaterThanOrEqual(2700);
+        expect(elapsed, 'probe elapsed').toBeLessThan(3600);
         log('probe resolution: single budget — passed');
     });
 
@@ -269,6 +281,29 @@ test.describe('verifyAbsence resolves the full repository selector', () => {
         // fallback and pass — a false PASS. The primary must be seen.
         await expect(steps.verifyAbsence('primaryHit', 'ShopPage')).rejects.toThrow();
         log('absence resolution: fallback chain, visible primary — passed');
+    });
+
+    test('fallback chain: the resolved variant decides — a hidden existing primary is absent', async ({ page }) => {
+        const steps = await shopSteps(page);
+        // repo.get resolves a fallback chain to the first node that EXISTS, and
+        // every action on the entry targets that node. The primary exists but
+        // is hidden, so the entry is absent even though the fallback is visible.
+        await steps.verifyAbsence('hiddenPrimary', 'ShopPage');
+        // The same entry fails as soon as the resolved primary shows.
+        await page.evaluate(() => ((document.getElementById('hidden-primary') as HTMLElement).style.display = ''));
+        await expect(steps.verifyAbsence('hiddenPrimary', 'ShopPage')).rejects.toThrow(/toBeHidden/);
+        log('absence resolution: resolved variant semantics — passed');
+    });
+
+    test('fallback chain with a multi-match primary never passes falsely', async ({ page }) => {
+        const steps = await shopSteps(page);
+        // The repository's ALL resolution walks past a primary that matches
+        // several elements (strict attach wait) to the absent fallback; asserting
+        // on that would pass while the primary is visible.
+        await expect(steps.verifyAbsence('visibleMultiPrimary', 'ShopPage')).rejects.toThrow();
+        // Documented limit: such an entry is refused even when every match is hidden.
+        await expect(steps.verifyAbsence('hiddenMultiPrimary', 'ShopPage')).rejects.toThrow(/matches several elements/);
+        log('absence resolution: multi-match fallback primary — passed');
     });
 
     test('multi-match entry: a visible later match fails the absence assertion', async ({ page }) => {
