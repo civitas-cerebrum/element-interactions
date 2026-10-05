@@ -10,6 +10,11 @@ permissions:
   pull-requests: write
 
 jobs:
+  # The merge gate. It answers one question — does this change work — and it
+  # must not be able to go red for any other reason. The dependency audit used
+  # to run inside this job before the build, so a single advisory in a
+  # transitive dependency turned every open pull request red and the tests and
+  # typecheck never ran at all. A red `test` check has to mean a test failed.
   test:
     runs-on: ubuntu-latest
 
@@ -26,9 +31,6 @@ jobs:
       - name: 🧩 Install dependencies
         run: npm ci
 
-      - name: 🔒 Vulnerability audit
-        run: npm audit --audit-level=high
-
       - name: 🛠️ Build package
         run: npm run build
 
@@ -44,8 +46,36 @@ jobs:
           docker compose -f docker-compose.sql.yml up -d --wait
           docker compose -f docker-compose.inventory.yml up -d --wait
 
+      # No `--update-snapshots` here. Regenerating baselines as part of the run
+      # makes every snapshot assertion unfailable in CI, which is the opposite
+      # of what a gate is for. The visual-regression specs are skipped until a
+      # baseline is committed (see tests/visual-match.spec.ts) — generate them
+      # locally and commit them; do not let CI write them.
       - name: 🧪 Run Unit Tests
-        run: npm run test:unit -- --update-snapshots
+        run: npm run test:unit
 
       - name: 📝 Check Types
         run: npx tsc --noEmit
+
+  # Reported separately and deliberately so an advisory is visible on the pull
+  # request without masking the test result. Runtime dependencies only — those
+  # are what consumers install. The full dev-inclusive audit, and the
+  # remediation PR, belong to the weekly audit workflow (audit.yml).
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🗂️ Checkout repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: 🧩 Install dependencies
+        run: npm ci
+
+      - name: 🔒 Vulnerability audit (runtime dependencies)
+        run: npm audit --audit-level=high --omit=dev
