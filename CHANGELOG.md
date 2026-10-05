@@ -1,5 +1,61 @@
 # Changelog
 
+## 0.3.10 — 2026-10-04
+
+### Added
+
+- **`baseFixture({ mutationInjection })`** — the browser-level hook a behavioural
+  mutation runner (e.g. `achilles-mutate`) needs, so a project using this package
+  writes none itself. With the option on, an opted-in payload is forwarded to every
+  page and child frame of the test's context: `E2E_MUTATION_INIT` as an init script,
+  `E2E_MUTATION_CSS` as a constructable stylesheet adopted from an init script of its
+  own. Accepts `true` or `{ strict: true }`. Default `false`.
+
+  Three things it refuses to do quietly, because the number this feature exists to
+  produce is corrupted by a silent no-op — an injection that never applied leaves the
+  suite green, and the runner writes down "mutant survived", a coverage gap nobody
+  actually has:
+
+  - **It will not inject on ambient environment alone.** `E2E_MUTATION_RUN` (`1`/
+    `true`/`yes`) is a required opt-in; without it a payload is ignored and reported
+    (`log.warn` plus a `mutation-injection-ignored` annotation). A value left behind
+    by an earlier mutation run in the same CI job, exported by a shell profile, or
+    committed to a `.env` — which this package's `dotenv` call loads — can no longer
+    mutate a normal run and have the failure blamed on the application.
+  - **It will not mutate a run without saying so.** Activation logs a warning and
+    pushes a `mutation-injection` annotation, the same pattern as `deadline-click`
+    in 0.3.9, so a report always shows whether the run under inspection was mutated.
+  - **It will not accept an injection it cannot prove applied.** Malformed
+    `E2E_MUTATION_INIT` is caught in Node (it used to throw only inside the page),
+    CSS is checked for parsing to at least one rule and for being adopted by the
+    document, and every page load is sampled; problems become
+    `mutation-injection-error` annotations, or test failures under
+    `{ strict: true }`. CSS that applies but matches no element is reported as a
+    `mutation-injection-warning`.
+
+- `forwardMutationInjection(context, injection?, options?)` and
+  `readMutationInjection(env?)` are exported for suites that drive a context
+  themselves, alongside `MUTATION_RUN_VAR` and the types `MutationInjection`,
+  `MutationInjectionOptions` and `MutationInjectionHandle`. `forwardMutationInjection`
+  now returns a handle whose `verify()` resolves to the list of problems found during
+  the run (empty when the injection is proven to have applied). An explicit
+  `injection` argument needs no opt-in — passing it *is* the opt-in.
+
+### Fixed
+
+- **The mutation CSS no longer has three ways to apply nothing at all.** It used to
+  be attached with `page.addStyleTag` from a `page.on('load')` handler, with the
+  result discarded (`.catch(() => {})`). Under a `Content-Security-Policy:
+  style-src 'self'` header the style element lands and the rules never apply; when
+  `load` never fires — a hanging subresource or a long-poll, exactly the timing the
+  README advertised — nothing was attached at all; a test asserting at
+  `domcontentloaded` or straight after an action-triggered navigation saw a clean
+  page; and a genuine rejection (CSP refusal, closed page, navigation) was swallowed.
+  The CSS is now adopted through CSSOM (`new CSSStyleSheet()` + `replaceSync`, then
+  `document.adoptedStyleSheets`) from an init script: CSP-exempt, in place before the
+  document's first script, and covering child frames, which the style-tag route never
+  reached. Failures are logged, annotated, and — in strict mode — fatal.
+
 ## 0.3.9 — 2026-08-12
 
 ### Fixed
