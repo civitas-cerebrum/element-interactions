@@ -229,9 +229,12 @@ export class Navigation {
      * Executes an action that opens a new tab/window, waits for the new page,
      * and returns it. The caller is responsible for interacting with the returned page.
      * @param action - An async function that triggers the new tab (e.g. a click).
+     *   Its return value is ignored, so a value-returning call (e.g.
+     *   `() => interactions.interact.click(el)`) is accepted without a
+     *   `void`-assignability error.
      * @returns The newly opened Page object.
      */
-    async switchToNewTab(action: () => Promise<void>): Promise<Page> {
+    async switchToNewTab(action: () => Promise<unknown>): Promise<Page> {
         const [newPage] = await Promise.all([
             this.page.context().waitForEvent('page'),
             action(),

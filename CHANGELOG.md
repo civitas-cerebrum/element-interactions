@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `steps.forPage(page)` — returns a `Steps` bound to another `Page` of the same
+  test (a popup, a new tab, a second window), so a test never constructs an
+  `ElementRepository` itself to drive one. Repository names resolve on the bound
+  page exactly as they do on the main page. Everything except the page is
+  shared: the repository data and its live resolution timeout (a later
+  `repo.setDefaultTimeout` is seen), the step timeout, `interceptionRetry`, the
+  API and SQL client registries (one connection pool, closed once by the owning
+  fixture), the email client, and the `tester:*` debug logging. The original
+  `Steps` stays bound to its own page — nothing is switched. Pairs with
+  `switchToNewTab`:
+  `const popupSteps = steps.forPage(await steps.switchToNewTab(() => steps.click('walletButton', 'CheckoutPage')))`.
+  Throws if the given page is already closed (a self-closing popup, rather than
+  a target-closed error blamed on the next element), and if the repository
+  cannot be rebound onto it.
+
+### Changed
+
+- `steps.switchToNewTab(action)` accepts a value-returning `action`
+  (`() => Promise<unknown>`). The documented form passes `steps.click(...)`,
+  which resolves `boolean | void` and so did not satisfy the previous
+  `() => Promise<void>` under `tsc --strict`. Same treatment `waitForUrl`
+  already had; callers passing a `void` action are unaffected. Also on
+  `Navigation.switchToNewTab`.
+
 ## 0.3.9 — 2026-08-12
 
 ### Fixed
