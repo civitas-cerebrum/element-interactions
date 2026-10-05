@@ -5,6 +5,26 @@ import { createLogger } from '../logger/Logger';
 const log = createLogger('visible');
 
 /**
+ * Attach slice the probe gives the repository per ATTEMPT (see
+ * {@link VisibleChain.probe}), and the cap on each attempt's visibility wait.
+ *
+ * Deliberately a fixed duration rather than a fraction of the probe budget.
+ * The repository walks a `fallback` chain by attach-waiting every missing node
+ * (two waits per non-terminal node, one for the node the walk lands on), so a
+ * slice expressed as `budget / k` makes the walk's cost scale with the budget
+ * and blow it on any chain longer than `k / 2` nodes — which is how a five-node
+ * chain came to leave the node it landed on a 1ms visibility wait and report a
+ * plainly visible element hidden. With a fixed slice the walk costs the same
+ * `(2N-1) x 250ms` whatever the budget, and the attempt loop simply stops
+ * starting attempts once the budget is spent.
+ *
+ * 250ms is the floor at which a node that is ALREADY attached is seen
+ * reliably; shorter deadlines routinely expire before Playwright's first poll,
+ * which makes the walk step over a node that is sitting in the DOM.
+ */
+const PROBE_SLICE_MS = 250;
+
+/**
  * Dual-behavior chain returned by `steps.on(el, page).visible(options?)` and
  * `steps.visible(el, page, options?)`. Consolidates the old `isVisible()`
  * probe and `ifVisible()` modifier into one entry point.
@@ -62,29 +82,71 @@ export class VisibleChain implements PromiseLike<boolean> {
      * Runs the visibility check (and optional `containsText` filter) without
      * throwing. Resolves the probe target through the action's `probeTarget()`
      * so scoped `findBy*` chains probe their child locator (the stamped scoped
-     * name has no repository entry) while repository chains keep the raw-selector
-     * construction where the caller-supplied `timeout` is the only wait —
-     * avoiding the 15s repository-resolution default that `repo.get(...)`
-     * would impose.
+     * name has no repository entry) while repository chains resolve the entry's
+     * FULL selector through the repository — role+name, regex text, fallback
+     * and frame scope — exactly as an action on the same entry would. `timeout`
+     * is the probe's whole budget, so the 15s repository-resolution default is
+     * never imposed on a probe.
+     *
+     * The probe RE-RESOLVES on every attempt instead of resolving once and then
+     * waiting. A repository resolution is a point-in-time answer: the walk
+     * commits to the first `fallback` node that is attached *while the walk is
+     * running* and the caller is then stuck with that node. So an entry whose
+     * primary hydrates a second into the probe used to be answered on the
+     * fallback the walk had already settled on — reporting `false` for an
+     * element that the very action being gated goes on to find, and silently
+     * skipping a click on a visible element. Re-resolving means a late primary
+     * is picked up by a later attempt; the loop just stops starting attempts
+     * once the budget is spent.
+     *
+     * Each attempt is bounded by {@link PROBE_SLICE_MS}, both for the
+     * repository's per-node attach wait and for that attempt's visibility wait.
+     * A chain walk is not interruptible, so an entry with a long `fallback`
+     * chain can overrun the nominal budget by at most the cost of the final
+     * walk — a correct answer slightly late, rather than a wrong answer on time.
      */
     private async probe(): Promise<boolean> {
         const { elementName: el, pageName: pg } = this.action;
         const timeout = this.options.timeout ?? 2000;
         const containsText = this.options.containsText;
-        try {
-            const element = await this.action.probeTarget();
-            await element.waitFor({ state: 'visible', timeout });
-            if (containsText) {
-                const text = await element.textContent().catch(() => null);
-                const ok = text !== null && text.includes(containsText);
-                log('[probe] "%s" @ "%s" (timeout=%dms, containsText="%s") → %s', el, pg, timeout, containsText, ok);
-                return ok;
+        // `Math.max(1, …)`: a Playwright timeout of 0 means "wait forever", and
+        // a 0ms budget must still buy one attempt rather than no answer at all.
+        const deadline = Date.now() + Math.max(1, timeout);
+
+        for (;;) {
+            const slice = Math.max(1, Math.min(PROBE_SLICE_MS, deadline - Date.now()));
+            const element = await this.action.probeTarget(slice).catch(() => null);
+            if (element) {
+                // Look at the resolved node with no wait at all before waiting
+                // on it. The walk may have spent the entire budget and still
+                // landed on a node that is visible *right now*; a residual
+                // `waitFor({ timeout: 1 })` is not a substitute, because a 1ms
+                // deadline routinely expires before Playwright's first poll and
+                // reports an attached, visible node as hidden.
+                let visible = await element.isVisible().catch(() => false);
+                if (!visible) {
+                    const left = Math.min(deadline - Date.now(), slice);
+                    if (left > 0) {
+                        visible = await element
+                            .waitFor({ state: 'visible', timeout: left })
+                            .then(() => true, () => false);
+                    }
+                }
+                if (visible) {
+                    if (containsText) {
+                        const text = await element.textContent().catch(() => null);
+                        const ok = text !== null && text.includes(containsText);
+                        log('[probe] "%s" @ "%s" (timeout=%dms, containsText="%s") → %s', el, pg, timeout, containsText, ok);
+                        return ok;
+                    }
+                    log('[probe] "%s" @ "%s" (timeout=%dms) → true', el, pg, timeout);
+                    return true;
+                }
             }
-            log('[probe] "%s" @ "%s" (timeout=%dms) → true', el, pg, timeout);
-            return true;
-        } catch {
-            log('[probe] "%s" @ "%s" (timeout=%dms) → false', el, pg, timeout);
-            return false;
+            if (Date.now() >= deadline) {
+                log('[probe] "%s" @ "%s" (timeout=%dms) → false', el, pg, timeout);
+                return false;
+            }
         }
     }
 
