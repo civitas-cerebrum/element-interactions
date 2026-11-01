@@ -63,7 +63,7 @@
     "dotenv": "^17.3.1"
   },
   "overrides": {
-    "nodemailer": "^9.0.1",
+    "nodemailer": "^10.0.14",
     "@civitas-cerebrum/test-coverage": {
       "glob": "^13.0.6"
     },
