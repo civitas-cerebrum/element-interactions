@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.10 — 2026-11-01
+
+### Fixed
+
+- **No more `glob` / `minimatch` advisories in the installed tree.**
+  `@civitas-cerebrum/wasapi` `^0.0.3` → `^0.0.5`. wasapi 0.0.5 moved
+  `@civitas-cerebrum/test-coverage` to its devDependencies, so consumers no
+  longer install test-coverage's glob 10 / minimatch 9 (GHSA-3g3m-2fjr-6pw4,
+  GHSA-g3hv-75wg-m249). The scoped `glob` override on test-coverage is
+  dropped: the dev dependency is now `^0.1.2`, which ships glob 14 itself.
+
 ## 0.3.9 — 2026-08-12
 
 ### Fixed
