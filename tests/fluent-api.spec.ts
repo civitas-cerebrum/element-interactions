@@ -45,6 +45,27 @@ test.describe('Fluent API — steps.on()', () => {
       const attr = await steps.on('disabledButton', 'ButtonsPage').byAttribute('disabled', '').getAttribute('disabled');
       expect(attr).toBe('');
     });
+
+    // Regression: the ATTRIBUTE strategy used to fall through the resolver's
+    // strategy switch to the un-filtered `.first()` path, so `byAttribute`
+    // silently resolved the FIRST matching base element and ignored the
+    // filter. These tests use a multi-match base ('variantButtons' matches
+    // every variant button) with a target that is deliberately NOT the first
+    // match — a silent first-match fallback fails both.
+
+    test('.byAttribute() resolves the matching non-first element from a multi-match base', async ({ steps }) => {
+      await steps.navigateTo('/');
+      await steps.click( 'buttonsLink','SidebarNav');
+      const text = await steps.on('variantButtons', 'ButtonsPage').byAttribute('data-testid', 'btn-danger').getText();
+      expect(text).toBe('Danger');
+    });
+
+    test('.byAttribute() click acts on the filtered element, not the first match', async ({ steps }) => {
+      await steps.navigateTo('/');
+      await steps.click( 'buttonsLink','SidebarNav');
+      await steps.on('variantButtons', 'ButtonsPage').byAttribute('data-testid', 'btn-danger').click();
+      await steps.verifyTextContains( 'resultText','ButtonsPage', 'Danger');
+    });
   });
 
   test.describe('Terminal — interactions', () => {

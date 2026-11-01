@@ -574,6 +574,12 @@
       "name": "ButtonsPage",
       "elements": [
         {
+          "elementName": "variantButtons",
+          "selector": {
+            "css": "button.btn"
+          }
+        },
+        {
           "elementName": "primaryButton",
           "selector": {
             "css": "[data-testid='btn-primary']"
