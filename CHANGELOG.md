@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.12 — 2026-11-01
 
 ### Added
 
@@ -54,6 +54,14 @@
   Throws if the given page is already closed (a self-closing popup, rather than
   a target-closed error blamed on the next element), and if the repository
   cannot be rebound onto it.
+- **`"list": true` entries** (element-repository 0.3.3's entry flag): a
+  collection whose contract is "at least one match". Reached without a
+  narrowing strategy, `verifyPresence` passes when ANY match is visible (not
+  only the first), and `getAll` waits for at least one match and throws when
+  there is none instead of returning `[]`; the wait honours a per-call
+  `{ timeout }` in both directions. `.nth()`, `.random()`, `.byText()`,
+  `.byAttribute()`, `.visible()`, `ifVisible()`, a scoped `findBy*` and a
+  `getAll` strategy opt out. Entries without the flag are unchanged.
 
 ### Changed
 
@@ -84,6 +92,11 @@
   several elements is asserted on that node's whole match set (absent only when
   every match is hidden); this needs element-repository 0.3.4, whose `ALL`
   resolution no longer walks past a multi-match node.
+- `@civitas-cerebrum/element-repository` floor `^0.3.1` → `^0.3.4`. 0.3.3
+  ships the `list` / `provisional` entry flags and the ATTRIBUTE strategy;
+  0.3.4 stops the `ALL` strategy from walking past a multi-match `fallback`
+  primary, so a list entry with a fallback, and `verifyAbsence` on one, are
+  judged on the primary.
 
 ### Fixed
 
@@ -137,6 +150,11 @@
   fails for reasons of the page's own churn (the node detaching mid-evaluation,
   a navigation tearing the execution context down) is retried rather than
   reported as an assertion failure.
+- **`.byAttribute(...)` selects the filtered element.** On the strategy path the
+  repository returned the unfiltered first match, so
+  `steps.on('variantButtons', page).byAttribute('data-testid', 'btn-danger')`
+  acted on the first button; element-repository 0.3.3 implements the strategy.
+  The `byAttribute` tests now use a multi-match base and a non-first target.
 
 ## 0.3.11 — 2026-11-01
 
