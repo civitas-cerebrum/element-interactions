@@ -27,6 +27,80 @@ function safeStringify(value: unknown): string {
 }
 
 /**
+ * Marker for the resolution-target guard `Steps.forPage` installs on its
+ * derived repository view, so binding a `Steps` that is itself page-bound
+ * inherits the guard instead of stacking another layer of it.
+ */
+const RESOLUTION_GUARD = Symbol('element-interactions.resolutionGuard');
+
+/**
+ * The `ElementRepository` query methods that resolve one or more `Element`s
+ * through the driver. `getSelector`, `getSelectorRaw` and `getPagePlatform` are
+ * pure repository lookups that never touch the driver, so they need no guard.
+ */
+const RESOLVING_REPO_METHODS = ['get', 'getAll', 'getRandom', 'getByText', 'getByAttribute', 'getByIndex', 'getVisible', 'getByRole'] as const;
+
+/** `page.url()` for an error message, without letting a closed page mask the error. */
+function describePage(page: Page | undefined): string {
+    try {
+        return page ? page.url() : 'unknown';
+    } catch {
+        return 'unknown';
+    }
+}
+
+/**
+ * Throws unless every `Element` just resolved through `repo` belongs to the page
+ * `repo.driver` reports. This is the check that `forPage`'s rebinding actually
+ * worked: the `driver` getter alone only proves what the repository *says* its
+ * page is, while this proves where resolution *landed*. An element-repository
+ * that captured its driver at construction (instead of reading `_driver` on
+ * every resolution, as 0.3.x does) would otherwise hand back steps that act on
+ * the opener while reporting the popup.
+ *
+ * Non-Playwright elements carry no `locator`, and `Locator.page()` only exists
+ * from Playwright 1.19 while the peer range allows older drivers — both skip
+ * the check rather than fail a legitimate call.
+ */
+function assertResolvedOnDriver(repo: ElementRepository, method: string, args: unknown[], resolved: unknown): void {
+    const expectedPage = repo.driver as Page | undefined;
+    for (const element of Array.isArray(resolved) ? resolved : [resolved]) {
+        const locator = (element as WebElement | null | undefined)?.locator;
+        if (!locator || typeof locator.page !== 'function') continue;
+        const actualPage = locator.page();
+        if (actualPage === expectedPage) continue;
+        throw new Error(
+            `forPage: repository resolution escaped the bound page. "${String(args[1])}.${String(args[0])}" `
+            + `(via repo.${method}) resolved on ${describePage(actualPage)} instead of the bound ${describePage(expectedPage)}. `
+            + 'The installed @civitas-cerebrum/element-repository does not read its driver from "_driver" on every resolution, '
+            + 'so these steps would act on the opener; pin the dependency to a version whose resolution path does (0.3.1 is known good).'
+        );
+    }
+}
+
+/**
+ * Installs {@link assertResolvedOnDriver} on `view` for every driver-resolving
+ * repository method. The wrappers validate against the *receiver's* driver, not
+ * a captured page, so a view derived from a view (a popup opened from a popup)
+ * is guarded correctly by the inherited wrapper.
+ */
+function guardResolutionTarget(view: ElementRepository): void {
+    const members = view as unknown as Record<string, unknown>;
+    for (const name of RESOLVING_REPO_METHODS) {
+        const method = members[name];
+        if (typeof method !== 'function') continue;
+        if ((method as unknown as Record<symbol, unknown>)[RESOLUTION_GUARD]) continue;
+        const guarded = async function (this: ElementRepository, ...args: unknown[]): Promise<unknown> {
+            const resolved = await (method as (...callArgs: unknown[]) => Promise<unknown>).apply(this, args);
+            assertResolvedOnDriver(this, name, args, resolved);
+            return resolved;
+        };
+        Object.defineProperty(guarded, RESOLUTION_GUARD, { value: true });
+        Object.defineProperty(view, name, { value: guarded, writable: true, configurable: true, enumerable: false });
+    }
+}
+
+/**
  * The `Steps` class serves as a unified Facade for test orchestration.
  * It combines element acquisition (via `@civitas-cerebrum/element-repository`) with
  * Playwright interactions, navigation, and verifications to keep test files clean,
@@ -49,6 +123,8 @@ export class Steps {
     private dbConnectTimeoutMs?: number;
     private timeout?: number;
     private interceptionRetry?: boolean;
+    /** Constructor options minus the client registries — re-applied by `forPage()`. */
+    private pageIndependentOptions: { emailCredentials?: EmailClientConfig; timeout?: number; interceptionRetry?: boolean; dbConnectTimeoutMs?: number };
 
     /**
      * Initializes the Steps class with the element repository.
@@ -80,6 +156,7 @@ export class Steps {
     ) {
         this.page = repo.driver;
         const { emailCredentials, timeout, interceptionRetry, apiBaseUrl, apiProviders } = options ?? {};
+        this.pageIndependentOptions = { emailCredentials, timeout, interceptionRetry, dbConnectTimeoutMs: options?.dbConnectTimeoutMs };
         const interactions = new ElementInteractions(this.page, { emailCredentials, timeout, interceptionRetry });
         this.interceptionRetry = interceptionRetry;
         this.interact = interactions.interact;
@@ -323,11 +400,81 @@ export class Steps {
      * Executes an action that opens a new browser tab/window, waits for it to load,
      * and returns the new Page object.
      * @param action - An async function that triggers the new tab (e.g. a click).
+     *   Its return value is ignored, so a value-returning call (e.g.
+     *   `() => steps.click('walletButton', 'CheckoutPage')`, which resolves a
+     *   `boolean | void`) is accepted without a `void`-assignability error.
      * @returns The newly opened Page object.
      */
-    async switchToNewTab(action: () => Promise<void>): Promise<Page> {
+    async switchToNewTab(action: () => Promise<unknown>): Promise<Page> {
         log.navigate('Switching to new tab...');
         return await this.navigate.switchToNewTab(action);
+    }
+
+    /**
+     * Returns a `Steps` bound to another `Page` of the same test — a popup, a
+     * new tab, or a second window — that shares everything except the page:
+     * the same repository data and resolution timeout, the same step timeout,
+     * interception-retry setting, the same API and SQL clients (one connection
+     * pool, closed once by the owning fixture), the same email client (one
+     * instance, so `steps.cleanEmails()` and `popupSteps.receiveEmail(...)`
+     * speak to the same mailbox through the same configuration), and the same
+     * `tester:*` debug logging. Repository names resolve on the popup exactly as
+     * they do on the main page, so a test never has to construct an
+     * `ElementRepository` itself.
+     *
+     * The original `Steps` stays bound to its own page; nothing is switched.
+     *
+     * @param page - The page to bind, e.g. the `Page` returned by `switchToNewTab`.
+     * @returns A new `Steps` whose element steps act on `page`.
+     * @throws If `page` is already closed, or if the repository cannot be
+     *   rebound onto it.
+     *
+     * @example
+     * ```ts
+     * const popup = await steps.switchToNewTab(() => steps.click('walletButton', 'CheckoutPage'));
+     * const popupSteps = steps.forPage(popup);
+     * await popupSteps.verifyPresence('heading', 'WalletPopup');
+     * await popupSteps.click('cancelLink', 'WalletPopup');
+     * ```
+     */
+    forPage(page: Page): Steps {
+        if (page === this.page) return this;
+        if (page.isClosed()) {
+            // Popups self-close routinely (`window.close()` on a "done" button),
+            // and a Steps bound to a dead page fails at its *next* step with
+            // Playwright's generic target-closed error, which reads as a problem
+            // with that element. Name the real cause here instead.
+            throw new Error('forPage: the given page is already closed, so no step could act on it. Bind the page (or read what you need from it) before it closes — a popup that calls window.close() is gone by the time forPage sees it.');
+        }
+        log.navigate('Binding Steps to another page: %s', page.url());
+        // Interim: a view of the same repository with only the driver replaced
+        // (end state: a public ElementRepository.withDriver(page)). Page data
+        // and the resolution timeout are read through the prototype chain from
+        // the original instance, so later `setDefaultTimeout` calls on the
+        // fixture's repo are shared too. `_driver` is the field behind the
+        // public `driver` getter.
+        const repo = Object.create(this.repo, { _driver: { value: page, writable: true } }) as ElementRepository;
+        if (repo.driver !== page) {
+            throw new Error('forPage: cannot rebind repository driver — the repository does not expose its page through the "_driver" field.');
+        }
+        // The getter check above only proves what the repository *reports*. The
+        // dependency range admits any 0.3.x, and a future one could capture the
+        // driver at construction while still answering the getter from
+        // `_driver` — the getter would agree and every element would quietly
+        // resolve on the opener. `guardResolutionTarget` therefore validates the
+        // resolution path itself: each resolved element must belong to the page
+        // the repository is bound to, checked where resolution happens.
+        guardResolutionTarget(repo);
+        const bound = new Steps(repo, this.pageIndependentOptions);
+        bound.apiClients = this.apiClients;
+        bound.dbClients = this.dbClients;
+        bound.dbConfigs = this.dbConfigs;
+        // One email client for the whole test, as the docstring promises: the
+        // constructor above built a second one from the same credentials, and
+        // two clients mean `cleanEmails()` on the opener and `receiveEmail()` on
+        // the popup are configured independently with nothing keeping them so.
+        bound.email = this.email;
+        return bound;
     }
 
     /**
