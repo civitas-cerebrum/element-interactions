@@ -1,0 +1,185 @@
+name: 🔒 Weekly Dependency Audit
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+# Needed by the auto-fix step: it pushes a branch and opens a pull request.
+permissions:
+  contents: write
+  pull-requests: write
+  # claude-code-action mints a GitHub App token via OIDC to do its repo
+  # work. That is separate from the Anthropic credential and fails the
+  # whole step without this scope:
+  #   "Unable to get ACTIONS_ID_TOKEN_REQUEST_URL env variable"
+  id-token: write
+
+# One audit at a time. A scheduled run and a manual one landing together would
+# otherwise race to open the same fix branch.
+concurrency:
+  group: audit-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FIX_BRANCH: chore/auto-audit-fix
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🗂️ Checkout repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: 🧩 Install dependencies
+        run: npm ci
+
+      # Full audit including devDependencies — PR CI only audits runtime deps.
+      # `continue-on-error` is deliberate: a finding is the TRIGGER for the
+      # auto-fix below, not the end of the job. The real pass/fail verdict is
+      # decided in the final step.
+      - name: 🔒 Vulnerability audit (all deps)
+        id: audit
+        continue-on-error: true
+        run: |
+          set +e
+          npm audit --audit-level=high > audit.txt 2>&1
+          code=$?
+          set -e
+          cat audit.txt
+          if [ $code -ne 0 ]; then
+            echo "vulnerable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "vulnerable=false" >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo "### 🔒 Dependency audit"
+            echo
+            echo '```'
+            head -c 8000 audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Don't stack a new PR on top of one nobody has merged yet. Without this
+      # the schedule opens a near-identical PR every week until someone acts.
+      - name: 🔎 Check for an existing fix PR
+        id: existing
+        if: steps.audit.outputs.vulnerable == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          open=$(gh pr list --state open --head "$FIX_BRANCH" --json number --jq 'length')
+          echo "count=$open" >> "$GITHUB_OUTPUT"
+          if [ "$open" != "0" ]; then
+            echo "An audit fix PR is already open for $FIX_BRANCH — skipping dispatch." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: 🤖 Dispatch Claude Code to fix and open a PR
+        id: fix
+        if: steps.audit.outputs.vulnerable == 'true' && steps.existing.outputs.count == '0'
+        uses: anthropics/claude-code-action@v1
+        with:
+          # Subscription auth (Claude Pro/Max). Generate the token locally with
+          # `claude setup-token` and store the output as a repository secret
+          # named CLAUDE_CODE_OAUTH_TOKEN. It EXPIRES — when it does this step
+          # fails on auth rather than on a vulnerability, and the job goes red
+          # with the audit report still in the summary. Regenerate and re-add
+          # the secret to restore it.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --allowedTools Bash,Read,Edit,Write,Glob,Grep
+            --max-turns 40
+          prompt: |
+            `npm audit --audit-level=high` is failing on the default branch of
+            this repository. Fix it and open a pull request.
+
+            The failing report is in ./audit.txt at the repo root — read it first.
+
+            HOW TO FIX, in order of preference:
+              1. A lockfile-only bump (`npm audit fix`) when a patched version
+                 exists inside the ranges already declared.
+              2. If the vulnerable package is pinned by an intermediate
+                 dependency so npm cannot reach the patch, add a narrow
+                 `overrides` entry in package.json. Prefer overriding the
+                 package whose OWN fixed release declares the safe range, so
+                 the resulting tree is a combination its maintainer tested.
+              3. If the vulnerable dependency is never imported or executed by
+                 this repo, prefer removing it over silencing it.
+
+            DO NOT run `npm audit fix --force` and do not accept any fix that
+            downgrades a package to an older major version. If the only
+            available remedy is a breaking change, STOP, open no PR, and
+            explain the situation in your final message instead.
+
+            VERIFY before committing — a fix that breaks the build is worse
+            than the advisory:
+              - `npm run build` (if the script exists) must pass
+              - the repo's test script must pass, except for tests that need
+                network or credentials unavailable in CI
+              - `npm audit --audit-level=high` must now be clean
+
+            THEN:
+              - commit to a branch named exactly `chore/auto-audit-fix`
+              - delete audit.txt before committing; it is a scratch file and
+                must not appear in the diff
+              - open a pull request against the default branch explaining which
+                advisory (quote the GHSA id), which dependency path, why you
+                chose that remedy, and exactly what you verified
+              - if you could not verify something, say so plainly in the PR body
+
+            ATTRIBUTION: do not add `Co-Authored-By`, `Claude-Session`,
+            "Generated with Claude Code", or any similar trailer or footer to
+            the commit message or the PR body. Do not name any AI model
+            anywhere in the commit or PR.
+
+      # A green dispatch step means the action process exited cleanly — NOT that
+      # a pull request exists. Claude may deliberately open nothing (the prompt
+      # tells it to stop rather than accept a breaking change), or fail to push
+      # while still exiting 0. The first live run did exactly that: dispatch
+      # succeeded, no branch and no PR were created, and the job went green with
+      # the advisory untouched. Verify the artifact, never the exit code.
+      - name: 🔎 Confirm a fix PR actually exists
+        id: confirm
+        if: always() && steps.audit.outputs.vulnerable == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          opened=$(gh pr list --state open --head "$FIX_BRANCH" --json number --jq 'length' 2>/dev/null || echo "")
+          echo "count=${opened}" >> "$GITHUB_OUTPUT"
+          echo "Open PRs on $FIX_BRANCH after dispatch: ${opened:-<lookup failed>}"
+
+      # The honest verdict. Green means either nothing was found, or something
+      # was found AND there is now an open PR to fix it. Red means a finding is
+      # sitting unactioned and needs a human.
+      - name: 📋 Report status
+        if: always()
+        run: |
+          vulnerable="${{ steps.audit.outputs.vulnerable }}"
+          existing="${{ steps.existing.outputs.count }}"
+          confirmed="${{ steps.confirm.outputs.count }}"
+
+          if [ "$vulnerable" != "true" ]; then
+            echo "✅ No high-severity vulnerabilities."
+            exit 0
+          fi
+          # Non-empty AND non-zero. An empty value means the lookup did not run
+          # or failed, which must never be read as "a PR exists".
+          if [ -n "$existing" ] && [ "$existing" != "0" ]; then
+            echo "⚠️ Vulnerabilities found; a fix PR was already open on $FIX_BRANCH."
+            exit 0
+          fi
+          if [ -n "$confirmed" ] && [ "$confirmed" != "0" ]; then
+            echo "⚠️ Vulnerabilities found; a fix PR is now open on $FIX_BRANCH."
+            exit 0
+          fi
+          echo "❌ Vulnerabilities found and no fix PR exists — needs a human."
+          echo "   (The fixer may have declined deliberately, e.g. the only"
+          echo "    available remedy was a breaking change. Read its log.)"
+          exit 1
