@@ -67,6 +67,33 @@
   a navigation tearing the execution context down) is retried rather than
   reported as an assertion failure.
 
+## 0.3.11 — 2026-11-01
+
+### Fixed
+
+- **No more nodemailer / ip-address advisories in the installed tree.**
+  `@civitas-cerebrum/email-client` `^0.0.9` → `^0.0.10`, which moves to
+  nodemailer `^10.3.1` (GHSA-8c8m-p3m8-cjg8, GHSA-m943-m63m-w62w,
+  GHSA-85x2-q946-cp5h), mailparser `^3.14.1` and imapflow `^1.7.8`. The local
+  `nodemailer` override follows to `^10.3.1`. Full `npm audit`: 0
+  vulnerabilities.
+- `ip-address` (GHSA-rxp7-6hxx-x8q5) arrives through imapflow → socks
+  `^10.1.1`, so a fresh install resolves the patched 10.7.5. The ≥10.7.4
+  floor in email-client is an `overrides` entry, which npm does not apply to
+  consumers: a consumer lockfile that already holds ≤10.7.3 keeps it until
+  refreshed (`npm update ip-address`).
+
+## 0.3.10 — 2026-11-01
+
+### Fixed
+
+- **No more `glob` / `minimatch` advisories in the installed tree.**
+  `@civitas-cerebrum/wasapi` `^0.0.3` → `^0.0.5`. wasapi 0.0.5 moved
+  `@civitas-cerebrum/test-coverage` to its devDependencies, so consumers no
+  longer install test-coverage's glob 10 / minimatch 9 (GHSA-3g3m-2fjr-6pw4,
+  GHSA-g3hv-75wg-m249). The scoped `glob` override on test-coverage is
+  dropped: the dev dependency is now `^0.1.2`, which ships glob 14 itself.
+
 ## 0.3.9 — 2026-08-12
 
 ### Fixed
