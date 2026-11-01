@@ -34,6 +34,12 @@ const CATALOGUE = `
             li.textContent = 'late item';
             document.querySelector('ul.later').appendChild(li);
         }, 300);
+        setTimeout(function () {
+            var li = document.createElement('li');
+            li.className = 'slow';
+            li.textContent = 'slow item';
+            document.querySelector('ul.later').appendChild(li);
+        }, 4000);
     </script>
 `;
 
@@ -47,6 +53,7 @@ const REPOSITORY = {
                 { elementName: 'promoRows', list: true, selector: { css: 'li.promo' } },
                 { elementName: 'promoRowsNoFlag', selector: { css: 'li.promo' } },
                 { elementName: 'lateRows', list: true, selector: { css: 'li.late' } },
+                { elementName: 'slowRows', list: true, selector: { css: 'li.slow' } },
             ],
         },
     ],
@@ -150,6 +157,23 @@ test.describe('list: true — getAll', () => {
         await expect(steps.getAll('promoRows', 'CataloguePage'))
             .rejects.toThrow(/getAll: 'CataloguePage\.promoRows' is a list entry \("list": true\).*found 0/);
         log('list entries: getAll empty list rejected — passed');
+    });
+
+    test('a shorter per-call timeout bounds the list wait', async ({ page }) => {
+        const steps = await catalogueSteps(page);
+        const started = Date.now();
+        await expect(steps.getAll('promoRows', 'CataloguePage', undefined, { timeout: 100 }))
+            .rejects.toThrow(/expected at least one match within 100ms, found 0/);
+        expect(Date.now() - started).toBeLessThan(STEP_TIMEOUT);
+        log('list entries: getAll shorter per-call timeout — passed');
+    });
+
+    test('a longer per-call timeout extends the list wait past the instance timeout', async ({ page }) => {
+        const steps = await catalogueSteps(page);
+        // `slow item` renders at 4000ms, well past the 1500ms instance timeout;
+        // only the per-call override can wait that long.
+        expect(await steps.getAll('slowRows', 'CataloguePage', undefined, { timeout: 6000 })).toEqual(['slow item']);
+        log('list entries: getAll longer per-call timeout — passed');
     });
 
     test('an entry without the flag still returns [] when nothing matches', async ({ page }) => {

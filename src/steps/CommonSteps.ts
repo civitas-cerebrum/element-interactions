@@ -1144,7 +1144,7 @@ export class Steps {
         let element: Element = await this.getAllWebElement(elementName, pageName, options);
 
         if ((!options?.strategy || options.strategy === 'all') && isListEntry(this.repo, elementName, pageName)) {
-            await this.requireListMatch(element as WebElement, elementName, pageName, 'getAll');
+            await this.requireListMatch(element as WebElement, elementName, pageName, 'getAll', options?.timeout);
         }
 
         if (getAllOptions?.child) {
@@ -1168,10 +1168,12 @@ export class Steps {
     /**
      * Enforces the `"list": true` contract (count ≥ 1): waits up to the step
      * timeout for the collection's first match to attach, and throws a message
-     * naming the entry when nothing ever matches.
+     * naming the entry when nothing ever matches. A per-call
+     * `StepOptions.timeout` takes precedence over the instance timeout, in both
+     * directions (shorter or longer).
      */
-    private async requireListMatch(all: WebElement, elementName: string, pageName: string, step: string): Promise<void> {
-        const timeout = this.timeout ?? 30000;
+    private async requireListMatch(all: WebElement, elementName: string, pageName: string, step: string, timeoutOverride?: number): Promise<void> {
+        const timeout = timeoutOverride ?? this.timeout ?? 30000;
         try {
             await all.locator.first().waitFor({ state: 'attached', timeout });
         } catch {
