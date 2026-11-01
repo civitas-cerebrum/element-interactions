@@ -331,6 +331,12 @@ export const test = baseFixture(base, 'tests/data/page-repository.json', {
                                     // click — recommended for adversarial/bug-discovery suites
   blockedOrigins: /(analytics\.com|tracking\.io)/,  // auto-abort matching routes
   screenshotOnFailure: true,        // auto-capture on test failure (default: true)
+  mutationInjection: true,          // forward an opted-in E2E_MUTATION_INIT / E2E_MUTATION_CSS payload to
+                                    // every page and frame of the context, popups included (default: false;
+                                    // inert without the E2E_MUTATION_RUN opt-in) — the hook behavioural
+                                    // mutation runners such as achilles-mutate need. See "6. Mutation
+                                    // injection" below
+  // mutationInjection: { strict: true },  // fail the test when the injection cannot be proven to have applied
   // screenshotOnFailure: { fullPage: false },  // viewport-only screenshots
   // screenshotOnFailure: false,                 // disable screenshots
 });
@@ -437,6 +443,61 @@ test('Authenticated flow', async ({ steps, authService }) => {
 });
 ```
 
+### 6. Mutation injection (for behavioural mutation runners)
+
+A behavioural mutation runner (e.g. `achilles-mutate`) breaks the page on purpose and
+then asks whether your suite noticed. `mutationInjection` is the hook it needs, so the
+project writes none itself. Three environment variables drive it:
+
+| Variable | Meaning |
+|---|---|
+| `E2E_MUTATION_RUN` | **The opt-in.** Nothing is injected unless this is `1` / `true` / `yes`. |
+| `E2E_MUTATION_INIT` | A JS string, run before the page's own scripts in every page and child frame (`context.addInitScript`). |
+| `E2E_MUTATION_CSS` | A CSS string, adopted as a constructable stylesheet from an init script of its own. |
+
+The opt-in exists because the payload variables are ambient: a value left behind by an
+earlier mutation run in the same CI job, exported by a shell profile, or committed to a
+`.env` (this package calls `dotenv`) would otherwise mutate a perfectly normal run and
+the resulting failure would be blamed on your application.
+
+The CSS goes through CSSOM rather than an injected `<style>` element on purpose. A
+`Content-Security-Policy: style-src 'self'` header blocks an inline `<style>` — the
+element lands, the rules never apply — while leaving CSSOM alone; and running from an
+init script puts the rules in place before the document's first script, instead of on
+`load`, which never fires while a subresource hangs. An already-open page gets the CSS
+applied to its current document immediately; `E2E_MUTATION_INIT` cannot reach a document
+that has already run its scripts, so for such a page it lands on the next navigation.
+
+**A mutated run is never silent.** Activation logs a warning and pushes a
+`mutation-injection` annotation onto the test; every page load is sampled for proof that
+the injection applied; anything unprovable (malformed init JS — caught in Node, not only
+inside the page — CSS that parses to no rules, a stylesheet the browser refused, no
+document reporting the injection at all) is reported as a `mutation-injection-error`
+annotation, and CSS that applied but matched no element as a `mutation-injection-warning`.
+With `mutationInjection: { strict: true }` the unprovable cases *fail* the test instead,
+so an injection that never applied cannot be scored as a surviving mutant — a coverage
+gap that was never real.
+
+The helpers are exported for suites that drive a context themselves:
+
+```ts
+import {
+  forwardMutationInjection,
+  readMutationInjection,
+  MUTATION_RUN_VAR,          // 'E2E_MUTATION_RUN'
+  type MutationInjection,    // { init?: string; css?: string }
+  type MutationInjectionOptions,
+  type MutationInjectionHandle,
+} from '@civitas-cerebrum/element-interactions';
+
+readMutationInjection();                      // {} unless E2E_MUTATION_RUN is set
+readMutationInjection(someEnvObject);          // same, from an explicit env
+
+// Explicit payloads need no opt-in — passing them *is* the opt-in.
+const mutation = await forwardMutationInjection(context, { css: '.cart { display: none }' }, { strict: true });
+const problems = await mutation.verify();      // [] once the injection is proven applied
+```
+
 ---
 
 ## 🛠️ API Reference: `Steps`
@@ -452,7 +513,8 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 * **`refresh()`** — Reloads the current page.
 * **`backOrForward(direction: 'back' | 'forward')`** — Navigates the browser history stack in the given direction.
 * **`setViewport(width: number, height: number)`** — Resizes the browser viewport to the specified pixel dimensions.
-* **`switchToNewTab(action: () => Promise<void>)`** — Executes an action that opens a new tab (e.g. clicking a link with `target="_blank"`), waits for the new tab, and returns the new `Page` object.
+* **`switchToNewTab(action: () => Promise<unknown>)`** — Executes an action that opens a new tab (e.g. clicking a link with `target="_blank"`), waits for the new tab, and returns the new `Page` object. The `action`'s return value is ignored, so a value-returning call (e.g. `() => steps.click('walletButton', 'CheckoutPage')`, which resolves a `boolean | void`) is accepted without a `void`-assignability error.
+* **`forPage(page: Page): Steps`** — Returns a `Steps` bound to another page of the same test (a popup, a new tab, a second window) that shares the repository, timeouts, API/SQL clients and logging with the original. Use it with `switchToNewTab`: `const popupSteps = steps.forPage(await steps.switchToNewTab(() => steps.click('openHelp', 'HomePage')))`. The original `Steps` stays bound to its own page.
 * **`closeTab(targetPage?: Page)`** — Closes the specified tab (or the current one) and returns the remaining active page.
 * **`getTabCount()`** — Returns the number of currently open tabs/pages in the browser context.
 
@@ -510,7 +572,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 
 * **`verifyPresence(elementName, pageName)`** — Asserts that an element is attached to the DOM and visible.
 * **`verifyAllPresent(targets: Array<{ elementName, pageName, options? }>)`** — Asserts presence of multiple independent elements in parallel via `Promise.all`. Equivalent to sequential `verifyPresence` calls but resolves all assertions concurrently — useful when a page has many content blocks to assert at once. Example: `await steps.verifyAllPresent([{ elementName: 'title', pageName: 'PDP' }, { elementName: 'price', pageName: 'PDP' }])`.
-* **`verifyAbsence(elementName, pageName)`** — Asserts that an element is hidden or detached from the DOM.
+* **`verifyAbsence(elementName, pageName, options?)`** — Asserts that an element is hidden or detached from the DOM. It resolves the entry through the repository with a short attach slice per `fallback` chain node and passes when no match is visible. The slice is an eighth of the chain's effective timeout, clamped to 250–1000 ms, so `options.timeout` / `.timeout(ms)` buys a slow-hydrating primary more room to attach; the same timeout bounds the underlying `toBeHidden`. For a `fallback` entry it asserts on the variant the repository resolves — the first node that exists — so a primary that exists but is hidden is absent even if the fallback is visible, and a primary that takes longer than the attach slice to attach is treated as missing. A fallback entry whose resolved selector matches several elements throws instead of asserting, because the repository cannot resolve that node's full match set.
 * **`verifyText(elementName, pageName, expectedText?)`** — Asserts element text. Provide `expectedText` for an exact match, or call with no args to assert not empty.
 * **`verifyCount(elementName, pageName, options: CountVerifyOptions)`** — Asserts element count. Accepts `{ exactly: number }`, `{ greaterThan: number }`, `{ lessThan: number }` (combinable with `greaterThan` for a range), `{ greaterThanOrEqual: number }`, or `{ lessThanOrEqual: number }` (combinable with `greaterThanOrEqual` for an inclusive range).
 * **`verifyImages(elementName, pageName, scroll?: boolean, options?: StepOptions & { verifyDecoded?: boolean })`** — Verifies image rendering: checks visibility, valid `src`, and `naturalWidth > 0`. Pass `{ verifyDecoded: true }` in `options` to also run the browser's native `decode()` round-trip (more thorough, adds a CDP round-trip per image; off by default). Scrolls into view by default.
@@ -570,6 +632,7 @@ expect(await res.text()).toContain('Sign in');
   - **awaitable as `Promise<boolean>`** — the probe, never throws. `await steps.isVisible(...)` resolves to `true` / `false`.
   - **chainable with action methods and the matcher tree** — the gate, silently skips when hidden.
   Options: `{ timeout?: number (default 2000), containsText?: string }`.
+  The probe resolves the entry through the repository exactly like an action does — role + accessible name, regex text, `fallback` chains, frame-scoped pages and the chain's own strategy selector (`.nth(i)`, `.byText(...)`, `.byAttribute(...)`) are all honoured — and uses `timeout` as its whole budget, so a missing element reports `false` after about `timeout` ms, never after the repository default. Within that budget the probe re-resolves the entry rather than resolving once and waiting, because a `fallback` chain resolves to whichever node is attached *while the walk runs*: an entry whose primary hydrates part-way into the probe is picked up instead of being answered on the fallback the first walk settled for. Each walk gives the repository a fixed 250 ms per chain node, so a long chain costs the same whatever the budget; a walk is not interruptible, so an entry with a long chain can exceed `timeout` by at most one walk.
 * **`isPresent(elementName, pageName)`** — Boolean presence check with the default element timeout. Equivalent to `await element.isVisible()` on the resolved element.
 
 ```ts

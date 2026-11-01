@@ -1,5 +1,143 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`baseFixture({ mutationInjection })`** — the browser-level hook a behavioural
+  mutation runner (e.g. `achilles-mutate`) needs, so a project using this package
+  writes none itself. With the option on, an opted-in payload is forwarded to every
+  page and child frame of the test's context: `E2E_MUTATION_INIT` as an init script,
+  `E2E_MUTATION_CSS` as a constructable stylesheet adopted from an init script of its
+  own. Accepts `true` or `{ strict: true }`. Default `false`.
+
+  Three things it refuses to do quietly, because the number this feature exists to
+  produce is corrupted by a silent no-op — an injection that never applied leaves the
+  suite green, and the runner writes down "mutant survived", a coverage gap nobody
+  actually has:
+
+  - **It will not inject on ambient environment alone.** `E2E_MUTATION_RUN` (`1`/
+    `true`/`yes`) is a required opt-in; without it a payload is ignored and reported
+    (`log.warn` plus a `mutation-injection-ignored` annotation). A value left behind
+    by an earlier mutation run in the same CI job, exported by a shell profile, or
+    committed to a `.env` — which this package's `dotenv` call loads — can no longer
+    mutate a normal run and have the failure blamed on the application.
+  - **It will not mutate a run without saying so.** Activation logs a warning and
+    pushes a `mutation-injection` annotation, the same pattern as `deadline-click`
+    in 0.3.9, so a report always shows whether the run under inspection was mutated.
+  - **It will not accept an injection it cannot prove applied.** Malformed
+    `E2E_MUTATION_INIT` is caught in Node (it used to throw only inside the page),
+    CSS is checked for parsing to at least one rule and for being adopted by the
+    document, and every page load is sampled; problems become
+    `mutation-injection-error` annotations, or test failures under
+    `{ strict: true }`. CSS that applies but matches no element is reported as a
+    `mutation-injection-warning`.
+
+- `forwardMutationInjection(context, injection?, options?)` and
+  `readMutationInjection(env?)` are exported for suites that drive a context
+  themselves, alongside `MUTATION_RUN_VAR` and the types `MutationInjection`,
+  `MutationInjectionOptions` and `MutationInjectionHandle`. `forwardMutationInjection`
+  now returns a handle whose `verify()` resolves to the list of problems found during
+  the run (empty when the injection is proven to have applied). An explicit
+  `injection` argument needs no opt-in — passing it *is* the opt-in.
+- `steps.forPage(page)` — returns a `Steps` bound to another `Page` of the same
+  test (a popup, a new tab, a second window), so a test never constructs an
+  `ElementRepository` itself to drive one. Repository names resolve on the bound
+  page exactly as they do on the main page. Everything except the page is
+  shared: the repository data and its live resolution timeout (a later
+  `repo.setDefaultTimeout` is seen), the step timeout, `interceptionRetry`, the
+  API and SQL client registries (one connection pool, closed once by the owning
+  fixture), the email client, and the `tester:*` debug logging. The original
+  `Steps` stays bound to its own page — nothing is switched. Pairs with
+  `switchToNewTab`:
+  `const popupSteps = steps.forPage(await steps.switchToNewTab(() => steps.click('walletButton', 'CheckoutPage')))`.
+  Throws if the given page is already closed (a self-closing popup, rather than
+  a target-closed error blamed on the next element), and if the repository
+  cannot be rebound onto it.
+
+### Changed
+
+- `steps.switchToNewTab(action)` accepts a value-returning `action`
+  (`() => Promise<unknown>`). The documented form passes `steps.click(...)`,
+  which resolves `boolean | void` and so did not satisfy the previous
+  `() => Promise<void>` under `tsc --strict`. Same treatment `waitForUrl`
+  already had; callers passing a `void` action are unaffected. Also on
+  `Navigation.switchToNewTab`.
+- **`verifyAbsence` semantics for `fallback` entries.** It no longer asserts on
+  `repo.getSelector(...)` — the first plain-string strategy of the entry, which
+  drops an accessible `name`, cannot express a regex and ignores a page's
+  `frame`, so for a role+name entry it failed while any sibling of that role was
+  shown and for a regex-text or frame-scoped entry it asserted on a selector
+  that could never match anything and passed silently. The entry is now resolved
+  through the repository, and the assertion runs on the first VISIBLE match of
+  the resolved node's match set: absent when every match is hidden or none
+  exists, present when any match is shown. A `fallback` entry is asserted on the
+  variant the repository resolves — the first chain node that exists, the node
+  an action on the entry would target — so a primary that exists but is hidden
+  is absent even while the fallback is visible. The resolution gets a short
+  attach slice per chain node instead of the repository's 15s default, derived
+  from the chain's effective timeout (an eighth of it, clamped to 250–1000ms),
+  so `steps.verifyAbsence(el, page, { timeout })` and
+  `steps.on(el, page).timeout(ms).verifyAbsence()` now reach both the slice and
+  the underlying `toBeHidden`, where previously neither honoured a
+  caller-supplied timeout. A `fallback` entry whose resolved node matches
+  several elements throws rather than asserting: the repository's `ALL`
+  resolution is strict and walks past such a node, and asserting on the node it
+  walks on to would pass while the real one was visible.
+
+### Fixed
+
+- **The mutation CSS no longer has three ways to apply nothing at all.** It used to
+  be attached with `page.addStyleTag` from a `page.on('load')` handler, with the
+  result discarded (`.catch(() => {})`). Under a `Content-Security-Policy:
+  style-src 'self'` header the style element lands and the rules never apply; when
+  `load` never fires — a hanging subresource or a long-poll, exactly the timing the
+  README advertised — nothing was attached at all; a test asserting at
+  `domcontentloaded` or straight after an action-triggered navigation saw a clean
+  page; and a genuine rejection (CSP refusal, closed page, navigation) was swallowed.
+  The CSS is now adopted through CSSOM (`new CSSStyleSheet()` + `replaceSync`, then
+  `document.adoptedStyleSheets`) from an init script: CSP-exempt, in place before the
+  document's first script, and covering child frames, which the style-tag route never
+  reached. Failures are logged, annotated, and — in strict mode — fatal.
+- **A visibility gate no longer skips an element that attaches part-way into the
+  probe.** A repository `fallback` chain resolves to whichever node is attached
+  *while the walk runs*, so a single resolution is a point-in-time answer. An
+  entry whose primary hydrates a second into the probe was therefore answered on
+  the fallback the walk had already settled for — the probe reported `false`,
+  `.visible().click()` skipped silently, and the test went green having clicked
+  nothing, even though the action behind the gate resolves with the repository
+  default and would have found the primary. The probe now re-resolves the entry
+  across its budget, so a late primary is picked up.
+- **A long `fallback` chain no longer reports a visible element hidden.** The
+  probe gave the repository an attach slice of `timeout / 8` per chain node, but
+  a walk costs `(2N-1)` slices, so from five nodes on the walk consumed the
+  whole budget and the node it landed on was left a 1ms visibility wait — which
+  reported an element that had been visible since page load as hidden. The slice
+  is now a fixed duration rather than a fraction of the budget, and the node the
+  walk lands on is looked at with no wait at all before any remaining budget is
+  consulted.
+- **A visibility probe honours the chain's strategy selector.** `.nth(i)`,
+  `.byText(...)` and `.byAttribute(...)` were dropped when building the probe
+  target, so every probe answered for the entry's first match. On a list whose
+  first row was hidden, `steps.on('rows', page).nth(1).isVisible().click()`
+  reported `false` and skipped a click on a perfectly visible second row.
+- **`verifyAbsence` no longer misdiagnoses an ordinary single-match primary.**
+  It resolves the entry twice (default and `ALL`) to detect a multi-match node
+  the strict `ALL` walk would step over. The two walks ran back to back, so they
+  looked at two different moments in the page's life: a single-match primary
+  that attached between them made them land on different nodes, and the
+  divergence was reported as "a fallback entry whose resolved selector matches
+  several elements" — a diagnosis of a selector neither node had. The two
+  resolutions now run concurrently and a divergence is confirmed by a second
+  round before it is blamed on a multi-match selector.
+- **`verifyAbsence` no longer leaks an `ElementHandle`.** The handle backing the
+  multi-match cross-check was disposed only on the success path, so every
+  `evaluateAll` that threw left a handle alive in the browser process for the
+  lifetime of the page. Disposal now runs in a `finally`, and a cross-check that
+  fails for reasons of the page's own churn (the node detaching mid-evaluation,
+  a navigation tearing the execution context down) is retried rather than
+  reported as an assertion failure.
+
 ## 0.3.11 — 2026-11-01
 
 ### Fixed
