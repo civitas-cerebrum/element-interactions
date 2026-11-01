@@ -61,11 +61,11 @@ const ABSENCE_ATTACH_SLICE_FLOOR_MS = 250;
 const ABSENCE_ATTACH_SLICE_CAP_MS = 1000;
 
 /**
- * How many times `verifyAbsence` resolves the entry before it blames a
- * divergence between the default and `ALL` resolutions on a multi-match
- * selector. One extra attempt is enough: a multi-match selector diverges on
- * every attempt, whereas a node that attached while the two walks were in
- * flight agrees on the retry.
+ * How many times `verifyAbsence` resolves the entry before it reports a
+ * divergence between the default and `ALL` resolutions. One extra attempt is
+ * enough: a node that attached while the two walks were in flight agrees on
+ * the retry, and a divergence that persists is a real disagreement about which
+ * chain node exists.
  */
 const ABSENCE_RESOLVE_ATTEMPTS = 2;
 
@@ -594,7 +594,8 @@ export class ElementAction {
      * ({@link absenceAttachSlice}), so `.timeout(ms)` and the `StepOptions`
      * timeout buy a slow-hydrating primary more room instead of being ignored
      * in favour of a hard-coded constant. A resolved node that matches several
-     * elements throws (see body).
+     * elements is asserted on its whole match set: absent only when every
+     * match is hidden.
      *
      * Scoped `findBy*` chains assert on the child locator itself (the stamped
      * scoped name has no repository entry). Resolving the PARENT still waits
@@ -616,21 +617,20 @@ export class ElementAction {
             divergence = undefined;
             // A `fallback` entry is asserted on the variant the repository
             // resolves: the first chain node that exists, exactly as an action
-            // would target. The default (first-match) resolution walks the
-            // chain correctly. The ALL resolution does not when a node matches
-            // several elements: the repository's attach wait on that match set
-            // is strict, throws, and walks on to the next node — which, for an
-            // absent fallback, would be a false PASS. So resolve both and
-            // refuse to assert when they diverge.
+            // would target. The assertion needs that node's FULL match set, so
+            // it reads the ALL resolution — and cross-checks it against the
+            // default one, refusing to assert when they land on different
+            // nodes: asserting on a node the action would not target (for an
+            // absent fallback, a false PASS) is worse than failing loudly.
+            // element-repository 0.3.4 and later probe a node by its first
+            // match under every strategy, so the two agree on a multi-match
+            // node; before that, ALL walked past it.
             //
             // The two resolutions run CONCURRENTLY, and a divergence is
-            // confirmed by a second round before it is blamed on a multi-match
-            // selector. Run back to back they were two walks over two different
-            // moments in the page's life, so a perfectly ordinary single-match
-            // primary that attached between them made the walks land on
-            // different nodes — and the mismatch was reported to the user as
-            // "a fallback entry whose resolved selector matches several
-            // elements", a diagnosis with nothing to do with the real cause.
+            // confirmed by a second round before it is reported. Run back to
+            // back they were two walks over two different moments in the page's
+            // life, so a perfectly ordinary single-match primary that attached
+            // between them made the walks land on different nodes.
             const [resolved, all] = (await Promise.all([
                 this.repo.get(this.elementName, this.pageName, { timeout: slice }),
                 this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL, timeout: slice }),
@@ -658,9 +658,9 @@ export class ElementAction {
             }
             if (inMatchSet) break;
             divergence = new Error(
-                `verifyAbsence: "${this.elementName}" on "${this.pageName}" is a fallback entry whose resolved selector matches several elements; ` +
-                `the repository cannot resolve that node's full match set, so absence cannot be asserted reliably. ` +
-                `Make the selector match a single element.`,
+                `verifyAbsence: "${this.elementName}" on "${this.pageName}" is a fallback entry whose default and ALL resolutions ` +
+                `landed on different chain nodes on ${ABSENCE_RESOLVE_ATTEMPTS} consecutive attempts, so absence cannot be asserted reliably. ` +
+                `Check that @civitas-cerebrum/element-repository is 0.3.4 or later.`,
             );
         }
         if (divergence) throw divergence;

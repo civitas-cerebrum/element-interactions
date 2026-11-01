@@ -27,6 +27,11 @@ const CATALOGUE = `
         <li class="row">soup ¤4.00</li>
     </ul>
     <ul class="later"></ul>
+    <ul class="archived">
+        <li class="archived-row" hidden>old one</li>
+        <li class="archived-row" hidden>old two</li>
+    </ul>
+    <p class="legacy-row">legacy row</p>
     <script>
         setTimeout(function () {
             var li = document.createElement('li');
@@ -54,6 +59,10 @@ const REPOSITORY = {
                 { elementName: 'promoRowsNoFlag', selector: { css: 'li.promo' } },
                 { elementName: 'lateRows', list: true, selector: { css: 'li.late' } },
                 { elementName: 'slowRows', list: true, selector: { css: 'li.slow' } },
+                // Multi-match primaries with a fallback (element-repository >= 0.3.4
+                // resolves the primary, not the fallback, under the ALL strategy).
+                { elementName: 'rowsWithAbsentFallback', list: true, selector: { css: 'li.row', fallback: { css: 'li.nope' } } },
+                { elementName: 'hiddenRowsWithVisibleFallback', list: true, selector: { css: 'li.archived-row', fallback: { css: 'p.legacy-row' } } },
             ],
         },
     ],
@@ -134,6 +143,29 @@ test.describe('list: true — verifyPresence', () => {
         expect(isListEntry(repo, 'nope', 'CataloguePage')).toBe(false);
         expect(isListEntry(repo, 'rows', 'NoSuchPage')).toBe(false);
         log('list entries: unknown names answer false — passed');
+    });
+});
+
+test.describe('list: true — fallback chain with a multi-match primary', () => {
+
+    test('verifyPresence judges the visible multi-match primary, not its absent fallback', async ({ page }) => {
+        const steps = await catalogueSteps(page);
+        await steps.verifyPresence('rowsWithAbsentFallback', 'CataloguePage');
+        log('list entries: multi-match primary, absent fallback — passed');
+    });
+
+    test('verifyPresence judges the hidden multi-match primary, not its visible fallback', async ({ page }) => {
+        const steps = await catalogueSteps(page);
+        await expect(steps.verifyPresence('hiddenRowsWithVisibleFallback', 'CataloguePage'))
+            .rejects.toThrow(/is a list entry \("list": true\).*found 2 match\(es\) and none visible/);
+        log('list entries: hidden multi-match primary, visible fallback — passed');
+    });
+
+    test('getAll returns the multi-match primary, not the fallback', async ({ page }) => {
+        const steps = await catalogueSteps(page);
+        expect(await steps.getAll('rowsWithAbsentFallback', 'CataloguePage')).toEqual(['Sold out', 'veggie-wrap ¤6.50', 'soup ¤4.00']);
+        expect(await steps.getAll('hiddenRowsWithVisibleFallback', 'CataloguePage')).toEqual(['old one', 'old two']);
+        log('list entries: getAll multi-match primary with fallback — passed');
     });
 });
 

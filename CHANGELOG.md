@@ -81,9 +81,9 @@
   `steps.on(el, page).timeout(ms).verifyAbsence()` now reach both the slice and
   the underlying `toBeHidden`, where previously neither honoured a
   caller-supplied timeout. A `fallback` entry whose resolved node matches
-  several elements throws rather than asserting: the repository's `ALL`
-  resolution is strict and walks past such a node, and asserting on the node it
-  walks on to would pass while the real one was visible.
+  several elements is asserted on that node's whole match set (absent only when
+  every match is hidden); this needs element-repository 0.3.4, whose `ALL`
+  resolution no longer walks past a multi-match node.
 
 ### Fixed
 
