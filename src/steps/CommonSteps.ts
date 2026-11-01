@@ -10,6 +10,7 @@ import { BrowserResponse, BrowserRequestOptions } from '../interactions/BrowserR
 import { ExpectNoRequestOptions, WaitUntilState, WaitForNetworkIdleOptions, LoadState } from '../interactions/Navigation';
 import { stepLog as log } from '../logger/Logger';
 import { ElementAction } from './ElementAction';
+import { isListEntry } from './listEntry';
 import { ExpectBuilder } from './ExpectMatchers';
 
 /**
@@ -1123,6 +1124,13 @@ export class Steps {
 
     /**
      * Extracts text content or attribute values from all elements matching the locator.
+     *
+     * For a repository entry declared `"list": true` (and no narrowing
+     * `strategy` in `options`), the collection must be non-empty: the step
+     * waits up to the step timeout for at least one match and throws when there
+     * is none, instead of returning `[]`. Entries without the flag keep the
+     * lenient behaviour (an empty array when nothing matches).
+     *
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param getAllOptions - Optional extraction configuration.
@@ -1134,6 +1142,10 @@ export class Steps {
         // `locateChild` widens the return type back to Element, so keep the
         // local as Element and narrow at the extract boundary.
         let element: Element = await this.getAllWebElement(elementName, pageName, options);
+
+        if ((!options?.strategy || options.strategy === 'all') && isListEntry(this.repo, elementName, pageName)) {
+            await this.requireListMatch(element as WebElement, elementName, pageName, 'getAll', options?.timeout);
+        }
 
         if (getAllOptions?.child) {
             if (typeof getAllOptions.child === 'string') {
@@ -1151,6 +1163,25 @@ export class Steps {
         }
 
         return await this.extract.getAllTexts(element as WebElement);
+    }
+
+    /**
+     * Enforces the `"list": true` contract (count ≥ 1): waits up to the step
+     * timeout for the collection's first match to attach, and throws a message
+     * naming the entry when nothing ever matches. A per-call
+     * `StepOptions.timeout` takes precedence over the instance timeout, in both
+     * directions (shorter or longer).
+     */
+    private async requireListMatch(all: WebElement, elementName: string, pageName: string, step: string, timeoutOverride?: number): Promise<void> {
+        const timeout = timeoutOverride ?? this.timeout ?? 30000;
+        try {
+            await all.locator.first().waitFor({ state: 'attached', timeout });
+        } catch {
+            throw new Error(
+                `${step}: '${pageName}.${elementName}' is a list entry ("list": true) — ` +
+                `expected at least one match within ${timeout}ms, found 0.`,
+            );
+        }
     }
 
     // ==========================================

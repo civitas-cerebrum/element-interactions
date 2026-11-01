@@ -459,12 +459,12 @@ test.describe('verifyAbsence resolves the full repository selector', () => {
 
     test('fallback chain with a multi-match primary never passes falsely', async ({ page }) => {
         const steps = await shopSteps(page);
-        // The repository's ALL resolution walks past a primary that matches
-        // several elements (strict attach wait) to the absent fallback; asserting
-        // on that would pass while the primary is visible.
-        await expect(steps.verifyAbsence('visibleMultiPrimary', 'ShopPage')).rejects.toThrow();
-        // Documented limit: such an entry is refused even when every match is hidden.
-        await expect(steps.verifyAbsence('hiddenMultiPrimary', 'ShopPage')).rejects.toThrow(/matches several elements/);
+        // A primary that matches several elements is the node the chain
+        // resolves (element-repository >= 0.3.4), never its absent fallback:
+        // asserting on the fallback would pass while the primary is visible.
+        await expect(steps.verifyAbsence('visibleMultiPrimary', 'ShopPage')).rejects.toThrow(/toBeHidden/);
+        // Every match of the multi-match primary hidden: absent, on the primary.
+        await steps.verifyAbsence('hiddenMultiPrimary', 'ShopPage');
         log('absence resolution: multi-match fallback primary — passed');
     });
 
