@@ -1117,7 +1117,12 @@ export class Steps {
      */
     async verifyAbsence(elementName: string, pageName: string, options?: StepOptions): Promise<void> {
         log.verify('Verifying absence of "%s" in "%s"', elementName, pageName);
-        await this.actionWithStrategy(elementName, pageName, options).verifyAbsence();
+        const action = this.actionWithStrategy(elementName, pageName, options);
+        // `verifyAbsence` derives its per-node attach slice and its `toBeHidden`
+        // budget from the chain's effective timeout, so a caller-supplied
+        // `timeout` has to be applied to the chain to reach either of them.
+        if (options?.timeout !== undefined) action.timeout(options.timeout);
+        await action.verifyAbsence();
     }
 
     /**

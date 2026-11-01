@@ -124,13 +124,18 @@ export class Verifications {
      * Asserts that the specified element is either hidden or completely detached from the DOM.
      * Accepts a Target or a raw selector string to prevent unnecessary repository waits.
      * @param selectorOrTarget - A Playwright Locator, Element, or raw selector string.
+     * @param options - Standard verification options. Honouring `timeout` here
+     *   is what makes `steps.on(el, page).timeout(ms).verifyAbsence()` mean
+     *   anything: without it the caller's timeout reached the resolution but
+     *   not `toBeHidden`, which is the wait that decides the assertion.
      */
-    async absence(selectorOrTarget: WebElement | string): Promise<void> {
+    async absence(selectorOrTarget: WebElement | string, options?: VerifyOptions): Promise<void> {
         const locator = typeof selectorOrTarget === 'string'
             ? this.page.locator(selectorOrTarget)
             : resolveLocator(selectorOrTarget);
 
-        await expect(locator).toBeHidden({ timeout: this.ELEMENT_TIMEOUT });
+        const { matcher, timeout } = this.prepare(locator, options);
+        await matcher.toBeHidden({ timeout });
     }
 
     /**
