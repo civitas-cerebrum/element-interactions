@@ -4,7 +4,6 @@ import {
     ElementType,
     PlatformNotSupportedError,
     PlaywrightFactory,
-    PlaywrightGestures,
     Interactions,
     Verifications,
     Extractions,
@@ -12,6 +11,7 @@ import {
 } from '../src/index';
 import type { IInteractionFactory } from '../src/index';
 import { ElementAction } from '../src/steps/ElementAction';
+import { PlaywrightGestures } from '../src/playwright/PlaywrightGestures';
 import { ExpectBuilder } from '../src/steps/ExpectMatchers';
 import { ReResolvingElement } from '../src/appium/ReResolvingElement';
 import type { EntryTarget } from '../src/interfaces/IEntryTarget';

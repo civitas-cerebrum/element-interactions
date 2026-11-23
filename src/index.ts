@@ -8,8 +8,6 @@ export { Interactions, Interactions as PlaywrightInteractions } from './playwrig
 export { Extractions, Extractions as PlaywrightExtractions } from './playwright/PlaywrightExtractions';
 export { BrowserRequest } from './playwright/BrowserRequest';
 export type { BrowserResponse, BrowserRequestOptions } from './playwright/BrowserRequest';
-export { PlaywrightGestures } from './playwright/PlaywrightGestures';
-export { PlaywrightDevice } from './playwright/PlaywrightDevice';
 export { PlaywrightFactory } from './playwright/PlaywrightFactory';
 export type { PlaywrightFactoryOptions } from './playwright/PlaywrightFactory';
 
@@ -23,9 +21,12 @@ export type {
     IUtils,
     IGestures,
     Direction,
+    ScreenSwipeOptions,
     IDevice,
     Orientation,
     PermissionState,
+    DeviceVerifyOptions,
+    EntryTarget,
     IInteractionFactory,
 } from './interfaces';
 // (vocabulary and error are element-repository's own; re-exported so `instanceof` works across packages)

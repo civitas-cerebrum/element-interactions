@@ -9,8 +9,6 @@ import {
     isPlatformName,
     familyOf,
     PlaywrightFactory,
-    PlaywrightGestures,
-    PlaywrightDevice,
     PlaywrightInteractions,
     PlaywrightVerifications,
     PlaywrightExtractions,
@@ -22,6 +20,8 @@ import {
     Utils,
 } from '../src/index';
 import type { Platform, IDevice } from '../src/index';
+import { PlaywrightGestures } from '../src/playwright/PlaywrightGestures';
+import { PlaywrightDevice } from '../src/playwright/PlaywrightDevice';
 
 /**
  * Pure unit tests for the platform interfaces: the shared vocabulary, the
