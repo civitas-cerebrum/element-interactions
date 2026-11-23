@@ -593,6 +593,16 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(await i.getListedElement(list, { text: 'Order', attribute: { name: 'content-desc', value: { regex: '2$' } } })).toBe(b);
         });
 
+        test('getListedElement tests a regex on the item text as the element reports it, untrimmed (web hasText)', async () => {
+            const { factory } = setup(2000);
+            const i = factory.createInteractions();
+            const plain = mockElement({ text: 'Padded' });
+            const padded = mockElement({ text: '  Padded  ' });
+            const list = mockElement({ children: [plain, padded] });
+            expect(await i.getListedElement(list, { text: { regex: '^\\s+Padded\\s+$' } })).toBe(padded);
+            expect(await i.getListedElement(list, { text: '  padded ' })).toBe(plain);
+        });
+
         test('getListedElement polls until the item appears (3rd read), then fails after its timeout', async () => {
             const { factory } = setup(3000);
             const late = mockElement({ text: 'late item' });

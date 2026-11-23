@@ -193,11 +193,12 @@ for (const platform of DEVICE_PLATFORMS) {
         test('absence never passes on a fatal driver error (dead session)', async () => {
             const dead = Object.assign(new Error('invalid session id'), { name: 'invalid session id' });
             const el = mockElement({ visible: async () => { throw dead; } });
-            const error = await factory().createVerifications().absence(el, { timeout: 150 }).catch(e => e);
-            expect(error).toBeInstanceOf(PollTimeoutError);
-            expect(error.message).toContain('invalid session id');
+            const started = Date.now();
+            const error = await factory().createVerifications().absence(el, { timeout: 5000 }).catch(e => e);
+            expect(error).toBe(dead);
             const listDead = { ...mockElement(), all: async () => { throw dead; } } as unknown as Element;
-            expect(await factory().createVerifications().absence(listDead, { timeout: 150 }).catch(e => e)).toBeInstanceOf(PollTimeoutError);
+            expect(await factory().createVerifications().absence(listDead, { timeout: 5000 }).catch(e => e)).toBe(dead);
+            expect(Date.now() - started).toBeLessThan(1000);
         });
 
         test(`state 'focused' ${platform === 'android' ? 'polls the focused attribute' : 'throws PlatformNotSupportedError'}`, async () => {

@@ -498,6 +498,16 @@ for (const platform of DEVICE_PLATFORMS) {
             expect((error as Error).message).toContain('Last value: "portrait"');
         });
 
+        test('verifyOrientation fails at once on a dead session, not at the step timeout', async () => {
+            const { steps, mock } = deviceSteps(platform, 5000);
+            const dead = Object.assign(new Error('invalid session id'), { name: 'invalid session id' });
+            (mock.driver as unknown as { getOrientation: () => Promise<string> }).getOrientation = async () => { throw dead; };
+            const started = Date.now();
+            const error = await caught(() => steps.verifyOrientation('landscape'));
+            expect(error).toBe(dead);
+            expect(Date.now() - started).toBeLessThan(2000);
+        });
+
         test('verifyOrientation refuses an unknown orientation before polling', async () => {
             const { steps, mock } = deviceSteps(platform);
             const error = await caught(() => steps.verifyOrientation('upside-down' as Orientation));

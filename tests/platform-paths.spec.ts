@@ -69,10 +69,10 @@ function listTree(overrides: { rowVisible?: Array<MockNode['visible']>; rows?: b
     ];
 }
 
-function deviceSteps(platform: 'android' | 'ios', tree: MockNode[]) {
+function deviceSteps(platform: 'android' | 'ios', tree: MockNode[], timeout = STEP_TIMEOUT) {
     const mock = mockUiDriver(tree, { capabilities: { platformName: platform } });
-    const repo = new ElementRepository(mock.driver, pages(platform), { platform, timeout: STEP_TIMEOUT });
-    const factory = new AppiumFactory(mock.driver, platform, { timeout: STEP_TIMEOUT, appId: 'com.example.app' });
+    const repo = new ElementRepository(mock.driver, pages(platform), { platform, timeout });
+    const factory = new AppiumFactory(mock.driver, platform, { timeout, appId: 'com.example.app' });
     const steps = new Steps(factory, repo);
     return { steps, mock };
 }
@@ -215,10 +215,11 @@ for (const platform of DEVICE_PLATFORMS) {
         });
 
         test('a dead session fails list presence and getAll with the driver error, never "found 0"', async () => {
-            const { steps, mock } = deviceSteps(platform, listTree());
+            const { steps, mock } = deviceSteps(platform, listTree(), 5000);
             mock.failWith(driverError('invalid session id', 'invalid session id: the session is gone'));
-            const presence = await caught(() => steps.verifyPresence('rows', 'Screen'));
+            const { error: presence, elapsed } = await timed(() => steps.verifyPresence('rows', 'Screen'));
             expect(presence?.message).toMatch(/invalid session id/);
+            expect(elapsed, 'a dead session fails at once, not at the step timeout').toBeLessThan(2000);
             const all = await caught(() => steps.getAll('rows', 'Screen'));
             expect(all?.message).toMatch(/invalid session id/);
             expect(all?.message).not.toMatch(/found 0/);
@@ -278,14 +279,16 @@ for (const platform of DEVICE_PLATFORMS) {
         });
 
         test('a dead session fails a listed-element step with the driver error', async () => {
-            const { steps, mock } = deviceSteps(platform, listTree());
+            const { steps, mock } = deviceSteps(platform, listTree(), 5000);
             mock.failWith(driverError('invalid session id', 'invalid session id: the session is gone'));
             for (const run of [
                 () => steps.clickListedElement('rows', 'Screen', { text: 'banana' }),
                 () => steps.verifyListedElement('rows', 'Screen', { text: 'banana' }),
                 () => steps.getListedElementData('rows', 'Screen', { text: 'banana' }),
-            ]) {
-                expect((await caught(run))?.message).toMatch(/invalid session id/);
+            ] as Array<() => Promise<unknown>>) {
+                const { error, elapsed } = await timed(run);
+                expect(error?.message).toMatch(/invalid session id/);
+                expect(elapsed, 'a dead session fails at once, not at the step timeout').toBeLessThan(2000);
             }
             expect(mock.calls.filter(c => c[0] === 'click')).toEqual([]);
         });

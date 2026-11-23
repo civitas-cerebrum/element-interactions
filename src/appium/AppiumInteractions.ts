@@ -45,8 +45,12 @@ function listedTextMatches(actual: string, matcher: TextMatcher): boolean {
     return normaliseWhitespace(actual).toLowerCase().includes(normaliseWhitespace(matcher).toLowerCase());
 }
 
-async function trimmedText(el: Element): Promise<string> {
-    return ((await el.textContent()) ?? '').trim();
+/**
+ * An item's text as the driver reports it, untrimmed: a regex matcher sees the
+ * full text, as web's `hasText` regex does; a string matcher normalises it.
+ */
+async function itemText(el: Element): Promise<string> {
+    return (await el.textContent()) ?? '';
 }
 
 /**
@@ -245,7 +249,7 @@ export class AppiumInteractions implements IInteractions {
             const found = await e.locateChild(descendantSelector).all();
             if (descendant?.text === undefined) return found.length > 0;
             for (const d of found) {
-                if (listedTextMatches(await trimmedText(d), descendant.text)) return true;
+                if (listedTextMatches(await itemText(d), descendant.text)) return true;
             }
             return false;
         };
@@ -253,7 +257,7 @@ export class AppiumInteractions implements IInteractions {
         const pick = async (): Promise<Element | undefined> => {
             const all = await base.all();
             const text = options.text;
-            const texts = text !== undefined ? await Promise.all(all.map(trimmedText)) : [];
+            const texts = text !== undefined ? await Promise.all(all.map(itemText)) : [];
             for (let i = 0; i < all.length; i++) {
                 if (text !== undefined && !listedTextMatches(texts[i], text)) continue;
                 if (!(await matchesAttribute(all[i]))) continue;

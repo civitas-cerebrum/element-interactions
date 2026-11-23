@@ -1,3 +1,5 @@
+import { isFatalDriverError } from './driverErrors';
+
 /** Options for {@link pollUntil}. */
 export interface PollOptions {
     /** Deadline in ms, measured from the call. At least one probe always runs, even with `0`. */
@@ -79,6 +81,9 @@ async function boundedProbe<T>(probe: () => Promise<T> | T, budget: number): Pro
  *   style), and rejects by returning `false` or throwing.
  * - A throwing `probe` (stale element, element not found yet) is retried,
  *   not thrown, until the deadline.
+ * - A FATAL driver error from the probe (dead session, invalid selector, lost
+ *   connection) is rethrown at once, unwrapped, as element-repository's own
+ *   polling lookups do: no amount of polling fixes it.
  * - Probes run every `interval` ms (100 by default); the last sleep is cut
  *   short at the deadline, and one final probe runs at the deadline.
  * - A single probe is bounded too: it is raced against the time left (never
@@ -116,14 +121,17 @@ export async function pollUntil<T>(
     let lastError: unknown;
 
     for (;;) {
+        let probed = false;
         try {
             // Never a zero budget, even with `interval: 0` at the deadline.
             const value = await boundedProbe(probe, Math.max(deadline - Date.now(), interval, 1));
+            probed = true;
             hasValue = true;
             lastValue = value;
             lastError = undefined;
             if (check(value) !== false) return value;
         } catch (error) {
+            if (!probed && isFatalDriverError(error)) throw error;
             lastError = error;
         }
         const remaining = deadline - Date.now();

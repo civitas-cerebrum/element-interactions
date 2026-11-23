@@ -146,6 +146,46 @@ test.describe('pollUntil', () => {
         }
     });
 
+    const fatalProbeErrors: Array<[string, Error]> = [
+        ['name invalid session id', Object.assign(new Error('session gone'), { name: 'invalid session id' })],
+        ['name invalid selector', Object.assign(new Error('bad query'), { name: 'invalid selector' })],
+        ['message ECONNREFUSED', new Error('connect ECONNREFUSED 127.0.0.1:4723')],
+        ['message terminated session', new Error('A session is either terminated or not started')],
+    ];
+    for (const [label, fatal] of fatalProbeErrors) {
+        test(`a fatal driver error from the probe is rethrown at once, unwrapped (${label})`, async () => {
+            let calls = 0;
+            const probe = async () => { calls++; throw fatal; };
+            const started = Date.now();
+            const error = await pollUntil(probe, () => true, { timeout: 5000, interval: 10 }).catch(e => e);
+            expect(error).toBe(fatal);
+            expect(calls).toBe(1);
+            expect(Date.now() - started).toBeLessThan(200);
+        });
+    }
+
+    test('a check that throws fatal-looking text is retried, not rethrown', async () => {
+        const { probe, calls } = sequence([1, 2]);
+        const value = await pollUntil(probe, v => {
+            if (v === 1) throw new Error('invalid session id in assertion text');
+        }, { timeout: 2000, interval: 5 });
+        expect(value).toBe(2);
+        expect(calls()).toBe(2);
+    });
+
+    test('transient probe errors are retried until a fatal one, which is rethrown', async () => {
+        const fatal = Object.assign(new Error('session gone'), { name: 'invalid session id' });
+        let calls = 0;
+        const probe = async () => {
+            calls++;
+            if (calls <= 2) throw Object.assign(new Error('element not found'), { name: 'no such element' });
+            throw fatal;
+        };
+        const error = await pollUntil(probe, () => true, { timeout: 5000, interval: 5 }).catch(e => e);
+        expect(error).toBe(fatal);
+        expect(calls).toBe(3);
+    });
+
     test('rejects an invalid timeout or interval up front', async () => {
         await expect(pollUntil(async () => 1, () => true, { timeout: -1 })).rejects.toThrow(/timeout must be/);
         await expect(pollUntil(async () => 1, () => true, { timeout: Number.NaN })).rejects.toThrow(/timeout must be/);
