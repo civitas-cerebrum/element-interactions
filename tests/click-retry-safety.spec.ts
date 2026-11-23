@@ -271,6 +271,39 @@ test.describe('Click retry safety (branches the widget fixtures cannot reach)', 
         expect(testInfo.annotations.find(a => a.type === 'deadline-click')).toBeFalsy();
     });
 
+    for (const option of ['force', 'withoutScrolling'] as const) {
+        test(`click({ ${option} }) on a never-attached element fails within one timeout`, async ({ page }) => {
+            await pageWithCountingButton(page);
+            const missing = new WebElement(page.locator('#never-there'));
+            const interactions = new Interactions(page);
+
+            // 1.5s is under the 2s soft-probe cap, so a probe before the click's own
+            // attach wait would make this fail after about twice the timeout.
+            const started = Date.now();
+            await expect(interactions.click(missing, { [option]: true, timeout: 1500 })).rejects.toThrow(/Timeout 1500ms exceeded/);
+            const elapsed = Date.now() - started;
+            expect(elapsed, `expected the failure after about 1.5s, took ${elapsed}ms`).toBeLessThan(2300);
+        });
+
+        test(`click({ ${option} }) dispatches once on an attached element, and on one attached late within the timeout`, async ({ page }) => {
+            const button = await pageWithCountingButton(page);
+            const interactions = new Interactions(page);
+            await interactions.click(button, { [option]: true, timeout: 1500 });
+            expect(await btnClicks(page)).toBe(1);
+
+            await page.evaluate(() => {
+                setTimeout(() => {
+                    const late = document.createElement('button');
+                    late.id = 'late';
+                    late.addEventListener('click', () => { (window as unknown as { __clicks: number }).__clicks++; });
+                    document.body.appendChild(late);
+                }, 500);
+            });
+            await interactions.click(new WebElement(page.locator('#late')), { [option]: true, timeout: 3000 });
+            expect(await btnClicks(page)).toBe(2);
+        });
+    }
+
     test('fast path: an immediately actionable click is unchanged', async ({ page }, testInfo) => {
         const button = await pageWithCountingButton(page);
 

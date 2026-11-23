@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { mkdtemp, readFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import type { Element } from '@civitas-cerebrum/element-repository';
+import { buildTouchSwipe, type Element } from '@civitas-cerebrum/element-repository';
 import {
     AppiumFactory,
     AppiumInteractions,
@@ -520,9 +520,8 @@ for (const platform of DEVICE_PLATFORMS) {
             const { factory, calls } = setup();
             const el = mockElement({ box: { x: 100, y: 200, width: 50, height: 20 } });
             await factory.createInteractions().dragAndDrop(el, { xOffset: 30, yOffset: -40 });
-            const actions = touches(calls)[0][0].actions;
-            expect(actions[0]).toMatchObject({ x: 125, y: 210 });
-            expect(actions[2]).toMatchObject({ x: 155, y: 170, duration: 600 });
+            expect(touches(calls)).toEqual([buildTouchSwipe({ x: 125, y: 210 }, { x: 155, y: 170 }, { holdMs: 0, moveMs: 600 })]);
+            expect(calls.filter(c => c[0] === 'performActions' || c[0] === 'releaseActions').map(c => c[0])).toEqual(['performActions', 'releaseActions']);
             await expect(factory.createInteractions().dragAndDrop(el, { xOffset: 1 })).rejects.toThrow(/must provide either 'target'/);
         });
 

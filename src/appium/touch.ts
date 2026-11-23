@@ -1,5 +1,5 @@
 import { performTouchActions, performTouchSwipe, touchPointers } from '@civitas-cerebrum/element-repository';
-import type { SwipeDirection, TouchAction, TouchPoint } from '@civitas-cerebrum/element-repository';
+import type { SwipeDirection, TouchPoint } from '@civitas-cerebrum/element-repository';
 import type { AppiumDriver } from './platform/PlatformStrategy';
 
 /**
@@ -8,8 +8,8 @@ import type { AppiumDriver } from './platform/PlatformStrategy';
  * element-repository's (`performTouchSwipe`, `performTouchActions`,
  * `touchPointers`); this module adds only what element-repository does not
  * own: the window geometry of a screen swipe (the safe-area inset each
- * platform strategy chooses), and the screen tap and offset drag, composed
- * with the same helpers.
+ * platform strategy chooses), the screen tap (composed with the same
+ * helpers) and the offset drag (a `performTouchSwipe` with no hold).
  */
 
 /** A point in native-context viewport coordinates. */
@@ -23,16 +23,21 @@ export interface WindowSize { width: number; height: number }
  * the platforms' touch slop and registers as a tap, not a scroll.
  */
 export const MIN_SWIPE_DISTANCE = 10;
-/** How long a screen tap holds the finger down, in ms. */
+/**
+ * How long a screen tap holds the finger down, in ms: the hold of
+ * element-repository's `PlatformElement.tapAt`, which keeps that value
+ * private; a unit test fails if the two drift apart.
+ */
 export const TAP_HOLD_MS = 50;
 
-const moveTo = (p: Point, duration = 0): TouchAction =>
-    ({ type: 'pointerMove', duration, x: Math.round(p.x), y: Math.round(p.y), origin: 'viewport' });
-
-/** Taps the screen at `at`: finger down, a {@link TAP_HOLD_MS} hold, finger up; the actions are always released. */
+/**
+ * Taps the screen at `at` (rounded): finger down, a {@link TAP_HOLD_MS} hold,
+ * finger up, the action sequence of `PlatformElement.tapAt`; the actions are
+ * always released.
+ */
 export async function touchTap(driver: AppiumDriver, at: Point): Promise<void> {
     await performTouchActions(driver, touchPointers([[
-        moveTo(at),
+        { type: 'pointerMove', duration: 0, origin: 'viewport', x: Math.round(at.x), y: Math.round(at.y) },
         { type: 'pointerDown', button: 0 },
         { type: 'pause', duration: TAP_HOLD_MS },
         { type: 'pointerUp', button: 0 },
@@ -41,16 +46,11 @@ export async function touchTap(driver: AppiumDriver, at: Point): Promise<void> {
 
 /**
  * Drags one finger from `from` to `to` over `duration` ms with no hold first
- * (an offset drag, unlike a swipe's press-and-hold start); the actions are
- * always released.
+ * (an offset drag, unlike a swipe's press-and-hold start): element-repository's
+ * `performTouchSwipe` with a zero hold, so the actions are always released.
  */
 export async function touchDrag(driver: AppiumDriver, from: Point, to: Point, duration: number): Promise<void> {
-    await performTouchActions(driver, touchPointers([[
-        moveTo(from),
-        { type: 'pointerDown', button: 0 },
-        moveTo(to, duration),
-        { type: 'pointerUp', button: 0 },
-    ]]));
+    await performTouchSwipe(driver, from, to, { holdMs: 0, moveMs: duration });
 }
 
 /** The window size in native-context viewport coordinates. */

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { buildTouchSwipe, PlatformNotSupportedError, SWIPE_HOLD_MS, SWIPE_MOVE_MS } from '@civitas-cerebrum/element-repository';
+import { buildTouchSwipe, PlatformElement, PlatformNotSupportedError, SWIPE_HOLD_MS, SWIPE_MOVE_MS } from '@civitas-cerebrum/element-repository';
 import type { IDevice } from '../src/interfaces';
 import {
     AppiumDevice,
@@ -16,7 +16,7 @@ import { MissingAppIdError } from '../src/appium/AppiumDevice';
 import { STRATEGY_METHODS } from '../src/appium/platform/notImplemented';
 import { IOS_SWIPE_INSET } from '../src/appium/platform/ios';
 import { ANDROID_SWIPE_INSET } from '../src/appium/platform/android';
-import { MIN_SWIPE_DISTANCE, touchSwipe } from '../src/appium/touch';
+import { MIN_SWIPE_DISTANCE, TAP_HOLD_MS, touchDrag, touchSwipe, touchTap } from '../src/appium/touch';
 import { mockDriver, mockElement, expectNotSupported, methodsOf, screenSwipes, swipeActions, WINDOW, type Call } from './appium/mocks';
 
 /**
@@ -494,6 +494,33 @@ test.describe('screen swipes through the platform strategy', () => {
         await expect(touchSwipe(driver, { x: 200, y: 900 }, { x: 200, y: 1200 }, WINDOW)).rejects.toThrow(/would move only 0 px/);
         await expect(touchSwipe(driver, { x: 200, y: 400 }, { x: 204, y: 404 }, WINDOW)).rejects.toThrow(/at least 10 px/);
         expect(calls).toEqual([]);
+    });
+
+    test('touchTap holds exactly as long as PlatformElement.tapAt', async () => {
+        // element-repository keeps its tap hold private; this pins the screen tap to it.
+        expect((PlatformElement as unknown as { TAP_HOLD_MS: number }).TAP_HOLD_MS).toBe(TAP_HOLD_MS);
+        const { driver, calls } = mockDriver();
+        await touchTap(driver, { x: 10.4, y: 19.6 });
+        expect(calls.filter(c => c[0] === 'performActions').map(c => c[1])).toEqual([[{
+            type: 'pointer',
+            id: 'finger1',
+            parameters: { pointerType: 'touch' },
+            actions: [
+                { type: 'pointerMove', duration: 0, origin: 'viewport', x: 10, y: 20 },
+                { type: 'pointerDown', button: 0 },
+                { type: 'pause', duration: TAP_HOLD_MS },
+                { type: 'pointerUp', button: 0 },
+            ],
+        }]]);
+        expect(calls.map(c => c[0])).toEqual(['performActions', 'releaseActions']);
+    });
+
+    test('touchDrag is element-repository\'s touch swipe with no hold and the given move time', async () => {
+        const { driver, calls } = mockDriver();
+        await touchDrag(driver, { x: 125, y: 210 }, { x: 155.4, y: 170 }, 600);
+        expect(calls.filter(c => c[0] === 'performActions').map(c => c[1]))
+            .toEqual([buildTouchSwipe({ x: 125, y: 210 }, { x: 155, y: 170 }, { holdMs: 0, moveMs: 600 })]);
+        expect(calls.map(c => c[0])).toEqual(['performActions', 'releaseActions']);
     });
 });
 
