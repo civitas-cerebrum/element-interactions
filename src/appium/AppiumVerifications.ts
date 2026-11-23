@@ -5,6 +5,7 @@ import type { CountVerifyOptions, TextVerifyOptions, VerifyOptions, VisualMatchP
 import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
 import { describeValue, pollUntil } from '../utils/poll';
 import { webOnly } from './unsupported';
+import { softRead } from '../utils/driverErrors';
 
 type HtmlOptions = VerifyOptions & { outer?: boolean };
 
@@ -89,16 +90,36 @@ export class AppiumVerifications implements IVerifications {
     }
 
     /**
-     * Passes once the element is not displayed or not in the UI tree. A
-     * string is an Appium selector, resolved as a platform element. A lookup
-     * that fails counts as absent.
+     * Whether ANY match of `target` is displayed now: every match from
+     * `all()` (one at most for an element narrowed by `first()` / `nth()`,
+     * the whole collection for an un-narrowed one or for an element picked
+     * from a set, whose `all()` re-queries its selector), so absence holds only
+     * when every match is hidden or gone, as the web family's absence on the
+     * first visible match of a set. A lookup or read that fails transiently
+     * (no such element, stale element) counts as not displayed; a fatal
+     * driver error (dead session, invalid selector) is rethrown, so it can
+     * never pass as "absent".
+     */
+    private async anyDisplayed(target: Element): Promise<boolean> {
+        const matches = await softRead(() => target.all(), [] as Element[]);
+        for (const match of matches) {
+            if (await softRead(() => match.isVisible(), false)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Passes once no match of the element is displayed (hidden or not in the
+     * UI tree). A string is an Appium selector, resolved as a platform
+     * element. A transient lookup failure counts as absent; a fatal driver
+     * error fails the assertion.
      */
     async absence(selectorOrTarget: Element | string, options?: VerifyOptions): Promise<void> {
         const target = typeof selectorOrTarget === 'string'
             ? new PlatformElement(this.driver, selectorOrTarget, undefined, options?.timeout ?? this.timeout, { platform: this.platform })
             : selectorOrTarget;
         await this.expectEventually(
-            () => target.isVisible().catch(() => false),
+            () => this.anyDisplayed(target),
             visible => !visible,
             'element to be absent (not displayed)',
             options,
@@ -128,7 +149,9 @@ export class AppiumVerifications implements IVerifications {
             case 'inViewport':
                 return this.expectEventually(() => target.isVisible(), v => v, `element to be ${state}`, options);
             case 'hidden':
-                return this.expectEventually(() => target.isVisible().catch(() => false), v => !v, 'element to be hidden', options);
+                // One element (a pick of `nth` / TEXT / ATTRIBUTE answers
+                // `all()` with every match of its selector, so not `anyDisplayed`).
+                return this.expectEventually(() => softRead(() => target.isVisible(), false), v => !v, 'element to be hidden', options);
             case 'attached':
                 return this.expectEventually(() => target.exists(), v => v, 'element to be attached', options);
             case 'focused': {

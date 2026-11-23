@@ -26,6 +26,22 @@ function textMatches(actual: string, matcher: TextMatcher, caseInsensitive = fal
 }
 
 /**
+ * The text tiers of a listed-element match, tried in order across the whole
+ * list (the first tier any item passes wins): a string matcher is equal, then
+ * a substring, then a substring ignoring case; a regex matcher is one tier.
+ * The same tiers as {@link AppiumInteractions.getByText}.
+ */
+function textTiers(matcher: TextMatcher | undefined): Array<(actual: string) => boolean> {
+    if (matcher === undefined) return [() => true];
+    if (typeof matcher !== 'string') return [t => textMatches(t, matcher)];
+    return [t => t === matcher, t => textMatches(t, matcher), t => textMatches(t, matcher, true)];
+}
+
+async function trimmedText(el: Element): Promise<string> {
+    return ((await el.textContent()) ?? '').trim();
+}
+
+/**
  * Time left until `deadline`, in ms, never below 1: the waits and the
  * primitive of one action share a single timeout, and `0` must not reach a
  * primitive (where it can mean "no timeout").
@@ -174,57 +190,77 @@ export class AppiumInteractions implements IInteractions {
     }
 
     /**
-     * The first match of `base` whose text (substring, retried ignoring case;
-     * or a regex) and / or attribute (exact value or regex) matches, polled
-     * until the instance timeout. `withDescendant` and `child` are not
-     * available on platform elements: element-repository's
-     * `PlatformElement.locateChild` is not scoped to its parent, so a
-     * descendant query would search the whole screen.
+     * The first item of the list `base` that matches every given criterion,
+     * polled (the list re-read on every poll) until the instance timeout, then
+     * waited on until visible within what is left of it, as on web:
+     *
+     * - `text`: the item's own text (`getText()`), in tiers across the list:
+     *   equal, then a substring, then a substring ignoring case; a regex is
+     *   one tier.
+     * - `attribute`: the exact value, or a regex.
+     * - `withDescendant`: the item has a descendant matching `child` (a
+     *   selector, or a repository reference), searched INSIDE the item only
+     *   (element-repository's `locateChild` is scoped to its parent); with
+     *   `text`, one such descendant's text contains it ignoring case (the web
+     *   `hasText` rule) or matches the regex.
+     * - `child`: the returned element is that descendant of the matched item,
+     *   scoped to the item.
      */
     async getListedElement(
         base: Element,
         options: ListedElementMatch,
-        _repo?: { getSelector(elementName: string, pageName: string): string },
+        repo?: { getSelector(elementName: string, pageName: string): string },
     ): Promise<Element> {
         if (!options.text && !options.attribute && !options.withDescendant) {
             throw new Error('ListedElementOptions requires "text", "attribute", or "withDescendant" to identify the element.');
         }
-        if (options.withDescendant || options.child) {
-            throw new Error(
-                `getListedElement: "${options.withDescendant ? 'withDescendant' : 'child'}" is not available on platform "${this.platform}" ` +
-                '(platform elements cannot query descendants scoped to a list item). Give the item a selector of its own instead.',
-            );
-        }
+        const selectorOf = (ref: string | { pageName: string; elementName: string }, option: string): string => {
+            if (typeof ref === 'string') return ref;
+            if (!repo) throw new Error(`An ElementRepository instance is required when "${option}" is a page-repository reference.`);
+            return repo.getSelector(ref.elementName, ref.pageName);
+        };
+        const descendant = options.withDescendant;
+        const descendantSelector = descendant ? selectorOf(descendant.child, 'withDescendant.child') : undefined;
+        const childSelector = options.child !== undefined ? selectorOf(options.child, 'child') : undefined;
+
+        const matchesAttribute = async (e: Element): Promise<boolean> => {
+            if (!options.attribute) return true;
+            const actual = await e.getAttribute(options.attribute.name);
+            if (actual === null) return false;
+            const { value } = options.attribute;
+            return typeof value === 'string' ? actual === value : new RegExp(value.regex, value.flags).test(actual);
+        };
+        const hasDescendant = async (e: Element): Promise<boolean> => {
+            if (descendantSelector === undefined) return true;
+            const found = await e.locateChild(descendantSelector).all();
+            if (descendant?.text === undefined) return found.length > 0;
+            for (const d of found) {
+                if (textMatches(await trimmedText(d), descendant.text, true)) return true;
+            }
+            return false;
+        };
 
         const pick = async (): Promise<Element | undefined> => {
             const all = await base.all();
-            const matchesAttribute = async (e: Element): Promise<boolean> => {
-                if (!options.attribute) return true;
-                const actual = await e.getAttribute(options.attribute.name);
-                if (actual === null) return false;
-                const { value } = options.attribute;
-                return typeof value === 'string' ? actual === value : new RegExp(value.regex, value.flags).test(actual);
-            };
-            const texts = options.text !== undefined
-                ? await Promise.all(all.map(async e => ((await e.textContent()) ?? '').trim()))
-                : [];
-            const passes = [false, true]; // exact case first, then ignoring case (string matchers only)
-            for (const caseInsensitive of passes) {
-                if (caseInsensitive && typeof options.text !== 'string') break;
+            const texts = options.text !== undefined ? await Promise.all(all.map(trimmedText)) : [];
+            for (const tier of textTiers(options.text)) {
                 for (let i = 0; i < all.length; i++) {
-                    if (options.text !== undefined && !textMatches(texts[i], options.text, caseInsensitive)) continue;
-                    if (await matchesAttribute(all[i])) return all[i];
+                    if (options.text !== undefined && !tier(texts[i])) continue;
+                    if (!(await matchesAttribute(all[i]))) continue;
+                    if (!(await hasDescendant(all[i]))) continue;
+                    return all[i];
                 }
-                if (options.text === undefined) break;
             }
             return undefined;
         };
 
+        const deadline = Date.now() + this.timeout;
         const matched = await pollUntil(pick, found => found !== undefined, {
             timeout: this.timeout,
             message: `No listed element matched ${JSON.stringify(options)}`,
-        });
-        return matched as Element;
+        }) as Element;
+        await this.utils.waitForState(matched, 'visible', remainingUntil(deadline));
+        return childSelector === undefined ? matched : matched.locateChild(childSelector);
     }
 
     // ── Web only ──

@@ -1,8 +1,8 @@
 import { Locator } from '@playwright/test';
-import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
+import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy, familyOf } from '@civitas-cerebrum/element-repository';
 import type { Platform } from '@civitas-cerebrum/element-repository';
 import { requireWebElement } from '../playwright/requireWebElement';
-import { ElementActionFamily, requireBuiltPath, requireWebPlatform } from './platformGuard';
+import { ElementActionFamily, requireWebPlatform } from './platformGuard';
 import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ScreenshotOptions, IsVisibleOptions } from '../enum/Options';
 import {
     ElementSnapshot,
@@ -12,6 +12,9 @@ import {
 } from './ExpectMatchers';
 import { VisibleChain } from './VisibleChain';
 import { isListEntry } from './listEntry';
+import { ReResolvingElement } from './ReResolvingElement';
+import { isFatalDriverError, softRead } from '../utils/driverErrors';
+import { pollUntil, PollTimeoutError } from '../utils/poll';
 
 /**
  * The shape returned by the `ElementAction.visible` getter: it is BOTH the
@@ -70,6 +73,31 @@ const ABSENCE_ATTACH_SLICE_CAP_MS = 1000;
  * chain node exists.
  */
 const ABSENCE_RESOLVE_ATTEMPTS = 2;
+
+/**
+ * Attach budget, per `fallback` chain node, of ONE re-resolution on a device
+ * platform: one attempt of the visibility probe, one poll of a matcher, one
+ * poll of list presence. The web probe's slice, for the same reason: a fixed
+ * slice keeps the cost of a chain walk independent of the overall budget, and
+ * the caller's loop simply stops starting attempts once that budget is spent.
+ */
+const DEVICE_RESOLVE_SLICE_MS = 250;
+
+/** Pause between two attempts of the device visibility probe, in ms (the Appium family's poll interval). */
+const DEVICE_PROBE_INTERVAL_MS = 100;
+
+/**
+ * Attributes a device snapshot (`satisfy()` predicates) reads, per platform.
+ * A native element has no attribute map to enumerate (the web snapshot
+ * iterates the DOM node's attributes), so the snapshot reads the attributes
+ * the drivers document; one the driver does not report is left out, as an
+ * absent DOM attribute is on web.
+ */
+const DEVICE_SNAPSHOT_ATTRIBUTES: Record<string, readonly string[]> = {
+    android: ['resource-id', 'content-desc', 'text', 'class', 'package', 'checkable', 'checked', 'clickable',
+        'enabled', 'focusable', 'focused', 'selected', 'displayed', 'bounds', 'hint'],
+    ios: ['name', 'label', 'value', 'type', 'enabled', 'visible', 'accessible', 'selected', 'placeholderValue'],
+};
 
 /**
  * Fluent builder for performing actions on a repository element.
@@ -238,9 +266,9 @@ export class ElementAction {
      */
     private async shouldProceed(): Promise<boolean> {
         if (!this.conditionalVisible) return true;
-        // Outside the try: on a device platform the gate is not built yet, and
-        // swallowing that would silently skip the action.
-        requireBuiltPath('ifVisible / isVisible gate', this.platform);
+        // A device gate re-resolves on every attempt and rethrows a fatal
+        // driver error instead of reading it as "hidden" (a silent skip).
+        if (this.onDevice) return this.probeOnDevice(this.visibilityTimeout);
         try {
             const element = await this.resolve();
             await element.waitFor({ state: 'visible', timeout: this.visibilityTimeout });
@@ -250,7 +278,17 @@ export class ElementAction {
         }
     }
 
-    private async resolve(): Promise<Element> {
+    /** `true` off the Playwright family: the chain acts on a device platform. */
+    private get onDevice(): boolean {
+        return familyOf(this.platform) !== 'playwright';
+    }
+
+    /**
+     * @param attachBudget - Per-call attach budget for the repository (per
+     *   `fallback` node). Omitted: the repository's default. Device
+     *   re-resolution passes {@link DEVICE_RESOLVE_SLICE_MS}.
+     */
+    private async resolve(attachBudget?: number): Promise<Element> {
         // Scoped chains never resolve via the repository — the stamped scoped
         // name has no repo entry. `narrowScoped` honours `visibleStrategy`, so
         // the check order here does not lose `.visible()` on scoped chains.
@@ -265,16 +303,73 @@ export class ElementAction {
             if (!visible) throw new Error(`No visible match for "${this.elementName}" in "${this.pageName}".`);
             return visible;
         }
-        return await this.repo.get(this.elementName, this.pageName, this.resolutionOptions);
+        const options = attachBudget === undefined ? this.resolutionOptions : { ...this.resolutionOptions, timeout: attachBudget };
+        return await this.repo.get(this.elementName, this.pageName, options);
     }
 
-    private async resolveAll(): Promise<Element> {
+    private async resolveAll(attachBudget?: number): Promise<Element> {
         if (this.scopedChild) {
             // Collection-level: ignore any .first()/.nth() narrowing, return the
             // whole child set so count / order / image terminals see every match.
             return new WebElement(await this.scopedChild());
         }
-        return await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL });
+        return await this.repo.get(this.elementName, this.pageName, {
+            strategy: SelectionStrategy.ALL,
+            ...(attachBudget === undefined ? {} : { timeout: attachBudget }),
+        });
+    }
+
+    /**
+     * The element a verification polls. On a device: a
+     * {@link ReResolvingElement} that resolves the entry afresh (short attach
+     * slice) on every read, so a poll never keeps reading a node the
+     * repository picked earlier; `all` re-resolves the whole collection
+     * (count / order matchers). Web chains resolve once: their locators are
+     * lazy already.
+     */
+    private async verifyTarget(all: boolean = false): Promise<Element> {
+        if (!this.onDevice) return all ? this.resolveAll() : this.resolve();
+        return new ReResolvingElement(() => all
+            ? this.resolveAll(DEVICE_RESOLVE_SLICE_MS)
+            : this.resolve(DEVICE_RESOLVE_SLICE_MS));
+    }
+
+    /**
+     * The visibility probe on a device platform, the counterpart of
+     * `VisibleChain`'s web probe: it RE-RESOLVES the entry on every attempt
+     * (a short attach slice per `fallback` node, so a primary that appears
+     * late is picked up by a later attempt) and asks the element whether it is
+     * displayed, until `timeout` ms pass. With `containsText`, a displayed
+     * element answers whether its text contains it, at once, as on web.
+     *
+     * Unlike web, it never answers `false` for a fatal driver error (dead
+     * session, invalid selector): that error is thrown, so a gate on a dead
+     * device fails loudly instead of skipping its action. A transient miss
+     * (no match yet, a stale element, an eager strategy that found nothing)
+     * is "not visible yet" and the probe keeps trying.
+     */
+    async probeOnDevice(timeout: number, containsText?: string): Promise<boolean> {
+        const deadline = Date.now() + Math.max(1, timeout);
+        for (;;) {
+            const slice = Math.max(1, Math.min(DEVICE_RESOLVE_SLICE_MS, deadline - Date.now()));
+            let visible = false;
+            let element: Element | undefined;
+            try {
+                element = await this.probeTarget(slice);
+                visible = await element.isVisible();
+            } catch (err) {
+                if (isFatalDriverError(err)) throw err;
+            }
+            if (visible && element) {
+                if (containsText === undefined) return true;
+                const target = element;
+                const text = await softRead(() => target.textContent(), null);
+                return text !== null && text.includes(containsText);
+            }
+            const left = deadline - Date.now();
+            if (left <= 0) return false;
+            await new Promise<void>(resolve => setTimeout(resolve, Math.min(DEVICE_PROBE_INTERVAL_MS, left)));
+        }
     }
 
     /**
@@ -590,7 +685,10 @@ export class ElementAction {
 
     /** List presence: at least one match of the collection becomes visible within the chain timeout. */
     private async verifyListPresence(): Promise<void> {
-        requireBuiltPath('verifyPresence on a "list": true entry', this.platform);
+        if (this.onDevice) {
+            await this.verifyListPresenceOnDevice();
+            return;
+        }
         const all = await this.resolveAll();
         requireWebElement('ElementAction.verifyPresence', all);
         try {
@@ -600,6 +698,33 @@ export class ElementAction {
             throw new Error(
                 `verifyPresence: '${this.pageName}.${this.elementName}' is a list entry ("list": true) — ` +
                 `expected at least one visible match within ${this._timeout}ms, found ${count} match(es) and none visible.`,
+            );
+        }
+    }
+
+    /**
+     * List presence on a device: the web contract (at least one match of the
+     * collection is displayed within the chain timeout), polled with the whole
+     * collection re-resolved on every poll. A fatal driver error is never read
+     * as "not displayed".
+     */
+    private async verifyListPresenceOnDevice(): Promise<void> {
+        let lastCount = 0;
+        try {
+            await pollUntil(async () => {
+                const matches = await (await this.resolveAll(DEVICE_RESOLVE_SLICE_MS)).all();
+                lastCount = matches.length;
+                for (const match of matches) {
+                    if (await softRead(() => match.isVisible(), false)) return true;
+                }
+                return false;
+            }, visible => visible, { timeout: this._timeout });
+        } catch (err) {
+            if (!(err instanceof PollTimeoutError)) throw err;
+            const cause = err.lastError instanceof Error ? ` Last error: ${err.lastError.message}` : '';
+            throw new Error(
+                `verifyPresence: '${this.pageName}.${this.elementName}' is a list entry ("list": true) — ` +
+                `expected at least one visible match within ${this._timeout}ms, found ${lastCount} match(es) and none visible.${cause}`,
             );
         }
     }
@@ -635,7 +760,10 @@ export class ElementAction {
      * for it: asserting "child absent" requires the parent to exist.
      */
     async verifyAbsence(): Promise<void> {
-        requireBuiltPath('verifyAbsence', this.platform);
+        if (this.onDevice) {
+            await this.verifyAbsenceOnDevice();
+            return;
+        }
         if (this.scopedChild) {
             await this.interactions.verify.absence(
                 new WebElement(this.narrowScoped(await this.scopedChild())),
@@ -708,6 +836,29 @@ export class ElementAction {
             new WebElement(element.locator.filter({ visible: true }).first()),
             { timeout: this._timeout },
         );
+    }
+
+    /**
+     * `verifyAbsence` on a device, with the web semantics: the entry is
+     * resolved once through the repository's `ALL` strategy with the same
+     * attach slice per `fallback` node ({@link absenceAttachSlice}), so a
+     * `fallback` entry is asserted on the node the repository resolves (the
+     * first chain node that exists, exactly as an action would target; the
+     * terminal node when none does), and absence means every match of that
+     * node is hidden or gone, polled until the chain timeout. A strategy
+     * selector does not narrow it (as on web).
+     *
+     * The web divergence cross-check (default vs `ALL` resolution landing on
+     * different nodes) has no device counterpart: there is no element handle
+     * to compare, and both resolutions probe a node with the same first-match
+     * attach wait, so they walk the chain identically.
+     */
+    private async verifyAbsenceOnDevice(): Promise<void> {
+        const all = await this.repo.get(this.elementName, this.pageName, {
+            strategy: SelectionStrategy.ALL,
+            timeout: this.absenceAttachSlice(),
+        });
+        await this.interactions.verify.absence(all, { timeout: this._timeout });
     }
 
     /**
@@ -833,7 +984,7 @@ export class ElementAction {
 
     /** Assert element state. */
     async verifyState(state: 'enabled' | 'disabled' | 'editable' | 'checked' | 'focused' | 'visible' | 'hidden' | 'attached' | 'inViewport'): Promise<void> {
-        const element = await this.resolve();
+        const element = await this.verifyTarget();
         await this.interactions.verify.state(element, state);
     }
 
@@ -851,7 +1002,7 @@ export class ElementAction {
      * compared against `expectedTexts`.
      */
     async verifyOrder(expectedTexts: string[]): Promise<void> {
-        const element = await this.resolveAll();
+        const element = await this.verifyTarget(true);
         await this.interactions.verify.order(element, expectedTexts);
     }
 
@@ -862,7 +1013,7 @@ export class ElementAction {
      * strategy selector on the chain.
      */
     async verifyListOrder(direction: 'asc' | 'desc'): Promise<void> {
-        const element = await this.resolveAll();
+        const element = await this.verifyTarget(true);
         await this.interactions.verify.listOrder(element, direction);
     }
 
@@ -949,7 +1100,7 @@ export class ElementAction {
      * Snapshot fields are all primitives — no async access needed in predicates.
      */
     async captureSnapshot(): Promise<ElementSnapshot> {
-        requireBuiltPath('satisfy() predicate snapshot', this.platform);
+        if (this.onDevice) return this.captureDeviceSnapshot();
         const element = await this.resolve();
         const first = element.first();
         // Count is always the un-narrowed match count so count-based matchers
@@ -973,6 +1124,41 @@ export class ElementAction {
         return { text: (rawText ?? '').trim(), value, attributes, visible, enabled, count };
     }
 
+    /**
+     * {@link captureSnapshot} on a device: resolves the entry afresh (each
+     * `satisfy()` poll calls it again, so every poll re-resolves) and reads
+     * the same fields; `attributes` holds {@link DEVICE_SNAPSHOT_ATTRIBUTES}.
+     * A missing element reads as the web defaults (no text, hidden, count 0),
+     * but a fatal driver error is thrown, never folded into a snapshot that a
+     * predicate such as `el => !el.visible` could pass on.
+     */
+    private async captureDeviceSnapshot(): Promise<ElementSnapshot> {
+        const [element, allElement] = await Promise.all([
+            this.resolve(DEVICE_RESOLVE_SLICE_MS),
+            this.resolveAll(DEVICE_RESOLVE_SLICE_MS),
+        ]);
+        const first = element.first();
+        const names = DEVICE_SNAPSHOT_ATTRIBUTES[this.platform] ?? [];
+        const readAttributes = async (): Promise<Record<string, string>> => {
+            const values = await Promise.all(names.map(name => softRead(() => first.getAttribute(name), null)));
+            const out: Record<string, string> = {};
+            names.forEach((name, i) => {
+                const v = values[i];
+                if (v !== null && v !== undefined) out[name] = v;
+            });
+            return out;
+        };
+        const [count, rawText, value, attributes, visible, enabled] = await Promise.all([
+            softRead(() => allElement.count(), 0),
+            softRead(() => first.textContent(), null),
+            softRead(() => first.inputValue(), ''),
+            readAttributes(),
+            softRead(() => first.isVisible(), false),
+            softRead(() => first.isEnabled(), false),
+        ]);
+        return { text: (rawText ?? '').trim(), value, attributes, visible, enabled, count };
+    }
+
     /** Build the context object consumed by the matcher tree classes. */
     buildExpectContext(): ExpectContext {
         return {
@@ -981,9 +1167,10 @@ export class ElementAction {
             timeout: this._timeout,
             conditionalVisible: this.conditionalVisible,
             visibilityTimeout: this.visibilityTimeout,
-            resolveElement: () => this.resolve(),
-            resolveAll: () => this.resolveAll(),
+            resolveElement: () => this.verifyTarget(),
+            resolveAll: () => this.verifyTarget(true),
             captureSnapshot: () => this.captureSnapshot(),
+            probeVisible: this.onDevice ? (timeout: number) => this.probeOnDevice(timeout) : undefined,
             verify: this.interactions.verify,
             platform: this.platform,
         };

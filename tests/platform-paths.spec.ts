@@ -1,0 +1,382 @@
+import { test, expect } from '@playwright/test';
+import { ElementRepository } from '@civitas-cerebrum/element-repository';
+import { Steps } from '../src/index';
+import { AppiumFactory } from '../src/appium';
+import { DEVICE_PLATFORMS, driverError, mockUiDriver, type MockNode } from './appium/mocks';
+
+/**
+ * Platform paths of the shared features (verifyAbsence, "list": true
+ * entries, listed elements with child / withDescendant, visibility probes and
+ * gates, polling matchers) on the REAL AppiumFactory and ElementRepository,
+ * over a mock native UI tree, for android and ios. No device.
+ */
+
+const STEP_TIMEOUT = 600;
+
+/** A reader flipping from `before` to `after` on its `n`-th read (1-based), counting reads. */
+function flipOnRead<T>(n: number, before: T, after: T): { read: () => T; reads: () => number } {
+    let reads = 0;
+    return { read: () => (++reads >= n ? after : before), reads: () => reads };
+}
+
+function pages(platform: string) {
+    return {
+        pages: [{
+            name: 'Screen',
+            platform,
+            elements: [
+                { elementName: 'rows', list: true, selector: { 'accessibility id': 'row' } },
+                { elementName: 'emptyList', list: true, selector: { 'accessibility id': 'nothing' } },
+                { elementName: 'title', selector: { 'accessibility id': 'title' } },
+                { elementName: 'banner', selector: { 'accessibility id': 'banner' } },
+                { elementName: 'toast', selector: { 'accessibility id': 'toast' } },
+                { elementName: 'status', selector: { 'accessibility id': 'status' } },
+                { elementName: 'draft', provisional: true, selector: { 'accessibility id': 'draft' } },
+                {
+                    elementName: 'dialog',
+                    selector: { 'accessibility id': 'primary', fallback: { 'accessibility id': 'secondary' } },
+                },
+            ],
+        }],
+    };
+}
+
+/** Three rows (each with a title; only the third with a badge) plus an orphan title and badge OUTSIDE the list. */
+function listTree(overrides: { rowVisible?: Array<MockNode['visible']>; rows?: boolean } = {}): MockNode[] {
+    const texts = ['Apple pie', 'Apple', 'banana'];
+    const rows: MockNode[] = overrides.rows === false ? [] : texts.map((text, i) => ({
+        match: '~row',
+        text,
+        visible: overrides.rowVisible?.[i] ?? true,
+        attributes: { name: `r${i + 1}` },
+        children: [
+            { match: '~title', text: `title ${i + 1}${i === 1 ? ' second' : ''}` },
+            ...(i === 2 ? [{ match: '~badge', text: 'NEW' }] : []),
+        ],
+    }));
+    return [
+        { match: '~list', children: rows },
+        { match: '~title', text: 'Orphan title' },
+        { match: '~badge', text: 'orphan badge' },
+    ];
+}
+
+function deviceSteps(platform: 'android' | 'ios', tree: MockNode[]) {
+    const mock = mockUiDriver(tree, { capabilities: { platformName: platform } });
+    const repo = new ElementRepository(mock.driver, pages(platform), { platform, timeout: STEP_TIMEOUT });
+    const factory = new AppiumFactory(mock.driver, platform, { timeout: STEP_TIMEOUT, appId: 'com.example.app' });
+    const steps = new Steps(factory, repo);
+    return { steps, mock };
+}
+
+async function caught(call: () => unknown): Promise<Error | undefined> {
+    try {
+        await call();
+    } catch (error) {
+        return error as Error;
+    }
+    return undefined;
+}
+
+async function timed<T>(call: () => Promise<T>): Promise<{ result?: T; error?: Error; elapsed: number }> {
+    const started = Date.now();
+    try {
+        const result = await call();
+        return { result, elapsed: Date.now() - started };
+    } catch (error) {
+        return { error: error as Error, elapsed: Date.now() - started };
+    }
+}
+
+for (const platform of DEVICE_PLATFORMS) {
+    test.describe(`verifyAbsence on ${platform}`, () => {
+        test('a displayed element fails after the step timeout', async () => {
+            const { steps } = deviceSteps(platform, [{ match: '~toast', text: 'Saved' }]);
+            for (const run of [() => steps.verifyAbsence('toast', 'Screen'), () => steps.on('toast', 'Screen').verifyAbsence()]) {
+                const { error, elapsed } = await timed(run);
+                expect(error?.message).toMatch(/absent/);
+                expect(elapsed).toBeGreaterThanOrEqual(STEP_TIMEOUT - 50);
+                expect(elapsed).toBeLessThan(STEP_TIMEOUT + 3000);
+            }
+        });
+
+        test('an element that disappears on the 3rd poll passes', async () => {
+            const visible = flipOnRead(3, true, false);
+            const { steps } = deviceSteps(platform, [{ match: '~toast', visible: visible.read }]);
+            await steps.verifyAbsence('toast', 'Screen', { timeout: 2000 });
+            expect(visible.reads()).toBe(3);
+        });
+
+        test('an element not in the tree passes; a hidden one passes; a per-call timeout is honoured', async () => {
+            await deviceSteps(platform, []).steps.verifyAbsence('toast', 'Screen');
+            await deviceSteps(platform, [{ match: '~toast', visible: false }]).steps.verifyAbsence('toast', 'Screen');
+            const { steps } = deviceSteps(platform, [{ match: '~toast' }]);
+            const { error, elapsed } = await timed(() => steps.verifyAbsence('toast', 'Screen', { timeout: 1500 }));
+            expect(error).toBeDefined();
+            expect(elapsed).toBeGreaterThanOrEqual(1450);
+        });
+
+        test('absence holds only when EVERY match is hidden', async () => {
+            const { steps } = deviceSteps(platform, [{ match: '~toast', visible: false }, { match: '~toast', visible: true }]);
+            expect(await caught(() => steps.verifyAbsence('toast', 'Screen'))).toBeDefined();
+        });
+
+        test('fallback: asserted on the node the repository resolves (web semantics)', async () => {
+            // Primary missing, fallback shown: the walk lands on the fallback -> present -> fails.
+            let r = deviceSteps(platform, [{ match: '~secondary' }]);
+            expect((await caught(() => r.steps.verifyAbsence('dialog', 'Screen')))?.message).toMatch(/absent/);
+            // Primary exists but hidden, fallback shown: the walk stops at the primary -> absent -> passes.
+            r = deviceSteps(platform, [{ match: '~primary', visible: false }, { match: '~secondary' }]);
+            await r.steps.verifyAbsence('dialog', 'Screen');
+            // Primary shown: fails.
+            r = deviceSteps(platform, [{ match: '~primary' }]);
+            expect(await caught(() => r.steps.verifyAbsence('dialog', 'Screen'))).toBeDefined();
+            // No node at all, or only a hidden fallback: passes.
+            await deviceSteps(platform, []).steps.verifyAbsence('dialog', 'Screen');
+            await deviceSteps(platform, [{ match: '~secondary', visible: false }]).steps.verifyAbsence('dialog', 'Screen');
+        });
+
+        test('a provisional entry keeps the same meaning', async () => {
+            await deviceSteps(platform, []).steps.verifyAbsence('draft', 'Screen');
+            expect(await caught(() => deviceSteps(platform, [{ match: '~draft' }]).steps.verifyAbsence('draft', 'Screen'))).toBeDefined();
+        });
+
+        test('a dead session never passes as absent', async () => {
+            const { steps, mock } = deviceSteps(platform, []);
+            mock.failWith(driverError('invalid session id', 'invalid session id: the session is gone'));
+            const error = await caught(() => steps.verifyAbsence('toast', 'Screen'));
+            expect(error, 'verifyAbsence must not pass on a dead session').toBeDefined();
+        });
+    });
+
+    test.describe(`"list": true entries on ${platform}`, () => {
+        test('verifyPresence: one displayed match is enough, none fails with the list message', async () => {
+            let r = deviceSteps(platform, listTree({ rowVisible: [false, true, false] }));
+            await r.steps.verifyPresence('rows', 'Screen');
+            await r.steps.on('rows', 'Screen').verifyPresence();
+            r = deviceSteps(platform, listTree({ rowVisible: [false, false, false] }));
+            const { error, elapsed } = await timed(() => r.steps.verifyPresence('rows', 'Screen'));
+            expect(error?.message).toMatch(/list entry \("list": true\).*found 3 match\(es\) and none visible/);
+            expect(elapsed).toBeGreaterThanOrEqual(STEP_TIMEOUT - 50);
+        });
+
+        test('verifyPresence waits for the first row to appear (re-resolved per poll)', async () => {
+            const exists = flipOnRead(4, false, true);
+            const tree = listTree();
+            (tree[0] as MockNode).exists = exists.read;
+            const { steps } = deviceSteps(platform, tree);
+            await steps.verifyPresence('rows', 'Screen', { timeout: 3000 });
+        });
+
+        test('getCount and getAll see every match, through the ALL strategy', async () => {
+            const { steps } = deviceSteps(platform, listTree());
+            expect(await steps.getCount('rows', 'Screen')).toBe(3);
+            expect(await steps.getAll('rows', 'Screen')).toEqual(['Apple pie', 'Apple', 'banana']);
+            expect(await steps.getAll('rows', 'Screen', { extractAttribute: 'name' })).toEqual(['r1', 'r2', 'r3']);
+            await steps.verifyCount('rows', 'Screen', { exactly: 3 });
+            await steps.on('rows', 'Screen').count.toBe(3);
+        });
+
+        test('getAll on an empty list entry fails instead of returning []', async () => {
+            const { steps } = deviceSteps(platform, listTree({ rows: false }));
+            const error = await caught(() => steps.getAll('rows', 'Screen'));
+            expect(error?.message).toMatch(/list entry \("list": true\).*found 0/);
+        });
+
+        test('getAll { child } is scoped to the list items: a child outside them never matches', async () => {
+            const { steps } = deviceSteps(platform, listTree());
+            const expected = ['title 1', 'title 2 second', 'title 3'];
+            expect(await steps.getAll('rows', 'Screen', { child: '~title' })).toEqual(expected);
+            expect(await steps.getAll('rows', 'Screen', { child: { pageName: 'Screen', elementName: 'title' } })).toEqual(expected);
+            expect(await steps.getAll('rows', 'Screen', { child: '~badge' })).toEqual(['NEW']);
+        });
+
+        test('an empty-string child is honoured (checked with !== undefined, not truthiness)', async () => {
+            const { steps } = deviceSteps(platform, listTree());
+            // '' is a child selector nothing answers to: no texts, not the rows' own texts.
+            expect(await steps.getAll('rows', 'Screen', { child: '' })).toEqual([]);
+        });
+    });
+
+    test.describe(`listed elements on ${platform}`, () => {
+        const nameOf = (steps: Steps, options: Parameters<Steps['getListedElementData']>[2]) =>
+            steps.getListedElementData('rows', 'Screen', { ...options, extractAttribute: 'name' });
+
+        test('text tiers: equal, then substring, then substring ignoring case; regex', async () => {
+            const { steps } = deviceSteps(platform, listTree());
+            expect(await nameOf(steps, { text: 'Apple' })).toBe('r2');
+            expect(await nameOf(steps, { text: 'pie' })).toBe('r1');
+            expect(await nameOf(steps, { text: 'BANANA' })).toBe('r3');
+            expect(await nameOf(steps, { text: { regex: '^ban' } })).toBe('r3');
+            expect(await nameOf(steps, { attribute: { name: 'name', value: 'r2' } })).toBe('r2');
+            expect(await nameOf(steps, { attribute: { name: 'name', value: { regex: '3$' } } })).toBe('r3');
+            expect(await steps.getListedElementData('rows', 'Screen', { text: 'banana' })).toBe('banana');
+        });
+
+        test('withDescendant searches inside each item only', async () => {
+            const { steps } = deviceSteps(platform, listTree());
+            // The orphan badge outside the list must not make row 1 match.
+            expect(await nameOf(steps, { withDescendant: { child: '~badge' } })).toBe('r3');
+            expect(await nameOf(steps, { withDescendant: { child: '~title', text: 'SECOND' } })).toBe('r2');
+            expect(await nameOf(steps, { text: 'Apple', withDescendant: { child: { pageName: 'Screen', elementName: 'title' } } })).toBe('r2');
+            // No item has a descendant with that text; the orphan title does: no match.
+            const error = await caught(() => nameOf(steps, { withDescendant: { child: '~title', text: 'Orphan' } }));
+            expect(error?.message).toMatch(/No listed element matched/);
+        });
+
+        test('child returns the descendant of the matched item, never one outside it', async () => {
+            const { steps } = deviceSteps(platform, listTree());
+            expect(await steps.getListedElementData('rows', 'Screen', { text: 'pie', child: '~title' })).toBe('title 1');
+            expect(await steps.getListedElementData('rows', 'Screen', { text: 'banana', child: { pageName: 'Screen', elementName: 'title' } })).toBe('title 3');
+            await steps.verifyListedElement('rows', 'Screen', { text: 'Apple', child: '~title', expectedText: 'title 2 second' });
+            await steps.verifyListedElement('rows', 'Screen', { text: 'Apple', expected: { name: 'name', value: 'r2' } });
+            await steps.verifyListedElement('rows', 'Screen', { text: 'Apple' });
+        });
+
+        test('clickListedElement taps the matched item', async () => {
+            const { steps, mock } = deviceSteps(platform, listTree());
+            await steps.clickListedElement('rows', 'Screen', { text: 'banana', child: '~badge' });
+            expect(mock.calls.filter(c => c[0] === 'click')).toEqual([['click', '~badge', '~row']]);
+        });
+
+        test('options that cannot identify an item, or a wrong reference, fail before anything resolves', async () => {
+            const { steps, mock } = deviceSteps(platform, listTree());
+            for (const run of [
+                () => steps.clickListedElement('rows', 'Screen', {}),
+                () => steps.verifyListedElement('rows', 'Screen', { expectedText: 'x' }),
+                () => steps.getListedElementData('rows', 'Screen', { text: 'x', child: { pageName: 'Screen', elementName: 'missing' } }),
+                () => steps.getListedElementData('rows', 'Screen', { withDescendant: { child: { pageName: 'Nope', elementName: 'x' } } }),
+            ]) {
+                expect(await caught(run)).toBeDefined();
+            }
+            expect(mock.lookups, 'nothing was looked up').toEqual([]);
+        });
+    });
+
+    test.describe(`probes and gates on ${platform}`, () => {
+        test('the isVisible probe answers true / false within its timeout', async () => {
+            expect(await deviceSteps(platform, [{ match: '~banner' }]).steps.isVisible('banner', 'Screen', { timeout: 300 })).toBe(true);
+            const { result, elapsed } = await timed(async () => deviceSteps(platform, [{ match: '~banner', visible: false }])
+                .steps.isVisible('banner', 'Screen', { timeout: 300 }));
+            expect(result).toBe(false);
+            expect(elapsed).toBeGreaterThanOrEqual(290);
+            expect(elapsed).toBeLessThan(2000);
+        });
+
+        test('the probe re-resolves: an element that enters the tree late is seen', async () => {
+            const exists = flipOnRead(4, false, true);
+            const { steps, mock } = deviceSteps(platform, [{ match: '~banner', exists: exists.read }]);
+            expect(await steps.isVisible('banner', 'Screen', { timeout: 3000 })).toBe(true);
+            expect(mock.lookupCount('~banner')).toBeGreaterThan(1);
+        });
+
+        test('the probe re-resolves a fallback entry: a late primary wins over the fallback', async () => {
+            const exists = flipOnRead(3, false, true);
+            const { steps } = deviceSteps(platform, [
+                { match: '~primary', exists: exists.read, text: 'primary' },
+                { match: '~secondary', visible: false },
+            ]);
+            expect(await steps.isVisible('dialog', 'Screen', { timeout: 3000 })).toBe(true);
+        });
+
+        test('containsText', async () => {
+            const { steps } = deviceSteps(platform, [{ match: '~banner', text: 'Summer sale' }]);
+            expect(await steps.isVisible('banner', 'Screen', { timeout: 300, containsText: 'sale' })).toBe(true);
+            expect(await steps.isVisible('banner', 'Screen', { timeout: 300, containsText: 'winter' })).toBe(false);
+        });
+
+        test('gates skip a hidden element and act on a visible one', async () => {
+            let r = deviceSteps(platform, [{ match: '~banner', visible: false }]);
+            await r.steps.isVisible('banner', 'Screen', { timeout: 300 }).click();
+            await r.steps.on('banner', 'Screen').ifVisible(300).click();
+            await r.steps.isVisible('banner', 'Screen', { timeout: 300 }).text.toBe('never checked');
+            expect(r.mock.calls.filter(c => c[0] === 'click')).toEqual([]);
+
+            r = deviceSteps(platform, [{ match: '~banner', text: 'Hi' }]);
+            await r.steps.isVisible('banner', 'Screen', { timeout: 300 }).click();
+            await r.steps.on('banner', 'Screen').ifVisible(300).click();
+            expect(r.mock.calls.filter(c => c[0] === 'click')).toHaveLength(2);
+            const error = await caught(() => Promise.resolve(r.steps.isVisible('banner', 'Screen', { timeout: 300 }).text.toBe('Bye')));
+            expect(error?.message, 'a visible element is asserted').toMatch(/Bye/);
+        });
+
+        test('a dead session is thrown by a probe and a gate, never read as "hidden"', async () => {
+            const { steps, mock } = deviceSteps(platform, [{ match: '~banner' }]);
+            mock.failWith(driverError('invalid session id', 'invalid session id'));
+            expect(await caught(async () => { await steps.isVisible('banner', 'Screen', { timeout: 300 }); })).toBeDefined();
+            expect(await caught(() => steps.isVisible('banner', 'Screen', { timeout: 300 }).click())).toBeDefined();
+            expect(await caught(() => steps.on('banner', 'Screen').ifVisible(300).click())).toBeDefined();
+        });
+    });
+
+    test.describe(`matchers poll on ${platform}`, () => {
+        test('text.toBe passes once the value flips', async () => {
+            const status = flipOnRead(4, 'loading', 'ready');
+            const { steps } = deviceSteps(platform, [{ match: '~status', text: status.read }]);
+            await steps.expect('status', 'Screen').text.toBe('ready');
+            expect(status.reads()).toBe(4);
+        });
+
+        test('a matcher that never holds fails after the timeout with the last value', async () => {
+            const { steps } = deviceSteps(platform, [{ match: '~status', text: 'loading' }]);
+            const { error, elapsed } = await timed(() => Promise.resolve(steps.expect('status', 'Screen').text.toBe('ready')));
+            expect(error?.message).toMatch(/"loading"/);
+            expect(error?.message).toMatch(new RegExp(`${STEP_TIMEOUT} ms`));
+            expect(elapsed).toBeGreaterThanOrEqual(STEP_TIMEOUT - 50);
+            expect(elapsed).toBeLessThan(STEP_TIMEOUT + 3000);
+        });
+
+        test('every poll re-resolves: a late fallback primary is read, not the fallback the first walk chose', async () => {
+            const exists = flipOnRead(3, false, true);
+            const { steps } = deviceSteps(platform, [
+                { match: '~primary', exists: exists.read, text: 'primary' },
+                { match: '~secondary', text: 'fallback' },
+            ]);
+            await steps.expect('dialog', 'Screen').timeout(3000).text.toBe('primary');
+        });
+
+        test('every poll re-resolves: a redrawn element is read afresh', async () => {
+            // The old node is replaced by a new one after its text was read twice.
+            let oldReads = 0;
+            const { steps, mock } = deviceSteps(platform, [
+                { match: '~status', exists: () => oldReads < 2, text: () => { oldReads++; return 'old'; } },
+                { match: '~status', exists: () => oldReads >= 2, text: 'new' },
+            ]);
+            await steps.on('status', 'Screen').timeout(3000).text.toBe('new');
+            expect(mock.lookupCount('~status')).toBeGreaterThan(2);
+        });
+
+        test('visible / enabled / attributes / not / count / satisfy poll too', async () => {
+            const visible = flipOnRead(3, false, true);
+            const { steps } = deviceSteps(platform, [
+                { match: '~banner', visible: visible.read, attributes: { name: 'banner-1' } },
+            ]);
+            await steps.on('banner', 'Screen').visible.toBeTrue();
+            await steps.on('banner', 'Screen').attributes.get('name').toBe('banner-1');
+            await steps.on('banner', 'Screen').not.text.toBe('nope');
+            await steps.verifyState('banner', 'Screen', 'enabled');
+            const shown = flipOnRead(3, true, false);
+            await deviceSteps(platform, [{ match: '~banner', visible: shown.read }]).steps.on('banner', 'Screen').visible.toBeFalse();
+        });
+
+        test('satisfy() re-captures a snapshot per poll and prints the last one on failure', async () => {
+            const status = flipOnRead(3, 'loading', 'ready');
+            const { steps } = deviceSteps(platform, [{ match: '~status', text: status.read, attributes: { name: 'status-cell' } }]);
+            await steps.on('status', 'Screen').satisfy(el => el.text === 'ready' && el.visible && el.count === 1);
+            const attrName = platform === 'ios' ? 'name' : 'resource-id';
+            const r = deviceSteps(platform, [{ match: '~status', text: 'loading', attributes: { [attrName]: 'status-cell' } }]);
+            const error = await caught(() => Promise.resolve(r.steps.on('status', 'Screen').satisfy(el => el.text === 'ready')));
+            expect(error?.message).toMatch(/snapshot at timeout/);
+            expect(error?.message).toMatch(/"text": "loading"/);
+            expect(error?.message).toMatch(/status-cell/);
+        });
+
+        test('satisfy() fails at once on a dead session instead of folding it into a snapshot', async () => {
+            const { steps, mock } = deviceSteps(platform, [{ match: '~status', text: 'x' }]);
+            mock.failWith(driverError('invalid session id', 'invalid session id'));
+            const { error, elapsed } = await timed(() => Promise.resolve(steps.on('status', 'Screen').timeout(5000).satisfy(el => !el.visible)));
+            expect(error?.message).toMatch(/invalid session id/);
+            expect(elapsed).toBeLessThan(2000);
+        });
+    });
+}

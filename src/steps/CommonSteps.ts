@@ -1,5 +1,5 @@
 import { Page, Response, Locator } from '@playwright/test';
-import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
+import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy, familyOf } from '@civitas-cerebrum/element-repository';
 import type { Platform } from '@civitas-cerebrum/element-repository';
 import { PlaywrightFactory } from '../playwright/PlaywrightFactory';
 import { BrowserRequest } from '../playwright/BrowserRequest';
@@ -13,7 +13,7 @@ import type { IUtils } from '../interfaces/IUtils';
 import type { IGestures, Direction } from '../interfaces/IGestures';
 import type { IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
 import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
-import { actionFamilyOf, assertFactoryFamily, requireBuiltPath, requireDevicePlatform, requireWebPlatform } from './platformGuard';
+import { actionFamilyOf, assertFactoryFamily, requireDevicePlatform, requireWebPlatform } from './platformGuard';
 import { pollUntil } from '../utils/poll';
 import { AppiumDevice, MissingAppIdError } from '../appium/AppiumDevice';
 import { EmailClient, EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
@@ -24,7 +24,7 @@ import type { BrowserResponse, BrowserRequestOptions } from '../playwright/Brows
 import { ExpectNoRequestOptions, WaitUntilState, WaitForNetworkIdleOptions, LoadState } from '../playwright/PlaywrightNavigation';
 import { stepLog as log } from '../logger/Logger';
 import { ElementAction } from './ElementAction';
-import { isListEntry } from './listEntry';
+import { isListEntry, requireListedMatch } from './listEntry';
 import { ExpectBuilder } from './ExpectMatchers';
 
 /**
@@ -1741,24 +1741,34 @@ export class Steps {
      */
     async getAll(elementName: string, pageName: string, getAllOptions?: GetAllOptions, options?: StepOptions): Promise<string[]> {
         log.extract('Extracting all from "%s" in "%s"', elementName, pageName);
-        // element-repository's platform `locateChild` is not scoped to the
-        // parent yet (a whole-screen lookup), so a device `child` would return
-        // the wrong elements. Refuse it before resolving anything.
-        if (getAllOptions?.child) requireBuiltPath('getAll with the "child" option', this.factory.platform);
+        // A child given as a repository reference is looked up before anything
+        // resolves, so a wrong reference fails without touching the screen.
+        const child = getAllOptions?.child;
+        const childSelector = child === undefined
+            ? undefined
+            : typeof child === 'string' ? child : this.repo.getSelector(child.elementName, child.pageName);
         let element: Element = await this.getAllElement(elementName, pageName, options);
 
         if ((!options?.strategy || options.strategy === 'all') && isListEntry(this.repo, elementName, pageName)) {
             await this.requireListMatch(element, elementName, pageName, 'getAll', options?.timeout);
         }
 
-        if (getAllOptions?.child) {
-            if (typeof getAllOptions.child === 'string') {
-                element = element.locateChild(getAllOptions.child);
-            } else {
-                const childSelector = this.repo.getSelector(getAllOptions.child.elementName, getAllOptions.child.pageName);
-                element = element.locateChild(childSelector);
+        if (childSelector !== undefined && familyOf(this.factory.platform) !== 'playwright') {
+            // On a device a child is scoped to ONE parent match
+            // (element-repository's `locateChild` searches inside the parent's
+            // match), so the children of the whole collection are gathered
+            // match by match, in order: what the web locator `parent >> child`
+            // returns across every parent match.
+            const parents = await element.all();
+            const children = (await Promise.all(parents.map(p => p.locateChild(childSelector).all()))).flat();
+            if (getAllOptions?.extractAttribute) {
+                const values = await Promise.all(children.map(el => el.getAttribute(getAllOptions.extractAttribute!)));
+                return values.filter((v): v is string => v !== null);
             }
+            return await Promise.all(children.map(async el => ((await el.textContent()) ?? '').trim()));
         }
+
+        if (childSelector !== undefined) element = element.locateChild(childSelector);
 
         if (getAllOptions?.extractAttribute) {
             const elements = await element.all();
@@ -2542,6 +2552,7 @@ export class Steps {
      */
     async clickListedElement(elementName: string, pageName: string, options: ListedElementMatch): Promise<void> {
         log.interact('Clicking listed element in "%s" > "%s" with options: %O', pageName, elementName, options);
+        requireListedMatch(this.repo, options);
         const baseElement = await this.getAllElement(elementName, pageName);
         const target = await this.interact.getListedElement(baseElement, options, this.repo);
         await this.interact.click(target, { subject: `${pageName}.${elementName}` });
@@ -2555,6 +2566,7 @@ export class Steps {
      */
     async verifyListedElement(elementName: string, pageName: string, options: VerifyListedOptions): Promise<void> {
         log.verify('Verifying listed element in "%s" > "%s" with options: %O', pageName, elementName, options);
+        requireListedMatch(this.repo, options);
         const baseElement = await this.getAllElement(elementName, pageName);
         const target = await this.interact.getListedElement(baseElement, options, this.repo);
 
@@ -2585,6 +2597,7 @@ export class Steps {
      */
     async getListedElementData(elementName: string, pageName: string, options: GetListedDataOptions): Promise<string | null> {
         log.extract('Extracting data from listed element in "%s" > "%s" with options: %O', pageName, elementName, options);
+        requireListedMatch(this.repo, options);
         const baseElement = await this.getAllElement(elementName, pageName);
         const target = await this.interact.getListedElement(baseElement, options, this.repo);
 

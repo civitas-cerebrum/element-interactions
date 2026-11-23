@@ -11,9 +11,9 @@ import {
     Steps,
 } from '../src/index';
 import type { IInteractionFactory } from '../src/index';
-import { PlatformPathPendingError } from '../src/steps/platformGuard';
 import { ElementAction } from '../src/steps/ElementAction';
 import { ExpectBuilder } from '../src/steps/ExpectMatchers';
+import { ReResolvingElement } from '../src/steps/ReResolvingElement';
 import { AppiumFactory } from '../src/appium';
 import { mockDriver, mockElement } from './appium/mocks';
 
@@ -154,6 +154,7 @@ const ACTION_CHAIN = [
     'byAttribute', 'ifVisible', 'probeTarget', 'captureSnapshot', 'buildExpectContext',
     'requireWeb', 'selectVisible', 'shouldProceed', 'resolve', 'resolveAll', 'narrowScoped', 'spawnScoped',
     'isWholeListEntry', 'verifyListPresence', 'absenceAttachSlice', 'expectBuilder',
+    'onDevice', 'verifyTarget', 'probeOnDevice', 'verifyListPresenceOnDevice', 'verifyAbsenceOnDevice', 'captureDeviceSnapshot',
 ];
 
 /** Matcher-tree (`ExpectBuilder`) fields that are web-only, and the shared ones. */
@@ -448,7 +449,17 @@ test.describe('Shared steps route to the factory with the neutral Element', () =
             await call(steps);
             const hit = memberCalls(calls, member).find(c => c[1] === method);
             expect(hit, `${member}.${method} was called`).toBeTruthy();
-            expect(hit![2], 'handed the repository Element as is').toBe(element);
+            const handed = hit![2] as Element;
+            if (handed instanceof ReResolvingElement) {
+                // A device verification polls an element that re-resolves the
+                // entry on every read: it reads the repository Element.
+                calls.length = 0;
+                await handed.count();
+                expect(calls.filter(c => c[0] === 'repo'), 'resolved afresh').toHaveLength(1);
+                expect(calls, 'read the repository Element').toContainEqual(['element:target', 'count']);
+            } else {
+                expect(handed, 'handed the repository Element as is').toBe(element);
+            }
         });
     }
 
@@ -535,7 +546,6 @@ test.describe('API, SQL and email steps on a device platform', () => {
             // Dummy arguments: the step may fail on them, but never with a platform refusal.
             const error = await caught(() => method.call(steps, 'a', 'b', 'c'));
             expect(error).not.toBeInstanceOf(PlatformNotSupportedError);
-            expect(error).not.toBeInstanceOf(PlatformPathPendingError);
 
             // Nothing resolved from the repository, nothing acted on; only the pacing steps use the utils.
             const touched = calls.filter(c => !(PACED.includes(name) && c[0] === 'utils'));
@@ -558,42 +568,17 @@ test.describe('API, SQL and email steps on a device platform', () => {
     });
 });
 
-// ─── Device paths not built yet: loud, never silent ──────────────────────────
+// ─── Device paths of shared features (behaviour: tests/platform-paths.spec.ts) ─
 
-test.describe('Shared features without a device path yet throw', () => {
-    async function expectPending(call: () => unknown, feature: RegExp) {
-        const error = await caught(call);
-        expect(error).toBeInstanceOf(PlatformPathPendingError);
-        expect((error as PlatformPathPendingError).platform).toBe('ios');
-        expect((error as Error).message).toMatch(feature);
-    }
-
-    test('verifyAbsence', async () => {
-        const { steps } = iosSteps();
-        await expectPending(() => steps.verifyAbsence('el', 'Page'), /verifyAbsence/);
-        await expectPending(() => steps.on('el', 'Page').verifyAbsence(), /verifyAbsence/);
-    });
-
-    test('verifyPresence on a "list": true entry', async () => {
-        const { steps } = iosSteps();
-        await expectPending(() => steps.verifyPresence('listy', 'Page'), /list/);
-    });
-
-    test('isVisible probe, action gate and matcher gate', async () => {
+test.describe('Shared features route to their device path', () => {
+    test('verifyAbsence asserts through the family absence on the ALL resolution', async () => {
         const { steps, calls } = iosSteps();
-        await expectPending(async () => { await steps.isVisible('el', 'Page'); }, /isVisible probe/);
-        await expectPending(() => steps.isVisible('el', 'Page').click(), /isVisible probe/);
-        await expectPending(() => Promise.resolve(steps.isVisible('el', 'Page').text.toBe('x')), /gate/);
-        await expectPending(() => steps.on('el', 'Page').ifVisible().click(), /gate/);
-        expect(memberCalls(calls, 'interact')).toEqual([]);
-        expect(memberCalls(calls, 'verify')).toEqual([]);
-    });
-
-    test('satisfy() predicates fail at once instead of polling', async () => {
-        const { steps } = iosSteps();
-        const started = Date.now();
-        await expectPending(() => Promise.resolve(steps.on('el', 'Page').timeout(5000).satisfy(() => true)), /satisfy/);
-        expect(Date.now() - started).toBeLessThan(2000);
+        await steps.verifyAbsence('el', 'Page');
+        await steps.on('el', 'Page').verifyAbsence();
+        const gets = calls.filter(c => c[0] === 'repo' && c[1] === 'get');
+        expect(gets).toHaveLength(2);
+        for (const get of gets) expect(get[4]).toMatchObject({ strategy: 'all' });
+        expect(memberCalls(calls, 'verify').map(c => c[1])).toEqual(['absence', 'absence']);
     });
 });
 
@@ -794,15 +779,19 @@ test.describe('Steps on a real AppiumFactory (mock driver)', () => {
         }
     });
 
-    test('getAll with { child } is refused before anything resolves', async () => {
-        const { steps, element, repoCalls } = appiumSteps(400);
-        const error = await caught(() => steps.getAll('el', 'Page', { child: '~row' }));
-        expect(error).toBeInstanceOf(PlatformPathPendingError);
-        expect((error as PlatformPathPendingError).feature).toMatch(/getAll.*child/);
-        expect((error as PlatformPathPendingError).platform).toBe('ios');
-        expect(repoCalls).toEqual([]);
-        expect(element.calls).toEqual([]);
-        // Without `child`, getAll works on the device.
+    test('getAll with { child } gathers the children match by match', async () => {
+        const child = mockElement({ text: 'child text' });
+        const parent = mockElement({ text: 'actual' });
+        (parent as unknown as { locateChild: (s: string) => unknown }).locateChild = (selector: string) => {
+            parent.calls.push(['locateChild', selector]);
+            return child;
+        };
+        const repoCalls: Call[] = [];
+        const factory = new AppiumFactory(mockDriver().driver, 'ios', { timeout: 400 });
+        const steps = new Steps(factory, stubRepo(repoCalls, parent));
+        expect(await steps.getAll('el', 'Page', { child: '~row' })).toEqual(['child text']);
+        expect(parent.calls).toContainEqual(['locateChild', '~row']);
+        // Without `child`, getAll reads the matches themselves.
         expect(await steps.getAll('el', 'Page')).toEqual(['actual']);
     });
 

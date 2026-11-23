@@ -194,3 +194,155 @@ export function methodsOf(ctor: { prototype: object }, except: string[] = []): s
 }
 
 export const DEVICE_PLATFORMS = ['android', 'ios'] as const;
+
+// ─── A UI-tree mock driver: `$` / `$$`, scoped `parent.$` / `$$` ────────────
+
+/** One node of a mock native UI tree. Readers are re-read on every command, so tests can flip state. */
+export interface MockNode {
+    /** The selector strings this node answers to (exact string match, as the repository formats them). */
+    match: string | string[];
+    text?: Reader<string | null>;
+    /** Displayed (default `true`). */
+    visible?: Reader<boolean>;
+    /** In the tree at all (default `true`); `false` removes the node and its subtree. */
+    exists?: Reader<boolean>;
+    enabled?: Reader<boolean>;
+    attributes?: Record<string, Reader<string | null>>;
+    children?: MockNode[];
+}
+
+export interface MockUiDriver extends MockDriver {
+    /** Every `$` / `$$` the session received, as `[method, selector, scope]` (`scope` is `'driver'` or the parent node's first selector). */
+    lookups: Array<[string, string, string]>;
+    /** Lookups of `selector` so far. */
+    lookupCount(selector: string): number;
+    /** Make every following command throw `error` (a dead session); `undefined` heals it. */
+    failWith(error: Error | undefined): void;
+}
+
+/** A WebDriver error as WebdriverIO raises it: `name` is the W3C error code. */
+export function driverError(name: string, message: string = name): Error {
+    const err = new Error(message);
+    err.name = name;
+    return err;
+}
+
+/**
+ * A stand-in WebdriverIO session over a mock native UI tree: `$(sel)` /
+ * `$$(sel)` on the driver search the whole tree; on an element they search
+ * only that element's subtree (as WebdriverIO's scoped `parent.$`), so a
+ * child outside the parent is never found. `$` returns the first match bound
+ * to its node, or (no match) a lazy handle that re-queries on every command,
+ * like WebdriverIO's lazy element. Everything else is {@link mockDriver}.
+ */
+export function mockUiDriver(nodes: MockNode[], options: Parameters<typeof mockDriver>[0] = {}): MockUiDriver {
+    const base = mockDriver(options);
+    const lookups: Array<[string, string, string]> = [];
+    let failure: Error | undefined;
+    let ids = 0;
+    const idOf = new Map<MockNode, string>();
+    const read = async <T>(value: Reader<T> | undefined, fallback: T): Promise<T> =>
+        value === undefined ? fallback : typeof value === 'function' ? await (value as () => T | Promise<T>)() : value;
+    const matches = (node: MockNode, selector: string) =>
+        (Array.isArray(node.match) ? node.match : [node.match]).includes(selector);
+    const live = async (node: MockNode) => read(node.exists, true);
+    const check = () => { if (failure) throw failure; };
+
+    /** Matches of `selector` among the descendants of `roots` (document order), skipping removed subtrees. */
+    async function search(roots: MockNode[], selector: string): Promise<MockNode[]> {
+        const out: MockNode[] = [];
+        const walk = async (list: MockNode[]) => {
+            for (const node of list) {
+                if (!(await live(node))) continue;
+                if (matches(node, selector)) out.push(node);
+                await walk(node.children ?? []);
+            }
+        };
+        await walk(roots);
+        return out;
+    }
+
+    const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+    async function waitUntil(cond: () => Promise<boolean>, timeout: number, what: string): Promise<true> {
+        const deadline = Date.now() + timeout;
+        for (;;) {
+            check();
+            if (await cond()) return true;
+            if (Date.now() >= deadline) throw new Error(`element still not ${what} after ${timeout}ms`);
+            await sleep(Math.min(20, Math.max(1, deadline - Date.now())));
+        }
+    }
+
+    function scopeName(node?: MockNode): string {
+        if (!node) return 'driver';
+        return Array.isArray(node.match) ? node.match[0] : node.match;
+    }
+
+    /** A raw element: bound to `node` when given, else lazy (re-queries `selector` under `scope` on every command). */
+    function raw(selector: string, scope: MockNode[], scopeLabel: string, bound?: MockNode): Record<string, unknown> {
+        const current = async (): Promise<MockNode | undefined> => {
+            check();
+            if (bound) return (await stillIn(bound)) ? bound : undefined;
+            return (await search(scope, selector))[0];
+        };
+        // A bound node is gone once it (or an ancestor) is removed: `search` skips removed subtrees.
+        const stillIn = async (node: MockNode) => (await search(scope, selector)).includes(node);
+        const need = async (): Promise<MockNode> => {
+            const node = await current();
+            if (!node) throw driverError(bound ? 'stale element reference' : 'no such element', `${bound ? 'stale element reference' : 'no such element'}: ${selector}`);
+            return node;
+        };
+        const el: Record<string, unknown> = {
+            selector,
+            get elementId() { return bound ? idOf.get(bound) : undefined; },
+            isExisting: async () => !!(await current()),
+            isDisplayed: async () => { const n = await current(); return n ? read(n.visible, true) : false; },
+            isEnabled: async () => read((await need()).enabled, true),
+            isSelected: async () => false,
+            getText: async () => read((await need()).text, ''),
+            getAttribute: async (name: string) => read((await need()).attributes?.[name], null),
+            getValue: async () => read((await need()).attributes?.value, ''),
+            click: async () => { await need(); base.calls.push(['click', selector, scopeLabel]); },
+            waitForExist: async ({ timeout = 0, reverse = false }: { timeout?: number; reverse?: boolean } = {}) =>
+                waitUntil(async () => !!(await current()) !== reverse, timeout, reverse ? 'gone' : 'existing'),
+            waitForDisplayed: async ({ timeout = 0, reverse = false }: { timeout?: number; reverse?: boolean } = {}) =>
+                waitUntil(async () => { const n = await current(); return (n ? await read(n.visible, true) : false) !== reverse; },
+                    timeout, reverse ? 'hidden' : 'displayed'),
+            $: async (sel: string) => {
+                const node = await need();
+                return lookup('$', sel, node.children ?? [], scopeName(node));
+            },
+            $$: async (sel: string) => {
+                const node = await need();
+                return lookupAll(sel, node.children ?? [], scopeName(node));
+            },
+        };
+        return el;
+    }
+    async function lookup(method: string, selector: string, scope: MockNode[], label: string) {
+        check();
+        lookups.push([method, selector, label]);
+        const [first] = await search(scope, selector);
+        if (first && !idOf.has(first)) idOf.set(first, `el-${++ids}`);
+        return raw(selector, scope, label, first);
+    }
+    async function lookupAll(selector: string, scope: MockNode[], label: string) {
+        check();
+        lookups.push(['$$', selector, label]);
+        const found = await search(scope, selector);
+        return found.map(node => {
+            if (!idOf.has(node)) idOf.set(node, `el-${++ids}`);
+            return raw(selector, scope, label, node);
+        });
+    }
+
+    const driver = base.driver as unknown as Record<string, unknown>;
+    driver.$ = (selector: string) => lookup('$', selector, nodes, 'driver');
+    driver.$$ = (selector: string) => lookupAll(selector, nodes, 'driver');
+    return {
+        ...base,
+        lookups,
+        lookupCount: selector => lookups.filter(l => l[1] === selector).length,
+        failWith: error => { failure = error; },
+    };
+}

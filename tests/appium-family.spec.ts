@@ -586,13 +586,16 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(error.message).toMatch(/No listed element matched \{"text":"never"\}: timed out after 250 ms/);
         });
 
-        test('getListedElement refuses withDescendant and child, and requires a criterion', async () => {
+        test('getListedElement requires a criterion, and a repository for a reference', async () => {
             const { factory } = setup();
             const i = factory.createInteractions();
             const list = mockElement();
-            await expect(i.getListedElement(list, { withDescendant: { child: '~x' } })).rejects.toThrow(/"withDescendant" is not available/);
-            await expect(i.getListedElement(list, { text: 'a', child: '~x' })).rejects.toThrow(/"child" is not available/);
             await expect(i.getListedElement(list, {})).rejects.toThrow(/requires "text", "attribute", or "withDescendant"/);
+            await expect(i.getListedElement(list, { withDescendant: { child: { pageName: 'P', elementName: 'x' } } }))
+                .rejects.toThrow(/ElementRepository instance is required when "withDescendant.child"/);
+            await expect(i.getListedElement(list, { text: 'a', child: { pageName: 'P', elementName: 'x' } }))
+                .rejects.toThrow(/ElementRepository instance is required when "child"/);
+            // child / withDescendant scoped to the item: tests/platform-paths.spec.ts (real PlatformElement).
         });
     });
 

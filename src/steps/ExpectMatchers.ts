@@ -1,7 +1,8 @@
 import { Element, PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
 import type { Platform } from '@civitas-cerebrum/element-repository';
 import type { IVerifications } from '../interfaces/IVerifications';
-import { PlatformPathPendingError, requireBuiltPath, requireWebPlatform } from './platformGuard';
+import { requireWebPlatform } from './platformGuard';
+import { isFatalDriverError } from '../utils/driverErrors';
 
 /**
  * Snapshot of an element's state at a single point in time.
@@ -39,6 +40,12 @@ export interface ExpectContext {
     readonly verify: IVerifications;
     /** The platform the context acts on. Omitted means `'web'`. */
     readonly platform?: Platform;
+    /**
+     * The ifVisible / isVisible gate's probe, when the host has its own (a
+     * device chain: re-resolving, fatal driver errors rethrown). Omitted: the
+     * gate resolves once and waits for visibility (web).
+     */
+    readonly probeVisible?: (timeout: number) => Promise<boolean>;
 }
 
 /** One assertion queued on an `ExpectBuilder`. Executes when the builder is awaited. */
@@ -55,8 +62,9 @@ interface QueuedAssertion {
 
 async function honorIfVisibleGate(ctx: ExpectContext): Promise<boolean> {
     if (!ctx.conditionalVisible) return true;
-    // Outside the try: swallowing a not-yet-built platform gate would silently skip the assertion.
-    requireBuiltPath('ifVisible / isVisible gate', ctx.platform ?? 'web');
+    // A device gate is the re-resolving probe: it rethrows a fatal driver
+    // error instead of skipping the assertion.
+    if (ctx.probeVisible) return ctx.probeVisible(ctx.visibilityTimeout);
     try {
         const element = await ctx.resolveElement();
         await element.waitFor({ state: 'visible', timeout: ctx.visibilityTimeout });
@@ -79,7 +87,7 @@ async function runViaVerify(
         if (!messageOverride) throw err;
         // A platform refusal is not an assertion failure: keep its type (and
         // its step name) instead of re-wrapping it under the custom message.
-        if (err instanceof PlatformNotSupportedError || err instanceof PlatformPathPendingError) throw err;
+        if (err instanceof PlatformNotSupportedError) throw err;
         const original = err instanceof Error ? err.message : String(err);
         throw new Error(`${messageOverride}\n  ${original}`);
     }
@@ -117,9 +125,10 @@ async function assertPredicate(
             lastSnapshot = await ctx.captureSnapshot();
             if (predicate(lastSnapshot) !== negated) return;
         } catch (err) {
-            // A platform path that is not built yet is not a transient miss:
-            // fail now instead of polling it for the whole timeout.
-            if (err instanceof PlatformPathPendingError) throw err;
+            // A platform refusal or a fatal driver error (dead session,
+            // invalid selector) is not a transient miss: fail now instead of
+            // polling it for the whole timeout.
+            if (err instanceof PlatformNotSupportedError || isFatalDriverError(err)) throw err;
             lastError = err;
         }
         await new Promise(resolve => setTimeout(resolve, pollMs));

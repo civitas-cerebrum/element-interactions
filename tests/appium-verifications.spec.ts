@@ -72,6 +72,7 @@ const EXEMPT: Record<string, string> = {
     expectEventually: 'private polling helper behind every case',
     readText: 'private probe helper',
     allTexts: 'private probe helper',
+    anyDisplayed: 'private probe helper behind absence (covered by its CASES row and the fatal-error case)',
 };
 
 test('every polling device verification has a retry case or an explicit exemption', () => {
@@ -172,15 +173,31 @@ for (const platform of DEVICE_PLATFORMS) {
             await factory().createVerifications().absence(mockElement({ visible: async () => { throw new Error('no such element'); } }), { timeout: 100 });
         });
 
-        test('absence with a selector string resolves a platform element on the driver', async () => {
+        test('absence with a selector string resolves a platform element on the driver (every match)', async () => {
             const mock = mockDriver({ capabilities: CAPS[platform] });
             const looked: unknown[] = [];
-            (mock.driver as unknown as Record<string, unknown>).$ = async (selector: string) => {
+            (mock.driver as unknown as Record<string, unknown>).$$ = async (selector: string) => {
                 looked.push(selector);
-                return { isDisplayed: async () => false };
+                return [{ elementId: 'a', isDisplayed: async () => false }];
             };
             await new AppiumFactory(mock.driver, platform).createVerifications().absence('~gone', { timeout: 100 });
             expect(looked[0]).toBe('~gone');
+        });
+
+        test('absence fails when any match is displayed', async () => {
+            const list = mockElement({ children: [mockElement({ visible: false }), mockElement({ visible: true })] });
+            const error = await factory().createVerifications().absence(list, { timeout: 150 }).catch(e => e);
+            expect(error).toBeInstanceOf(PollTimeoutError);
+        });
+
+        test('absence never passes on a fatal driver error (dead session)', async () => {
+            const dead = Object.assign(new Error('invalid session id'), { name: 'invalid session id' });
+            const el = mockElement({ visible: async () => { throw dead; } });
+            const error = await factory().createVerifications().absence(el, { timeout: 150 }).catch(e => e);
+            expect(error).toBeInstanceOf(PollTimeoutError);
+            expect(error.message).toContain('invalid session id');
+            const listDead = { ...mockElement(), all: async () => { throw dead; } } as unknown as Element;
+            expect(await factory().createVerifications().absence(listDead, { timeout: 150 }).catch(e => e)).toBeInstanceOf(PollTimeoutError);
         });
 
         test(`state 'focused' ${platform === 'android' ? 'polls the focused attribute' : 'throws PlatformNotSupportedError'}`, async () => {

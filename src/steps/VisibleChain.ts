@@ -1,7 +1,7 @@
 import { ElementAction } from './ElementAction';
 import { IsVisibleOptions, ClickOptions, DropdownSelectOptions, DragAndDropOptions } from '../enum/Options';
 import { createLogger } from '../logger/Logger';
-import { requireBuiltPath } from './platformGuard';
+import { familyOf } from '@civitas-cerebrum/element-repository';
 
 const log = createLogger('visible');
 
@@ -107,12 +107,17 @@ export class VisibleChain implements PromiseLike<boolean> {
      * walk — a correct answer slightly late, rather than a wrong answer on time.
      */
     private async probe(): Promise<boolean> {
-        // The probe re-resolution has no device-platform path yet. Throw rather
-        // than answer `false`, which would make every gate silently skip.
-        requireBuiltPath('isVisible probe', this.action.platform);
         const { elementName: el, pageName: pg } = this.action;
         const timeout = this.options.timeout ?? 2000;
         const containsText = this.options.containsText;
+        if (familyOf(this.action.platform) !== 'playwright') {
+            // The device probe: re-resolves per attempt, like the loop below,
+            // and throws a fatal driver error instead of answering `false`.
+            const ok = await this.action.probeOnDevice(timeout, containsText);
+            log('[probe] "%s" @ "%s" (timeout=%dms%s) → %s', el, pg, timeout,
+                containsText === undefined ? '' : `, containsText="${containsText}"`, ok);
+            return ok;
+        }
         // `Math.max(1, …)`: a Playwright timeout of 0 means "wait forever", and
         // a 0ms budget must still buy one attempt rather than no answer at all.
         const deadline = Date.now() + Math.max(1, timeout);

@@ -58,32 +58,6 @@ export function assertFactoryFamily(factory: IInteractionFactory): void {
 }
 
 /**
- * Thrown by a shared feature whose device-platform implementation is not built
- * yet (list entries, `verifyAbsence`, visibility probes and gates, predicate
- * snapshots). Distinct from `PlatformNotSupportedError`: the feature is meant
- * to work on the platform, it just has no implementation in this build. It is
- * always thrown, never swallowed, so such a step can never silently pass.
- */
-export class PlatformPathPendingError extends Error {
-    readonly feature: string;
-    readonly platform: Platform;
-
-    constructor(feature: string, platform: Platform) {
-        super(`"${feature}" has no implementation for platform "${platform}" yet; it works on "web" only in this build.`);
-        this.name = 'PlatformPathPendingError';
-        this.feature = feature;
-        this.platform = platform;
-    }
-}
-
-/** Throws {@link PlatformPathPendingError} unless `platform` belongs to the Playwright family. */
-export function requireBuiltPath(feature: string, platform: Platform): void {
-    if (familyOf(platform) !== 'playwright') {
-        throw new PlatformPathPendingError(feature, platform);
-    }
-}
-
-/**
  * The single platform-only guard of the Steps layer, the mirror of
  * {@link requireWebPlatform}: throws `PlatformNotSupportedError(stepName,
  * platform)` when `platform` belongs to the Playwright family (`web`). Called
