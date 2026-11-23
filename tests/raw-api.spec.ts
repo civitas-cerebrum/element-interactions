@@ -64,7 +64,7 @@ test.describe('ElementRepository — direct query methods', () => {
   });
 
   test('getPagePlatform — throws for nonexistent page', async ({ repo }) => {
-    expect(() => repo.getPagePlatform('NonexistentPage')).toThrow('not found');
+    expect(() => repo.getPagePlatform('NonexistentPage')).toThrow('Page "NonexistentPage" has no entry for platform "web". Available: none.');
   });
 
   test('getSelectorRaw — returns the correct strategy and raw value', async ({ repo }) => {

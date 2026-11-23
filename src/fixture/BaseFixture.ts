@@ -581,10 +581,9 @@ function webFixture(baseTest: typeof base, locatorPath: string, options: BaseFix
             }
         },
         repo: async ({ page }, use) => {
-            // Unchanged from 0.3.x: no active platform, first page with the name.
-            // (CONTRACT B3 asks for `{ platform: 'web' }`; held back so web keeps
-            // today's behaviour and messages — see the S4 report.)
-            await use(new ElementRepository(page, locatorPath, options?.repoTimeout));
+            // CONTRACT B3: `web` is the active platform, so a page name resolves to
+            // its web entry even when the file also holds android / ios pages.
+            await use(new ElementRepository(page, locatorPath, { platform: 'web', timeout: options?.repoTimeout }));
         },
         steps: async ({ repo }, use) => {
             const steps = new Steps(repo, {
