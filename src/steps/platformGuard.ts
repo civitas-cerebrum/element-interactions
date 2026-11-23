@@ -82,3 +82,18 @@ export function requireBuiltPath(feature: string, platform: Platform): void {
         throw new PlatformPathPendingError(feature, platform);
     }
 }
+
+/**
+ * The single platform-only guard of the Steps layer, the mirror of
+ * {@link requireWebPlatform}: throws `PlatformNotSupportedError(stepName,
+ * platform)` when `platform` belongs to the Playwright family (`web`). Called
+ * first by every platform-only step (app lifecycle, device, contexts, device
+ * assertions, page source, screen-level gestures), before anything is
+ * resolved or acted on, so the error names the STEP, never an internal
+ * family method.
+ */
+export function requireDevicePlatform(stepName: string, platform: Platform): void {
+    if (familyOf(platform) === 'playwright') {
+        throw new PlatformNotSupportedError(stepName, platform);
+    }
+}

@@ -11,8 +11,10 @@ import type { IExtractions } from '../interfaces/IExtractions';
 import type { INavigation } from '../interfaces/INavigation';
 import type { IUtils } from '../interfaces/IUtils';
 import type { IGestures, Direction } from '../interfaces/IGestures';
-import type { IDevice } from '../interfaces/IDevice';
-import { actionFamilyOf, assertFactoryFamily, requireBuiltPath, requireWebPlatform } from './platformGuard';
+import type { IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
+import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
+import { actionFamilyOf, assertFactoryFamily, requireBuiltPath, requireDevicePlatform, requireWebPlatform } from './platformGuard';
+import { pollUntil } from '../utils/poll';
 import { EmailClient, EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
 import { SqlClient, SqlResult, QueryBuilder, UnsupportedEngineException } from '@civitas-cerebrum/sql-client';
@@ -819,6 +821,352 @@ export class Steps {
         log.interact('Scrolling "%s" in "%s" into view', elementName, pageName);
         const element = await this.getElement(elementName, pageName, options);
         await this.gestures.scrollIntoView(element, options?.direction !== undefined ? { direction: options.direction } : undefined);
+    }
+
+    // ==========================================
+    // PLATFORM STEPS (CONTRACT B5)
+    // ==========================================
+    //
+    // App lifecycle, device, contexts, device assertions, page source and the
+    // screen-level gestures (`swipeScreen`, `tapAt`) are platform-only: on web
+    // they throw `PlatformNotSupportedError(<step>, 'web')` first, before any
+    // element is resolved or anything is acted on. A step one device platform
+    // cannot do (`pressBack` on ios) throws the same error for that platform,
+    // from the platform strategy. The element-level gestures (`swipe`,
+    // `scrollUntilFound`, `longPress`, `pinch`, `zoom`) resolve the element and
+    // delegate to its element-repository primitive on every platform: on web
+    // `swipe` and `longPress` drag / hold with the mouse, `scrollUntilFound`
+    // scrolls the element into view, and `pinch` / `zoom` throw
+    // `PlatformNotSupportedError('pinch' | 'zoom', 'web')` from the element.
+
+    /** {@link requireDevicePlatform} on this factory's platform. */
+    private requirePlatform(stepName: string): void {
+        requireDevicePlatform(stepName, this.factory.platform);
+    }
+
+    /**
+     * Polls a read-only device probe until `accept` takes its value, for the
+     * step timeout (the factory's). A `PlatformNotSupportedError` from the
+     * probe is not retried: it is rethrown at once. On timeout the error names
+     * the step, what was expected and the last observed value.
+     */
+    private async pollDevice<T>(probe: () => Promise<T>, accept: (value: T) => boolean, message: string): Promise<void> {
+        let refusal: PlatformNotSupportedError | undefined;
+        const REFUSED = Symbol('refused');
+        await pollUntil<T | typeof REFUSED>(
+            async () => {
+                try {
+                    return await probe();
+                } catch (error) {
+                    if (error instanceof PlatformNotSupportedError) {
+                        refusal = error;
+                        return REFUSED;
+                    }
+                    throw error;
+                }
+            },
+            value => value === REFUSED || accept(value as T),
+            { timeout: this.timeout ?? this.utils.getTimeout(), message },
+        );
+        if (refusal) throw refusal;
+    }
+
+    // ── App lifecycle ──
+
+    /**
+     * Launches the app (starts it when not running). Device platforms only.
+     * @param appId - Android package / iOS bundle id; defaults to the app under test from the capabilities file.
+     */
+    async launchApp(appId?: string): Promise<void> {
+        this.requirePlatform('launchApp');
+        log.navigate('Launching app "%s"', appId ?? '<app under test>');
+        await this.device.launchApp(appId);
+    }
+
+    /**
+     * Brings the app to the foreground (starting it when needed). Device platforms only.
+     * @param appId - Android package / iOS bundle id; defaults to the app under test.
+     */
+    async activateApp(appId?: string): Promise<void> {
+        this.requirePlatform('activateApp');
+        log.navigate('Activating app "%s"', appId ?? '<app under test>');
+        await this.device.activateApp(appId);
+    }
+
+    /**
+     * Terminates the app. Device platforms only.
+     * @param appId - Android package / iOS bundle id; defaults to the app under test.
+     */
+    async terminateApp(appId?: string): Promise<void> {
+        this.requirePlatform('terminateApp');
+        log.navigate('Terminating app "%s"', appId ?? '<app under test>');
+        await this.device.terminateApp(appId);
+    }
+
+    /**
+     * Sends the app under test to the background for `seconds`, then brings it back. Device platforms only.
+     * @param seconds - Non-negative, finite number of seconds.
+     */
+    async backgroundApp(seconds: number): Promise<void> {
+        this.requirePlatform('backgroundApp');
+        log.navigate('Backgrounding the app for %ds', seconds);
+        await this.device.backgroundApp(seconds);
+    }
+
+    /** Terminates and re-activates the app under test. Device platforms only. */
+    async resetApp(): Promise<void> {
+        this.requirePlatform('resetApp');
+        log.navigate('Resetting the app under test (terminate + activate)');
+        await this.device.resetApp();
+    }
+
+    /**
+     * Installs an app from `appPath` (an `.apk` / `.app` / `.ipa` path or URL the Appium server can reach).
+     * Device platforms only.
+     */
+    async installApp(appPath: string): Promise<void> {
+        this.requirePlatform('installApp');
+        log.navigate('Installing app from "%s"', appPath);
+        await this.device.installApp(appPath);
+    }
+
+    /**
+     * Uninstalls the app `appId` (Android package / iOS bundle id). Device platforms only.
+     */
+    async removeApp(appId: string): Promise<void> {
+        this.requirePlatform('removeApp');
+        log.navigate('Removing app "%s"', appId);
+        await this.device.removeApp(appId);
+    }
+
+    /**
+     * Opens a deep link. Device platforms only.
+     * @param url - The deep link (custom scheme or universal / app link).
+     * @param appId - The app that should handle it; defaults to the app under test.
+     */
+    async openDeepLink(url: string, appId?: string): Promise<void> {
+        this.requirePlatform('openDeepLink');
+        log.navigate('Opening deep link "%s"', url);
+        await this.device.openDeepLink(url, appId);
+    }
+
+    // ── Gestures ──
+
+    /**
+     * Swipes on an element: the finger moves in `direction` (`'up'` reveals content below), through the
+     * element's centre. Delegates to the element's `swipe` primitive on every platform (on web a mouse drag).
+     * @param options - `distance`: finger travel in px (platform default when omitted).
+     */
+    async swipe(elementName: string, pageName: string, direction: Direction, options?: { distance?: number }): Promise<void> {
+        log.interact('Swiping %s on "%s" in "%s"', direction, elementName, pageName);
+        const element = await this.getElement(elementName, pageName);
+        await this.gestures.swipe(element, direction, options?.distance !== undefined ? { distance: options.distance } : undefined);
+    }
+
+    /**
+     * Swipes across the screen: the finger moves in `direction` through the screen centre (`'up'` reveals
+     * content below), kept clear of the system gesture zones. Device platforms only.
+     * @param options - `distance`: finger travel in px (default half the screen along that axis).
+     */
+    async swipeScreen(direction: Direction, options?: { distance?: number }): Promise<void> {
+        this.requirePlatform('swipeScreen');
+        log.interact('Swiping the screen %s', direction);
+        await this.gestures.swipeScreen(direction, options?.distance !== undefined ? { distance: options.distance } : undefined);
+    }
+
+    /**
+     * Scrolls the screen until the element is displayed, re-reading it after every swipe; throws when
+     * `timeout` expires first. On web the browser scrolls the element into view directly.
+     * @param options - `direction`: where the element lies relative to the view (default `'down'`);
+     *   `timeout` in ms (default the step timeout). `timeout` bounds when a new swipe may start: an
+     *   in-flight swipe always finishes, so the step may run up to one swipe longer.
+     */
+    async scrollUntilFound(elementName: string, pageName: string, options?: { direction?: Direction; timeout?: number }): Promise<void> {
+        log.interact('Scrolling %s until "%s" in "%s" is found', options?.direction ?? 'down', elementName, pageName);
+        const element = await this.getElement(elementName, pageName);
+        const gestureOptions: { direction?: Direction; timeout?: number } = {};
+        if (options?.direction !== undefined) gestureOptions.direction = options.direction;
+        if (options?.timeout !== undefined) gestureOptions.timeout = options.timeout;
+        await this.gestures.scrollUntilFound(element, gestureOptions);
+    }
+
+    /**
+     * Presses and holds an element. Delegates to the element's `longPress` primitive on every platform
+     * (on web the mouse button is held).
+     * @param options - `duration`: hold time in ms (default 1000).
+     */
+    async longPress(elementName: string, pageName: string, options?: { duration?: number }): Promise<void> {
+        log.interact('Long-pressing "%s" in "%s"', elementName, pageName);
+        const element = await this.getElement(elementName, pageName);
+        await this.gestures.longPress(element, options?.duration !== undefined ? { duration: options.duration } : undefined);
+    }
+
+    /**
+     * Taps the screen at (`x`, `y`) px, native-context screen coordinates. Device platforms only.
+     */
+    async tapAt(x: number, y: number): Promise<void> {
+        this.requirePlatform('tapAt');
+        log.interact('Tapping the screen at (%d, %d)', x, y);
+        await this.gestures.tapAt(x, y);
+    }
+
+    /**
+     * Two-finger pinch (fingers move together) on an element. Delegates to the element's `pinch` primitive;
+     * a web element throws `PlatformNotSupportedError('pinch', 'web')`.
+     * @param options - `scale` in (0, 1), default 0.5.
+     */
+    async pinch(elementName: string, pageName: string, options?: { scale?: number }): Promise<void> {
+        log.interact('Pinching "%s" in "%s"', elementName, pageName);
+        const element = await this.getElement(elementName, pageName);
+        await this.gestures.pinch(element, options?.scale !== undefined ? { scale: options.scale } : undefined);
+    }
+
+    /**
+     * Two-finger zoom (fingers spread) on an element. Delegates to the element's `zoom` primitive;
+     * a web element throws `PlatformNotSupportedError('zoom', 'web')`.
+     * @param options - `scale` above 1, default 2.
+     */
+    async zoom(elementName: string, pageName: string, options?: { scale?: number }): Promise<void> {
+        log.interact('Zooming "%s" in "%s"', elementName, pageName);
+        const element = await this.getElement(elementName, pageName);
+        await this.gestures.zoom(element, options?.scale !== undefined ? { scale: options.scale } : undefined);
+    }
+
+    // ── Device ──
+
+    /** System back. Android only: throws `PlatformNotSupportedError('pressBack', 'ios')` on ios. */
+    async pressBack(): Promise<void> {
+        this.requirePlatform('pressBack');
+        log.navigate('Pressing system back');
+        await this.device.pressBack();
+    }
+
+    /** Hides the on-screen keyboard. Device platforms only. */
+    async hideKeyboard(): Promise<void> {
+        this.requirePlatform('hideKeyboard');
+        log.interact('Hiding the keyboard');
+        await this.device.hideKeyboard();
+    }
+
+    /** Rotates the device to `orientation`. Device platforms only. */
+    async setOrientation(orientation: Orientation): Promise<void> {
+        this.requirePlatform('setOrientation');
+        log.interact('Setting orientation to %s', orientation);
+        await this.device.setOrientation(orientation);
+    }
+
+    /** Accepts the open system / app alert. Device platforms only. */
+    async acceptAlert(): Promise<void> {
+        this.requirePlatform('acceptAlert');
+        log.interact('Accepting the alert');
+        await this.device.acceptAlert();
+    }
+
+    /** Dismisses the open system / app alert. Device platforms only. */
+    async dismissAlert(): Promise<void> {
+        this.requirePlatform('dismissAlert');
+        log.interact('Dismissing the alert');
+        await this.device.dismissAlert();
+    }
+
+    /**
+     * Grants, denies or resets a permission of the app under test. Device platforms only.
+     * @param permission - The platform's name: an Android permission (`android.permission.CAMERA`) or an
+     *   iOS service (`camera`, `photos`, ...).
+     * @param state - `'grant'`, `'deny'` or `'reset'` (on Android `'reset'` revokes).
+     */
+    async setPermission(permission: string, state: PermissionState): Promise<void> {
+        this.requirePlatform('setPermission');
+        log.interact('Setting permission "%s" to %s', permission, state);
+        await this.device.setPermission(permission, state);
+    }
+
+    // ── Contexts ──
+
+    /** The available contexts (`'NATIVE_APP'`, `'WEBVIEW_*'`). Device platforms only. */
+    async getContexts(): Promise<string[]> {
+        this.requirePlatform('getContexts');
+        log.extract('Getting the available contexts');
+        return await this.device.getContexts();
+    }
+
+    /** Switches to the context `name` (`'NATIVE_APP'` or a `'WEBVIEW_*'` name). Device platforms only. */
+    async switchContext(name: string): Promise<void> {
+        this.requirePlatform('switchContext');
+        log.navigate('Switching to context "%s"', name);
+        await this.device.switchContext(name);
+    }
+
+    // ── Assertions (polling, step timeout) ──
+
+    /**
+     * Waits until the app is in the foreground; fails after the step timeout with the last observed state.
+     * Device platforms only.
+     * @param appId - Android package / iOS bundle id; defaults to the app under test.
+     */
+    async verifyAppInForeground(appId?: string): Promise<void> {
+        this.requirePlatform('verifyAppInForeground');
+        const app = appId ?? '<app under test>';
+        log.verify('Verifying app "%s" is in the foreground', app);
+        await this.pollDevice(
+            () => this.device.isAppInForeground(appId),
+            inForeground => inForeground === true,
+            `verifyAppInForeground: expected app "${app}" in the foreground (last value: whether it is)`,
+        );
+    }
+
+    /**
+     * Waits until the device reports `orientation`; fails after the step timeout with the last observed one.
+     * Device platforms only.
+     */
+    async verifyOrientation(orientation: Orientation): Promise<void> {
+        this.requirePlatform('verifyOrientation');
+        if (orientation !== 'portrait' && orientation !== 'landscape') {
+            throw new Error(`verifyOrientation: expected 'portrait' or 'landscape', got "${orientation}".`);
+        }
+        log.verify('Verifying orientation is %s', orientation);
+        await this.pollDevice(
+            () => this.device.getOrientation(),
+            actual => actual === orientation,
+            `verifyOrientation: expected orientation "${orientation}"`,
+        );
+    }
+
+    /**
+     * Waits until the on-screen keyboard is shown (`shown`, default `true`) or hidden (`false`); fails after
+     * the step timeout with the last observed state. Device platforms only.
+     */
+    async verifyKeyboardShown(shown: boolean = true): Promise<void> {
+        this.requirePlatform('verifyKeyboardShown');
+        log.verify('Verifying the keyboard is %s', shown ? 'shown' : 'hidden');
+        await this.pollDevice(
+            () => this.device.isKeyboardShown(),
+            actual => actual === shown,
+            `verifyKeyboardShown: expected the keyboard ${shown ? 'shown' : 'hidden'} (last value: whether it is shown)`,
+        );
+    }
+
+    /**
+     * Waits until the current context is `name`; fails after the step timeout with the last observed context.
+     * Device platforms only.
+     */
+    async verifyContext(name: string): Promise<void> {
+        this.requirePlatform('verifyContext');
+        log.verify('Verifying the current context is "%s"', name);
+        await this.pollDevice(
+            () => this.device.getContext(),
+            actual => actual === name,
+            `verifyContext: expected context "${name}"`,
+        );
+    }
+
+    // ── Extraction ──
+
+    /** The current screen's UI hierarchy as XML. Device platforms only (on web use `getPageHtml`). */
+    async getPageSource(): Promise<string> {
+        this.requirePlatform('getPageSource');
+        log.extract('Getting the page source');
+        return await this.device.getPageSource();
     }
 
     /**

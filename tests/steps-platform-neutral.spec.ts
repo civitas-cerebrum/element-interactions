@@ -31,6 +31,28 @@ import { mockDriver, mockElement } from './appium/mocks';
 // shared   — UI steps with the same name and arguments on every platform.
 // web-only — throw PlatformNotSupportedError(step, platform) off the Playwright family.
 // non-ui   — API (wasapi), SQL, email, pacing and pure value checks: no driver, every platform.
+// platform-only — CONTRACT B5 steps with no element on web: throw PlatformNotSupportedError(step, 'web')
+//            before anything (tests/steps-platform-steps.spec.ts checks each one).
+// element gestures — CONTRACT B5 element-level gestures: on web they follow the element primitive
+//            (swipe / longPress / scrollUntilFound act, pinch / zoom throw from the WebElement).
+//            scrollIntoView, the pre-existing one, stays under shared.
+
+const PLATFORM_ONLY = [
+    // app lifecycle
+    'launchApp', 'activateApp', 'terminateApp', 'backgroundApp', 'resetApp', 'installApp', 'removeApp', 'openDeepLink',
+    // screen-level gestures
+    'swipeScreen', 'tapAt',
+    // device
+    'pressBack', 'hideKeyboard', 'setOrientation', 'acceptAlert', 'dismissAlert', 'setPermission',
+    // contexts
+    'getContexts', 'switchContext',
+    // device assertions (polling)
+    'verifyAppInForeground', 'verifyOrientation', 'verifyKeyboardShown', 'verifyContext',
+    // extraction
+    'getPageSource',
+] as const;
+
+const ELEMENT_GESTURES = ['swipe', 'scrollUntilFound', 'longPress', 'pinch', 'zoom'] as const;
 
 const SHARED = [
     'on', 'click', 'clickRandom', 'clickIfPresent', 'doubleClick', 'check', 'uncheck', 'scrollIntoView', 'fill',
@@ -86,6 +108,7 @@ const NOT_STEPS = [
     'requireWeb', 'webPage', 'webRequest', 'toResolutionOptions', 'toAllResolutionOptions', 'getElement', 'getAllElement',
     'actionWithStrategy', 'requireListMatch', 'verifyStorage', 'resolveVisualMaskLocators', 'getApiClient',
     'resolveApiArgs', 'resolveApiArgsWithBody', 'getDbClient', 'resolveSqlArgs', 'bindBuilder',
+    'requirePlatform', 'pollDevice',
 ];
 
 // ─── ElementAction (steps.on) and matcher-tree classification ────────────────
@@ -269,11 +292,11 @@ function memberCalls(calls: Call[], member: string): Call[] {
 
 test.describe('Step classification', () => {
     test('every Steps prototype member is classified exactly once', () => {
-        const all = [...SHARED, ...WEB_ONLY, ...NON_UI, ...NOT_STEPS];
+        const all = [...SHARED, ...WEB_ONLY, ...NON_UI, ...PLATFORM_ONLY, ...ELEMENT_GESTURES, ...NOT_STEPS];
         expect(new Set(all).size, 'a name is classified twice').toBe(all.length);
         const proto = Object.getOwnPropertyNames(Steps.prototype);
         const unclassified = proto.filter(n => !all.includes(n));
-        expect(unclassified, 'classify every new step as shared, web-only or non-ui').toEqual([]);
+        expect(unclassified, 'classify every new step as shared, web-only, non-ui, platform-only or element gesture').toEqual([]);
         const stale = all.filter(n => !proto.includes(n));
         expect(stale, 'classified names that are not on Steps').toEqual([]);
     });
@@ -392,6 +415,11 @@ test.describe('Shared steps route to the factory with the neutral Element', () =
         ['waitAndClick', s => s.waitAndClick('el', 'Page'), 'interact', 'click'],
         ['fillForm', s => s.fillForm('Page', { el: 'v' }), 'interact', 'fill'],
         ['scrollIntoView', s => s.scrollIntoView('el', 'Page'), 'gestures', 'scrollIntoView'],
+        ['swipe', s => s.swipe('el', 'Page', 'up'), 'gestures', 'swipe'],
+        ['scrollUntilFound', s => s.scrollUntilFound('el', 'Page'), 'gestures', 'scrollUntilFound'],
+        ['longPress', s => s.longPress('el', 'Page'), 'gestures', 'longPress'],
+        ['pinch', s => s.pinch('el', 'Page'), 'gestures', 'pinch'],
+        ['zoom', s => s.zoom('el', 'Page'), 'gestures', 'zoom'],
         ['getText', s => s.getText('el', 'Page'), 'extract', 'getText'],
         ['getAttribute', s => s.getAttribute('el', 'Page', 'name'), 'extract', 'getAttribute'],
         ['getCount', s => s.getCount('el', 'Page'), 'extract', 'getCount'],
@@ -438,6 +466,23 @@ test.describe('Shared steps route to the factory with the neutral Element', () =
         expect(await steps.getListedElementData('el', 'Page', { text: 'row' })).toBe('text');
         expect(memberCalls(calls, 'extract')).toEqual([['extract', 'getText', listed]]);
     });
+
+    for (const name of PLATFORM_ONLY) {
+        test(`platform-only ${name} reaches the device / gestures member on ios without resolving an element`, async () => {
+            const { steps, calls } = iosSteps();
+            const method = (steps as unknown as Record<string, (...args: unknown[]) => unknown>)[name];
+            const args: Record<string, unknown[]> = {
+                backgroundApp: [1], installApp: ['/a'], removeApp: ['x'], openDeepLink: ['x://y'], swipeScreen: ['up'],
+                tapAt: [1, 2], setOrientation: ['portrait'], setPermission: ['camera', 'grant'], switchContext: ['NATIVE_APP'],
+                verifyOrientation: ['portrait'], verifyContext: ['NATIVE_APP'],
+            };
+            // The recording members answer `undefined`, so the polling assertions time out; never a platform refusal.
+            const error = await caught(() => method.apply(steps, args[name] ?? []));
+            expect(error).not.toBeInstanceOf(PlatformNotSupportedError);
+            expect(calls.filter(c => c[0] === 'repo'), 'no element resolved').toEqual([]);
+            expect(calls.filter(c => c[0] === 'device' || c[0] === 'gestures').length).toBeGreaterThan(0);
+        });
+    }
 
     test('scrollIntoView passes the direction to IGestures.scrollIntoView', async () => {
         const { steps, calls, element } = iosSteps();
