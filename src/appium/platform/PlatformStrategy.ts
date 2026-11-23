@@ -3,6 +3,7 @@ import type {} from 'webdriverio';
 import '../../types/webdriverio-global';
 import type { Platform } from '@civitas-cerebrum/element-repository';
 import type { PermissionState } from '../../interfaces/IDevice';
+import type { Direction } from '../../interfaces/IGestures';
 
 /** The WebdriverIO session the Appium family drives. */
 export type AppiumDriver = WebdriverIO.Browser;
@@ -56,6 +57,17 @@ export interface PlatformStrategy {
     pressBack(driver: AppiumDriver): Promise<void>;
     hideKeyboard(driver: AppiumDriver): Promise<void>;
     isKeyboardShown(driver: AppiumDriver): Promise<boolean>;
+
+    // Screen gestures
+    /**
+     * Swipes across the screen with the platform's native gesture command.
+     * `direction` is the way the FINGER moves, the meaning of
+     * element-repository's `Element.swipe`: `'up'` drags the content up and
+     * reveals what lies below. `distance` is the finger travel in px
+     * (native-context viewport coordinates); when omitted, the platform's
+     * default screen swipe. The caller has validated `distance` (positive, finite).
+     */
+    swipeScreen(driver: AppiumDriver, direction: Direction, distance?: number): Promise<void>;
 
     // Alerts and permissions
     acceptAlert(driver: AppiumDriver): Promise<void>;

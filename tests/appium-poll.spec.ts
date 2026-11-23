@@ -125,6 +125,13 @@ test.describe('pollUntil', () => {
         expect(Date.now() - started).toBeLessThan(60 + 150);
     });
 
+    test('interval 0 at timeout 0 never gives a probe a zero budget', async () => {
+        const error = await pollUntil(() => new Promise<string>(() => undefined), () => true, { timeout: 0, interval: 0 }).catch(e => e);
+        expect(error).toBeInstanceOf(PollTimeoutError);
+        expect(error.lastError).toBeInstanceOf(ProbeTimeoutError);
+        expect((error.lastError as ProbeTimeoutError).budget).toBeGreaterThanOrEqual(1);
+    });
+
     test('an abandoned probe that rejects late raises no unhandled rejection', async () => {
         const unhandled: unknown[] = [];
         const onUnhandled = (reason: unknown) => unhandled.push(reason);

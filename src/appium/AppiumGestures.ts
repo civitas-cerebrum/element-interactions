@@ -2,7 +2,7 @@ import type { Element } from '@civitas-cerebrum/element-repository';
 import type { Direction, IGestures } from '../interfaces/IGestures';
 import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
 import { notImplementedError } from './platform/notImplemented';
-import { performTouch, swipeSteps, tapSteps, travel, windowSize, type Point } from './touch';
+import { performTouch, tapSteps, windowSize, type Point } from './touch';
 
 /** The finger direction that reveals content lying in `direction` (content below -> finger moves up). */
 const REVEAL: Record<Direction, Direction> = { down: 'up', up: 'down', right: 'left', left: 'right' };
@@ -12,9 +12,16 @@ const REVEAL: Record<Direction, Direction> = { down: 'up', up: 'down', right: 'l
  *
  * Element-level gestures delegate to element-repository's primitives
  * (`swipe`, `scrollIntoView`, `longPress`, `tapAt`, `pinch`, `zoom`) with the
- * timeout filled in. Screen-level gestures with no element (`swipeScreen`,
- * `tapAt(x, y)`) and the compositions `scrollUntilFound` and `centerElement`
- * use W3C pointer actions on the driver.
+ * timeout filled in. Screen swipes (`swipeScreen` and the compositions
+ * `scrollUntilFound` and `centerElement`) go through the platform strategy's
+ * native gesture command (iOS `mobile: swipe` / `mobile:
+ * dragFromToForDuration`, Android `mobile: swipeGesture`). `tapAt(x, y)`
+ * uses a W3C touch pointer action.
+ *
+ * Direction meanings follow element-repository: in `swipe` / `swipeScreen`
+ * `direction` is where the finger moves (`'up'` reveals content below); in
+ * `scrollIntoView` / `scrollUntilFound` it is where the target lies (`'down'`
+ * swipes the finger up).
  */
 export class AppiumGestures implements IGestures {
     /** A centred element may sit this many px off the screen centre. */
@@ -44,19 +51,18 @@ export class AppiumGestures implements IGestures {
     }
 
     /**
-     * Swipes from the screen centre: the finger moves `distance` px in
-     * `direction` (default half the screen along that axis), clamped to the window.
+     * Swipes across the screen: the finger moves in `direction`, `distance`
+     * px when given (clamped to the window). Without `distance` the platform's
+     * default screen swipe runs (iOS: XCUITest's `mobile: swipe`; Android:
+     * half the window along that axis).
      */
     async swipeScreen(direction: Direction, options?: { distance?: number }): Promise<void> {
         this.requireImplemented();
-        const win = await windowSize(this.driver);
-        const from: Point = { x: win.width / 2, y: win.height / 2 };
-        const horizontal = direction === 'left' || direction === 'right';
-        const distance = options?.distance ?? (horizontal ? win.width : win.height) / 2;
-        if (!Number.isFinite(distance) || distance <= 0) {
+        const distance = options?.distance;
+        if (distance !== undefined && (!Number.isFinite(distance) || distance <= 0)) {
             throw new Error(`swipeScreen: distance must be a positive number of px, got ${distance}`);
         }
-        await performTouch(this.driver, [swipeSteps(from, travel(from, direction, distance, win))]);
+        await this.strategy.swipeScreen(this.driver, direction, distance);
     }
 
     /** `direction` names where the element lies relative to the current view (default `'down'`). */
@@ -78,12 +84,11 @@ export class AppiumGestures implements IGestures {
         const win = await windowSize(this.driver);
         const finger = REVEAL[direction];
         const step = (finger === 'left' || finger === 'right' ? win.width : win.height) / 3;
-        const centre: Point = { x: win.width / 2, y: win.height / 2 };
         let swipes = 0;
         for (;;) {
             if (await element.isVisible().catch(() => false)) return;
             if (Date.now() >= deadline) break;
-            await performTouch(this.driver, [swipeSteps(centre, travel(centre, finger, step, win))]);
+            await this.strategy.swipeScreen(this.driver, finger, step);
             swipes++;
             await this.settle();
         }
@@ -95,13 +100,14 @@ export class AppiumGestures implements IGestures {
 
     /**
      * Scrolls vertically until the element's centre is within
-     * {@link CENTERING_TOLERANCE} px of the screen centre: one swipe per step,
-     * at most a third of the screen each, re-reading the element's bounds
-     * from its `boundingBox` primitive. Stops when centred, when the content
-     * no longer moves (scroll boundary or non-scrollable container), or when
-     * `timeout` expires. Exact centring is best effort, but when it stops
-     * short the element must at least be on screen (its centre inside the
-     * window): otherwise it throws, as it does for an element without bounds.
+     * {@link CENTERING_TOLERANCE} px of the screen centre (vertically): one
+     * swipe per step, at most a third of the screen each, through the
+     * platform's screen swipe, re-reading the element's bounds from its
+     * `boundingBox` primitive. Stops when centred, when the content no longer
+     * moves (scroll boundary or non-scrollable container), or when `timeout`
+     * expires. Exact centring is best effort, but whichever way it stops the
+     * element must be on screen (its centre inside the window, both axes):
+     * otherwise it throws, as it does for an element without bounds.
      */
     async centerElement(element: Element, options?: { timeout?: number }): Promise<void> {
         this.requireImplemented();
@@ -115,22 +121,27 @@ export class AppiumGestures implements IGestures {
         for (;;) {
             const box = await element.boundingBox();
             if (!box) throw new Error('centerElement: the element has no bounds (is it in the UI tree?).');
-            const offset = box.y + box.height / 2 - centre.y;
-            if (Math.abs(offset) <= AppiumGestures.CENTERING_TOLERANCE) return;
+            const mid: Point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+            const offset = mid.y - centre.y;
+            const centred = Math.abs(offset) <= AppiumGestures.CENTERING_TOLERANCE;
             const stuck = Math.abs(offset - previous) < AppiumGestures.STALE_POSITION_THRESHOLD;
-            if (stuck || Date.now() >= deadline) {
-                const mid: Point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+            if (centred || stuck || Date.now() >= deadline) {
+                // Every way out requires the element's centre inside the window,
+                // including a vertically centred element that is off screen sideways.
                 if (mid.x >= 0 && mid.x < win.width && mid.y >= 0 && mid.y < win.height) return;
+                const reason = centred
+                    ? 'it is vertically centred, but this scrolls only vertically'
+                    : stuck ? 'the content stopped moving' : `timed out after ${timeout} ms`;
                 throw new Error(
                     `centerElement: element${element.selector ? ` "${element.selector}"` : ''} is not on screen ` +
                     `(centre at (${Math.round(mid.x)}, ${Math.round(mid.y)}) outside the ${win.width}x${win.height} window) ` +
-                    `after ${swipes} swipe(s): ${stuck ? 'the content stopped moving' : `timed out after ${timeout} ms`}.`,
+                    `after ${swipes} swipe(s): ${reason}.`,
                 );
             }
             previous = offset;
             // Element below the centre (offset > 0): the finger moves up by the offset.
             const distance = Math.min(Math.abs(offset), maxStep);
-            await performTouch(this.driver, [swipeSteps(centre, travel(centre, offset > 0 ? 'up' : 'down', distance, win))]);
+            await this.strategy.swipeScreen(this.driver, offset > 0 ? 'up' : 'down', distance);
             swipes++;
             await this.settle();
         }

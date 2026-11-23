@@ -60,6 +60,41 @@ export function touches(calls: Call[]): Array<Array<{ id: string; actions: unkno
     return calls.filter(c => c[0] === 'performActions').map(c => c[1] as Array<{ id: string; actions: unknown[] }>);
 }
 
+/** A screen swipe as the platform strategy sent it, read back as finger travel. */
+export interface ScreenSwipe {
+    /** The `mobile:` command used. */
+    command: string;
+    /** The way the finger moved. */
+    direction: 'up' | 'down' | 'left' | 'right';
+    /** Finger travel in px; `undefined` for a native swipe without a distance (iOS `mobile: swipe`). */
+    distance?: number;
+}
+
+/**
+ * Every screen swipe in `calls`, normalised to finger travel: iOS
+ * `mobile: dragFromToForDuration` (from -> to), iOS `mobile: swipe`
+ * (direction only) and Android `mobile: swipeGesture` (percent of its area).
+ */
+export function screenSwipes(calls: Call[]): ScreenSwipe[] {
+    const out: ScreenSwipe[] = [];
+    for (const [name, script, raw] of calls) {
+        if (name !== 'execute') continue;
+        const args = raw as Record<string, number & string>;
+        if (script === 'mobile: swipe') {
+            out.push({ command: script, direction: args.direction });
+        } else if (script === 'mobile: swipeGesture') {
+            const horizontal = args.direction === 'left' || args.direction === 'right';
+            out.push({ command: script, direction: args.direction, distance: args.percent * (horizontal ? args.width : args.height) });
+        } else if (script === 'mobile: dragFromToForDuration') {
+            const dx = args.toX - args.fromX;
+            const dy = args.toY - args.fromY;
+            const direction = dx !== 0 ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down');
+            out.push({ command: script, direction, distance: Math.abs(dx !== 0 ? dx : dy) });
+        }
+    }
+    return out;
+}
+
 type Reader<T> = T | (() => T | Promise<T>);
 
 export interface MockElementSpec {

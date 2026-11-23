@@ -57,6 +57,21 @@ export async function performTouch(driver: AppiumDriver, sources: PointerStep[][
     }
 }
 
+/**
+ * The generic screen swipe with W3C touch actions: the finger moves from the
+ * screen centre `distance` px in `direction` (default half the window along
+ * that axis), clamped to the window. Android and iOS use their native
+ * gesture commands instead (`PlatformStrategy.swipeScreen`); this is the
+ * fallback for an Appium-family strategy without one.
+ */
+export async function w3cSwipeScreen(driver: AppiumDriver, direction: Direction, distance?: number): Promise<void> {
+    const win = await windowSize(driver);
+    const from: Point = { x: win.width / 2, y: win.height / 2 };
+    const horizontal = direction === 'left' || direction === 'right';
+    const travelled = distance ?? (horizontal ? win.width : win.height) / 2;
+    await performTouch(driver, [swipeSteps(from, travel(from, direction, travelled, win))]);
+}
+
 /** The window size in native-context viewport coordinates. */
 export async function windowSize(driver: AppiumDriver): Promise<{ width: number; height: number }> {
     const { width, height } = await driver.getWindowSize();

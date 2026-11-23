@@ -12,7 +12,10 @@ import {
     windowsStrategy,
 } from '../src/appium';
 import { STRATEGY_METHODS } from '../src/appium/platform/notImplemented';
-import { mockDriver, expectNotSupported, methodsOf, type Call } from './appium/mocks';
+import { IOS_DRAG_HOLD_SECONDS } from '../src/appium/platform/ios';
+import { ANDROID_SWIPE_INSET } from '../src/appium/platform/android';
+import { w3cSwipeScreen } from '../src/appium/touch';
+import { mockDriver, expectNotSupported, methodsOf, touches, WINDOW, type Call } from './appium/mocks';
 
 /**
  * Pure unit tests for the platform strategies and AppiumDevice over a mock
@@ -339,6 +342,65 @@ for (const platform of ['macos', 'windows'] as const) {
         });
     });
 }
+
+test.describe('screen swipes through the platform strategy', () => {
+    // WINDOW is 400x800; the finger direction is passed through unchanged on both platforms.
+
+    test('ios: without a distance, XCUITest mobile: swipe with the finger direction', async () => {
+        const { driver, calls } = mockDriver();
+        for (const direction of ['up', 'down', 'left', 'right'] as const) await iosStrategy.swipeScreen(driver, direction);
+        expect(calls).toEqual([
+            ['execute', 'mobile: swipe', { direction: 'up' }],
+            ['execute', 'mobile: swipe', { direction: 'down' }],
+            ['execute', 'mobile: swipe', { direction: 'left' }],
+            ['execute', 'mobile: swipe', { direction: 'right' }],
+        ]);
+    });
+
+    test('ios: with a distance, mobile: dragFromToForDuration from the centre, clamped to the window', async () => {
+        const { driver, calls } = mockDriver();
+        await iosStrategy.swipeScreen(driver, 'up', 300);
+        await iosStrategy.swipeScreen(driver, 'right', 5000);
+        expect(IOS_DRAG_HOLD_SECONDS).toBe(0.5);
+        expect(calls).toEqual([
+            ['execute', 'mobile: dragFromToForDuration', { duration: 0.5, fromX: 200, fromY: 400, toX: 200, toY: 100 }],
+            ['execute', 'mobile: dragFromToForDuration', { duration: 0.5, fromX: 200, fromY: 400, toX: WINDOW.width - 1, toY: 400 }],
+        ]);
+        expect(touches(calls)).toEqual([]);
+    });
+
+    test('android: UiAutomator2 mobile: swipeGesture over the inset window, distance as percent', async () => {
+        expect(ANDROID_SWIPE_INSET).toEqual({ x: 0.1, y: 0.2 });
+        const { driver, calls } = mockDriver();
+        const area = { left: 40, top: 160, width: 320, height: 480 };
+        await androidStrategy.swipeScreen(driver, 'up', 240);
+        await androidStrategy.swipeScreen(driver, 'left');
+        await androidStrategy.swipeScreen(driver, 'down');
+        await androidStrategy.swipeScreen(driver, 'right', 5000);
+        expect(calls).toEqual([
+            ['execute', 'mobile: swipeGesture', { ...area, direction: 'up', percent: 0.5 }],
+            ['execute', 'mobile: swipeGesture', { ...area, direction: 'left', percent: 0.625 }], // half the width: 200 / 320
+            ['execute', 'mobile: swipeGesture', { ...area, direction: 'down', percent: 0.833 }], // half the height: 400 / 480
+            ['execute', 'mobile: swipeGesture', { ...area, direction: 'right', percent: 1 }], // capped
+        ]);
+        expect(touches(calls)).toEqual([]);
+    });
+
+    test('generic fallback: w3cSwipeScreen is one W3C touch swipe from the centre, released', async () => {
+        const { driver, calls } = mockDriver();
+        await w3cSwipeScreen(driver, 'up', 300);
+        await w3cSwipeScreen(driver, 'left');
+        expect(calls.map(c => c[0])).toEqual(['performActions', 'releaseActions', 'performActions', 'releaseActions']);
+        const [up, left] = touches(calls).map(([finger]) => finger.actions);
+        expect(up).toEqual([
+            { type: 'pointerMove', duration: 0, x: 200, y: 400, origin: 'viewport' },
+            { type: 'pointerDown', button: 0 },
+            { type: 'pointerMove', duration: 300, x: 200, y: 100, origin: 'viewport' },
+            { type: 'pointerUp', button: 0 },
+        ]);
+        expect(left[2]).toMatchObject({ x: 0, y: 400 });
+    });
+});
 
 test('STRATEGY_METHODS lists every method of the android and ios strategies', () => {
     const methodNames = (s: object) => Object.entries(s).filter(([, v]) => typeof v === 'function').map(([k]) => k).sort();
