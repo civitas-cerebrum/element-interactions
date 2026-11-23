@@ -28,8 +28,8 @@ function withEnv(vars: Record<string, string | undefined>, fn: () => void): void
 
 test.describe('parseServerUrl', () => {
     test('keeps the base path', () => {
-        expect(parseServerUrl('http://127.0.0.1:14732/wd/hub'))
-            .toEqual({ protocol: 'http', hostname: '127.0.0.1', port: 14732, path: '/wd/hub' });
+        expect(parseServerUrl('http://127.0.0.1:4725/wd/hub'))
+            .toEqual({ protocol: 'http', hostname: '127.0.0.1', port: 4725, path: '/wd/hub' });
         expect(parseServerUrl('https://appium.example.com:8443/wd/hub/'))
             .toEqual({ protocol: 'https', hostname: 'appium.example.com', port: 8443, path: '/wd/hub' });
     });
@@ -57,8 +57,8 @@ test.describe('resolveServer', () => {
     test('default: APPIUM_URL, else http://127.0.0.1:4723', () => {
         expect(DEFAULT_APPIUM_URL).toBe('http://127.0.0.1:4723');
         expect(resolveServer(undefined, {})).toEqual({ protocol: 'http', hostname: '127.0.0.1', port: 4723, path: '/' });
-        expect(resolveServer(undefined, { APPIUM_URL: 'http://127.0.0.1:14732/wd/hub' }))
-            .toEqual({ protocol: 'http', hostname: '127.0.0.1', port: 14732, path: '/wd/hub' });
+        expect(resolveServer(undefined, { APPIUM_URL: 'http://127.0.0.1:4725/wd/hub' }))
+            .toEqual({ protocol: 'http', hostname: '127.0.0.1', port: 4725, path: '/wd/hub' });
     });
 
     test('reads process.env when no env is passed', () => {

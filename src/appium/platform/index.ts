@@ -32,7 +32,7 @@ export function strategyFor(platform: Platform): PlatformStrategy {
 }
 
 /**
- * The app under test named in a capabilities object (CONTRACT B1): the
+ * The app under test named in a capabilities object: the
  * platform's key (`appium:bundleId` on ios / macos, `appium:appPackage` on
  * android, `appium:app` on windows), top-level or in Appium's nested form
  * `"appium:options": { "bundleId" | "appPackage" | "app": ... }`. The

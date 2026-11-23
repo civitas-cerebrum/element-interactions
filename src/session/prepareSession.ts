@@ -10,7 +10,7 @@ export interface PreparedSession {
     context: SessionStartContext;
     /** The capabilities file as given (option or `CAPABILITIES`). */
     capabilitiesFile: string;
-    /** The app under test read from the file (CONTRACT B1); `undefined` when the file names none. */
+    /** The app under test read from the file; `undefined` when the file names none. */
     appId: string | undefined;
     reset: 'relaunch' | 'none';
 }
@@ -23,7 +23,7 @@ export interface PreparedSession {
  *
  * A file with `browserName` must also set `"wdio:enforceWebDriverClassic": true`:
  * without it WebdriverIO adds BiDi keys to the session request, and the
- * library sends exactly the file (CONTRACT B1).
+ * library sends exactly the file.
  */
 export function prepareSession(platform: Platform, options: SessionOptions = {}, env: NodeJS.ProcessEnv = process.env): PreparedSession {
     if (familyOf(platform) !== 'appium') {

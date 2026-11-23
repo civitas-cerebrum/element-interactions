@@ -4,7 +4,7 @@ import type { ServerOptions } from './types';
 export const DEFAULT_APPIUM_URL = 'http://127.0.0.1:4723';
 
 /**
- * Resolves `session.server` to connection options (CONTRACT B1, B2).
+ * Resolves `session.server` to connection options.
  *
  * - `undefined`: `env.APPIUM_URL ?? 'http://127.0.0.1:4723'` (an empty
  *   `APPIUM_URL` counts as unset).

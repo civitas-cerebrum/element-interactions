@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test';
 import { resolvePlatform } from './src';
 
 /**
- * Platform runs (CONTRACT C1, C2): the cross-platform spec and the live device
+ * Platform runs: the cross-platform spec and the live device
  * checks against an Appium server. The only start form:
  *
  *   PLATFORM=<platform> CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \

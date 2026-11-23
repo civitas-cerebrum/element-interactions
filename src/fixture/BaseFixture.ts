@@ -475,7 +475,7 @@ export async function forwardMutationInjection(
 }
 
 /**
- * Resolves the `platform` option (CONTRACT B1, B2): the option, else
+ * Resolves the `platform` option: the option, else
  * `process.env.PLATFORM`, else `'web'`. An empty `PLATFORM` counts as unset.
  * A value that is not a {@link Platform} throws, naming where it came from.
  */
@@ -582,7 +582,7 @@ function webFixture(baseTest: typeof base, locatorPath: string, options: BaseFix
             }
         },
         repo: async ({ page }, use) => {
-            // CONTRACT B3: `web` is the active platform, so a page name resolves to
+            // `web` is the active platform, so a page name resolves to
             // its web entry even when the file also holds android / ios pages.
             await use(new ElementRepository(page, locatorPath, { platform: 'web', timeout: options?.repoTimeout }));
         },
@@ -681,7 +681,7 @@ function platformFixture(
             await use(new ElementRepository(_eiPlatformSession.driver, locatorPath, { platform, timeout: options?.repoTimeout }));
         },
         steps: async ({ _eiFactory, repo }, use) => {
-            // The factory owns timeout and interception (S2): neither is passed here.
+            // The factory owns timeout and interception: neither is passed here.
             const steps = new Steps(_eiFactory, repo, {
                 emailCredentials: options?.emailCredentials,
                 apiBaseUrl: options?.apiBaseUrl,
@@ -725,8 +725,8 @@ function testFailed(testInfo: TestInfo): boolean {
 export const EVIDENCE_TIMEOUT_MS = 10_000;
 
 /**
- * Attaches the device screenshot and the page source of a failed test
- * (CONTRACT B6). Each is best-effort: a failure to collect one is logged and
+ * Attaches the device screenshot and the page source of a failed test.
+ * Each is best-effort: a failure to collect one is logged and
  * never replaces the test's own failure. Each command is given up after
  * `timeoutMs`, so a dead device cannot stall the teardown.
  *

@@ -9,7 +9,7 @@ import { requireSettingsCapabilities } from '../cross-platform/settingsGuard';
  * navigates into General and back. It never toggles a switch, changes a
  * setting, types into a field, opens the Apple Account page or another app.
  *
- * Skipped unless the resolved platform is `ios`. Run it (CONTRACT C2):
+ * Skipped unless the resolved platform is `ios`. Run it:
  *
  *   PLATFORM=ios CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \
  *     npx playwright test -c playwright.platform.config.ts tests/live

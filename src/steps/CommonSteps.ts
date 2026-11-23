@@ -826,7 +826,7 @@ export class Steps {
     }
 
     // ==========================================
-    // PLATFORM STEPS (CONTRACT B5)
+    // PLATFORM STEPS
     // ==========================================
     //
     // App lifecycle, device, contexts, device assertions, page source, the

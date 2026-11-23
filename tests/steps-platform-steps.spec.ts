@@ -11,7 +11,7 @@ import { PollTimeoutError } from '../src/utils/poll';
 import { mockDriver, mockElement, expectNotSupported, screenSwipes, touches, DEVICE_PLATFORMS, type Call } from './appium/mocks';
 
 /**
- * Unit tests (no device, no browser) for the CONTRACT B5 platform steps:
+ * Unit tests (no device, no browser) for the platform steps:
  * `Steps` over a real `AppiumFactory` on the mock WebdriverIO session for
  * android and ios (each step sends the expected driver commands through the
  * platform strategy), and over the Playwright family for web (every
@@ -19,10 +19,10 @@ import { mockDriver, mockElement, expectNotSupported, screenSwipes, touches, DEV
  * anything is resolved or acted on).
  */
 
-// ─── CONTRACT B5, exact signatures (compile-time check) ──────────────────────
+// ─── Platform steps, exact signatures (compile-time check) ──────────────────
 
-/** The B5 platform steps, transcribed from the contract. */
-interface B5 {
+/** The platform steps and their published signatures. */
+interface PlatformStepSurface {
     launchApp(appId?: string): Promise<void>;
     activateApp(appId?: string): Promise<void>;
     terminateApp(appId?: string): Promise<void>;
@@ -64,48 +64,48 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B 
 type Expect<T extends true> = T;
 
 /**
- * Every B5 step has exactly the contract's parameters and return type, except
- * `scrollIntoView`, the pre-existing step: its options are the contract's plus
+ * Every platform step has exactly the published parameters and return type, except
+ * `scrollIntoView`, the pre-existing step: its options are the published ones plus
  * the `StepOptions` every element step takes (a superset), checked by
  * assignability below.
  */
-type ExactSteps = Exclude<keyof B5, 'scrollIntoView'>;
-/** The B5 steps whose Steps signature differs from the contract (must be `never`). */
+type ExactSteps = Exclude<keyof PlatformStepSurface, 'scrollIntoView'>;
+/** The platform steps whose Steps signature differs from the published one (must be `never`). */
 type MismatchedSteps = {
-    [K in ExactSteps]: Equal<Parameters<Steps[K]>, Parameters<B5[K]>> extends true
-        ? (Equal<ReturnType<Steps[K]>, ReturnType<B5[K]>> extends true ? never : K)
+    [K in ExactSteps]: Equal<Parameters<Steps[K]>, Parameters<PlatformStepSurface[K]>> extends true
+        ? (Equal<ReturnType<Steps[K]>, ReturnType<PlatformStepSurface[K]>> extends true ? never : K)
         : K
 }[ExactSteps];
 export type _SignaturesMatch = Expect<Equal<MismatchedSteps, never>>;
-// scrollIntoView: every B5 call is a valid Steps call, and it returns the same.
-type ScrollIntoViewAccepts = Expect<Parameters<B5['scrollIntoView']> extends Parameters<Steps['scrollIntoView']> ? true : false>;
-type ScrollIntoViewReturns = Expect<Equal<ReturnType<Steps['scrollIntoView']>, ReturnType<B5['scrollIntoView']>>>;
-// Steps itself is usable as the B5 surface.
-const asB5: (steps: Steps) => B5 = steps => steps;
-void asB5;
+// scrollIntoView: every published call is a valid Steps call, and it returns the same.
+type ScrollIntoViewAccepts = Expect<Parameters<PlatformStepSurface['scrollIntoView']> extends Parameters<Steps['scrollIntoView']> ? true : false>;
+type ScrollIntoViewReturns = Expect<Equal<ReturnType<Steps['scrollIntoView']>, ReturnType<PlatformStepSurface['scrollIntoView']>>>;
+// Steps itself is usable as the platform step surface.
+const asPlatformStepSurface: (steps: Steps) => PlatformStepSurface = steps => steps;
+void asPlatformStepSurface;
 // Unused-type guards for noUnusedLocals.
-export type _B5Checks = [ScrollIntoViewAccepts, ScrollIntoViewReturns];
+export type _PlatformStepChecks = [ScrollIntoViewAccepts, ScrollIntoViewReturns];
 
-/** The B5 step names (runtime list), checked against the interface above. */
-const B5_STEPS = [
+/** The platform step names (runtime list), checked against the interface above. */
+const PLATFORM_STEPS = [
     'launchApp', 'activateApp', 'terminateApp', 'backgroundApp', 'resetApp', 'installApp', 'removeApp', 'openDeepLink',
     'swipe', 'swipeScreen', 'scrollIntoView', 'scrollUntilFound', 'longPress', 'tapAt', 'pinch', 'zoom',
     'pressBack', 'hideKeyboard', 'setOrientation', 'acceptAlert', 'dismissAlert', 'setPermission',
     'getContexts', 'switchContext',
     'verifyAppInForeground', 'verifyOrientation', 'verifyKeyboardShown', 'verifyContext',
     'getPageSource',
-] as const satisfies ReadonlyArray<keyof B5>;
-// Every B5 key is in the runtime list.
-type MissingFromList = Exclude<keyof B5, (typeof B5_STEPS)[number]>;
-export type _B5ListComplete = Expect<Equal<MissingFromList, never>>;
+] as const satisfies ReadonlyArray<keyof PlatformStepSurface>;
+// Every platform step is in the runtime list.
+type MissingFromList = Exclude<keyof PlatformStepSurface, (typeof PLATFORM_STEPS)[number]>;
+export type _PlatformStepListComplete = Expect<Equal<MissingFromList, never>>;
 
-/** Element-level gestures that work on web: they follow the element primitive (CONTRACT A5) instead of a step guard. */
+/** Element-level gestures that work on web: they follow the element primitive (the element's own gesture) instead of a step guard. */
 const ELEMENT_GESTURES = ['swipe', 'scrollIntoView', 'scrollUntilFound', 'longPress'] as const;
-/** Every other B5 step (`pinch` / `zoom` included) is platform-only: refused on web before anything happens. */
-const PLATFORM_ONLY = B5_STEPS.filter(n => !(ELEMENT_GESTURES as readonly string[]).includes(n));
+/** Every other platform step (`pinch` / `zoom` included) is platform-only: refused on web before anything happens. */
+const PLATFORM_ONLY = PLATFORM_STEPS.filter(n => !(ELEMENT_GESTURES as readonly string[]).includes(n));
 
-/** Sample arguments for every B5 step. */
-const ARGS: Record<(typeof B5_STEPS)[number], unknown[]> = {
+/** Sample arguments for every platform step. */
+const ARGS: Record<(typeof PLATFORM_STEPS)[number], unknown[]> = {
     launchApp: [], activateApp: [], terminateApp: [], backgroundApp: [1], resetApp: [], installApp: ['/tmp/app.apk'],
     removeApp: ['org.example.other'], openDeepLink: ['example://home'],
     swipe: ['el', 'Page', 'up'], swipeScreen: ['up'], scrollIntoView: ['el', 'Page'], scrollUntilFound: ['el', 'Page'],
@@ -116,9 +116,9 @@ const ARGS: Record<(typeof B5_STEPS)[number], unknown[]> = {
     getPageSource: [],
 };
 
-test.describe('B5 signatures', () => {
-    test('every B5 step exists on Steps.prototype', () => {
-        for (const name of B5_STEPS) {
+test.describe('platform step signatures', () => {
+    test('every platform step exists on Steps.prototype', () => {
+        for (const name of PLATFORM_STEPS) {
             expect(typeof (Steps.prototype as unknown as Record<string, unknown>)[name], name).toBe('function');
         }
     });
@@ -306,7 +306,7 @@ const DEVICE_EXPECTED: Record<string, Expectation> = {
 };
 
 for (const platform of DEVICE_PLATFORMS) {
-    test.describe(`B5 steps on ${platform} (AppiumFactory over a mock driver)`, () => {
+    test.describe(`platform steps on ${platform} (AppiumFactory over a mock driver)`, () => {
         for (const [name, expectation] of Object.entries(DEVICE_EXPECTED)) {
             const expected = expectation[platform];
             if (expected === 'unsupported') {
@@ -648,9 +648,9 @@ function webSteps() {
     return { steps, repoCalls, touched, element };
 }
 
-test.describe('B5 on web (new Steps(repo))', () => {
-    test('the web classification covers every B5 step', () => {
-        expect([...PLATFORM_ONLY, ...ELEMENT_GESTURES].sort()).toEqual([...B5_STEPS].sort());
+test.describe('platform steps on web (new Steps(repo))', () => {
+    test('the web classification covers every platform step', () => {
+        expect([...PLATFORM_ONLY, ...ELEMENT_GESTURES].sort()).toEqual([...PLATFORM_STEPS].sort());
         expect(PLATFORM_ONLY).toEqual(expect.arrayContaining(['swipeScreen', 'tapAt', 'getPageSource', 'verifyContext']));
     });
 

@@ -1,7 +1,7 @@
 import type { Platform } from '@civitas-cerebrum/element-repository';
 import type { PlatformStrategy } from './PlatformStrategy';
 
-/** The error every operation of a declared-but-unimplemented platform throws (CONTRACT B1). */
+/** The error every operation of a declared-but-unimplemented platform throws. */
 export function notImplementedError(platform: Platform): Error {
     return new Error(`Platform "${platform}" is declared but not implemented yet.`);
 }

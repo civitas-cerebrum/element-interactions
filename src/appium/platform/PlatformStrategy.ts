@@ -30,7 +30,7 @@ export interface PlatformStrategy {
      */
     readonly implemented: boolean;
     /**
-     * The capabilities-file key naming the app under test (CONTRACT B1):
+     * The capabilities-file key naming the app under test:
      * `appium:bundleId` (ios, macos), `appium:appPackage` (android),
      * `appium:app` (windows).
      */
@@ -44,7 +44,7 @@ export interface PlatformStrategy {
     launchApp(driver: AppiumDriver, appId: string): Promise<void>;
     activateApp(driver: AppiumDriver, appId: string): Promise<void>;
     terminateApp(driver: AppiumDriver, appId: string): Promise<void>;
-    /** Terminates, then activates the app (CONTRACT B5, builder decision D5). */
+    /** Terminates, then activates the app: the default reset between tests of a session. */
     resetApp(driver: AppiumDriver, appId: string): Promise<void>;
     backgroundApp(driver: AppiumDriver, seconds: number): Promise<void>;
     installApp(driver: AppiumDriver, appPath: string): Promise<void>;

@@ -24,7 +24,7 @@ import {
 import type { Platform, IDevice } from '../src/index';
 
 /**
- * Pure unit tests for the platform contract: the shared vocabulary, the
+ * Pure unit tests for the platform interfaces: the shared vocabulary, the
  * not-supported error, and the Playwright family's factory / gestures / device.
  * No browser is launched: nothing here takes the `page` fixture, and the
  * factory is built on a stand-in object because no member touches the page

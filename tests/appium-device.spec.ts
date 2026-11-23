@@ -163,7 +163,7 @@ test.describe('strategyFor', () => {
         expect(() => strategyFor('mobile' as never)).toThrow();
     });
 
-    test('app id capability keys follow CONTRACT B1', () => {
+    test('app id capability keys are the appium: keys per platform', () => {
         expect(androidStrategy.appIdCapability).toBe('appium:appPackage');
         expect(iosStrategy.appIdCapability).toBe('appium:bundleId');
         expect(macosStrategy.appIdCapability).toBe('appium:bundleId');
@@ -194,7 +194,7 @@ test.describe('appIdFromCapabilities', () => {
             .toBe('com.example.Top');
     });
 
-    test('unprefixed keys are not read (CONTRACT B1 names the appium: keys)', () => {
+    test('unprefixed keys are not read (only the appium: keys name the app)', () => {
         expect(appIdFromCapabilities('ios', { bundleId: 'com.example.Echo' })).toBeUndefined();
         expect(appIdFromCapabilities('android', { appPackage: 'com.example.echo' })).toBeUndefined();
         expect(appIdFromCapabilities('ios', { 'appium:options': { 'appium:bundleId': 'x' } })).toBeUndefined();

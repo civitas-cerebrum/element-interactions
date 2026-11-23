@@ -37,7 +37,7 @@ async function rejection(promise: Promise<unknown>): Promise<Error> {
 const context = (overrides: Partial<SessionStartContext> = {}): SessionStartContext => ({
     platform: 'ios',
     capabilities: { platformName: 'iOS', 'appium:bundleId': 'com.example.app' },
-    server: { protocol: 'http', hostname: '127.0.0.1', port: 14732, path: '/wd/hub' },
+    server: { protocol: 'http', hostname: '127.0.0.1', port: 4725, path: '/wd/hub' },
     ...overrides,
 });
 
@@ -66,7 +66,7 @@ test.describe('AppiumSessionProvider.start', () => {
     test('passes a copy of the capabilities file content: deep-equal to the file, never the caller\'s object', async () => {
         const wdio = fakeWebdriverio();
         const provider = new AppiumSessionProvider({ importWebdriverio: wdio.importer });
-        const prepared = prepareSession('ios', { capabilities: IOS_EXAMPLE, server: 'http://127.0.0.1:14732/wd/hub' }, {});
+        const prepared = prepareSession('ios', { capabilities: IOS_EXAMPLE, server: 'http://127.0.0.1:4725/wd/hub' }, {});
         await provider.start(prepared.context);
         expect(wdio.calls[0].capabilities).not.toBe(prepared.context.capabilities);
         expect(wdio.calls[0].capabilities).toStrictEqual(prepared.context.capabilities);
@@ -107,7 +107,7 @@ test.describe('AppiumSessionProvider.start', () => {
             client: { logLevel: 'debug', waitforTimeout: 250, connectionRetryCount: 1, connectionRetryTimeout: undefined },
         });
         await provider.start(context());
-        expect(wdio.calls[0]).toMatchObject({ logLevel: 'debug', waitforTimeout: 250, connectionRetryCount: 1, port: 14732 });
+        expect(wdio.calls[0]).toMatchObject({ logLevel: 'debug', waitforTimeout: 250, connectionRetryCount: 1, port: 4725 });
         expect(wdio.calls[0]).not.toHaveProperty('connectionRetryTimeout');
     });
 

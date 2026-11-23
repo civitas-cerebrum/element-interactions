@@ -178,7 +178,7 @@ test.describe('prepareSession', () => {
             .toContain(`has no "appium:appPackage" (nor "appium:options": { "appPackage": ... })`);
     });
 
-    test('unprefixed bundleId / appPackage are not the app id (CONTRACT B1 names the appium: keys)', () => {
+    test('unprefixed bundleId / appPackage are not the app id (only the appium: keys name the app)', () => {
         const ios = writeFile('unprefixed-ios.json', JSON.stringify({ platformName: 'iOS', bundleId: 'com.example.app' }));
         expect(errorOf(() => prepareSession('ios', { capabilities: ios }, {})).message).toContain('has no "appium:bundleId"');
         const android = writeFile('unprefixed-android.json', JSON.stringify({ platformName: 'Android', appPackage: 'com.example.app' }));

@@ -13,7 +13,7 @@ export interface LoadedCapabilities {
 }
 
 /**
- * Reads the capabilities JSON file of a platform run (CONTRACT B1).
+ * Reads the capabilities JSON file of a platform run.
  *
  * - `file` is ALWAYS a path; `undefined` falls back to `env.CAPABILITIES` (an
  *   empty value counts as unset). An inline object is rejected: capabilities

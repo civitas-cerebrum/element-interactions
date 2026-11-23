@@ -31,9 +31,9 @@ import { mockDriver, mockElement } from './appium/mocks';
 // shared   — UI steps with the same name and arguments on every platform.
 // web-only — throw PlatformNotSupportedError(step, platform) off the Playwright family.
 // non-ui   — API (wasapi), SQL, email, pacing and pure value checks: no driver, every platform.
-// platform-only — CONTRACT B5 steps with no element on web: throw PlatformNotSupportedError(step, 'web')
+// platform-only — platform steps with no element on web: throw PlatformNotSupportedError(step, 'web')
 //            before anything (tests/steps-platform-steps.spec.ts checks each one).
-// element gestures — CONTRACT B5 element-level gestures: on a device they resolve the element and call
+// element gestures — element-level platform gestures: on a device they resolve the element and call
 //            its primitive. On web swipe / longPress / scrollUntilFound follow the element primitive;
 //            pinch / zoom throw PlatformNotSupportedError(step, 'web') before resolving anything.
 //            scrollIntoView, the pre-existing one, stays under shared.

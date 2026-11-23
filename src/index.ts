@@ -13,7 +13,7 @@ export { PlaywrightDevice } from './playwright/PlaywrightDevice';
 export { PlaywrightFactory } from './playwright/PlaywrightFactory';
 export type { PlaywrightFactoryOptions } from './playwright/PlaywrightFactory';
 
-// Platform contract: family interfaces, platform vocabulary, not-supported error
+// Platform interfaces: family interfaces, platform vocabulary, not-supported error
 export type {
     IInteractions,
     IVerifications,

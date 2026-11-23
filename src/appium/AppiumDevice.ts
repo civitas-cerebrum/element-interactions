@@ -33,7 +33,7 @@ export const NATIVE_CONTEXT = 'NATIVE_APP';
  * resolves the app id and normalises results.
  *
  * `appId` arguments default to the app under test the factory was given
- * (read from the capabilities file, CONTRACT B1). A call that needs an app id
+ * (read from the capabilities file). A call that needs an app id
  * when there is none throws, naming the capability key to set.
  */
 export class AppiumDevice implements IDevice {
@@ -98,7 +98,7 @@ export class AppiumDevice implements IDevice {
         await this.strategy.backgroundApp(this.driver, seconds);
     }
 
-    /** Terminates and re-activates the app under test (CONTRACT B5). */
+    /** Terminates and re-activates the app under test. */
     async resetApp(): Promise<void> {
         this.requireImplemented();
         await this.strategy.resetApp(this.driver, this.resolveAppId('resetApp'));

@@ -6,8 +6,8 @@ import { requireSettingsCapabilities } from './settingsGuard';
 /**
  * The fixture of the cross-platform spec: one `baseFixture` call that serves
  * web, Android and iOS. The platform comes from `PLATFORM` (unset: web).
- * Capabilities and server come ONLY from `CAPABILITIES` / `APPIUM_URL`
- * (CONTRACT C2): nothing about a device or a server is written here.
+ * Capabilities and server come ONLY from `CAPABILITIES` / `APPIUM_URL`:
+ * nothing about a device or a server is written here.
  *
  *   web (default suite): the docker test site at the config's baseURL.
  *   ios:     PLATFORM=ios CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \
