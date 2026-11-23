@@ -1,0 +1,10 @@
+{
+  "platformName": "iOS",
+  "appium:automationName": "XCUITest",
+  "appium:deviceName": "<device-name>",
+  "appium:udid": "<device-udid>",
+  "appium:bundleId": "com.example.app",
+  "appium:newCommandTimeout": 300,
+  "appium:autoAcceptAlerts": false,
+  "appium:noReset": true
+}
