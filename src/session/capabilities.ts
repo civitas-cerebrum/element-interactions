@@ -4,7 +4,7 @@ import type { Platform } from '@civitas-cerebrum/element-repository';
 
 /** A capabilities file read by {@link loadCapabilities}. */
 export interface LoadedCapabilities {
-    /** The path as given (option or `CAPABILITIES`), used in every message. */
+    /** The path as given (option or `E2E_CAPABILITIES`), used in every message. */
     file: string;
     /** The absolute path that was read. */
     resolvedPath: string;
@@ -15,7 +15,7 @@ export interface LoadedCapabilities {
 /**
  * Reads the capabilities JSON file of a platform run.
  *
- * - `file` is ALWAYS a path; `undefined` falls back to `env.CAPABILITIES` (an
+ * - `file` is ALWAYS a path; `undefined` falls back to `env.E2E_CAPABILITIES` (an
  *   empty value counts as unset). An inline object is rejected: capabilities
  *   live only in files.
  * - The file is a FLAT W3C capabilities object: a file wrapped in
@@ -28,14 +28,14 @@ export interface LoadedCapabilities {
  *
  * @param file - Path to the JSON file, absolute or relative to the working directory.
  * @param platform - The active platform the file must declare.
- * @param env - Environment to read `CAPABILITIES` from (default `process.env`).
+ * @param env - Environment to read `E2E_CAPABILITIES` from (default `process.env`).
  */
 export function loadCapabilities(file: unknown, platform: Platform, env: NodeJS.ProcessEnv = process.env): LoadedCapabilities {
-    const given = file === undefined ? env.CAPABILITIES : file;
+    const given = file === undefined ? env.E2E_CAPABILITIES : file;
     if (given === undefined || given === '') {
         throw new Error(
             `No capabilities file for platform "${platform}": set session.capabilities to the path of a JSON capabilities `
-            + 'file (for example tests/capabilities/<device>.json), or set CAPABILITIES.',
+            + 'file (for example tests/capabilities/<device>.json), or set E2E_CAPABILITIES.',
         );
     }
     if (typeof given !== 'string') {
@@ -83,7 +83,7 @@ export function loadCapabilities(file: unknown, platform: Platform, env: NodeJS.
     if (platformName.toLowerCase() !== platform.toLowerCase()) {
         throw new Error(
             `Capabilities file "${given}" has "platformName": "${platformName}", but the platform is "${platform}". `
-            + 'Point session.capabilities (or CAPABILITIES) at a file for this platform, or change the platform.',
+            + 'Point session.capabilities (or E2E_CAPABILITIES) at a file for this platform, or change the platform.',
         );
     }
     return { file: given, resolvedPath, capabilities };

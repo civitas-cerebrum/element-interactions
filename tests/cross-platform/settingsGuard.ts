@@ -1,4 +1,4 @@
-import { loadCapabilities } from '../../src';
+import { loadCapabilities } from '../../src/session/capabilities';
 import type { Platform } from '../../src';
 
 /**
@@ -6,7 +6,7 @@ import type { Platform } from '../../src';
  *
  * Both specs drive ONLY the platform's built-in Settings app, read-only. On a
  * device platform the capabilities file is read the way the library reads it
- * (`loadCapabilities`: `CAPABILITIES`, flat object, `platformName` agreeing
+ * (`loadCapabilities`: `E2E_CAPABILITIES`, flat object, `platformName` agreeing
  * with the platform) and checked against an ALLOW-LIST before any session
  * opens:
  *
@@ -25,7 +25,7 @@ import type { Platform } from '../../src';
  *   absent or exactly `false`: the spec must never answer a system dialog or
  *   grant a permission on its own.
  *
- * The guard checks the file named by `CAPABILITIES`. A fixture using it must
+ * The guard checks the file named by `E2E_CAPABILITIES`. A fixture using it must
  * therefore not set `session.capabilities`, which would open the session from
  * another file than the one checked.
  *
@@ -80,7 +80,7 @@ const PREFIX = 'appium:';
  * else.
  *
  * @param platform - The resolved platform of the run.
- * @param env - Environment to read `CAPABILITIES` from (default `process.env`).
+ * @param env - Environment to read `E2E_CAPABILITIES` from (default `process.env`).
  */
 export function requireSettingsCapabilities(platform: Platform, env: NodeJS.ProcessEnv = process.env): void {
     const expected = SETTINGS_APPS[platform];

@@ -33,7 +33,7 @@ test.beforeAll(() => {
     const log = path.join(dir, 'session.log');
     const report = path.join(dir, 'report.json');
     const env: NodeJS.ProcessEnv = { ...process.env, EI_FAKE_SESSION_LOG: log, PLAYWRIGHT_JSON_OUTPUT_NAME: report, TESTER_DEBUG: 'false' };
-    for (const key of ['PLATFORM', 'CAPABILITIES', 'APPIUM_URL', 'APPIUM_USER', 'APPIUM_KEY', 'TEST_WORKER_INDEX', 'TEST_PARALLEL_INDEX']) delete env[key];
+    for (const key of ['E2E_PLATFORM', 'E2E_CAPABILITIES', 'APPIUM_URL', 'APPIUM_USER', 'APPIUM_KEY', 'TEST_WORKER_INDEX', 'TEST_PARALLEL_INDEX']) delete env[key];
     const run = spawnSync(process.execPath, [require.resolve('@playwright/test/cli'), 'test', '-c', 'tests/fixture-platform/playwright.config.ts'], {
         cwd: ROOT, env, encoding: 'utf-8', timeout: 120_000,
     });

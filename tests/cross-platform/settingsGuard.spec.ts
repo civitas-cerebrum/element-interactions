@@ -36,7 +36,7 @@ function file(content: unknown): string {
     return p;
 }
 function env(capabilities: unknown): NodeJS.ProcessEnv {
-    return { CAPABILITIES: file(capabilities) };
+    return { E2E_CAPABILITIES: file(capabilities) };
 }
 function refusal(fn: () => void): string {
     try {
@@ -55,13 +55,13 @@ function without(caps: Record<string, unknown>, ...keys: string[]): Record<strin
 function expectRefused(platform: 'ios' | 'android', caps: Record<string, unknown>, key: string): string {
     const e = env(caps);
     const message = refusal(() => requireSettingsCapabilities(platform, e));
-    expect(message).toContain(e.CAPABILITIES!);
+    expect(message).toContain(e.E2E_CAPABILITIES!);
     expect(message).toContain(`(key "${key}")`);
     return message;
 }
 
 test.describe('requireSettingsCapabilities', () => {
-    test('web: a no-op, CAPABILITIES is not read', () => {
+    test('web: a no-op, E2E_CAPABILITIES is not read', () => {
         expect(() => requireSettingsCapabilities('web', {})).not.toThrow();
     });
 
@@ -113,11 +113,11 @@ test.describe('requireSettingsCapabilities', () => {
         }))).not.toThrow();
 
         // As committed they name a placeholder app, which only the app id check refuses.
-        expect(refusal(() => requireSettingsCapabilities('ios', { CAPABILITIES: 'tests/capabilities/ios.example.json' })))
+        expect(refusal(() => requireSettingsCapabilities('ios', { E2E_CAPABILITIES: 'tests/capabilities/ios.example.json' })))
             .toContain('(key "appium:bundleId")');
     });
 
-    test('a missing CAPABILITIES is refused', () => {
+    test('a missing E2E_CAPABILITIES is refused', () => {
         expect(() => requireSettingsCapabilities('ios', {})).toThrow(/No capabilities file/);
     });
 

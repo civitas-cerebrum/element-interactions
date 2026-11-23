@@ -39,7 +39,7 @@ export interface SessionProvider {
 export interface SessionOptions {
     /**
      * PATH to a JSON capabilities file: one flat W3C capabilities object (no
-     * `alwaysMatch` / `firstMatch` wrapper). Default: `process.env.CAPABILITIES`
+     * `alwaysMatch` / `firstMatch` wrapper). Default: `process.env.E2E_CAPABILITIES`
      * (an empty value counts as unset). An inline object is not accepted.
      *
      * A relative path resolves against `process.cwd()` (where Playwright was

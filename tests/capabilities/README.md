@@ -1,11 +1,11 @@
 # Capabilities files
 
 Capabilities for a platform run live only in JSON files in this folder. A test
-run picks one with `CAPABILITIES` and the library sends its content exactly as
+run picks one with `E2E_CAPABILITIES` and the library sends its content exactly as
 written: it adds, defaults and rewrites nothing.
 
 ```
-PLATFORM=<platform> CAPABILITIES=tests/capabilities/<device>.local.json APPIUM_URL=<appium-server-url-with-base-path> \
+E2E_PLATFORM=<platform> E2E_CAPABILITIES=tests/capabilities/<device>.local.json APPIUM_URL=<appium-server-url-with-base-path> \
   npx playwright test -c playwright.platform.config.ts
 ```
 
@@ -29,7 +29,7 @@ Each file is ONE flat W3C capabilities object: top-level keys only, no
 
 Required keys:
 
-- `platformName`: `Android` or `iOS`. It must agree with `PLATFORM` (case-insensitive), or the run fails before a session opens.
+- `platformName`: `Android` or `iOS`. It must agree with `E2E_PLATFORM` (case-insensitive), or the run fails before a session opens.
 - `appium:automationName`: `UiAutomator2` (Android) or `XCUITest` (iOS).
 - `appium:deviceName`: set it explicitly; tools that open inspection sessions inject their own default otherwise.
 - `appium:newCommandTimeout`: set it explicitly (the examples use 300 s) for the same reason.

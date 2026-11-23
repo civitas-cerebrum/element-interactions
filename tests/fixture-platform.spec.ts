@@ -47,7 +47,8 @@ test.describe.serial('baseFixture on ios (mock session)', () => {
         await steps.verifyText('title', 'LoginPage', 'Sign in');
 
         expect(interactions).toBeInstanceOf(PlatformInteractions);
-        const platformInteractions = interactions as unknown as PlatformInteractions;
+        if (!(interactions instanceof PlatformInteractions)) throw new Error('expected PlatformInteractions');
+        const platformInteractions = interactions;
         expect(platformInteractions.interact).toBeInstanceOf(AppiumInteractions);
         expect(platformInteractions.verify).toBeInstanceOf(AppiumVerifications);
         expect(platformInteractions.gestures).toBeInstanceOf(AppiumGestures);
@@ -84,7 +85,8 @@ test.describe.serial('baseFixture on ios (mock session)', () => {
     });
 
     test('the family members act on the worker session with the app id from the file', async ({ interactions }) => {
-        const device = (interactions as unknown as PlatformInteractions).device;
+        if (!(interactions instanceof PlatformInteractions)) throw new Error('expected PlatformInteractions');
+        const device = interactions.device;
         await device.terminateApp();
         const last = fake.calls.filter(c => c[0] === 'execute').at(-1)!;
         expect(last.slice(1)).toEqual(['mobile: terminateApp', { bundleId: 'com.example.app' }]);
@@ -93,37 +95,57 @@ test.describe.serial('baseFixture on ios (mock session)', () => {
 });
 
 test.describe('platform resolution and web-only options', () => {
-    test('resolvePlatform: option, else PLATFORM, else web; bad values name their source', () => {
+    test('resolvePlatform: option, else E2E_PLATFORM, else web; bad values name their source', () => {
         expect(resolvePlatform(undefined, {})).toBe('web');
-        expect(resolvePlatform(undefined, { PLATFORM: 'android' })).toBe('android');
-        expect(resolvePlatform('ios', { PLATFORM: 'android' })).toBe('ios');
-        expect(() => resolvePlatform(undefined, { PLATFORM: 'mobile' }))
-            .toThrow('PLATFORM is "mobile", which is not a platform. Expected one of: web, android, ios, macos, windows.');
+        expect(resolvePlatform(undefined, { E2E_PLATFORM: 'android' })).toBe('android');
+        expect(resolvePlatform('ios', { E2E_PLATFORM: 'android' })).toBe('ios');
+        expect(() => resolvePlatform(undefined, { E2E_PLATFORM: 'mobile' }))
+            .toThrow('E2E_PLATFORM is "mobile", which is not a platform. Expected one of: web, android, ios, macos, windows.');
         expect(() => resolvePlatform('iOS', {}))
             .toThrow('baseFixture option "platform" is "iOS", which is not a platform.');
-        expect(resolvePlatform(undefined, { PLATFORM: '' })).toBe('web');
-        expect(() => resolvePlatform('', { PLATFORM: 'ios' })).toThrow('baseFixture option "platform" is "", which is not a platform.');
+        expect(resolvePlatform(undefined, { E2E_PLATFORM: '' })).toBe('web');
+        expect(() => resolvePlatform('', { E2E_PLATFORM: 'ios' })).toThrow('baseFixture option "platform" is "", which is not a platform.');
     });
 
-    test('an empty PLATFORM in process.env counts as unset: baseFixture builds the web fixture', () => {
-        const saved = process.env.PLATFORM;
-        process.env.PLATFORM = '';
+    test('an empty E2E_PLATFORM in process.env counts as unset: baseFixture builds the web fixture', () => {
+        const saved = process.env.E2E_PLATFORM;
+        process.env.E2E_PLATFORM = '';
         try {
             expect(resolvePlatform(undefined)).toBe('web');
             // A platform fixture would refuse the web-only option; web accepts it.
             expect(() => baseFixture(base, REPO, { blockedOrigins: /x/ })).not.toThrow();
         } finally {
-            if (saved === undefined) delete process.env.PLATFORM; else process.env.PLATFORM = saved;
+            if (saved === undefined) delete process.env.E2E_PLATFORM; else process.env.E2E_PLATFORM = saved;
         }
     });
 
-    test('baseFixture reads PLATFORM when the option is absent', () => {
-        const saved = process.env.PLATFORM;
-        process.env.PLATFORM = 'nonsense';
+    test('baseFixture reads E2E_PLATFORM when the option is absent', () => {
+        const saved = process.env.E2E_PLATFORM;
+        process.env.E2E_PLATFORM = 'nonsense';
         try {
-            expect(() => baseFixture(base, REPO)).toThrow(/PLATFORM is "nonsense"/);
+            expect(() => baseFixture(base, REPO)).toThrow(/E2E_PLATFORM is "nonsense"/);
         } finally {
-            if (saved === undefined) delete process.env.PLATFORM; else process.env.PLATFORM = saved;
+            if (saved === undefined) delete process.env.E2E_PLATFORM; else process.env.E2E_PLATFORM = saved;
+        }
+    });
+
+    test('unprefixed PLATFORM and CAPABILITIES are never read: a web run is unaffected', () => {
+        expect(resolvePlatform(undefined, { PLATFORM: 'x64', CAPABILITIES: 'x' })).toBe('web');
+        expect(resolvePlatform(undefined, { PLATFORM: 'ios' })).toBe('web');
+        const keys = ['PLATFORM', 'CAPABILITIES', 'E2E_PLATFORM', 'E2E_CAPABILITIES'] as const;
+        const saved = Object.fromEntries(keys.map(k => [k, process.env[k]]));
+        delete process.env.E2E_PLATFORM;
+        delete process.env.E2E_CAPABILITIES;
+        process.env.PLATFORM = 'x64';
+        process.env.CAPABILITIES = 'x';
+        try {
+            expect(resolvePlatform(undefined)).toBe('web');
+            // The web fixture accepts a web-only option; a platform fixture would refuse it.
+            expect(() => baseFixture(base, REPO, { blockedOrigins: /x/ })).not.toThrow();
+        } finally {
+            for (const k of keys) {
+                if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k];
+            }
         }
     });
 

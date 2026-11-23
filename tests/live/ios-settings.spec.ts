@@ -11,7 +11,7 @@ import { requireSettingsCapabilities } from '../cross-platform/settingsGuard';
  *
  * Skipped unless the resolved platform is `ios`. Run it:
  *
- *   PLATFORM=ios CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \
+ *   E2E_PLATFORM=ios E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \
  *     npx playwright test -c playwright.platform.config.ts tests/live
  *
  * The capabilities file is a flat W3C object (see tests/capabilities/README.md)
@@ -38,7 +38,7 @@ const ROOT = 'SettingsRoot';
 const GENERAL = 'GeneralScreen';
 
 // No `session.capabilities` here: the Settings guard checks the file named by
-// CAPABILITIES, so the session must open from that same file.
+// E2E_CAPABILITIES, so the session must open from that same file.
 const test = baseFixture(base, path.join(__dirname, 'page-repository.json'), {
     platform,
     // Generous: the first gesture in a fresh iOS session took 15-30 s live.
@@ -47,7 +47,7 @@ const test = baseFixture(base, path.join(__dirname, 'page-repository.json'), {
 });
 
 test.describe('live iOS Settings (read-only)', () => {
-    test.skip(platform !== 'ios', 'Live iOS check: runs only when PLATFORM=ios (with CAPABILITIES and APPIUM_URL).');
+    test.skip(platform !== 'ios', 'Live iOS check: runs only when E2E_PLATFORM=ios (with E2E_CAPABILITIES and APPIUM_URL).');
     test.describe.configure({ timeout: 300_000 });
 
     // Runs before the session opens: refuses any file that is not the Settings

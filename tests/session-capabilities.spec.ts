@@ -54,36 +54,41 @@ test.describe('loadCapabilities', () => {
         expect(loadCapabilities(file, 'ios', {}).capabilities.platformName).toBe('IOS');
     });
 
-    test('falls back to CAPABILITIES (explicit env and process.env)', () => {
-        expect(loadCapabilities(undefined, 'ios', { CAPABILITIES: IOS_EXAMPLE }).file).toBe(IOS_EXAMPLE);
-        const saved = process.env.CAPABILITIES;
-        process.env.CAPABILITIES = ANDROID_EXAMPLE;
+    test('falls back to E2E_CAPABILITIES (explicit env and process.env)', () => {
+        expect(loadCapabilities(undefined, 'ios', { E2E_CAPABILITIES: IOS_EXAMPLE }).file).toBe(IOS_EXAMPLE);
+        const saved = process.env.E2E_CAPABILITIES;
+        process.env.E2E_CAPABILITIES = ANDROID_EXAMPLE;
         try {
             expect(loadCapabilities(undefined, 'android').file).toBe(ANDROID_EXAMPLE);
         } finally {
-            if (saved === undefined) delete process.env.CAPABILITIES; else process.env.CAPABILITIES = saved;
+            if (saved === undefined) delete process.env.E2E_CAPABILITIES; else process.env.E2E_CAPABILITIES = saved;
         }
     });
 
-    test('an empty CAPABILITIES counts as unset', () => {
-        expect(errorOf(() => loadCapabilities(undefined, 'ios', { CAPABILITIES: '' })).message)
+    test('an empty E2E_CAPABILITIES counts as unset', () => {
+        expect(errorOf(() => loadCapabilities(undefined, 'ios', { E2E_CAPABILITIES: '' })).message)
             .toMatch(/^No capabilities file for platform "ios"/);
-        const saved = process.env.CAPABILITIES;
-        process.env.CAPABILITIES = '';
+        const saved = process.env.E2E_CAPABILITIES;
+        process.env.E2E_CAPABILITIES = '';
         try {
             expect(errorOf(() => loadCapabilities(undefined, 'android')).message).toMatch(/^No capabilities file for platform "android"/);
         } finally {
-            if (saved === undefined) delete process.env.CAPABILITIES; else process.env.CAPABILITIES = saved;
+            if (saved === undefined) delete process.env.E2E_CAPABILITIES; else process.env.E2E_CAPABILITIES = saved;
         }
     });
 
-    test('the option wins over CAPABILITIES', () => {
-        expect(loadCapabilities(IOS_EXAMPLE, 'ios', { CAPABILITIES: ANDROID_EXAMPLE }).file).toBe(IOS_EXAMPLE);
+    test('an unprefixed CAPABILITIES is never read', () => {
+        expect(errorOf(() => loadCapabilities(undefined, 'ios', { CAPABILITIES: IOS_EXAMPLE })).message)
+            .toMatch(/^No capabilities file for platform "ios"/);
+    });
+
+    test('the option wins over E2E_CAPABILITIES', () => {
+        expect(loadCapabilities(IOS_EXAMPLE, 'ios', { E2E_CAPABILITIES: ANDROID_EXAMPLE }).file).toBe(IOS_EXAMPLE);
     });
 
     test('no file at all is an error that says how to give one', () => {
         expect(errorOf(() => loadCapabilities(undefined, 'ios', {})).message)
-            .toMatch(/No capabilities file for platform "ios".*session\.capabilities.*CAPABILITIES/);
+            .toMatch(/No capabilities file for platform "ios".*session\.capabilities.*E2E_CAPABILITIES/);
     });
 
     test('an inline object is rejected: capabilities are always a file path', () => {

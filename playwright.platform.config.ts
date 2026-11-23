@@ -5,7 +5,7 @@ import { resolvePlatform } from './src';
  * Platform runs: the cross-platform spec and the live device
  * checks against an Appium server. The only start form:
  *
- *   PLATFORM=<platform> CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \
+ *   E2E_PLATFORM=<platform> E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \
  *     npx playwright test -c playwright.platform.config.ts [tests/cross-platform | tests/live]
  *
  * One device session per worker, so one worker. Long timeouts: the first
@@ -20,8 +20,8 @@ import { resolvePlatform } from './src';
 const platform = resolvePlatform(undefined);
 if (platform === 'web') {
     throw new Error(
-        'playwright.platform.config.ts runs device platforms only, but the platform resolved to "web" (PLATFORM unset, empty or "web"). '
-        + 'Set PLATFORM=ios or PLATFORM=android with CAPABILITIES and APPIUM_URL; '
+        'playwright.platform.config.ts runs device platforms only, but the platform resolved to "web" (E2E_PLATFORM unset, empty or "web"). '
+        + 'Set E2E_PLATFORM=ios or E2E_PLATFORM=android with E2E_CAPABILITIES and APPIUM_URL; '
         + 'the web run of tests/cross-platform belongs to the default config (npx playwright test tests/cross-platform).',
     );
 }

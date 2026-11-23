@@ -5,14 +5,14 @@ import { requireSettingsCapabilities } from './settingsGuard';
 
 /**
  * The fixture of the cross-platform spec: one `baseFixture` call that serves
- * web, Android and iOS. The platform comes from `PLATFORM` (unset: web).
- * Capabilities and server come ONLY from `CAPABILITIES` / `APPIUM_URL`:
+ * web, Android and iOS. The platform comes from `E2E_PLATFORM` (unset: web).
+ * Capabilities and server come ONLY from `E2E_CAPABILITIES` / `APPIUM_URL`:
  * nothing about a device or a server is written here.
  *
  *   web (default suite): the docker test site at the config's baseURL.
- *   ios:     PLATFORM=ios CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \
+ *   ios:     E2E_PLATFORM=ios E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \
  *              npx playwright test -c playwright.platform.config.ts tests/cross-platform
- *   android: the same with PLATFORM=android.
+ *   android: the same with E2E_PLATFORM=android.
  *
  * The capabilities file must name the built-in Settings app
  * (`appium:bundleId: com.apple.Preferences` on iOS,
@@ -22,7 +22,7 @@ import { requireSettingsCapabilities } from './settingsGuard';
 export const platform = resolvePlatform(undefined);
 
 // No `session.capabilities` here: the Settings guard checks the file named by
-// CAPABILITIES, so the session must open from that same file.
+// E2E_CAPABILITIES, so the session must open from that same file.
 const stepsTest = baseFixture(base, path.join(__dirname, 'page-repository.json'), {
     platform,
     // Generous: the first gesture in a fresh iOS session took 15-30 s live.

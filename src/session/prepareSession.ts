@@ -8,7 +8,7 @@ import type { SessionOptions, SessionStartContext } from './types';
 /** Everything needed to open the session of a platform run, resolved before any connection is made. */
 export interface PreparedSession {
     context: SessionStartContext;
-    /** The capabilities file as given (option or `CAPABILITIES`). */
+    /** The capabilities file as given (option or `E2E_CAPABILITIES`). */
     capabilitiesFile: string;
     /** The app under test read from the file; `undefined` when the file names none. */
     appId: string | undefined;

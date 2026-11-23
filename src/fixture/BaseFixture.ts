@@ -31,12 +31,15 @@ import { PlatformInteractions } from './PlatformInteractions';
 
 type StepFixture = {
     /**
-     * On `web` the Playwright facade. On a platform run a
-     * {@link PlatformInteractions} with the same member names (`interact`,
-     * `verify`, `extract`, `navigate`, `email`), built from the Appium family;
-     * Playwright-only members (`request`) throw `PlatformNotSupportedError`.
+     * On `web` the Playwright facade ({@link ElementInteractions}). On a
+     * platform run a {@link PlatformInteractions} with the same member names
+     * (`interact`, `verify`, `extract`, `navigate`, `email`) plus `gestures`
+     * and `device`, built from the Appium family; its `request` throws
+     * `PlatformNotSupportedError`. Narrow with
+     * `interactions instanceof PlatformInteractions` to reach `gestures` /
+     * `device`.
      */
-    interactions: ElementInteractions;
+    interactions: ElementInteractions | PlatformInteractions;
     contextStore: ContextStore;
     repo: ElementRepository;
     steps: Steps;
@@ -55,8 +58,8 @@ export type BaseFixtureTest = TestType<
 
 export interface BaseFixtureOptions {
     /**
-     * The platform this run tests. Default: `process.env.PLATFORM`, else
-     * `'web'` (an empty `PLATFORM` counts as unset). Read once, when
+     * The platform this run tests. Default: `process.env.E2E_PLATFORM`, else
+     * `'web'` (an empty `E2E_PLATFORM` counts as unset). Read once, when
      * `baseFixture()` is called.
      *
      * - `web`: the Playwright fixtures, unchanged.
@@ -476,14 +479,14 @@ export async function forwardMutationInjection(
 
 /**
  * Resolves the `platform` option: the option, else
- * `process.env.PLATFORM`, else `'web'`. An empty `PLATFORM` counts as unset.
+ * `process.env.E2E_PLATFORM`, else `'web'`. An empty `E2E_PLATFORM` counts as unset.
  * A value that is not a {@link Platform} throws, naming where it came from.
  */
 export function resolvePlatform(option: unknown, env: NodeJS.ProcessEnv = process.env): Platform {
-    const value = option !== undefined ? option : (env.PLATFORM === '' ? undefined : env.PLATFORM);
+    const value = option !== undefined ? option : (env.E2E_PLATFORM === '' ? undefined : env.E2E_PLATFORM);
     if (value === undefined) return 'web';
     if (!isPlatformName(value)) {
-        const source = option !== undefined ? 'baseFixture option "platform"' : 'PLATFORM';
+        const source = option !== undefined ? 'baseFixture option "platform"' : 'E2E_PLATFORM';
         throw new Error(`${source} is "${String(value)}", which is not a platform. Expected one of: ${PLATFORMS.join(', ')}.`);
     }
     return value;
@@ -508,7 +511,7 @@ function webOnlyOptionsGiven(options: BaseFixtureOptions | undefined): string[] 
 /**
  * Extends a Playwright `test` with the StepFixture surface — `repo`, `steps`,
  * `interactions`, `contextStore`, `driver` — for the platform chosen when this
- * function is called (`options.platform`, else `PLATFORM`, else `web`).
+ * function is called (`options.platform`, else `E2E_PLATFORM`, else `web`).
  *
  * **web** — `repo` / `steps` / `interactions` on the Playwright `page`, and a
  * `page` wrapper that attaches a failure screenshot on every failed test.
@@ -695,7 +698,7 @@ function platformFixture(
         },
         interactions: async ({ _eiFactory }, use) => {
             const interactions = new PlatformInteractions(_eiFactory, { emailCredentials: options?.emailCredentials });
-            await use(interactions as unknown as ElementInteractions);
+            await use(interactions);
         },
         contextStore: async ({ }, use) => {
             await use(new ContextStore());
