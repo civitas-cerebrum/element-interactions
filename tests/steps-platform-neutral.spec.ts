@@ -154,7 +154,7 @@ const SHARED_TERMINALS = [
  * gestures; on web `pinch` / `zoom` throw PlatformNotSupportedError before resolving
  * (tests/steps-platform-options.spec.ts).
  */
-const GESTURE_TERMINALS = ['swipe', 'scrollUntilFound', 'longPress', 'pinch', 'zoom'];
+const GESTURE_TERMINALS = ['swipe', 'scrollUntilFound', 'longPress', 'tapAt', 'pinch', 'zoom'];
 
 /** `ElementAction` members that are not terminals: chain modifiers, accessors and helpers. */
 const ACTION_CHAIN = [

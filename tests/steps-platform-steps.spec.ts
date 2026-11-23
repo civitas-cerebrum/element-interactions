@@ -385,27 +385,17 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(element.calls).toEqual([['scrollIntoView', { direction: 'up', timeout: 400 }]]);
         });
 
-        test('scrollUntilFound swipes the screen until the element is displayed', async () => {
+        test('scrollUntilFound delegates to Element.scrollIntoView with the step timeout', async () => {
             const mock = mockDriver({ capabilities: { ...CAPS[platform] } });
-            let reads = 0;
-            const element = mockElement({ visible: () => ++reads >= 3 });
+            const element = mockElement();
             const steps = new Steps(new AppiumFactory(mock.driver, platform, { timeout: 5000 }), stubRepo([], element));
             await steps.scrollUntilFound('row', 'Page');
-            // Target below (default 'down'): the finger moves up; two swipes before the third read finds it.
-            expect(screenSwipes(mock.calls).map(s => s.direction)).toEqual(['up', 'up']);
-        });
-
-        test('scrollUntilFound honours direction and timeout, failing with the swipe count', async () => {
-            const mock = mockDriver({ capabilities: { ...CAPS[platform] } });
-            const element = mockElement({ visible: false });
-            const steps = new Steps(new AppiumFactory(mock.driver, platform, { timeout: 30000 }), stubRepo([], element));
-            const started = Date.now();
-            const error = await caught(() => steps.scrollUntilFound('row', 'Page', { direction: 'right', timeout: 300 }));
-            expect(Date.now() - started).toBeLessThan(5000);
-            expect((error as Error).message).toMatch(/not displayed after \d+ swipe\(s\) scrolling right within 300 ms/);
-            const swipes = screenSwipes(mock.calls);
-            expect(swipes.length).toBeGreaterThan(0);
-            expect(new Set(swipes.map(s => s.direction))).toEqual(new Set(['left']));
+            await steps.scrollUntilFound('row', 'Page', { direction: 'right', timeout: 300 });
+            expect(element.calls).toEqual([
+                ['scrollIntoView', { timeout: 5000 }],
+                ['scrollIntoView', { direction: 'right', timeout: 300 }],
+            ]);
+            expect(mock.calls).toEqual([]);
         });
 
         test('longPress delegates to Element.longPress with the duration', async () => {

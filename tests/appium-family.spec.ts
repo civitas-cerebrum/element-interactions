@@ -211,18 +211,20 @@ for (const platform of DEVICE_PLATFORMS) {
         const delegates: Array<[string, (g: AppiumGestures, el: Element) => Promise<unknown>, Call]> = [
             ['swipe', (g, el) => g.swipe(el, 'left', { distance: 100, timeout: 500 }), ['swipe', 'left', { distance: 100, timeout: 500 }]],
             ['scrollIntoView', (g, el) => g.scrollIntoView(el, { direction: 'up', timeout: 500 }), ['scrollIntoView', { direction: 'up', timeout: 500 }]],
+            ['scrollUntilFound', (g, el) => g.scrollUntilFound(el, { direction: 'right', maxSwipes: 4, timeout: 500 }),
+                ['scrollIntoView', { direction: 'right', maxSwipes: 4, timeout: 500 }]],
             ['longPress', (g, el) => g.longPress(el, { duration: 800, timeout: 500 }), ['longPress', { duration: 800, timeout: 500 }]],
             ['tapAtElement', (g, el) => g.tapAtElement(el, { x: 3, y: 4 }, { timeout: 500 }), ['tapAt', { x: 3, y: 4 }, { timeout: 500 }]],
             ['pinch', (g, el) => g.pinch(el, { scale: 0.4, timeout: 500 }), ['pinch', { scale: 0.4, timeout: 500 }]],
             ['zoom', (g, el) => g.zoom(el, { scale: 3, timeout: 500 }), ['zoom', { scale: 3, timeout: 500 }]],
         ];
-        const compositions = ['swipeScreen', 'tapAt', 'scrollUntilFound', 'centerElement'];
+        const compositions = ['swipeScreen', 'tapAt', 'centerElement'];
 
         for (const [method, call, expected] of delegates) {
-            test(`${method} delegates to the element primitive with its options`, async () => {
+            test(`${method} delegates to the element primitive with its options and resolves to the element`, async () => {
                 const { factory, calls } = setup();
                 const el = mockElement();
-                await call(factory.createGestures(), el);
+                expect(await call(factory.createGestures(), el)).toBe(el);
                 expect(el.calls).toEqual([expected]);
                 expect(calls).toEqual([]);
             });
@@ -239,6 +241,7 @@ for (const platform of DEVICE_PLATFORMS) {
             const el = mockElement();
             await g.swipe(el, 'up');
             await g.scrollIntoView(el);
+            await g.scrollUntilFound(el, { direction: 'up' });
             await g.longPress(el, { duration: 200 });
             await g.longPress(el, { duration: 200, timeout: 50 });
             await g.tapAtElement(el, { x: 1, y: 2 });
@@ -247,6 +250,8 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(el.calls).toEqual([
                 ['swipe', 'up', { timeout: 1500 }],
                 ['scrollIntoView', { timeout: 1500 }],
+                // scrollUntilFound always gives the sweep a timeout, so it is time-bounded
+                ['scrollIntoView', { direction: 'up', timeout: 1500 }],
                 ['longPress', { duration: 200, timeout: 1500 }],
                 ['longPress', { duration: 200, timeout: 50 }],
                 ['tapAt', { x: 1, y: 2 }, { timeout: 1500 }],
@@ -302,53 +307,20 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(calls.map(c => c[0])).toEqual(['releaseActions']);
         });
 
-        test('scrollUntilFound swipes until the element shows up (3rd read), finger opposite the direction', async () => {
-            const { factory, calls } = setup();
-            const visible = changing([false, false, true]);
-            const el = mockElement({ visible: visible.read });
-            await factory.createGestures().scrollUntilFound(el, { direction: 'down', timeout: 5000 });
-            expect(visible.reads()).toBe(3);
-            const swipes = screenSwipes(calls);
-            expect(swipes).toHaveLength(2);
-            // content below -> finger moves up a third of the screen (267 px), centred on y = 400
-            expect(swipes[0]).toEqual({ from: { x: 200, y: 534 }, to: { x: 200, y: 267 }, direction: 'up', distance: 267 });
-            expect(swipes[1]).toEqual(swipes[0]);
+        test('scrollUntilFound is the element\'s scrollIntoView, time-bounded: it sends no swipe of its own', async () => {
+            const { factory, calls } = setup(800);
+            const el = mockElement();
+            expect(await factory.createGestures().scrollUntilFound(el)).toBe(el);
+            expect(el.calls).toEqual([['scrollIntoView', { timeout: 800 }]]);
+            expect(calls).toEqual([]);
         });
 
-        test('scrollUntilFound honours direction for horizontal lists', async () => {
-            const { factory, calls } = setup();
-            const visible = changing([false, true]);
-            await factory.createGestures().scrollUntilFound(mockElement({ visible: visible.read }), { direction: 'right', timeout: 5000 });
-            const [swipe] = screenSwipes(calls);
-            expect(swipe).toEqual({ from: { x: 267, y: 400 }, to: { x: 134, y: 400 }, direction: 'left', distance: 133 });
-        });
-
-        test('scrollUntilFound throws after its timeout, naming the swipes', async () => {
+        test('scrollUntilFound passes the primitive\'s failure on, a fatal driver error included', async () => {
             const { factory } = setup();
-            const started = Date.now();
-            const error = await factory.createGestures()
-                .scrollUntilFound(mockElement({ visible: false, selector: '~target' }), { timeout: 450 })
-                .catch(e => e);
-            expect(error.message).toMatch(/scrollUntilFound: element "~target" not displayed after \d+ swipe\(s\) scrolling down within 450 ms/);
-            expect(Date.now() - started).toBeGreaterThanOrEqual(440);
-            expect(Date.now() - started).toBeLessThan(2000);
-        });
-
-        test('scrollUntilFound treats a failing visibility read as not yet visible', async () => {
-            const { factory } = setup();
-            let n = 0;
-            const el = mockElement({ visible: async () => { if (n++ < 1) throw new Error('stale'); return true; } });
-            await expect(factory.createGestures().scrollUntilFound(el, { timeout: 5000 })).resolves.toBeUndefined();
-        });
-
-        test('scrollUntilFound throws a fatal driver error at once instead of swiping on', async () => {
-            const { factory, calls } = setup();
             const dead = Object.assign(new Error('invalid session id: the session is gone'), { name: 'invalid session id' });
-            const el = mockElement({ visible: async () => { throw dead; } });
-            const started = Date.now();
-            await expect(factory.createGestures().scrollUntilFound(el, { timeout: 5000 })).rejects.toThrow(/invalid session id/);
-            expect(Date.now() - started).toBeLessThan(1000);
-            expect(calls.filter(c => c[0] === 'performActions')).toEqual([]);
+            const el = mockElement();
+            (el as unknown as { scrollIntoView: () => Promise<never> }).scrollIntoView = async () => { throw dead; };
+            await expect(factory.createGestures().scrollUntilFound(el, { timeout: 5000 })).rejects.toBe(dead);
         });
 
         test('centerElement swipes until the element is within tolerance of the centre', async () => {
@@ -416,7 +388,7 @@ for (const platform of DEVICE_PLATFORMS) {
             let y = 700;
             // Slowly drifts (10 px per read): never centred, never stuck, always on screen.
             const el = mockElement({ box: async () => ({ x: 0, y: (y -= 10), width: 10, height: 10 }) });
-            await expect(factory.createGestures().centerElement(el, { timeout: 250 })).resolves.toBeUndefined();
+            await expect(factory.createGestures().centerElement(el, { timeout: 250 })).resolves.toBe(el);
         });
 
         test('centerElement does nothing for an element already centred, and throws without bounds', async () => {
@@ -441,7 +413,8 @@ for (const platform of DEVICE_PLATFORMS) {
             const { factory } = setup(700);
             const el = mockElement();
             await factory.createInteractions().click(el, { timeout: 90, withoutScrolling: true });
-            expect(el.calls).toEqual([['waitFor', { state: 'visible', timeout: 90 }], ['click', { timeout: expect.any(Number) }]]);
+            // withoutScrolling reaches the element's click primitive, where a device tap never scrolls
+            expect(el.calls).toEqual([['waitFor', { state: 'visible', timeout: 90 }], ['click', { timeout: expect.any(Number), withoutScrolling: true }]]);
             expectTimeLeft(el.calls[1][1], 90);
         });
 

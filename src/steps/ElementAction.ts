@@ -13,7 +13,17 @@ import {
 import { VisibleChain } from './VisibleChain';
 import { isListEntry } from './listEntry';
 import type { EntryTarget } from '../interfaces/IEntryTarget';
-import type { Direction, IGestures, LongPressOptions, PinchOptions, ScrollIntoViewOptions, SwipeOptions } from '../interfaces/IGestures';
+import type {
+    IGestures,
+    LongPressOptions,
+    PinchOptions,
+    ScrollIntoViewOptions,
+    SwipeDirection,
+    SwipeOptions,
+    TapAtOptions,
+    TapOffset,
+    ZoomOptions,
+} from '../interfaces/IGestures';
 
 /**
  * The shape returned by the `ElementAction.visible` getter: it is BOTH the
@@ -500,11 +510,16 @@ export class ElementAction {
         await element.action(this._timeout).fill(text);
     }
 
-    /** Scroll the resolved element into view. Skips silently if `ifVisible()` was set and element is hidden. */
-    async scrollIntoView(): Promise<void> {
+    /**
+     * Scroll the resolved element into view. Skips silently if `ifVisible()` was set and element is hidden.
+     * @param options - `direction`: where the element lies relative to the view on a device (default
+     *   `'down'`; the browser scrolls whichever way is needed); `maxSwipes`: the most swipes a device sweep
+     *   makes (default 20); `timeout` in ms (default the chain timeout), which also bounds a device sweep.
+     */
+    async scrollIntoView(options?: ScrollIntoViewOptions): Promise<void> {
         if (!await this.shouldProceed()) return;
         const element = await this.resolve();
-        await element.action(this._timeout).scrollIntoView();
+        await element.scrollIntoView({ ...options, timeout: options?.timeout ?? this._timeout });
     }
 
     // -- Terminal actions: gestures --
@@ -528,31 +543,26 @@ export class ElementAction {
      * drag. Skips silently if `ifVisible()` was set and the element is hidden.
      * @param options - `distance`: finger travel in px (platform default when omitted); `timeout` in ms.
      */
-    async swipe(direction: Direction, options?: SwipeOptions): Promise<void> {
+    async swipe(direction: SwipeDirection, options?: SwipeOptions): Promise<void> {
         const gestures = this.requireGestures('swipe');
         if (!await this.shouldProceed()) return;
         const element = await this.resolve();
-        await gestures.swipe(element, direction, {
-            ...(options?.distance !== undefined ? { distance: options.distance } : {}),
-            timeout: options?.timeout ?? this._timeout,
-        });
+        await gestures.swipe(element, direction, { ...options, timeout: options?.timeout ?? this._timeout });
     }
 
     /**
-     * Scroll until the resolved element is displayed, re-reading it after
-     * every swipe; throws when the timeout expires first. On web the browser
-     * scrolls it into view. Not gated by `ifVisible()`: the element is
-     * expected to be off screen.
+     * Scroll until the resolved element is displayed; throws when the timeout
+     * expires or the swipe limit is reached first. On web the browser scrolls
+     * it into view. Not gated by `ifVisible()`: the element is expected to be
+     * off screen.
      * @param options - `direction`: where the element lies relative to the view (default `'down'`);
-     *   `timeout` in ms (default the chain timeout).
+     *   `maxSwipes`: the most swipes a device sweep makes (default 20); `timeout` in ms (default the
+     *   chain timeout).
      */
     async scrollUntilFound(options?: ScrollIntoViewOptions): Promise<void> {
         const gestures = this.requireGestures('scrollUntilFound');
         const element = await this.resolve();
-        await gestures.scrollUntilFound(element, {
-            ...(options?.direction !== undefined ? { direction: options.direction } : {}),
-            timeout: options?.timeout ?? this._timeout,
-        });
+        await gestures.scrollUntilFound(element, { ...options, timeout: options?.timeout ?? this._timeout });
     }
 
     /**
@@ -564,10 +574,21 @@ export class ElementAction {
         const gestures = this.requireGestures('longPress');
         if (!await this.shouldProceed()) return;
         const element = await this.resolve();
-        await gestures.longPress(element, {
-            ...(options?.duration !== undefined ? { duration: options.duration } : {}),
-            timeout: options?.timeout ?? this._timeout,
-        });
+        await gestures.longPress(element, { ...options, timeout: options?.timeout ?? this._timeout });
+    }
+
+    /**
+     * Tap a point inside the resolved element, `offset` px from its top-left
+     * corner (`0 <= x < width`, `0 <= y < height`). On a device a W3C touch
+     * tap; on web a mouse click at that point. Skips silently if
+     * `ifVisible()` was set and the element is hidden.
+     * @param options - `timeout` in ms (default the chain timeout).
+     */
+    async tapAt(offset: TapOffset, options?: TapAtOptions): Promise<void> {
+        const gestures = this.requireGestures('tapAt');
+        if (!await this.shouldProceed()) return;
+        const element = await this.resolve();
+        await gestures.tapAtElement(element, offset, { ...options, timeout: options?.timeout ?? this._timeout });
     }
 
     /**
@@ -581,10 +602,7 @@ export class ElementAction {
         const gestures = this.requireGestures('pinch');
         if (!await this.shouldProceed()) return;
         const element = await this.resolve();
-        await gestures.pinch(element, {
-            ...(options?.scale !== undefined ? { scale: options.scale } : {}),
-            timeout: options?.timeout ?? this._timeout,
-        });
+        await gestures.pinch(element, { ...options, timeout: options?.timeout ?? this._timeout });
     }
 
     /**
@@ -593,15 +611,12 @@ export class ElementAction {
      * before resolving. Skips silently if `ifVisible()` was set and the element is hidden.
      * @param options - `scale` above 1, default 2; `timeout` in ms.
      */
-    async zoom(options?: PinchOptions): Promise<void> {
+    async zoom(options?: ZoomOptions): Promise<void> {
         requireDevicePlatform('zoom', this.platform);
         const gestures = this.requireGestures('zoom');
         if (!await this.shouldProceed()) return;
         const element = await this.resolve();
-        await gestures.zoom(element, {
-            ...(options?.scale !== undefined ? { scale: options.scale } : {}),
-            timeout: options?.timeout ?? this._timeout,
-        });
+        await gestures.zoom(element, { ...options, timeout: options?.timeout ?? this._timeout });
     }
 
     /** Select a dropdown option. */

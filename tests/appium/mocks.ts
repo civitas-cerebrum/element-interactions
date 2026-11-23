@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import { ElementType, PlatformNotSupportedError, type Element, type Platform } from '@civitas-cerebrum/element-repository';
+import { buildTouchSwipe, ElementType, PlatformNotSupportedError, type Element, type Platform } from '@civitas-cerebrum/element-repository';
 import type { AppiumDriver } from '../../src/appium';
 
 /** One recorded call: the method name followed by its arguments. */
@@ -51,6 +51,8 @@ export function mockDriver(options: {
         takeScreenshot: record('takeScreenshot', options.screenshot ?? Buffer.from('png-bytes').toString('base64')),
         performActions: record('performActions'),
         releaseActions: record('releaseActions'),
+        // WebdriverIO's browser.pause: a real wait, not recorded (element-repository settles after a swipe).
+        pause: (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)),
     };
     return { driver: driver as unknown as AppiumDriver, calls, executeResults };
 }
@@ -70,15 +72,9 @@ export interface ScreenSwipe {
     distance: number;
 }
 
-/** The exact W3C action sequence of one swipe from `from` to `to` (element-repository's PlatformElement shape). */
+/** The exact W3C action sequence of one swipe from `from` to `to`: element-repository's `buildTouchSwipe`. */
 export function swipeActions(from: { x: number; y: number }, to: { x: number; y: number }): unknown[] {
-    return [
-        { type: 'pointerMove', duration: 0, x: from.x, y: from.y, origin: 'viewport' },
-        { type: 'pointerDown', button: 0 },
-        { type: 'pause', duration: 100 },
-        { type: 'pointerMove', duration: 600, x: to.x, y: to.y, origin: 'viewport' },
-        { type: 'pointerUp', button: 0 },
-    ];
+    return buildTouchSwipe(from, to)[0].actions;
 }
 
 /**
@@ -115,9 +111,10 @@ type Reader<T> = T | (() => T | Promise<T>);
 export interface MockElementSpec {
     selector?: string;
     /**
-     * The element's visible text: what `textContent` answers (Android's text)
-     * and, unless `attributes.label` is given, the `label` attribute (where
-     * iOS keeps visible text). One spec then reads the same on both platforms.
+     * The element's visible text: what `rawText` answers as is and
+     * `textContent` answers trimmed (as element-repository's platform element
+     * does) and, unless `attributes.label` is given, the `label` attribute.
+     * One spec then reads the same on both platforms.
      */
     text?: Reader<string | null>;
     visible?: Reader<boolean>;
@@ -136,8 +133,9 @@ export interface MockElementSpec {
 export function mockElement(spec: MockElementSpec = {}, calls: Call[] = []): Element & { calls: Call[] } {
     const read = async <T>(value: Reader<T> | undefined, fallback: T): Promise<T> =>
         value === undefined ? fallback : typeof value === 'function' ? await (value as () => T | Promise<T>)() : value;
-    const record = (name: string) => async (...args: unknown[]) => { calls.push([name, ...args]); };
-    const el = {
+    // Element primitives resolve to the element itself, as element-repository's do.
+    const record = (name: string) => async (...args: unknown[]) => { calls.push([name, ...args]); return el; };
+    const el: Record<string, unknown> = {
         _type: ElementType.PLATFORM,
         selector: spec.selector ?? '~item',
         calls,
@@ -157,7 +155,8 @@ export function mockElement(spec: MockElementSpec = {}, calls: Call[] = []): Ele
         dragTo: record('dragTo'),
         screenshot: async (...args: unknown[]) => { calls.push(['screenshot', ...args]); return Buffer.from('el'); },
         waitFor: spec.waitFor ?? record('waitFor'),
-        textContent: () => read(spec.text, 'text'),
+        textContent: async () => { const t = await read(spec.text, 'text'); return t === null ? null : t.trim(); },
+        rawText: () => read(spec.text, 'text'),
         isVisible: () => read(spec.visible, true),
         isEnabled: () => read(spec.enabled, true),
         isChecked: () => read(spec.checked, false),
@@ -315,6 +314,8 @@ export function mockUiDriver(nodes: MockNode[], options: Parameters<typeof mockD
                     : read(node.attributes?.[name], null);
             },
             getValue: async () => read((await need()).attributes?.value, ''),
+            // XCUITest reports the element type as the tag name.
+            getTagName: async () => (await read((await need()).attributes?.type, null)) ?? 'XCUIElementTypeOther',
             click: async () => { await need(); base.calls.push(['click', selector, scopeLabel]); },
             waitForExist: async ({ timeout = 0, reverse = false }: { timeout?: number; reverse?: boolean } = {}) =>
                 waitUntil(async () => !!(await current()) !== reverse, timeout, reverse ? 'gone' : 'existing'),

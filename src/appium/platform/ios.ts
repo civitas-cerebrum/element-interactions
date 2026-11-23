@@ -1,6 +1,6 @@
-import { PlatformNotSupportedError, type Element } from '@civitas-cerebrum/element-repository';
+import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
 import type { PermissionState } from '../../interfaces/IDevice';
-import type { Direction } from '../../interfaces/IGestures';
+import type { SwipeDirection } from '@civitas-cerebrum/element-repository';
 import { swipeScreenW3C, type SwipeInset } from '../touch';
 import { APP_STATE_FOREGROUND, mobile, type AppiumDriver, type PlatformStrategy } from './PlatformStrategy';
 
@@ -19,36 +19,6 @@ const PERMISSION_ACCESS: Record<PermissionState, 'yes' | 'no' | 'unset'> = {
     reset: 'unset',
 };
 
-/** XCUITest element types whose `value` is the text typed into them. */
-export const IOS_TEXT_INPUT_TYPES: readonly string[] = Object.freeze([
-    'XCUIElementTypeTextField',
-    'XCUIElementTypeSecureTextField',
-    'XCUIElementTypeTextView',
-    'XCUIElementTypeSearchField',
-]);
-
-/**
- * The visible text of an XCUITest element: its `label`, falling back to its
- * `value`; `''` when both are empty (blank counts as empty). `name` is never
- * read: it is usually the accessibility id. On a text input
- * ({@link IOS_TEXT_INPUT_TYPES}) a non-empty `value` wins over a `label`.
- * `label` and `value` are read together; `type` is read only when both are
- * non-empty, the one case where it decides, so an ordinary labelled element
- * costs two attribute reads. An empty text input reports its placeholder as
- * its value, so it reads the placeholder; use `getInputValue` /
- * `verifyInputValue` for the typed value.
- */
-export async function iosReadText(element: Element): Promise<string> {
-    const [label, value] = (await Promise.all([
-        element.getAttribute('label'),
-        element.getAttribute('value'),
-    ])).map(v => v ?? '');
-    if (!label.trim()) return value.trim() ? value : '';
-    if (!value.trim()) return label;
-    const type = await element.getAttribute('type');
-    return type !== null && IOS_TEXT_INPUT_TYPES.includes(type) ? value : label;
-}
-
 /** iOS (XCUITest driver). Every command is a W3C or `mobile:` command of Appium 3. */
 export const iosStrategy: PlatformStrategy = Object.freeze({
     platform: 'ios',
@@ -59,8 +29,6 @@ export const iosStrategy: PlatformStrategy = Object.freeze({
     unsupported: Object.freeze(['pressBack']),
     snapshotAttributes: Object.freeze(['name', 'label', 'value', 'type', 'enabled', 'visible', 'accessible', 'selected',
         'placeholderValue']),
-
-    readText: iosReadText,
 
     async launchApp(driver: AppiumDriver, appId: string) {
         await mobile(driver, 'launchApp', { bundleId: appId });
@@ -111,7 +79,7 @@ export const iosStrategy: PlatformStrategy = Object.freeze({
      * `mobile: dragFromToForDuration` (a 0.5 s press first, a long-press risk)
      * are not used.
      */
-    async swipeScreen(driver: AppiumDriver, direction: Direction, distance?: number) {
+    async swipeScreen(driver: AppiumDriver, direction: SwipeDirection, distance?: number) {
         await swipeScreenW3C(driver, direction, IOS_SWIPE_INSET, distance);
     },
 

@@ -1,5 +1,5 @@
 import { writeFile } from 'fs/promises';
-import type { Element, Platform } from '@civitas-cerebrum/element-repository';
+import { isFatalDriverError, type Element, type Platform } from '@civitas-cerebrum/element-repository';
 import type { IExtractions } from '../interfaces/IExtractions';
 import type { ElementSnapshot, EntryTarget } from '../interfaces/IEntryTarget';
 import type { ScreenshotOptions } from '../enum/Options';
@@ -7,14 +7,14 @@ import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy
 import { strategyFor } from './platform';
 import { Utils } from '../utils/ElementUtilities';
 import { webOnly } from './unsupported';
-import { isFatalDriverError, softRead } from '../utils/driverErrors';
+import { softRead } from '../utils/poll';
 import { DEVICE_POLL_ATTACH_MS } from './entry';
 
 /**
  * Value extraction for the Appium family. Element reads delegate to the
  * element's primitives (`getAttribute`, `inputValue`, `count`,
- * `boundingBox`, `screenshot`); text is the platform strategy's
- * `readText` (on iOS the label, falling back to the value). Web-only reads (CSS, HTML, page text,
+ * `boundingBox`, `screenshot`); text is the element's `textContent`
+ * (trimmed; on iOS the label, falling back to the value). Web-only reads (CSS, HTML, page text,
  * storage, window properties, scripts) throw `PlatformNotSupportedError`.
  * The device's page source is `IDevice.getPageSource()`.
  */
@@ -35,7 +35,7 @@ export class AppiumExtractions implements IExtractions {
 
     async getText(target: Element): Promise<string | null> {
         await this.utils.softProbe(target, 'attached');
-        return (await this.strategy.readText(target)).trim();
+        return (await target.textContent()) ?? '';
     }
 
     /**
@@ -47,7 +47,7 @@ export class AppiumExtractions implements IExtractions {
         await target.waitFor({ state: 'attached', timeout }).catch(err => {
             if (isFatalDriverError(err)) throw err;
         });
-        return (await this.strategy.readText(target)).trim();
+        return (await target.textContent()) ?? '';
     }
 
     /**
@@ -70,7 +70,7 @@ export class AppiumExtractions implements IExtractions {
             const values = await Promise.all(items.map(el => el.getAttribute(attribute)));
             return values.filter((v): v is string => v !== null);
         }
-        return await Promise.all(items.map(async el => (await this.strategy.readText(el)).trim()));
+        return await Promise.all(items.map(async el => (await el.textContent()) ?? ''));
     }
 
     /**
@@ -99,7 +99,7 @@ export class AppiumExtractions implements IExtractions {
         };
         const [count, rawText, value, attributes, visible, enabled] = await Promise.all([
             softRead(() => allElement.count(), 0),
-            softRead(() => this.strategy.readText(first), null),
+            softRead(() => first.textContent(), null),
             softRead(() => first.inputValue(), ''),
             readAttributes(),
             softRead(() => first.isVisible(), false),
@@ -115,7 +115,7 @@ export class AppiumExtractions implements IExtractions {
 
     async getAllTexts(target: Element): Promise<string[]> {
         const all = await target.all();
-        return Promise.all(all.map(async e => (await this.strategy.readText(e)).trim()));
+        return Promise.all(all.map(async e => (await e.textContent()) ?? ''));
     }
 
     async getInputValue(target: Element): Promise<string> {

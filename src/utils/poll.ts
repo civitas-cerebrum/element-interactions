@@ -1,4 +1,4 @@
-import { isFatalDriverError } from './driverErrors';
+import { isFatalDriverError } from '@civitas-cerebrum/element-repository';
 
 /** Options for {@link pollUntil}. */
 export interface PollOptions {
@@ -144,4 +144,20 @@ export async function pollUntil<T>(
     parts.push(`Last value: ${hasValue ? describeValue(lastValue) : '(no value; every probe failed)'}.`);
     if (lastError !== undefined) parts.push(`Last error: ${errorText(lastError)}`);
     throw new PollTimeoutError(parts.join(' '), timeout, lastValue, lastError);
+}
+
+/**
+ * Runs `read`; a transient failure answers `fallback`, a fatal driver error
+ * (element-repository's `isFatalDriverError`: dead session, invalid selector,
+ * lost connection) is rethrown. A fatal error must never be read as "not
+ * displayed" or "not there": that would turn a dead session into a passing
+ * absence check or a silently skipped gate.
+ */
+export async function softRead<T>(read: () => Promise<T>, fallback: T): Promise<T> {
+    try {
+        return await read();
+    } catch (err) {
+        if (isFatalDriverError(err)) throw err;
+        return fallback;
+    }
 }

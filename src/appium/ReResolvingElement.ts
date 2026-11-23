@@ -1,5 +1,6 @@
 import { ElementChain, ElementType } from '@civitas-cerebrum/element-repository';
 import type {
+    ClickOptions,
     Element,
     ElementActionOptions,
     LongPressOptions,
@@ -7,6 +8,7 @@ import type {
     ScrollIntoViewOptions,
     SwipeDirection,
     SwipeOptions,
+    TapAtOptions,
     TapOffset,
     ZoomOptions,
 } from '@civitas-cerebrum/element-repository';
@@ -61,7 +63,7 @@ export class ReResolvingElement implements Element {
 
     action(timeout?: number): ElementChain { return new ElementChain(this, timeout); }
 
-    async click(options?: ElementActionOptions): Promise<Element> { return (await this.target()).click(options); }
+    async click(options?: ClickOptions): Promise<Element> { return (await this.target()).click(options); }
     async fill(text: string, options?: ElementActionOptions): Promise<Element> { return (await this.target()).fill(text, options); }
     async clear(options?: ElementActionOptions): Promise<Element> { return (await this.target()).clear(options); }
     async check(options?: ElementActionOptions): Promise<Element> { return (await this.target()).check(options); }
@@ -70,10 +72,10 @@ export class ReResolvingElement implements Element {
     async doubleClick(options?: ElementActionOptions): Promise<Element> { return (await this.target()).doubleClick(options); }
     async scrollIntoView(options?: ScrollIntoViewOptions): Promise<Element> { return (await this.target()).scrollIntoView(options); }
     async swipe(direction: SwipeDirection, options?: SwipeOptions): Promise<Element> { return (await this.target()).swipe(direction, options); }
-    async longPress(options?: LongPressOptions): Promise<void> { return (await this.target()).longPress(options); }
-    async tapAt(offset: TapOffset, options?: ElementActionOptions): Promise<void> { return (await this.target()).tapAt(offset, options); }
-    async pinch(options?: PinchOptions): Promise<void> { return (await this.target()).pinch(options); }
-    async zoom(options?: ZoomOptions): Promise<void> { return (await this.target()).zoom(options); }
+    async longPress(options?: LongPressOptions): Promise<Element> { return (await this.target()).longPress(options); }
+    async tapAt(offset: TapOffset, options?: TapAtOptions): Promise<Element> { return (await this.target()).tapAt(offset, options); }
+    async pinch(options?: PinchOptions): Promise<Element> { return (await this.target()).pinch(options); }
+    async zoom(options?: ZoomOptions): Promise<Element> { return (await this.target()).zoom(options); }
     async pressSequentially(text: string, delay?: number, options?: ElementActionOptions): Promise<Element> {
         return (await this.target()).pressSequentially(text, delay, options);
     }
@@ -86,6 +88,7 @@ export class ReResolvingElement implements Element {
     async isChecked(): Promise<boolean> { return (await this.target()).isChecked(); }
     async raw(): Promise<string | null> { return (await this.target()).raw(); }
     async textContent(): Promise<string | null> { return (await this.target()).textContent(); }
+    async rawText(): Promise<string | null> { return (await this.target()).rawText(); }
     async getAttribute(name: string): Promise<string | null> { return (await this.target()).getAttribute(name); }
     async inputValue(): Promise<string> { return (await this.target()).inputValue(); }
     async getCssProperty(property: string): Promise<string> { return (await this.target()).getCssProperty(property); }

@@ -82,21 +82,24 @@ for (const platform of DEVICE_PLATFORMS) {
         });
 
         test('scrollUntilFound resolves with the strategy and its per-call timeout wins over the step timeout', async () => {
-            const { steps, repoCalls, mock } = deviceSteps(platform, 30000, mockElement({ visible: false }));
-            const started = Date.now();
-            const error = await caught(() => steps.scrollUntilFound('cards', 'Home', { strategy: 'index', index: 2, direction: 'up', timeout: 300 }));
-            expect(Date.now() - started, 'the per-call timeout, not the 30 s step timeout').toBeLessThan(5000);
-            expect((error as Error).message).toMatch(/scrolling up within 300 ms/);
-            expect(repoCalls).toEqual([['repo', 'get', 'cards', 'Home', INDEX_2]]);
-            expect(new Set(screenSwipes(mock.calls).map(s => s.direction))).toEqual(new Set(['down']));
+            const { steps, element, repoCalls, mock } = deviceSteps(platform, 30000);
+            await steps.scrollUntilFound('cards', 'Home', { strategy: 'index', index: 2, direction: 'up', maxSwipes: 3, timeout: 300 });
+            await steps.scrollUntilFound('cards', 'Home');
+            expect(repoCalls).toEqual([['repo', 'get', 'cards', 'Home', INDEX_2], ['repo', 'get', 'cards', 'Home', undefined]]);
+            // element-repository's scrollIntoView, always with a timeout: the sweep is time-bounded
+            expect(element.calls).toEqual([
+                ['scrollIntoView', { direction: 'up', maxSwipes: 3, timeout: 300 }],
+                ['scrollIntoView', { timeout: 30000 }],
+            ]);
+            expect(mock.calls, 'no screen swipe of its own').toEqual([]);
         });
 
         test('scrollIntoView resolves with the strategy and forwards direction and the per-call timeout', async () => {
             const { steps, element, repoCalls } = deviceSteps(platform);
-            await steps.scrollIntoView('cards', 'Home', { strategy: 'index', index: 2, direction: 'up', timeout: 650 });
+            await steps.scrollIntoView('cards', 'Home', { strategy: 'index', index: 2, direction: 'up', maxSwipes: 5, timeout: 650 });
             await steps.scrollIntoView('cards', 'Home');
             expect(repoCalls).toEqual([['repo', 'get', 'cards', 'Home', INDEX_2], ['repo', 'get', 'cards', 'Home', undefined]]);
-            expect(element.calls).toEqual([['scrollIntoView', { direction: 'up', timeout: 650 }], ['scrollIntoView', { timeout: 400 }]]);
+            expect(element.calls).toEqual([['scrollIntoView', { direction: 'up', maxSwipes: 5, timeout: 650 }], ['scrollIntoView', { timeout: 400 }]]);
         });
     });
 
@@ -128,18 +131,58 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(element.calls).toEqual([['swipe', 'right', { timeout: 1234 }], ['longPress', { timeout: 55 }]]);
         });
 
-        test('scrollUntilFound on the chain swipes the screen until the element is displayed', async () => {
-            let reads = 0;
-            const { steps, mock, repoCalls } = deviceSteps(platform, 5000, mockElement({ visible: () => ++reads >= 3 }));
+        test('scrollUntilFound on the chain is the element\'s scrollIntoView with the chain timeout', async () => {
+            const { steps, element, mock, repoCalls } = deviceSteps(platform, 5000);
             await steps.on('cards', 'Home').nth(2).scrollUntilFound({ direction: 'right' });
-            expect(repoCalls).toEqual([['repo', 'get', 'cards', 'Home', INDEX_2]]);
-            expect(screenSwipes(mock.calls).map(s => s.direction)).toEqual(['left', 'left']);
+            await steps.on('cards', 'Home').scrollUntilFound({ maxSwipes: 2, timeout: 70 });
+            expect(repoCalls).toEqual([['repo', 'get', 'cards', 'Home', INDEX_2], ['repo', 'get', 'cards', 'Home', {}]]);
+            expect(element.calls).toEqual([
+                ['scrollIntoView', { direction: 'right', timeout: 5000 }],
+                ['scrollIntoView', { maxSwipes: 2, timeout: 70 }],
+            ]);
+            expect(mock.calls).toEqual([]);
+        });
+
+        test('scrollIntoView on the chain forwards direction, maxSwipes and timeout; the no-argument form is unchanged', async () => {
+            const { steps, element, repoCalls } = deviceSteps(platform);
+            await steps.on('cards', 'Home').nth(2).scrollIntoView({ direction: 'up', maxSwipes: 4 });
+            await steps.on('cards', 'Home').scrollIntoView({ direction: 'left', timeout: 90 });
+            await steps.on('cards', 'Home').scrollIntoView();
+            expect(repoCalls).toEqual([
+                ['repo', 'get', 'cards', 'Home', INDEX_2],
+                ['repo', 'get', 'cards', 'Home', {}],
+                ['repo', 'get', 'cards', 'Home', {}],
+            ]);
+            expect(element.calls).toEqual([
+                ['scrollIntoView', { direction: 'up', maxSwipes: 4, timeout: 400 }],
+                ['scrollIntoView', { direction: 'left', timeout: 90 }],
+                ['scrollIntoView', { timeout: 400 }],
+            ]);
+        });
+
+        test('tapAt on the chain taps the offset inside the element the chain selects', async () => {
+            const { steps, element, repoCalls, mock } = deviceSteps(platform);
+            await steps.on('cards', 'Home').nth(2).tapAt({ x: 5, y: 7 });
+            await steps.on('cards', 'Home').tapAt({ x: 1, y: 2 }, { timeout: 60 });
+            expect(repoCalls).toEqual([['repo', 'get', 'cards', 'Home', INDEX_2], ['repo', 'get', 'cards', 'Home', {}]]);
+            expect(element.calls).toEqual([
+                ['tapAt', { x: 5, y: 7 }, { timeout: 400 }],
+                ['tapAt', { x: 1, y: 2 }, { timeout: 60 }],
+            ]);
+            expect(mock.calls, 'the element primitive, not a screen tap').toEqual([]);
+        });
+
+        test('zoom on the chain takes ZoomOptions', async () => {
+            const { steps, element } = deviceSteps(platform);
+            await steps.on('cards', 'Home').zoom({ scale: 2.5, timeout: 80 });
+            expect(element.calls).toEqual([['zoom', { scale: 2.5, timeout: 80 }]]);
         });
 
         test('an ifVisible() gate skips a gesture on a hidden element', async () => {
             const { steps, element } = deviceSteps(platform, 400, mockElement({ visible: false }));
             await steps.on('cards', 'Home').ifVisible(150).swipe('left');
             await steps.on('cards', 'Home').ifVisible(150).longPress();
+            await steps.on('cards', 'Home').ifVisible(150).tapAt({ x: 1, y: 1 });
             expect(element.calls).toEqual([]);
         });
 

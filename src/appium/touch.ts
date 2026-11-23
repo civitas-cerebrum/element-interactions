@@ -1,32 +1,23 @@
+import { performTouchActions, performTouchSwipe, touchPointers } from '@civitas-cerebrum/element-repository';
+import type { SwipeDirection, TouchAction, TouchPoint } from '@civitas-cerebrum/element-repository';
 import type { AppiumDriver } from './platform/PlatformStrategy';
-import type { Direction } from '../interfaces/IGestures';
 
-/** One step of a W3C pointer action sequence. */
-export type PointerStep =
-    | { type: 'pointerMove'; duration: number; x: number; y: number; origin: 'viewport' }
-    | { type: 'pointerDown'; button: 0 }
-    | { type: 'pointerUp'; button: 0 }
-    | { type: 'pause'; duration: number };
+/**
+ * Screen-level touch gestures of the Appium family. The W3C action sequences
+ * of a swipe, their timings and the always-release rule are
+ * element-repository's (`performTouchSwipe`, `performTouchActions`,
+ * `touchPointers`); this module adds only what element-repository does not
+ * own: the window geometry of a screen swipe (the safe-area inset each
+ * platform strategy chooses), and the screen tap and offset drag, composed
+ * with the same helpers.
+ */
 
 /** A point in native-context viewport coordinates. */
-export interface Point { x: number; y: number }
+export type Point = TouchPoint;
 
 /** A window size in native-context viewport coordinates. */
 export interface WindowSize { width: number; height: number }
 
-/**
- * Finger hold after `pointerDown` before a swipe moves, in ms: long enough
- * that the press registers as a drag start rather than a flick, far below a
- * long press. The same value as element-repository's
- * `PlatformElement.SWIPE_HOLD_MS`.
- */
-export const SWIPE_HOLD_MS = 100;
-/**
- * Duration of a swipe's travel from start to end point, in ms: slow enough
- * that the content follows the finger without a fling. The same value as
- * element-repository's `PlatformElement.SWIPE_MOVE_MS`.
- */
-export const SWIPE_MOVE_MS = 600;
 /**
  * The shortest screen swipe, in px. A shorter finger movement stays inside
  * the platforms' touch slop and registers as a tap, not a scroll.
@@ -35,61 +26,31 @@ export const MIN_SWIPE_DISTANCE = 10;
 /** How long a screen tap holds the finger down, in ms. */
 export const TAP_HOLD_MS = 50;
 
-const move = (p: Point, duration = 0): PointerStep =>
+const moveTo = (p: Point, duration = 0): TouchAction =>
     ({ type: 'pointerMove', duration, x: Math.round(p.x), y: Math.round(p.y), origin: 'viewport' });
 
-/**
- * One-finger swipe, the shape element-repository's `PlatformElement`
- * sends for `swipe` / `scrollIntoView` (live-verified on iOS): an instant move
- * to `from`, finger down, a {@link SWIPE_HOLD_MS} hold, a
- * {@link SWIPE_MOVE_MS} move to `to`, finger up.
- */
-export function swipeSteps(from: Point, to: Point): PointerStep[] {
-    return [
-        move(from),
+/** Taps the screen at `at`: finger down, a {@link TAP_HOLD_MS} hold, finger up; the actions are always released. */
+export async function touchTap(driver: AppiumDriver, at: Point): Promise<void> {
+    await performTouchActions(driver, touchPointers([[
+        moveTo(at),
         { type: 'pointerDown', button: 0 },
-        { type: 'pause', duration: SWIPE_HOLD_MS },
-        move(to, SWIPE_MOVE_MS),
+        { type: 'pause', duration: TAP_HOLD_MS },
         { type: 'pointerUp', button: 0 },
-    ];
-}
-
-/** Finger down at `from`, travel to `to` over `duration` ms without a hold, finger up (an offset drag). */
-export function dragSteps(from: Point, to: Point, duration: number): PointerStep[] {
-    return [move(from), { type: 'pointerDown', button: 0 }, move(to, duration), { type: 'pointerUp', button: 0 }];
-}
-
-/** Finger down at `at`, hold briefly, finger up. */
-export function tapSteps(at: Point): PointerStep[] {
-    return [move(at), { type: 'pointerDown', button: 0 }, { type: 'pause', duration: TAP_HOLD_MS }, { type: 'pointerUp', button: 0 }];
+    ]]));
 }
 
 /**
- * Sends touch pointer sequences (one per finger) with the W3C
- * `performActions` command and always releases them afterwards, as
- * element-repository's `PlatformElement` does. A release error never masks
- * the gesture's own error; when the gesture succeeded, it is thrown.
+ * Drags one finger from `from` to `to` over `duration` ms with no hold first
+ * (an offset drag, unlike a swipe's press-and-hold start); the actions are
+ * always released.
  */
-export async function performTouch(driver: AppiumDriver, sources: PointerStep[][]): Promise<void> {
-    const actions = sources.map((steps, i) => ({
-        type: 'pointer' as const,
-        id: `finger${i + 1}`,
-        parameters: { pointerType: 'touch' as const },
-        actions: steps,
-    }));
-    let failed = false;
-    try {
-        await driver.performActions(actions);
-    } catch (error) {
-        failed = true;
-        throw error;
-    } finally {
-        try {
-            await driver.releaseActions();
-        } catch (releaseError) {
-            if (!failed) throw releaseError;
-        }
-    }
+export async function touchDrag(driver: AppiumDriver, from: Point, to: Point, duration: number): Promise<void> {
+    await performTouchActions(driver, touchPointers([[
+        moveTo(from),
+        { type: 'pointerDown', button: 0 },
+        moveTo(to, duration),
+        { type: 'pointerUp', button: 0 },
+    ]]));
 }
 
 /** The window size in native-context viewport coordinates. */
@@ -105,11 +66,13 @@ export function clampToWindow(p: Point, win: WindowSize): Point {
 }
 
 /**
- * Sends one swipe from `from` to `to` with {@link swipeSteps} through
- * {@link performTouch}. Both points are rounded and clamped inside the window
- * (element-repository clamps its swipe end point the same way); a swipe that
- * would not move the finger at least {@link MIN_SWIPE_DISTANCE} px after
- * that is refused instead of being sent as a tap.
+ * Sends one swipe from `from` to `to` with element-repository's
+ * `performTouchSwipe` (the action sequence and timings of
+ * `PlatformElement.swipe` / `scrollIntoView`, actions always released). Both
+ * points are rounded and clamped inside the window (element-repository clamps
+ * its swipe end point the same way); a swipe that would not move the finger
+ * at least {@link MIN_SWIPE_DISTANCE} px after that is refused instead of
+ * being sent as a tap.
  */
 export async function touchSwipe(driver: AppiumDriver, from: Point, to: Point, win: WindowSize): Promise<void> {
     const start = clampToWindow(from, win);
@@ -121,7 +84,7 @@ export async function touchSwipe(driver: AppiumDriver, from: Point, to: Point, w
             `inside the ${win.width}x${win.height} window; a swipe needs at least ${MIN_SWIPE_DISTANCE} px.`,
         );
     }
-    await performTouch(driver, [swipeSteps(start, end)]);
+    await performTouchSwipe(driver, start, end);
 }
 
 /**
@@ -139,7 +102,7 @@ export interface SwipeInset { readonly x: number; readonly y: number }
  * (shortened, rounded) distance. A distance that rounds below
  * {@link MIN_SWIPE_DISTANCE} is refused.
  */
-export function screenSwipeGeometry(win: WindowSize, direction: Direction, inset: SwipeInset, distance?: number): { from: Point; to: Point } {
+export function screenSwipeGeometry(win: WindowSize, direction: SwipeDirection, inset: SwipeInset, distance?: number): { from: Point; to: Point } {
     const horizontal = direction === 'left' || direction === 'right';
     const size = horizontal ? win.width : win.height;
     const lo = Math.round(size * (horizontal ? inset.x : inset.y));
@@ -168,7 +131,7 @@ export function screenSwipeGeometry(win: WindowSize, direction: Direction, inset
  * Appium-family strategy's `swipeScreen` calls this; the strategy only
  * chooses `inset`.
  */
-export async function swipeScreenW3C(driver: AppiumDriver, direction: Direction, inset: SwipeInset, distance?: number): Promise<void> {
+export async function swipeScreenW3C(driver: AppiumDriver, direction: SwipeDirection, inset: SwipeInset, distance?: number): Promise<void> {
     const win = await windowSize(driver);
     const { from, to } = screenSwipeGeometry(win, direction, inset, distance);
     await touchSwipe(driver, from, to, win);

@@ -1,8 +1,18 @@
 import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
-import type { Element } from '@civitas-cerebrum/element-repository';
+import type {
+    Element,
+    LongPressOptions,
+    PinchOptions,
+    ScrollIntoViewOptions,
+    SwipeDirection,
+    SwipeOptions,
+    TapAtOptions,
+    TapOffset,
+    ZoomOptions,
+} from '@civitas-cerebrum/element-repository';
 import { requireWebElement } from './requireWebElement';
 import { Utils } from '../utils/ElementUtilities';
-import type { Direction, IGestures } from '../interfaces/IGestures';
+import type { IGestures, ScreenSwipeOptions } from '../interfaces/IGestures';
 
 /**
  * Gestures for the Playwright family (`web`). Element-level gestures delegate
@@ -21,12 +31,12 @@ export class PlaywrightGestures implements IGestures {
         this.utils = new Utils(timeout);
     }
 
-    async swipe(element: Element, direction: Direction, options?: { distance?: number; timeout?: number }): Promise<void> {
+    async swipe(element: Element, direction: SwipeDirection, options?: SwipeOptions): Promise<Element> {
         requireWebElement('PlaywrightGestures.swipe', element);
-        await element.swipe(direction, { ...options, timeout: options?.timeout ?? this.timeout });
+        return element.swipe(direction, { ...options, timeout: options?.timeout ?? this.timeout });
     }
 
-    async swipeScreen(_direction: Direction, _options?: { distance?: number }): Promise<void> {
+    async swipeScreen(_direction: SwipeDirection, _options?: ScreenSwipeOptions): Promise<void> {
         throw new PlatformNotSupportedError('swipeScreen', 'web');
     }
 
@@ -36,11 +46,11 @@ export class PlaywrightGestures implements IGestures {
      * best-effort attach probe, then the element primitive), so
      * `steps.scrollIntoView` behaves as before on web.
      */
-    async scrollIntoView(element: Element, options?: { direction?: Direction; timeout?: number }): Promise<void> {
+    async scrollIntoView(element: Element, options?: ScrollIntoViewOptions): Promise<Element> {
         requireWebElement('PlaywrightGestures.scrollIntoView', element);
         const timeout = options?.timeout ?? this.timeout;
         await this.utils.softProbe(element, 'attached', timeout);
-        await element.scrollIntoView({ ...options, timeout });
+        return element.scrollIntoView({ ...options, timeout });
     }
 
     /**
@@ -48,13 +58,13 @@ export class PlaywrightGestures implements IGestures {
      * is `scrollIntoView` bounded by `timeout`; it throws if the element never
      * attaches.
      */
-    async scrollUntilFound(element: Element, options?: { direction?: Direction; timeout?: number }): Promise<void> {
+    async scrollUntilFound(element: Element, options?: ScrollIntoViewOptions): Promise<Element> {
         requireWebElement('PlaywrightGestures.scrollUntilFound', element);
-        await element.scrollIntoView({ ...options, timeout: options?.timeout ?? this.timeout });
+        return element.scrollIntoView({ ...options, timeout: options?.timeout ?? this.timeout });
     }
 
     /** Centres the web element in the viewport. */
-    async centerElement(element: Element, options?: { timeout?: number }): Promise<void> {
+    async centerElement(element: Element, options?: { timeout?: number }): Promise<Element> {
         requireWebElement('PlaywrightGestures.centerElement', element);
         const timeout = options?.timeout ?? this.timeout;
         await element.scrollIntoView({ timeout });
@@ -63,31 +73,33 @@ export class PlaywrightGestures implements IGestures {
             undefined,
             { timeout },
         );
+        return element;
     }
 
-    async longPress(element: Element, options?: { duration?: number; timeout?: number }): Promise<void> {
+    async longPress(element: Element, options?: LongPressOptions): Promise<Element> {
         requireWebElement('PlaywrightGestures.longPress', element);
-        await element.longPress({ ...options, timeout: options?.timeout ?? this.timeout });
+        return element.longPress({ ...options, timeout: options?.timeout ?? this.timeout });
     }
 
     async tapAt(_x: number, _y: number): Promise<void> {
         throw new PlatformNotSupportedError('tapAt', 'web');
     }
 
-    async tapAtElement(element: Element, offset: { x: number; y: number }, options?: { timeout?: number }): Promise<void> {
+    /** Delegates to `Element.tapAt`: on web a mouse click at `offset` from the element's top-left corner. */
+    async tapAtElement(element: Element, offset: TapOffset, options?: TapAtOptions): Promise<Element> {
         requireWebElement('PlaywrightGestures.tapAtElement', element);
-        await element.tapAt(offset, { ...options, timeout: options?.timeout ?? this.timeout });
+        return element.tapAt(offset, { ...options, timeout: options?.timeout ?? this.timeout });
     }
 
     /** Delegates to `Element.pinch`; a web element throws `PlatformNotSupportedError('pinch', 'web')`. */
-    async pinch(element: Element, options?: { scale?: number; timeout?: number }): Promise<void> {
+    async pinch(element: Element, options?: PinchOptions): Promise<Element> {
         requireWebElement('PlaywrightGestures.pinch', element);
-        await element.pinch({ ...options, timeout: options?.timeout ?? this.timeout });
+        return element.pinch({ ...options, timeout: options?.timeout ?? this.timeout });
     }
 
     /** Delegates to `Element.zoom`; a web element throws `PlatformNotSupportedError('zoom', 'web')`. */
-    async zoom(element: Element, options?: { scale?: number; timeout?: number }): Promise<void> {
+    async zoom(element: Element, options?: ZoomOptions): Promise<Element> {
         requireWebElement('PlaywrightGestures.zoom', element);
-        await element.zoom({ ...options, timeout: options?.timeout ?? this.timeout });
+        return element.zoom({ ...options, timeout: options?.timeout ?? this.timeout });
     }
 }

@@ -23,7 +23,9 @@ function rawElement(selector: string, calls: Call[]) {
         waitForExist: record('waitForExist', true),
         waitForDisplayed: record('waitForDisplayed', true),
         getText: record('getText', TEXTS[selector] ?? ''),
-        // iOS keeps visible text in `label` (the Appium family's iOS text read).
+        // XCUITest reports the element type as the tag name; iOS keeps visible
+        // text in `label` (element-repository's iOS text read).
+        getTagName: record('getTagName', 'XCUIElementTypeStaticText'),
         getAttribute: async (name: string) => {
             calls.push(['el.getAttribute', selector, name]);
             return name === 'label' ? TEXTS[selector] ?? null : null;

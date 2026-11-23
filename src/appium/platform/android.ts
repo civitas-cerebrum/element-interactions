@@ -1,6 +1,5 @@
-import type { Element } from '@civitas-cerebrum/element-repository';
 import type { PermissionState } from '../../interfaces/IDevice';
-import type { Direction } from '../../interfaces/IGestures';
+import type { SwipeDirection } from '@civitas-cerebrum/element-repository';
 import { swipeScreenW3C, type SwipeInset } from '../touch';
 import { APP_STATE_FOREGROUND, mobile, type AppiumDriver, type PlatformStrategy } from './PlatformStrategy';
 
@@ -32,11 +31,6 @@ export const androidStrategy: PlatformStrategy = Object.freeze({
     unsupported: Object.freeze([]) as readonly string[],
     snapshotAttributes: Object.freeze(['resource-id', 'content-desc', 'text', 'class', 'package', 'checkable', 'checked',
         'clickable', 'enabled', 'focusable', 'focused', 'selected', 'displayed', 'bounds', 'hint']),
-
-    /** The element's text (UiAutomator2 `text`), as `textContent` reads it. */
-    async readText(element: Element) {
-        return (await element.textContent()) ?? '';
-    },
 
     async launchApp(driver: AppiumDriver, appId: string) {
         // UiAutomator2 has no separate "launch": activateApp starts the app
@@ -85,7 +79,7 @@ export const androidStrategy: PlatformStrategy = Object.freeze({
      * window centre inside the window minus {@link ANDROID_SWIPE_INSET}: at
      * most 60 % of the height or 80 % of the width.
      */
-    async swipeScreen(driver: AppiumDriver, direction: Direction, distance?: number) {
+    async swipeScreen(driver: AppiumDriver, direction: SwipeDirection, distance?: number) {
         await swipeScreenW3C(driver, direction, ANDROID_SWIPE_INSET, distance);
     },
 

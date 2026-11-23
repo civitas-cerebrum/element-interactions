@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
+import { buildTouchSwipe, PlatformNotSupportedError, SWIPE_HOLD_MS, SWIPE_MOVE_MS } from '@civitas-cerebrum/element-repository';
 import type { IDevice } from '../src/interfaces';
 import {
     AppiumDevice,
@@ -16,7 +16,7 @@ import { MissingAppIdError } from '../src/appium/AppiumDevice';
 import { STRATEGY_METHODS } from '../src/appium/platform/notImplemented';
 import { IOS_SWIPE_INSET } from '../src/appium/platform/ios';
 import { ANDROID_SWIPE_INSET } from '../src/appium/platform/android';
-import { MIN_SWIPE_DISTANCE, SWIPE_HOLD_MS, SWIPE_MOVE_MS, touchSwipe } from '../src/appium/touch';
+import { MIN_SWIPE_DISTANCE, touchSwipe } from '../src/appium/touch';
 import { mockDriver, mockElement, expectNotSupported, methodsOf, screenSwipes, swipeActions, WINDOW, type Call } from './appium/mocks';
 
 /**
@@ -412,11 +412,11 @@ for (const platform of ['macos', 'windows'] as const) {
 }
 
 test.describe('screen swipes through the platform strategy', () => {
-    // WINDOW is 400x800. Both platforms send element-repository's W3C touch swipe:
+    // WINDOW is 400x800. Both platforms send element-repository's W3C touch swipe (`performTouchSwipe`):
     // move instantly to the start, finger down, 100 ms hold, 600 ms move to the end, finger up, release.
     // The swipe is centred on the window centre inside the window minus the platform inset.
 
-    test('the swipe timings match element-repository PlatformElement (hold 100 ms, move 600 ms)', () => {
+    test('the swipe timings are element-repository\'s (hold 100 ms, move 600 ms)', () => {
         expect(SWIPE_HOLD_MS).toBe(100);
         expect(SWIPE_MOVE_MS).toBe(600);
         expect(MIN_SWIPE_DISTANCE).toBe(10);
@@ -435,12 +435,14 @@ test.describe('screen swipes through the platform strategy', () => {
             await strategy.swipeScreen(driver, 'right', 5000);
             expect(calls.map(c => c[0])).toEqual(Array(4).fill(['performActions', 'releaseActions']).flat());
             expect(calls.filter(c => c[0] === 'execute')).toEqual([]);
-            expect(calls[0]).toEqual(['performActions', [{
+            // exactly element-repository's buildTouchSwipe payload, sent through its performTouchSwipe
+            expect(calls[0]).toEqual(['performActions', buildTouchSwipe({ x: 200, y: 520 }, { x: 200, y: 280 })]);
+            expect(calls[0][1]).toEqual([{
                 type: 'pointer',
                 id: 'finger1',
                 parameters: { pointerType: 'touch' },
                 actions: swipeActions({ x: 200, y: 520 }, { x: 200, y: 280 }),
-            }]]);
+            }]);
             expect(screenSwipes(calls).map(({ from, to }) => [from, to])).toEqual([
                 // up 240 px, centred on y = 400
                 [{ x: 200, y: 520 }, { x: 200, y: 280 }],
@@ -507,8 +509,7 @@ test('each strategy\'s unsupported list is exactly the methods that throw Platfo
         const methods = strategy as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>;
         const refusing: string[] = [];
         for (const method of STRATEGY_METHODS) {
-            const args = method === 'setPermission' ? [driver, 'camera', 'grant', 'com.example.app']
-                : method === 'readText' ? [mockElement()] : [driver, 'com.example.app'];
+            const args = method === 'setPermission' ? [driver, 'camera', 'grant', 'com.example.app'] : [driver, 'com.example.app'];
             const error = await methods[method](...args).then(() => undefined, (e: unknown) => e);
             if (error instanceof PlatformNotSupportedError) {
                 expect(error.platform, `${strategy.platform}.${method}`).toBe(strategy.platform);
@@ -539,93 +540,35 @@ test('the factory refuses web', () => {
     expect(() => new AppiumFactory(driver, 'web')).toThrow(/not in the Appium family/);
 });
 
-// ─── Visible text: the strategy's readText ─────────────────────────────────
+// ─── Visible text: the element's own textContent ──────────────────────────
 
 /**
- * An element whose driver text read (`textContent`, WebdriverIO `getText()`)
- * answers `driverText` while its attributes answer `attributes`, as XCUITest
- * does (its `getText()` prefers `value` over `label`). Records every
- * attribute read.
+ * The Appium family reads visible text only through element-repository's
+ * `Element.textContent` (where the iOS label-first rule lives); it never reads
+ * the `label` / `value` / `type` attributes itself. The label-first rule over
+ * a real `PlatformElement` is covered through Steps in platform-paths.spec.ts.
  */
-function nativeElement(driverText: string | null, attributes: Record<string, string | null>) {
-    const reads: string[] = [];
-    const el = mockElement({ text: driverText, attributes });
-    const getAttribute = el.getAttribute.bind(el);
-    (el as { getAttribute: (name: string) => Promise<string | null> }).getAttribute = async (name: string) => {
-        reads.push(name);
-        return getAttribute(name);
-    };
-    let textReads = 0;
-    const textContent = el.textContent.bind(el);
-    (el as { textContent: () => Promise<string | null> }).textContent = async () => { textReads++; return textContent(); };
-    return { el, reads, textReads: () => textReads };
-}
-
-/** A settings row with a badge: label "General", value "1"; XCUITest's getText answers "1". */
-const badgeRow = () => nativeElement('1', { label: 'General', value: '1', name: 'com.example.general', type: 'XCUIElementTypeButton' });
-
-test.describe('readText on ios: the label, falling back to the value', () => {
-    test('a button with a badge reads its label, not the badge value', async () => {
-        const { el, reads, textReads } = badgeRow();
-        expect(await iosStrategy.readText(el)).toBe('General');
-        expect(reads.sort()).toEqual(['label', 'type', 'value']);
-        expect(textReads(), 'never the driver text read').toBe(0);
-    });
-
-    test('a navigation bar with no label and no value reads "" (never its name)', async () => {
-        const { el, reads } = nativeElement('', { label: null, value: null, name: 'General', type: 'XCUIElementTypeNavigationBar' });
-        expect(await iosStrategy.readText(el)).toBe('');
-        expect(reads.sort(), 'type is read only when label and value are both set').toEqual(['label', 'value']);
-    });
-
-    test('a plain row reads its label, without reading its type', async () => {
-        const { el, reads } = nativeElement('Privacy & Security', { label: 'Privacy & Security', value: null, type: 'XCUIElementTypeCell' });
-        expect(await iosStrategy.readText(el)).toBe('Privacy & Security');
-        expect(reads.sort()).toEqual(['label', 'value']);
-    });
-
-    test('an element with only a value reads its value; blank counts as empty', async () => {
-        expect(await iosStrategy.readText(nativeElement('42 %', { label: null, value: '42 %' }).el)).toBe('42 %');
-        expect(await iosStrategy.readText(nativeElement('42 %', { label: '  ', value: '42 %' }).el)).toBe('42 %');
-        expect(await iosStrategy.readText(nativeElement('', { label: '', value: '   ' }).el)).toBe('');
-    });
-
-    for (const type of ['XCUIElementTypeTextField', 'XCUIElementTypeSecureTextField', 'XCUIElementTypeTextView', 'XCUIElementTypeSearchField']) {
-        test(`a ${type} reads its typed value over its label`, async () => {
-            const { el } = nativeElement('typed text', { label: 'Email', value: 'typed text', type });
-            expect(await iosStrategy.readText(el)).toBe('typed text');
-        });
+test.describe('the Appium family reads visible text through Element.textContent', () => {
+    function textElement(text: string) {
+        const reads: string[] = [];
+        const el = mockElement({ text, attributes: { label: 'not the text', value: 'nor this', type: 'XCUIElementTypeButton' } });
+        const getAttribute = el.getAttribute.bind(el);
+        (el as { getAttribute: (name: string) => Promise<string | null> }).getAttribute = async (name: string) => {
+            reads.push(name);
+            return getAttribute(name);
+        };
+        return { el, reads };
     }
 
-    test('the Appium family on ios verifies and extracts the label of a badge row', async () => {
-        const factory = new AppiumFactory(mockDriver().driver, 'ios', { timeout: 300 });
-        await factory.createVerifications().text(badgeRow().el, 'General');
-        await expect(factory.createVerifications().text(badgeRow().el, '1')).rejects.toThrow(/Last value: "General"/);
-        expect(await factory.createExtractions().getText(badgeRow().el)).toBe('General');
-        expect(await factory.createExtractions().getAllTexts(mockElement({ children: [badgeRow().el] }))).toEqual(['General']);
-        const row = badgeRow().el;
-        expect(await factory.createInteractions().getByText(mockElement({ children: [row] }), 'General')).toBe(row);
-    });
-});
-
-test.describe('readText on android: the element text', () => {
-    test('reads textContent and no attribute', async () => {
-        const { el, reads, textReads } = badgeRow();
-        expect(await androidStrategy.readText(el)).toBe('1');
-        expect(reads).toEqual([]);
-        expect(textReads()).toBe(1);
-        expect(await androidStrategy.readText(nativeElement(null, {}).el)).toBe('');
-    });
-
-    test('the Appium family on android verifies the element text', async () => {
-        const factory = new AppiumFactory(mockDriver().driver, 'android', { timeout: 300 });
-        await factory.createVerifications().text(nativeElement('Wi-Fi', { label: 'other' }).el, 'Wi-Fi');
-        expect(await factory.createExtractions().getText(nativeElement('  Wi-Fi ', {}).el)).toBe('Wi-Fi');
-    });
-});
-
-test('readText on a declared-but-unimplemented platform throws the not-implemented error', async () => {
-    for (const strategy of [macosStrategy, windowsStrategy]) {
-        await expect(strategy.readText(mockElement())).rejects.toThrow(`Platform "${strategy.platform}" is declared but not implemented yet.`);
+    for (const platform of ['android', 'ios'] as const) {
+        test(`${platform}: verifications, extractions and getByText use textContent, no text attribute`, async () => {
+            const factory = new AppiumFactory(mockDriver().driver, platform, { timeout: 300 });
+            const { el, reads } = textElement('  General ');
+            await factory.createVerifications().text(el, 'General');
+            expect(await factory.createExtractions().getText(el)).toBe('General');
+            expect(await factory.createExtractions().getAllTexts(mockElement({ children: [el] }))).toEqual(['General']);
+            expect(await factory.createInteractions().getByText(mockElement({ children: [el] }), 'General')).toBe(el);
+            expect(reads.filter(r => r === 'label' || r === 'value' || r === 'type')).toEqual([]);
+        });
     }
 });

@@ -10,11 +10,10 @@ import type { IVerifications } from '../interfaces/IVerifications';
 import type { IExtractions } from '../interfaces/IExtractions';
 import type { INavigation } from '../interfaces/INavigation';
 import type { IUtils } from '../interfaces/IUtils';
-import type { IGestures, Direction, LongPressOptions, PinchOptions, ScreenSwipeOptions, ScrollIntoViewOptions, SwipeOptions } from '../interfaces/IGestures';
+import type { IGestures, LongPressOptions, PinchOptions, ScreenSwipeOptions, ScrollIntoViewOptions, SwipeDirection, SwipeOptions, ZoomOptions } from '../interfaces/IGestures';
 import type { DeviceVerifyOptions, IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
-import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
+import { PlatformNotSupportedError, isFatalDriverError } from '@civitas-cerebrum/element-repository';
 import { actionFamilyOf, assertFactoryFamily, requireDevicePlatform, requireWebPlatform } from './platformGuard';
-import { isFatalDriverError } from '../utils/driverErrors';
 import { EmailClient, EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
 import { SqlClient, SqlResult, QueryBuilder, UnsupportedEngineException } from '@civitas-cerebrum/sql-client';
@@ -825,13 +824,14 @@ export class Steps {
      * @param options - Optional step options for element resolution, plus
      *   `direction`: where the element is relative to the current view on a
      *   device (`'down'` by default there). The browser scrolls whichever way
-     *   is needed, so `direction` is ignored on web. `timeout` in ms (default
+     *   is needed, so `direction` is ignored on web. `maxSwipes`: the most
+     *   swipes a device sweep makes (default 20). `timeout` in ms (default
      *   the step timeout) bounds the scroll.
      */
     async scrollIntoView(elementName: string, pageName: string, options?: StepOptions & ScrollIntoViewOptions): Promise<void> {
         log.interact('Scrolling "%s" in "%s" into view', elementName, pageName);
         const element = await this.getElement(elementName, pageName, options);
-        await this.gestures.scrollIntoView(element, definedOptions({ direction: options?.direction, timeout: options?.timeout }));
+        await this.gestures.scrollIntoView(element, definedOptions({ direction: options?.direction, maxSwipes: options?.maxSwipes, timeout: options?.timeout }));
     }
 
     // ==========================================
@@ -973,7 +973,7 @@ export class Steps {
      * @param options - Optional step options for element resolution (`strategy`, `index`, ...; `timeout` is
      *   also the gesture's), plus `distance`: finger travel in px (platform default when omitted).
      */
-    async swipe(elementName: string, pageName: string, direction: Direction, options?: StepOptions & SwipeOptions): Promise<void> {
+    async swipe(elementName: string, pageName: string, direction: SwipeDirection, options?: StepOptions & SwipeOptions): Promise<void> {
         log.interact('Swiping %s on "%s" in "%s"', direction, elementName, pageName);
         const element = await this.getElement(elementName, pageName, options);
         await this.gestures.swipe(element, direction, definedOptions({ distance: options?.distance, timeout: options?.timeout }));
@@ -984,23 +984,24 @@ export class Steps {
      * content below), kept clear of the system gesture zones. Device platforms only.
      * @param options - `distance`: finger travel in px (default half the screen along that axis).
      */
-    async swipeScreen(direction: Direction, options?: ScreenSwipeOptions): Promise<void> {
+    async swipeScreen(direction: SwipeDirection, options?: ScreenSwipeOptions): Promise<void> {
         this.requirePlatform('swipeScreen');
         log.interact('Swiping the screen %s', direction);
         await this.gestures.swipeScreen(direction, options?.distance !== undefined ? { distance: options.distance } : undefined);
     }
 
     /**
-     * Scrolls the screen until the element is displayed, re-reading it after every swipe; throws when
-     * `timeout` expires first. On web the browser scrolls the element into view directly.
+     * Scrolls the screen until the element is displayed; throws when `timeout` expires or the swipe limit is
+     * reached first. On web the browser scrolls the element into view directly.
      * @param options - Optional step options for element resolution, plus `direction`: where the element
-     *   lies relative to the view (default `'down'`). `timeout` in ms (default the step timeout) bounds when
-     *   a new swipe may start: an in-flight swipe always finishes, so the step may run up to one swipe longer.
+     *   lies relative to the view (default `'down'`) and `maxSwipes`: the most swipes a device sweep makes
+     *   (default 20). `timeout` in ms (default the step timeout) bounds when a new swipe may start: an
+     *   in-flight swipe always finishes, so the step may run up to one swipe longer.
      */
     async scrollUntilFound(elementName: string, pageName: string, options?: StepOptions & ScrollIntoViewOptions): Promise<void> {
         log.interact('Scrolling %s until "%s" in "%s" is found', options?.direction ?? 'down', elementName, pageName);
         const element = await this.getElement(elementName, pageName, options);
-        await this.gestures.scrollUntilFound(element, definedOptions({ direction: options?.direction, timeout: options?.timeout }));
+        await this.gestures.scrollUntilFound(element, definedOptions({ direction: options?.direction, maxSwipes: options?.maxSwipes, timeout: options?.timeout }));
     }
 
     /**
@@ -1043,7 +1044,7 @@ export class Steps {
      * @param options - Optional step options for element resolution (`timeout` is also the gesture's),
      *   plus `scale` above 1, default 2.
      */
-    async zoom(elementName: string, pageName: string, options?: StepOptions & PinchOptions): Promise<void> {
+    async zoom(elementName: string, pageName: string, options?: StepOptions & ZoomOptions): Promise<void> {
         this.requirePlatform('zoom');
         log.interact('Zooming "%s" in "%s"', elementName, pageName);
         const element = await this.getElement(elementName, pageName, options);

@@ -41,6 +41,17 @@ export { ElementInteractions } from './playwright/ElementInteractions';
 
 // Re-exports from @civitas-cerebrum/element-repository
 export type { Element, ElementResolutionOptions, ElementActionOptions } from '@civitas-cerebrum/element-repository';
+// Gesture direction and option types (element-repository's, used by the gesture steps and the fluent chain)
+export type {
+    SwipeDirection,
+    SwipeOptions,
+    ScrollIntoViewOptions,
+    LongPressOptions,
+    TapOffset,
+    TapAtOptions,
+    PinchOptions,
+    ZoomOptions,
+} from '@civitas-cerebrum/element-repository';
 export { ElementType, WebElement, PlatformElement, ElementChain, isWeb, isPlatform, SelectionStrategy } from '@civitas-cerebrum/element-repository';
 
 // Test Steps Facade

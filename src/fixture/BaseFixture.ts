@@ -587,7 +587,7 @@ function webFixture(baseTest: typeof base, locatorPath: string, options: BaseFix
         repo: async ({ page }, use) => {
             // `web` is the active platform, so a page name resolves to
             // its web entry even when the file also holds android / ios pages.
-            await use(new ElementRepository(page, locatorPath, { platform: 'web', timeout: options?.repoTimeout }));
+            await use(new ElementRepository(page, locatorPath, { platform: 'web', defaultTimeout: options?.repoTimeout }));
         },
         steps: async ({ repo }, use) => {
             const steps = new Steps(repo, {
@@ -681,7 +681,7 @@ function platformFixture(
             await use(_eiPlatformSession.driver);
         },
         repo: async ({ _eiPlatformSession }, use) => {
-            await use(new ElementRepository(_eiPlatformSession.driver, locatorPath, { platform, timeout: options?.repoTimeout }));
+            await use(new ElementRepository(_eiPlatformSession.driver, locatorPath, { platform, defaultTimeout: options?.repoTimeout }));
         },
         steps: async ({ _eiFactory, repo }, use) => {
             // The factory owns timeout and interception: neither is passed here.

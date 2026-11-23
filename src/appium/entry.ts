@@ -1,6 +1,6 @@
-import type { Element } from '@civitas-cerebrum/element-repository';
+import { isFatalDriverError, type Element } from '@civitas-cerebrum/element-repository';
 import type { EntryTarget } from '../interfaces/IEntryTarget';
-import { isFatalDriverError, softRead } from '../utils/driverErrors';
+import { softRead } from '../utils/poll';
 
 /**
  * Attach budget, per `fallback` chain node, of one attempt of the visibility
@@ -35,7 +35,7 @@ export function entryLabel(entry: EntryTarget): string {
  * every attempt (a short attach slice per `fallback` node, so a primary that
  * appears late is picked up by a later attempt) and asks the element whether
  * it is displayed, until `timeout` ms pass. With `containsText`, a displayed
- * element answers whether its text (read with `readText`) contains it, at
+ * element answers whether its text (`textContent`) contains it, at
  * once, as on web.
  *
  * Unlike web, it never answers `false` for a fatal driver error (dead
@@ -53,7 +53,6 @@ export function entryLabel(entry: EntryTarget): string {
 export async function probeVisibleOnDevice(
     entry: EntryTarget,
     timeout: number,
-    readText: (element: Element) => Promise<string>,
     containsText?: string,
 ): Promise<boolean> {
     const deadline = Date.now() + Math.max(1, timeout);
@@ -70,7 +69,7 @@ export async function probeVisibleOnDevice(
         if (visible && element) {
             if (containsText === undefined) return true;
             const target = element;
-            const text = await softRead(() => readText(target), null);
+            const text = await softRead(() => target.textContent(), null);
             return text !== null && text.includes(containsText);
         }
         const left = deadline - Date.now();

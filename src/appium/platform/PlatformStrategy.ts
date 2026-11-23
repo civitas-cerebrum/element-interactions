@@ -1,9 +1,9 @@
 import type {} from 'webdriverio';
 // Keeps `WebdriverIO.Browser` resolvable in the published types without webdriverio installed.
 import '../../types/webdriverio-global';
-import type { Element, Platform } from '@civitas-cerebrum/element-repository';
+import type { Platform } from '@civitas-cerebrum/element-repository';
 import type { PermissionState } from '../../interfaces/IDevice';
-import type { Direction } from '../../interfaces/IGestures';
+import type { SwipeDirection } from '@civitas-cerebrum/element-repository';
 
 /** The WebdriverIO session the Appium family drives. */
 export type AppiumDriver = WebdriverIO.Browser;
@@ -15,9 +15,9 @@ export type AppiumDriver = WebdriverIO.Browser;
  * strategy file, not touching the classes.
  *
  * Every method takes the driver explicitly; a strategy holds no session state
- * and is frozen. Element primitives belong to element-repository; the
- * strategy only decides which of them answers a platform question, such as
- * which attribute holds an element's visible text ({@link PlatformStrategy.readText}).
+ * and is frozen. Element primitives (including an element's visible text,
+ * `Element.textContent`) belong to element-repository; the strategy holds
+ * only what differs per platform at the device level.
  * A method the platform cannot perform throws
  * `PlatformNotSupportedError(method, platform)` and is listed in
  * {@link PlatformStrategy.unsupported}.
@@ -49,24 +49,6 @@ export interface PlatformStrategy {
      */
     readonly snapshotAttributes: readonly string[];
 
-    /**
-     * The visible text of a native element as the element reports it (not
-     * trimmed: callers trim where they compare); `''` when it has none.
-     * Built only from the element's own primitives (`textContent`,
-     * `getAttribute`), never a raw driver command. Every text read of the
-     * Appium family (text verifications, `getText` / `getAllTexts`, text
-     * matching of `getByText` and listed elements, the matcher snapshot) goes
-     * through it.
-     *
-     * - android: the element's text (`textContent`).
-     * - ios: the `label` when non-empty, else the `value`, never `name`
-     *   (usually the accessibility id). XCUITest's own text read answers
-     *   `value` first, so a settings row with a badge would read as its badge
-     *   count. On a text field, secure text field or text view the typed text
-     *   is the `value` and a `label` is a description, so there `value` wins.
-     */
-    readText(element: Element): Promise<string>;
-
     // App lifecycle (appId is resolved by the caller; never empty here)
     launchApp(driver: AppiumDriver, appId: string): Promise<void>;
     activateApp(driver: AppiumDriver, appId: string): Promise<void>;
@@ -88,8 +70,8 @@ export interface PlatformStrategy {
     // Screen gestures
     /**
      * Swipes across the screen with the shared W3C touch swipe
-     * (`swipeScreenW3C` in `../touch`, the same action sequence as
-     * element-repository's `PlatformElement.swipe`); the strategy only chooses
+     * (`swipeScreenW3C` in `../touch`, which sends element-repository's
+     * `performTouchSwipe`, the action sequence of `PlatformElement.swipe`); the strategy only chooses
      * the geometry (the safe area it keeps clear of system gesture zones).
      * `direction` is the way the FINGER moves, the meaning of
      * element-repository's `Element.swipe`: `'up'` drags the content up and
@@ -98,7 +80,7 @@ export interface PlatformStrategy {
      * omitted, half the window along that axis. The caller has validated
      * `distance` (finite, at least `MIN_SWIPE_DISTANCE`).
      */
-    swipeScreen(driver: AppiumDriver, direction: Direction, distance?: number): Promise<void>;
+    swipeScreen(driver: AppiumDriver, direction: SwipeDirection, distance?: number): Promise<void>;
 
     // Alerts and permissions
     acceptAlert(driver: AppiumDriver): Promise<void>;

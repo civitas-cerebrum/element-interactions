@@ -1,8 +1,7 @@
-import { Element, PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
+import { Element, PlatformNotSupportedError, isFatalDriverError } from '@civitas-cerebrum/element-repository';
 import type { Platform } from '@civitas-cerebrum/element-repository';
 import type { IVerifications } from '../interfaces/IVerifications';
 import { requireWebPlatform } from './platformGuard';
-import { isFatalDriverError } from '../utils/driverErrors';
 
 import type { ElementSnapshot } from '../interfaces/IEntryTarget';
 export type { ElementSnapshot } from '../interfaces/IEntryTarget';

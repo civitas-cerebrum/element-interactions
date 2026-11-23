@@ -141,11 +141,13 @@ export class Interactions implements IInteractions {
 
     /**
      * Dispatches a native 'click' event directly on the element, bypassing
-     * actionability checks. Used for both `force` and `withoutScrolling`.
+     * actionability checks. Used for both `force` and `withoutScrolling`:
+     * element-repository's `click({ withoutScrolling: true })`, which waits
+     * for the element to be attached and dispatches a DOM `click` event.
      */
     private async dispatchClick(element: WebElement, timeout: number): Promise<void> {
         await this.softProbe(element, 'attached', timeout);
-        await element.dispatchEvent('click');
+        await element.click({ withoutScrolling: true, timeout });
     }
 
     /**

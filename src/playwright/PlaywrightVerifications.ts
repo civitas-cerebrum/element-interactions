@@ -161,7 +161,8 @@ export class Verifications implements IVerifications {
      * Asserts the entry hidden or detached with `toBeHidden()` on the first
      * VISIBLE match of the entry's full match set (so it holds for every match,
      * never a strict-mode violation on a multi-match entry), resolved through
-     * `repo.get(...)` with `attachSlice` per `fallback` chain node.
+     * the entry's default and whole-collection resolvers (`resolveDefault` /
+     * `resolveAll`) with `attachSlice` per `fallback` chain node.
      *
      * A `fallback` entry is asserted on the variant the repository resolves:
      * the first chain node that exists, exactly as an action would target. The

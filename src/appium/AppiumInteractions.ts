@@ -8,12 +8,10 @@ import type {
     ListedElementMatch,
     TextMatcher,
 } from '../enum/Options';
-import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
-import { strategyFor } from './platform';
+import type { AppiumDriver } from './platform/PlatformStrategy';
 import { Utils } from '../utils/ElementUtilities';
-import { dragSteps, performTouch } from './touch';
-import { pollUntil } from '../utils/poll';
-import { softRead } from '../utils/driverErrors';
+import { touchDrag } from './touch';
+import { pollUntil, softRead } from '../utils/poll';
 import { webOnly } from './unsupported';
 
 /** Finger travel time of an offset drag, in ms. */
@@ -73,11 +71,6 @@ export class AppiumInteractions implements IInteractions {
         this.utils = new Utils(timeout);
     }
 
-    /** The platform strategy; its `readText` is the text every match below is made on. */
-    private get strategy(): PlatformStrategy {
-        return strategyFor(this.platform);
-    }
-
     /**
      * Taps the element once it is visible.
      * - `ifPresent`: taps only when the element is displayed now; resolves `false` otherwise.
@@ -86,23 +79,24 @@ export class AppiumInteractions implements IInteractions {
      *   read as a skip.
      * - `force`: taps the element's centre with a positional tap (`Element.tapAt`)
      *   instead of the element click command.
-     * - `withoutScrolling`: accepted; a device tap never scrolls first.
+     * - `withoutScrolling`: passed to the element's `click` primitive, where a
+     *   device tap never scrolls first (element-repository's `ClickOptions`).
      */
     async click(element: Element, options?: ClickOptions): Promise<boolean | void> {
         const timeout = options?.timeout ?? this.timeout;
         if (options?.ifPresent) {
             if (!(await softRead(() => element.isVisible(), false))) return false;
-            await this.tap(element, timeout, options.force);
+            await this.tap(element, timeout, options);
             return true;
         }
         const deadline = Date.now() + timeout;
         await this.utils.waitForState(element, 'visible', timeout);
-        await this.tap(element, remainingUntil(deadline), options?.force);
+        await this.tap(element, remainingUntil(deadline), options);
     }
 
-    private async tap(element: Element, timeout: number, force?: boolean): Promise<void> {
-        if (!force) {
-            await element.click({ timeout });
+    private async tap(element: Element, timeout: number, options?: ClickOptions): Promise<void> {
+        if (!options?.force) {
+            await element.click(options?.withoutScrolling ? { timeout, withoutScrolling: true } : { timeout });
             return;
         }
         const box = await element.boundingBox();
@@ -143,7 +137,7 @@ export class AppiumInteractions implements IInteractions {
             if (!box) throw new Error('[Action] Error -> Unable to get bounding box for element to perform drag action.');
             const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
             const to = { x: from.x + options.xOffset, y: from.y + options.yOffset };
-            await performTouch(this.driver, [dragSteps(from, to, DRAG_DURATION_MS)]);
+            await touchDrag(this.driver, from, to, DRAG_DURATION_MS);
             return;
         }
         throw new Error(`[Action] Error -> You must provide either 'target', or both 'xOffset' and 'yOffset' in DragAndDropOptions.`);
@@ -157,7 +151,7 @@ export class AppiumInteractions implements IInteractions {
      */
     async getByText(base: Element, desiredText: string, strict: boolean = false): Promise<Element | null> {
         const all = await base.all();
-        const texts = await Promise.all(all.map(async e => (await this.strategy.readText(e)).trim()));
+        const texts = await Promise.all(all.map(async e => (await e.textContent()) ?? ''));
         const tiers: Array<(t: string) => boolean> = [
             t => t === desiredText,
             t => textMatches(t, desiredText),
@@ -207,8 +201,9 @@ export class AppiumInteractions implements IInteractions {
      * polled (the list re-read on every poll) until the instance timeout, then
      * waited on until visible within what is left of it, as on web:
      *
-     * - `text`: the item's own text (the strategy's `readText`: on iOS the
-     *   label, falling back to the value) by the web `hasText` rule:
+     * - `text`: the item's own text (element-repository's `rawText`, untrimmed
+     *   as web's `hasText` sees it: on iOS the label, falling back to the
+     *   value) by the web `hasText` rule:
      *   a substring ignoring case, whitespace normalised; a regex is tested
      *   as is. The first item in list order wins.
      * - `attribute`: the exact value, or a regex.
@@ -248,7 +243,7 @@ export class AppiumInteractions implements IInteractions {
             const found = await e.locateChild(descendantSelector).all();
             if (descendant?.text === undefined) return found.length > 0;
             for (const d of found) {
-                if (listedTextMatches(await this.strategy.readText(d), descendant.text)) return true;
+                if (listedTextMatches((await d.rawText()) ?? '', descendant.text)) return true;
             }
             return false;
         };
@@ -256,7 +251,7 @@ export class AppiumInteractions implements IInteractions {
         const pick = async (): Promise<Element | undefined> => {
             const all = await base.all();
             const text = options.text;
-            const texts = text !== undefined ? await Promise.all(all.map(e => this.strategy.readText(e))) : [];
+            const texts = text !== undefined ? await Promise.all(all.map(async e => (await e.rawText()) ?? '')) : [];
             for (let i = 0; i < all.length; i++) {
                 if (text !== undefined && !listedTextMatches(texts[i], text)) continue;
                 if (!(await matchesAttribute(all[i]))) continue;

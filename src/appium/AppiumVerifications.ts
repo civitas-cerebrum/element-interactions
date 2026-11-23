@@ -4,9 +4,8 @@ import type { IVerifications, VerifiableState } from '../interfaces/IVerificatio
 import type { EntryTarget } from '../interfaces/IEntryTarget';
 import type { CountVerifyOptions, TextVerifyOptions, VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
 import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
-import { describeValue, pollUntil, PollTimeoutError } from '../utils/poll';
+import { describeValue, pollUntil, PollTimeoutError, softRead } from '../utils/poll';
 import { webOnly } from './unsupported';
-import { softRead } from '../utils/driverErrors';
 import { ReResolvingElement } from './ReResolvingElement';
 import { DEVICE_POLL_ATTACH_MS, entryLabel, probeVisibleOnDevice } from './entry';
 
@@ -54,7 +53,7 @@ export class AppiumVerifications implements IVerifications {
     }
 
     private readText(target: Element): () => Promise<string> {
-        return async () => (await this.strategy.readText(target)).trim();
+        return async () => (await target.textContent()) ?? '';
     }
 
     // ── Repository entries (fluent chains) ──
@@ -73,12 +72,12 @@ export class AppiumVerifications implements IVerifications {
 
     /** The re-resolving visibility probe; a fatal driver error is thrown, never read as hidden. */
     async visibleWithin(entry: EntryTarget, timeout: number): Promise<boolean> {
-        return probeVisibleOnDevice(entry, timeout, element => this.strategy.readText(element));
+        return probeVisibleOnDevice(entry, timeout);
     }
 
     /** The re-resolving visibility probe; with `containsText`, the platform's visible text must contain it. */
     async probeVisible(entry: EntryTarget, timeout: number, containsText?: string): Promise<boolean> {
-        return probeVisibleOnDevice(entry, timeout, element => this.strategy.readText(element), containsText);
+        return probeVisibleOnDevice(entry, timeout, containsText);
     }
 
     /**
@@ -109,9 +108,10 @@ export class AppiumVerifications implements IVerifications {
 
     /**
      * The entry is resolved once through its whole-collection resolver (the
-     * repository's `ALL` strategy) with `attachSlice` per `fallback` node, so a `fallback` entry is asserted on
-     * the node the repository resolves (the first chain node that exists,
-     * exactly as an action would target; the terminal node when none does),
+     * repository's `ALL` strategy) with `attachSlice` per `fallback` node, so
+     * a `fallback` entry is asserted on the node the repository resolves (the
+     * first chain node that exists, exactly as an action would target; the
+     * terminal node when none does),
      * and absence means every match of that node is hidden or gone, polled
      * until `timeout`. A strategy selector does not narrow it (as on web).
      *
@@ -290,7 +290,7 @@ export class AppiumVerifications implements IVerifications {
     private allTexts(target: Element): () => Promise<string[]> {
         return async () => {
             const all = await target.all();
-            return Promise.all(all.map(async e => (await this.strategy.readText(e)).trim()));
+            return Promise.all(all.map(async e => (await e.textContent()) ?? ''));
         };
     }
 

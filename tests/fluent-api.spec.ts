@@ -115,6 +115,16 @@ test.describe('Fluent API — steps.on()', () => {
       await steps.on('loadingButton', 'ButtonsPage').scrollIntoView();
       await steps.on('loadingButton', 'ButtonsPage').verifyState('inViewport');
     });
+
+    test('scrollIntoView({ direction, timeout }): the browser scrolls whichever way is needed', async ({ steps }) => {
+      await steps.on('loadingButton', 'ButtonsPage').scrollIntoView({ direction: 'up', timeout: 5000 });
+      await steps.on('loadingButton', 'ButtonsPage').verifyState('inViewport');
+    });
+
+    test('tapAt(offset) clicks inside the element with the mouse', async ({ steps }) => {
+      await steps.on('primaryButton', 'ButtonsPage').tapAt({ x: 5, y: 5 });
+      await steps.verifyTextContains( 'resultText','ButtonsPage', 'Primary');
+    });
   });
 
   test.describe('Terminal — text inputs', () => {

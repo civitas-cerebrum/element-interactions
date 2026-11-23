@@ -3,7 +3,7 @@ import { ElementRepository } from '@civitas-cerebrum/element-repository';
 import { Steps } from '../src/index';
 import { AppiumFactory } from '../src/appium';
 import { ReResolvingElement } from '../src/appium/ReResolvingElement';
-import { DEVICE_PLATFORMS, driverError, mockElement, mockUiDriver, type MockNode } from './appium/mocks';
+import { DEVICE_PLATFORMS, driverError, mockElement, mockUiDriver, screenSwipes, type MockNode } from './appium/mocks';
 
 /**
  * Platform paths of the shared features (verifyAbsence, "list": true
@@ -32,6 +32,7 @@ function pages(platform: string) {
                 { elementName: 'banner', selector: { 'accessibility id': 'banner' } },
                 { elementName: 'toast', selector: { 'accessibility id': 'toast' } },
                 { elementName: 'status', selector: { 'accessibility id': 'status' } },
+                { elementName: 'field', selector: { 'accessibility id': 'field' } },
                 { elementName: 'draft', provisional: true, selector: { 'accessibility id': 'draft' } },
                 {
                     elementName: 'dialog',
@@ -498,6 +499,7 @@ test.describe('visible text on ios is the label, falling back to the value', () 
         { match: '~banner', text: '1', attributes: { label: 'General', value: '1', type: 'XCUIElementTypeButton' } },
         { match: '~status', text: 'ready', attributes: { label: null, value: 'ready' } },
         { match: '~toast', text: '', attributes: { label: null, value: null, name: 'General' } },
+        { match: '~field', text: 'Email', attributes: { label: 'Email', value: 'typed text', type: 'XCUIElementTypeTextField' } },
     ];
 
     test('verifications, matchers, getText, snapshots and probes read the label', async () => {
@@ -511,6 +513,9 @@ test.describe('visible text on ios is the label, falling back to the value', () 
         expect(await steps.isVisible('banner', 'Screen', { timeout: 300, containsText: 'General' })).toBe(true);
         expect(await steps.getText('status', 'Screen')).toBe('ready');
         expect(await steps.getText('toast', 'Screen')).toBe('');
+        // a text input reads its typed value before its label
+        expect(await steps.getText('field', 'Screen')).toBe('typed text');
+        await steps.verifyText('field', 'Screen', 'typed text');
         const error = await caught(() => steps.verifyText('banner', 'Screen', '1'));
         expect(error?.message).toMatch(/Last value: "General"/);
     });
@@ -527,3 +532,32 @@ test.describe('visible text on ios is the label, falling back to the value', () 
         })).toBe('row-2');
     });
 });
+
+for (const platform of DEVICE_PLATFORMS) {
+    test.describe(`scrollUntilFound on ${platform} is element-repository's scrollIntoView sweep`, () => {
+        test('swipes with element-repository\'s touch swipe until the element is displayed', async () => {
+            const shown = flipOnRead(3, false, true);
+            const { steps, mock } = deviceSteps(platform, [{ match: '~title', text: 'Title', visible: shown.read }]);
+            await steps.scrollUntilFound('title', 'Screen', { timeout: 10000 });
+            // screenSwipes checks each gesture is exactly buildTouchSwipe's payload, released after
+            const swipes = screenSwipes(mock.calls);
+            expect(swipes.length).toBeGreaterThan(0);
+            // target below (default 'down'): the finger moves up
+            expect(new Set(swipes.map(s => s.direction))).toEqual(new Set(['up']));
+        });
+
+        test('the step timeout bounds the sweep', async () => {
+            const { steps } = deviceSteps(platform, [{ match: '~title', text: 'Title', visible: false }]);
+            const { error, elapsed } = await timed(() => steps.scrollUntilFound('title', 'Screen', { direction: 'right', timeout: 300 }));
+            expect(error?.message).toMatch(/within the 300 ms timeout .*direction=right/);
+            expect(elapsed).toBeLessThan(3000);
+        });
+
+        test('maxSwipes bounds the sweep', async () => {
+            const { steps, mock } = deviceSteps(platform, [{ match: '~title', text: 'Title', visible: false }]);
+            const error = await caught(() => steps.scrollUntilFound('title', 'Screen', { maxSwipes: 2, timeout: 20000 }));
+            expect(error?.message).toMatch(/after 2 swipes, the swipe limit/);
+            expect(screenSwipes(mock.calls)).toHaveLength(2);
+        });
+    });
+}

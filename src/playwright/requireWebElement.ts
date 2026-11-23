@@ -14,8 +14,6 @@ import type { Element, WebElement } from '@civitas-cerebrum/element-repository';
  * @throws When `element` is not a web (Playwright) element.
  */
 export function requireWebElement(method: string, element: Element): asserts element is WebElement {
-    // `isWeb` is a plain boolean check in element-repository, not a type
-    // guard; the assertion signature does the narrowing.
     if (element && isWeb(element)) return;
     const kind = element && typeof element === 'object' && '_type' in element ? String(element._type) : typeof element;
     throw new Error(
