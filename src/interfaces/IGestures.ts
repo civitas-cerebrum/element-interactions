@@ -20,13 +20,19 @@ export type Direction = 'up' | 'down' | 'left' | 'right';
  * `swipeScreen` and `tapAt`.
  */
 export interface IGestures {
-    /** Swipes on the element in `direction`; `distance` in px (family default when omitted). */
+    /** Swipes on the element: the finger moves in `direction`; `distance` in px, platform default when omitted. */
     swipe(element: Element, direction: Direction, options?: { distance?: number; timeout?: number }): Promise<void>;
-    /** Swipes across the screen from its centre in `direction`; `distance` in px. Device platforms only. */
+    /**
+     * Swipes across the screen: the finger moves in `direction` through the screen centre; `distance` in px,
+     * platform default when omitted (at least 10 px). Device platforms only.
+     */
     swipeScreen(direction: Direction, options?: { distance?: number }): Promise<void>;
-    /** Scrolls the element into view; `direction` is the scroll direction on device platforms. */
+    /** Scrolls the element into view; `direction`: where the target lies relative to the view (device platforms). */
     scrollIntoView(element: Element, options?: { direction?: Direction; timeout?: number }): Promise<void>;
-    /** Scrolls in `direction` until the element is displayed or `timeout` (ms) expires, then throws. */
+    /**
+     * Scrolls until the element is displayed or `timeout` (ms) expires, then throws; `direction`: where the
+     * target lies relative to the view.
+     */
     scrollUntilFound(element: Element, options?: { direction?: Direction; timeout?: number }): Promise<void>;
     /** Scrolls so the element sits in the middle of the viewport / screen. */
     centerElement(element: Element, options?: { timeout?: number }): Promise<void>;

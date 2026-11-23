@@ -60,38 +60,53 @@ export function touches(calls: Call[]): Array<Array<{ id: string; actions: unkno
     return calls.filter(c => c[0] === 'performActions').map(c => c[1] as Array<{ id: string; actions: unknown[] }>);
 }
 
-/** A screen swipe as the platform strategy sent it, read back as finger travel. */
+/** A one-finger W3C touch swipe as the driver received it, read back as finger travel. */
 export interface ScreenSwipe {
-    /** The `mobile:` command used. */
-    command: string;
+    from: { x: number; y: number };
+    to: { x: number; y: number };
     /** The way the finger moved. */
     direction: 'up' | 'down' | 'left' | 'right';
-    /** Finger travel in px; `undefined` for a native swipe without a distance (iOS `mobile: swipe`). */
-    distance?: number;
+    /** Finger travel in px. */
+    distance: number;
+}
+
+/** The exact W3C action sequence of one swipe from `from` to `to` (element-repository's PlatformElement shape). */
+export function swipeActions(from: { x: number; y: number }, to: { x: number; y: number }): unknown[] {
+    return [
+        { type: 'pointerMove', duration: 0, x: from.x, y: from.y, origin: 'viewport' },
+        { type: 'pointerDown', button: 0 },
+        { type: 'pause', duration: 100 },
+        { type: 'pointerMove', duration: 600, x: to.x, y: to.y, origin: 'viewport' },
+        { type: 'pointerUp', button: 0 },
+    ];
 }
 
 /**
- * Every screen swipe in `calls`, normalised to finger travel: iOS
- * `mobile: dragFromToForDuration` (from -> to), iOS `mobile: swipe`
- * (direction only) and Android `mobile: swipeGesture` (percent of its area).
+ * Every screen swipe in `calls`: each `performActions` must be one touch
+ * finger with exactly the {@link swipeActions} shape, followed by
+ * `releaseActions`; no `mobile:` command may be sent. Returns the swipes as
+ * finger travel.
  */
 export function screenSwipes(calls: Call[]): ScreenSwipe[] {
+    expect(calls.filter(c => c[0] === 'execute'), 'no mobile: command for a screen swipe').toEqual([]);
     const out: ScreenSwipe[] = [];
-    for (const [name, script, raw] of calls) {
-        if (name !== 'execute') continue;
-        const args = raw as Record<string, number & string>;
-        if (script === 'mobile: swipe') {
-            out.push({ command: script, direction: args.direction });
-        } else if (script === 'mobile: swipeGesture') {
-            const horizontal = args.direction === 'left' || args.direction === 'right';
-            out.push({ command: script, direction: args.direction, distance: args.percent * (horizontal ? args.width : args.height) });
-        } else if (script === 'mobile: dragFromToForDuration') {
-            const dx = args.toX - args.fromX;
-            const dy = args.toY - args.fromY;
-            const direction = dx !== 0 ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down');
-            out.push({ command: script, direction, distance: Math.abs(dx !== 0 ? dx : dy) });
-        }
-    }
+    calls.forEach((call, i) => {
+        if (call[0] !== 'performActions') return;
+        const sources = call[1] as Array<{ type: string; id: string; parameters: unknown; actions: Array<{ x: number; y: number }> }>;
+        expect(sources).toHaveLength(1);
+        const [finger] = sources;
+        expect(finger.type).toBe('pointer');
+        expect(finger.id).toBe('finger1');
+        expect(finger.parameters).toEqual({ pointerType: 'touch' });
+        const from = { x: finger.actions[0].x, y: finger.actions[0].y };
+        const to = { x: finger.actions[3].x, y: finger.actions[3].y };
+        expect(finger.actions).toEqual(swipeActions(from, to));
+        expect(calls[i + 1]?.[0], 'releaseActions after every swipe').toBe('releaseActions');
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const direction = dx !== 0 ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down');
+        out.push({ from, to, direction, distance: Math.abs(dx !== 0 ? dx : dy) });
+    });
     return out;
 }
 

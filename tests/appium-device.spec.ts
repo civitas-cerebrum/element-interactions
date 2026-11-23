@@ -12,10 +12,10 @@ import {
     windowsStrategy,
 } from '../src/appium';
 import { STRATEGY_METHODS } from '../src/appium/platform/notImplemented';
-import { IOS_DRAG_HOLD_SECONDS } from '../src/appium/platform/ios';
+import { IOS_SWIPE_INSET } from '../src/appium/platform/ios';
 import { ANDROID_SWIPE_INSET } from '../src/appium/platform/android';
-import { w3cSwipeScreen } from '../src/appium/touch';
-import { mockDriver, expectNotSupported, methodsOf, touches, WINDOW, type Call } from './appium/mocks';
+import { MIN_SWIPE_DISTANCE, SWIPE_HOLD_MS, SWIPE_MOVE_MS, touchSwipe } from '../src/appium/touch';
+import { mockDriver, expectNotSupported, methodsOf, screenSwipes, swipeActions, WINDOW, type Call } from './appium/mocks';
 
 /**
  * Pure unit tests for the platform strategies and AppiumDevice over a mock
@@ -344,61 +344,86 @@ for (const platform of ['macos', 'windows'] as const) {
 }
 
 test.describe('screen swipes through the platform strategy', () => {
-    // WINDOW is 400x800; the finger direction is passed through unchanged on both platforms.
+    // WINDOW is 400x800. Both platforms send element-repository's W3C touch swipe:
+    // move instantly to the start, finger down, 100 ms hold, 600 ms move to the end, finger up, release.
+    // The swipe is centred on the window centre inside the window minus the platform inset.
 
-    test('ios: without a distance, XCUITest mobile: swipe with the finger direction', async () => {
-        const { driver, calls } = mockDriver();
-        for (const direction of ['up', 'down', 'left', 'right'] as const) await iosStrategy.swipeScreen(driver, direction);
-        expect(calls).toEqual([
-            ['execute', 'mobile: swipe', { direction: 'up' }],
-            ['execute', 'mobile: swipe', { direction: 'down' }],
-            ['execute', 'mobile: swipe', { direction: 'left' }],
-            ['execute', 'mobile: swipe', { direction: 'right' }],
-        ]);
-    });
-
-    test('ios: with a distance, mobile: dragFromToForDuration from the centre, clamped to the window', async () => {
-        const { driver, calls } = mockDriver();
-        await iosStrategy.swipeScreen(driver, 'up', 300);
-        await iosStrategy.swipeScreen(driver, 'right', 5000);
-        expect(IOS_DRAG_HOLD_SECONDS).toBe(0.5);
-        expect(calls).toEqual([
-            ['execute', 'mobile: dragFromToForDuration', { duration: 0.5, fromX: 200, fromY: 400, toX: 200, toY: 100 }],
-            ['execute', 'mobile: dragFromToForDuration', { duration: 0.5, fromX: 200, fromY: 400, toX: WINDOW.width - 1, toY: 400 }],
-        ]);
-        expect(touches(calls)).toEqual([]);
-    });
-
-    test('android: UiAutomator2 mobile: swipeGesture over the inset window, distance as percent', async () => {
+    test('the swipe timings match element-repository PlatformElement (hold 100 ms, move 600 ms)', () => {
+        expect(SWIPE_HOLD_MS).toBe(100);
+        expect(SWIPE_MOVE_MS).toBe(600);
+        expect(MIN_SWIPE_DISTANCE).toBe(10);
         expect(ANDROID_SWIPE_INSET).toEqual({ x: 0.1, y: 0.2 });
-        const { driver, calls } = mockDriver();
-        const area = { left: 40, top: 160, width: 320, height: 480 };
-        await androidStrategy.swipeScreen(driver, 'up', 240);
-        await androidStrategy.swipeScreen(driver, 'left');
-        await androidStrategy.swipeScreen(driver, 'down');
-        await androidStrategy.swipeScreen(driver, 'right', 5000);
-        expect(calls).toEqual([
-            ['execute', 'mobile: swipeGesture', { ...area, direction: 'up', percent: 0.5 }],
-            ['execute', 'mobile: swipeGesture', { ...area, direction: 'left', percent: 0.625 }], // half the width: 200 / 320
-            ['execute', 'mobile: swipeGesture', { ...area, direction: 'down', percent: 0.833 }], // half the height: 400 / 480
-            ['execute', 'mobile: swipeGesture', { ...area, direction: 'right', percent: 1 }], // capped
-        ]);
-        expect(touches(calls)).toEqual([]);
+        expect(IOS_SWIPE_INSET).toEqual({ x: 0.1, y: 0.15 });
+        expect(Object.isFrozen(ANDROID_SWIPE_INSET) && Object.isFrozen(IOS_SWIPE_INSET)).toBe(true);
     });
 
-    test('generic fallback: w3cSwipeScreen is one W3C touch swipe from the centre, released', async () => {
+    for (const strategy of [androidStrategy, iosStrategy]) {
+        const { platform } = strategy;
+        test(`${platform}: exact W3C touch sequence per swipe, released after each, no mobile: command`, async () => {
+            const { driver, calls } = mockDriver();
+            await strategy.swipeScreen(driver, 'up', 240);
+            await strategy.swipeScreen(driver, 'left');
+            await strategy.swipeScreen(driver, 'down');
+            await strategy.swipeScreen(driver, 'right', 5000);
+            expect(calls.map(c => c[0])).toEqual(Array(4).fill(['performActions', 'releaseActions']).flat());
+            expect(calls.filter(c => c[0] === 'execute')).toEqual([]);
+            expect(calls[0]).toEqual(['performActions', [{
+                type: 'pointer',
+                id: 'finger1',
+                parameters: { pointerType: 'touch' },
+                actions: swipeActions({ x: 200, y: 520 }, { x: 200, y: 280 }),
+            }]]);
+            expect(screenSwipes(calls).map(({ from, to }) => [from, to])).toEqual([
+                // up 240 px, centred on y = 400
+                [{ x: 200, y: 520 }, { x: 200, y: 280 }],
+                // default: half the width, centred on x = 200
+                [{ x: 300, y: 400 }, { x: 100, y: 400 }],
+                // default: half the height, centred on y = 400
+                [{ x: 200, y: 200 }, { x: 200, y: 600 }],
+                // shortened to the safe width: x in [40, 359]
+                [{ x: 40, y: 400 }, { x: 359, y: 400 }],
+            ]);
+        });
+
+        test(`${platform}: a long vertical swipe is shortened to the safe area`, async () => {
+            const { driver, calls } = mockDriver();
+            await strategy.swipeScreen(driver, 'down', 5000);
+            await strategy.swipeScreen(driver, 'up', 5000);
+            const [down, up] = screenSwipes(calls);
+            // android keeps 20 % clear top and bottom (y in [160, 639]); ios 15 % (y in [120, 679])
+            const [lo, hi] = platform === 'android' ? [160, 639] : [120, 679];
+            expect(down).toMatchObject({ from: { x: 200, y: lo }, to: { x: 200, y: hi }, direction: 'down', distance: hi - lo });
+            expect(up).toMatchObject({ from: { x: 200, y: hi }, to: { x: 200, y: lo }, direction: 'up', distance: hi - lo });
+        });
+
+        test(`${platform}: a swipe shorter than ${MIN_SWIPE_DISTANCE} px is refused and sends nothing`, async () => {
+            const { driver, calls } = mockDriver();
+            await expect(strategy.swipeScreen(driver, 'up', 9.4)).rejects.toThrow(/at least 10 px/);
+            await expect(strategy.swipeScreen(driver, 'left', 0)).rejects.toThrow(/at least 10 px/);
+            expect(calls).toEqual([]);
+        });
+
+        test(`${platform}: the touch actions are released when the swipe fails`, async () => {
+            const { driver, calls } = mockDriver();
+            (driver as unknown as { performActions: () => Promise<never> }).performActions = async () => { throw new Error('boom'); };
+            await expect(strategy.swipeScreen(driver, 'up', 200)).rejects.toThrow('boom');
+            expect(calls.map(c => c[0])).toEqual(['releaseActions']);
+        });
+    }
+
+    test('touchSwipe clamps both points inside the window and refuses a swipe that would not move', async () => {
         const { driver, calls } = mockDriver();
-        await w3cSwipeScreen(driver, 'up', 300);
-        await w3cSwipeScreen(driver, 'left');
-        expect(calls.map(c => c[0])).toEqual(['performActions', 'releaseActions', 'performActions', 'releaseActions']);
-        const [up, left] = touches(calls).map(([finger]) => finger.actions);
-        expect(up).toEqual([
-            { type: 'pointerMove', duration: 0, x: 200, y: 400, origin: 'viewport' },
-            { type: 'pointerDown', button: 0 },
-            { type: 'pointerMove', duration: 300, x: 200, y: 100, origin: 'viewport' },
-            { type: 'pointerUp', button: 0 },
+        await touchSwipe(driver, { x: 200.4, y: 400 }, { x: 200, y: -50 }, WINDOW);
+        await touchSwipe(driver, { x: -5, y: 300 }, { x: 900, y: 300 }, WINDOW);
+        expect(screenSwipes(calls).map(({ from, to }) => [from, to])).toEqual([
+            [{ x: 200, y: 400 }, { x: 200, y: 0 }],
+            [{ x: 0, y: 300 }, { x: WINDOW.width - 1, y: 300 }],
         ]);
-        expect(left[2]).toMatchObject({ x: 0, y: 400 });
+        calls.length = 0;
+        // Both points clamp onto the bottom row: zero length.
+        await expect(touchSwipe(driver, { x: 200, y: 900 }, { x: 200, y: 1200 }, WINDOW)).rejects.toThrow(/would move only 0 px/);
+        await expect(touchSwipe(driver, { x: 200, y: 400 }, { x: 204, y: 404 }, WINDOW)).rejects.toThrow(/at least 10 px/);
+        expect(calls).toEqual([]);
     });
 });
 

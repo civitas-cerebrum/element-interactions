@@ -60,12 +60,16 @@ export interface PlatformStrategy {
 
     // Screen gestures
     /**
-     * Swipes across the screen with the platform's native gesture command.
+     * Swipes across the screen with the shared W3C touch swipe
+     * (`swipeScreenW3C` in `../touch`, the same action sequence as
+     * element-repository's `PlatformElement.swipe`); the strategy only chooses
+     * the geometry (the safe area it keeps clear of system gesture zones).
      * `direction` is the way the FINGER moves, the meaning of
      * element-repository's `Element.swipe`: `'up'` drags the content up and
      * reveals what lies below. `distance` is the finger travel in px
-     * (native-context viewport coordinates); when omitted, the platform's
-     * default screen swipe. The caller has validated `distance` (positive, finite).
+     * (native-context viewport coordinates), shortened to the safe area; when
+     * omitted, half the window along that axis. The caller has validated
+     * `distance` (finite, at least `MIN_SWIPE_DISTANCE`).
      */
     swipeScreen(driver: AppiumDriver, direction: Direction, distance?: number): Promise<void>;
 

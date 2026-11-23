@@ -10,7 +10,7 @@ import type {
 } from '../enum/Options';
 import type { AppiumDriver } from './platform/PlatformStrategy';
 import { AppiumUtils } from './AppiumUtils';
-import { performTouch, swipeSteps } from './touch';
+import { dragSteps, performTouch } from './touch';
 import { pollUntil } from '../utils/poll';
 import { webOnly } from './unsupported';
 
@@ -114,7 +114,7 @@ export class AppiumInteractions implements IInteractions {
             if (!box) throw new Error('[Action] Error -> Unable to get bounding box for element to perform drag action.');
             const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
             const to = { x: from.x + options.xOffset, y: from.y + options.yOffset };
-            await performTouch(this.driver, [swipeSteps(from, to, DRAG_DURATION_MS)]);
+            await performTouch(this.driver, [dragSteps(from, to, DRAG_DURATION_MS)]);
             return;
         }
         throw new Error(`[Action] Error -> You must provide either 'target', or both 'xOffset' and 'yOffset' in DragAndDropOptions.`);

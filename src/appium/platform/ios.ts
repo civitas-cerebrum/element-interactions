@@ -1,14 +1,16 @@
 import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
 import type { PermissionState } from '../../interfaces/IDevice';
 import type { Direction } from '../../interfaces/IGestures';
-import { travel, windowSize } from '../touch';
+import { swipeScreenW3C, type SwipeInset } from '../touch';
 import { APP_STATE_FOREGROUND, mobile, type AppiumDriver, type PlatformStrategy } from './PlatformStrategy';
 
 /**
- * How long a measured screen swipe holds the finger before dragging, in
- * seconds: the minimum XCUITest accepts for `mobile: dragFromToForDuration`.
+ * The share of the window a screen swipe keeps clear on each side (x: left
+ * and right, y: top and bottom), so it never starts or ends on the status
+ * bar / Notification Centre and Control Center edge, on the home indicator
+ * (whose upward swipe leaves the app) or on the back-swipe edge on the left.
  */
-export const IOS_DRAG_HOLD_SECONDS = 0.5;
+export const IOS_SWIPE_INSET: SwipeInset = Object.freeze({ x: 0.1, y: 0.15 });
 
 /** `setPermission` state -> XCUITest `mobile: setPermission` access value. */
 const PERMISSION_ACCESS: Record<PermissionState, 'yes' | 'no' | 'unset'> = {
@@ -67,27 +69,16 @@ export const iosStrategy: PlatformStrategy = Object.freeze({
     },
 
     /**
-     * Without `distance`: XCUITest `mobile: swipe {direction}` on the
-     * application element (its direction is the finger direction too, so it
-     * is passed through unchanged; XCUITest sets the travel). With
-     * `distance`: `mobile: dragFromToForDuration` from the screen centre,
-     * the finger travelling exactly `distance` px (clamped to the window)
-     * after a {@link IOS_DRAG_HOLD_SECONDS} s hold. W3C touch actions are not
-     * used: they did not scroll an iOS collection view reliably.
+     * The shared W3C touch swipe (`swipeScreenW3C`, the gesture
+     * element-repository's `PlatformElement.swipe` sends and that was verified
+     * to scroll an iOS collection view), centred on the window centre inside
+     * the window minus {@link IOS_SWIPE_INSET}: at most 70 % of the height or
+     * 80 % of the width. XCUITest's `mobile: swipe` (no distance) and
+     * `mobile: dragFromToForDuration` (a 0.5 s press first, a long-press risk)
+     * are not used.
      */
     async swipeScreen(driver: AppiumDriver, direction: Direction, distance?: number) {
-        if (distance === undefined) {
-            await mobile(driver, 'swipe', { direction });
-            return;
-        }
-        const win = await windowSize(driver);
-        const from = { x: Math.round(win.width / 2), y: Math.round(win.height / 2) };
-        const to = travel(from, direction, distance, win);
-        await mobile(driver, 'dragFromToForDuration', {
-            duration: IOS_DRAG_HOLD_SECONDS,
-            fromX: from.x, fromY: from.y,
-            toX: Math.round(to.x), toY: Math.round(to.y),
-        });
+        await swipeScreenW3C(driver, direction, IOS_SWIPE_INSET, distance);
     },
 
     async acceptAlert(driver: AppiumDriver) {

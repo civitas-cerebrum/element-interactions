@@ -255,39 +255,30 @@ for (const platform of DEVICE_PLATFORMS) {
             ]);
         });
 
-        /** The native command each platform uses for a measured screen swipe. */
-        const MEASURED = platform === 'ios' ? 'mobile: dragFromToForDuration' : 'mobile: swipeGesture';
-
-        test('swipeScreen sends one native swipe through the platform strategy, no W3C actions', async () => {
+        test('swipeScreen sends one W3C touch swipe (element-repository shape) through the strategy, then releases', async () => {
             const { factory, calls } = setup();
             await factory.createGestures().swipeScreen('up', { distance: 300 });
-            expect(touches(calls)).toEqual([]);
-            expect(calls.filter(c => c[0] === 'releaseActions')).toEqual([]);
+            expect(calls.map(c => c[0])).toEqual(['performActions', 'releaseActions']);
+            // screenSwipes asserts the exact action sequence and that no mobile: command was sent
             const [swipe] = screenSwipes(calls);
-            expect(swipe.command).toBe(MEASURED);
-            expect(swipe.direction).toBe('up');
-            expect(swipe.distance).toBeCloseTo(300, 0);
+            expect(swipe).toEqual({ from: { x: 200, y: 550 }, to: { x: 200, y: 250 }, direction: 'up', distance: 300 });
         });
 
-        test('swipeScreen without a distance uses the platform default; distance is clamped; 0 is refused', async () => {
+        test('swipeScreen defaults to half the window, shortens to the safe area, refuses tiny or invalid distances', async () => {
             const { factory, calls } = setup();
             const g = factory.createGestures();
             await g.swipeScreen('left');
             await g.swipeScreen('down', { distance: 5000 });
             const [left, down] = screenSwipes(calls);
-            if (platform === 'ios') {
-                // XCUITest's own swipe: direction only.
-                expect(left).toEqual({ command: 'mobile: swipe', direction: 'left' });
-                // From the centre to the last row of the window.
-                expect(down).toEqual({ command: MEASURED, direction: 'down', distance: WINDOW.height - 1 - 400 });
-            } else {
-                expect(left.direction).toBe('left');
-                expect(left.distance).toBeCloseTo(WINDOW.width / 2, 0);
-                // The whole swipe area (window minus the insets), percent capped at 1.
-                expect(down).toEqual({ command: MEASURED, direction: 'down', distance: 480 });
+            expect(left).toEqual({ from: { x: 300, y: 400 }, to: { x: 100, y: 400 }, direction: 'left', distance: WINDOW.width / 2 });
+            // the window minus 20 % (android) / 15 % (ios) top and bottom
+            const [lo, hi] = platform === 'android' ? [160, 639] : [120, 679];
+            expect(down).toEqual({ from: { x: 200, y: lo }, to: { x: 200, y: hi }, direction: 'down', distance: hi - lo });
+            calls.length = 0;
+            for (const distance of [0, -20, 9.9, Number.NaN, Number.POSITIVE_INFINITY]) {
+                await expect(g.swipeScreen('up', { distance }), String(distance)).rejects.toThrow(/at least 10 \(a shorter swipe registers as a tap\)/);
             }
-            await expect(g.swipeScreen('up', { distance: 0 })).rejects.toThrow(/positive/);
-            await expect(g.swipeScreen('up', { distance: Number.NaN })).rejects.toThrow(/positive/);
+            expect(calls).toEqual([]);
         });
 
         test('tapAt taps the screen point and rejects points outside the window', async () => {
@@ -317,13 +308,11 @@ for (const platform of DEVICE_PLATFORMS) {
             const el = mockElement({ visible: visible.read });
             await factory.createGestures().scrollUntilFound(el, { direction: 'down', timeout: 5000 });
             expect(visible.reads()).toBe(3);
-            expect(touches(calls)).toEqual([]);
             const swipes = screenSwipes(calls);
             expect(swipes).toHaveLength(2);
-            // content below -> finger moves up a third of the screen
-            expect(swipes[0].command).toBe(MEASURED);
-            expect(swipes[0].direction).toBe('up');
-            expect(swipes[0].distance).toBeCloseTo(800 / 3, 0);
+            // content below -> finger moves up a third of the screen (267 px), centred on y = 400
+            expect(swipes[0]).toEqual({ from: { x: 200, y: 534 }, to: { x: 200, y: 267 }, direction: 'up', distance: 267 });
+            expect(swipes[1]).toEqual(swipes[0]);
         });
 
         test('scrollUntilFound honours direction for horizontal lists', async () => {
@@ -331,8 +320,7 @@ for (const platform of DEVICE_PLATFORMS) {
             const visible = changing([false, true]);
             await factory.createGestures().scrollUntilFound(mockElement({ visible: visible.read }), { direction: 'right', timeout: 5000 });
             const [swipe] = screenSwipes(calls);
-            expect(swipe.direction).toBe('left');
-            expect(swipe.distance).toBeCloseTo(400 / 3, 0);
+            expect(swipe).toEqual({ from: { x: 267, y: 400 }, to: { x: 134, y: 400 }, direction: 'left', distance: 133 });
         });
 
         test('scrollUntilFound throws after its timeout, naming the swipes', async () => {
@@ -361,12 +349,11 @@ for (const platform of DEVICE_PLATFORMS) {
                 { x: 0, y: 390, width: 100, height: 40 }, // within 50 px
             ]);
             await factory.createGestures().centerElement(mockElement({ box: box.read }), { timeout: 5000 });
-            expect(touches(calls)).toEqual([]);
             const swipes = screenSwipes(calls);
             expect(swipes).toHaveLength(2);
-            expect(swipes.map(s => [s.command, s.direction])).toEqual([[MEASURED, 'up'], [MEASURED, 'up']]);
-            expect(swipes[0].distance).toBeCloseTo(800 / 3, 0);
-            expect(swipes[1].distance).toBeCloseTo(73, 0);
+            expect(swipes.map(s => s.direction)).toEqual(['up', 'up']);
+            expect(swipes[0].distance).toBe(267);
+            expect(swipes[1]).toEqual({ from: { x: 200, y: 437 }, to: { x: 200, y: 364 }, direction: 'up', distance: 73 });
         });
 
         test('centerElement swipes the finger down for an element above the centre', async () => {
@@ -374,8 +361,7 @@ for (const platform of DEVICE_PLATFORMS) {
             const box = changing([{ x: 0, y: 200, width: 100, height: 40 }, { x: 0, y: 380, width: 100, height: 40 }]);
             await factory.createGestures().centerElement(mockElement({ box: box.read }), { timeout: 5000 });
             const [swipe] = screenSwipes(calls);
-            expect(swipe.direction).toBe('down');
-            expect(swipe.distance).toBeCloseTo(180, 0);
+            expect(swipe).toEqual({ from: { x: 200, y: 310 }, to: { x: 200, y: 490 }, direction: 'down', distance: 180 });
         });
 
         test('centerElement stops when the content no longer moves (scroll boundary)', async () => {

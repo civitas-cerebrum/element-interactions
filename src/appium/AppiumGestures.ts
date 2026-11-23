@@ -2,7 +2,7 @@ import type { Element } from '@civitas-cerebrum/element-repository';
 import type { Direction, IGestures } from '../interfaces/IGestures';
 import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
 import { notImplementedError } from './platform/notImplemented';
-import { performTouch, tapSteps, windowSize, type Point } from './touch';
+import { MIN_SWIPE_DISTANCE, performTouch, tapSteps, windowSize, type Point } from './touch';
 
 /** The finger direction that reveals content lying in `direction` (content below -> finger moves up). */
 const REVEAL: Record<Direction, Direction> = { down: 'up', up: 'down', right: 'left', left: 'right' };
@@ -12,11 +12,13 @@ const REVEAL: Record<Direction, Direction> = { down: 'up', up: 'down', right: 'l
  *
  * Element-level gestures delegate to element-repository's primitives
  * (`swipe`, `scrollIntoView`, `longPress`, `tapAt`, `pinch`, `zoom`) with the
- * timeout filled in. Screen swipes (`swipeScreen` and the compositions
- * `scrollUntilFound` and `centerElement`) go through the platform strategy's
- * native gesture command (iOS `mobile: swipe` / `mobile:
- * dragFromToForDuration`, Android `mobile: swipeGesture`). `tapAt(x, y)`
- * uses a W3C touch pointer action.
+ * timeout filled in. Screen swipes (`swipeScreen` and the steps of the
+ * compositions `scrollUntilFound` and `centerElement`) go through the
+ * platform strategy's `swipeScreen`, which sends the same explicit W3C touch
+ * swipe as element-repository's `PlatformElement.swipe` (finger down, 100 ms
+ * hold, 600 ms move, finger up, actions released) on every Appium platform;
+ * the strategy only picks the safe area. `tapAt(x, y)` uses a W3C touch
+ * pointer action too.
  *
  * Direction meanings follow element-repository: in `swipe` / `swipeScreen`
  * `direction` is where the finger moves (`'up'` reveals content below); in
@@ -51,16 +53,17 @@ export class AppiumGestures implements IGestures {
     }
 
     /**
-     * Swipes across the screen: the finger moves in `direction`, `distance`
-     * px when given (clamped to the window). Without `distance` the platform's
-     * default screen swipe runs (iOS: XCUITest's `mobile: swipe`; Android:
-     * half the window along that axis).
+     * Swipes across the screen: the finger moves in `direction` through the
+     * screen centre, `distance` px (default half the window along that axis),
+     * shortened to the platform's safe area (the window minus the system
+     * gesture zones). A `distance` below {@link MIN_SWIPE_DISTANCE} px (it
+     * would register as a tap) or not a finite number is refused.
      */
     async swipeScreen(direction: Direction, options?: { distance?: number }): Promise<void> {
         this.requireImplemented();
         const distance = options?.distance;
-        if (distance !== undefined && (!Number.isFinite(distance) || distance <= 0)) {
-            throw new Error(`swipeScreen: distance must be a positive number of px, got ${distance}`);
+        if (distance !== undefined && !(Number.isFinite(distance) && distance >= MIN_SWIPE_DISTANCE)) {
+            throw new Error(`swipeScreen: distance must be a number of px of at least ${MIN_SWIPE_DISTANCE} (a shorter swipe registers as a tap), got ${distance}`);
         }
         await this.strategy.swipeScreen(this.driver, direction, distance);
     }
