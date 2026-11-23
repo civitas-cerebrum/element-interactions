@@ -63,48 +63,23 @@ export {
 } from './steps/ExpectMatchers';
 export type { ElementSnapshot, ExpectContext } from './steps/ExpectMatchers';
 
-// Appium family (WebdriverIO is imported only by the session provider, on first use)
-export {
-    AppiumFactory,
-    AppiumInteractions,
-    AppiumVerifications,
-    AppiumExtractions,
-    AppiumNavigation,
-    AppiumUtils,
-    AppiumGestures,
-    AppiumDevice,
-    MissingAppIdError,
-    NATIVE_CONTEXT,
-    strategyFor,
-    appIdFromCapabilities,
-    appIdFromSession,
-    androidStrategy,
-    iosStrategy,
-    macosStrategy,
-    windowsStrategy,
-    notImplementedError,
-    APP_STATE_FOREGROUND,
-} from './appium';
-export type { AppiumFactoryOptions, PlatformStrategy, AppiumDriver } from './appium';
+// Appium family: the factory and its public types. The per-family classes and
+// platform strategies stay internal; `Steps` reaches them through the factory.
+// (WebdriverIO is imported only by the session provider, on first use.)
+export { AppiumFactory, MissingAppIdError } from './appium';
+export type { AppiumFactoryOptions, AppiumDriver } from './appium';
+
+// Timeouts of the polling device steps, catchable by type
+export { PollTimeoutError, ProbeTimeoutError } from './utils/poll';
 
 // Session layer (platform runs)
 export type { ServerOptions, SessionStartContext, SessionProvider, SessionOptions } from './session';
-export {
-    AppiumSessionProvider,
-    DEFAULT_CLIENT_OPTIONS,
-    loadCapabilities,
-    resolveServer,
-    parseServerUrl,
-    DEFAULT_APPIUM_URL,
-    prepareSession,
-} from './session';
+export { AppiumSessionProvider } from './session';
 export type {
-    LoadedCapabilities,
     AppiumSessionProviderOptions,
     AppiumClientOptions,
     WebdriverioLogLevel,
     WebdriverioModule,
-    PreparedSession,
 } from './session';
 
 // Test Fixture
