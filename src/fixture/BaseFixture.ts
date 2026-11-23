@@ -56,7 +56,8 @@ export type BaseFixtureTest = TestType<
 export interface BaseFixtureOptions {
     /**
      * The platform this run tests. Default: `process.env.PLATFORM`, else
-     * `'web'`. Read once, when `baseFixture()` is called.
+     * `'web'` (an empty `PLATFORM` counts as unset). Read once, when
+     * `baseFixture()` is called.
      *
      * - `web`: the Playwright fixtures, unchanged.
      * - `android` / `ios`: a worker-scoped Appium session (see `session`); no
@@ -475,11 +476,11 @@ export async function forwardMutationInjection(
 
 /**
  * Resolves the `platform` option (CONTRACT B1, B2): the option, else
- * `process.env.PLATFORM`, else `'web'`. A value that is not a {@link Platform}
- * throws, naming where it came from.
+ * `process.env.PLATFORM`, else `'web'`. An empty `PLATFORM` counts as unset.
+ * A value that is not a {@link Platform} throws, naming where it came from.
  */
 export function resolvePlatform(option: unknown, env: NodeJS.ProcessEnv = process.env): Platform {
-    const value = option !== undefined ? option : env.PLATFORM;
+    const value = option !== undefined ? option : (env.PLATFORM === '' ? undefined : env.PLATFORM);
     if (value === undefined) return 'web';
     if (!isPlatformName(value)) {
         const source = option !== undefined ? 'baseFixture option "platform"' : 'PLATFORM';
@@ -709,32 +710,61 @@ function platformFixture(
     return extended as unknown as BaseFixtureTest;
 }
 
-/** A test that did not end as expected, or ended failed / timed out (also under `test.fail()`). */
+/**
+ * A test that did not end as expected: the same trigger as the web failure
+ * screenshot. A failure under `test.fail()` is expected and gets no evidence;
+ * an unexpected pass under `test.fail()` does.
+ */
 function testFailed(testInfo: TestInfo): boolean {
-    return testInfo.status !== testInfo.expectedStatus
-        || testInfo.status === 'failed'
-        || testInfo.status === 'timedOut';
+    return testInfo.status !== testInfo.expectedStatus;
 }
+
+/** How long one evidence command (screenshot, page source) may take before it is given up, in ms. */
+export const EVIDENCE_TIMEOUT_MS = 10_000;
 
 /**
  * Attaches the device screenshot and the page source of a failed test
  * (CONTRACT B6). Each is best-effort: a failure to collect one is logged and
- * never replaces the test's own failure.
+ * never replaces the test's own failure. Each command is given up after
+ * `timeoutMs`, so a dead device cannot stall the teardown.
+ *
+ * @internal Exported for the tests; not part of the package entry point.
  */
-async function attachPlatformEvidence(driver: WebdriverIO.Browser, testInfo: TestInfo, screenshot: boolean): Promise<void> {
+export async function attachPlatformEvidence(
+    driver: WebdriverIO.Browser,
+    testInfo: Pick<TestInfo, 'attach'>,
+    screenshot: boolean,
+    timeoutMs: number = EVIDENCE_TIMEOUT_MS,
+): Promise<void> {
     const wd = driver as unknown as { takeScreenshot(): Promise<string>; getPageSource(): Promise<string> };
     if (screenshot) {
         try {
-            const png = await wd.takeScreenshot();
+            const png = await withTimeout(() => wd.takeScreenshot(), timeoutMs, 'takeScreenshot');
             await testInfo.attach('failure-screenshot', { body: Buffer.from(png, 'base64'), contentType: 'image/png' });
         } catch (error) {
             log.warn('Could not attach the failure screenshot: %s', error instanceof Error ? error.message : String(error));
         }
     }
     try {
-        const source = await wd.getPageSource();
+        const source = await withTimeout(() => wd.getPageSource(), timeoutMs, 'getPageSource');
         await testInfo.attach('page-source', { body: source, contentType: 'text/xml' });
     } catch (error) {
         log.warn('Could not attach the page source: %s', error instanceof Error ? error.message : String(error));
+    }
+}
+
+/** Runs `call`, rejecting when it has not settled after `ms`. The timer never outlives the race. */
+async function withTimeout<T>(call: () => Promise<T>, ms: number, name: string): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    const pending = Promise.resolve().then(call);
+    // A late rejection of the abandoned call must not become an unhandled rejection.
+    pending.catch(() => undefined);
+    const expired = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${name} did not answer within ${ms} ms`)), ms);
+    });
+    try {
+        return await Promise.race([pending, expired]);
+    } finally {
+        clearTimeout(timer);
     }
 }

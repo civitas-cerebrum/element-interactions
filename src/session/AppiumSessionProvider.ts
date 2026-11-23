@@ -55,7 +55,11 @@ const MISSING_WEBDRIVERIO =
  * first `start`, so web-only users never load it.
  *
  * The session is opened with exactly the capabilities it is given (the
- * capabilities file's content) and the server's connection options. Each
+ * capabilities file's content) and the server's connection options. They are
+ * passed as a deep copy, so the caller's object is never changed. WebdriverIO
+ * adds BiDi keys (`webSocketUrl`, `unhandledPromptBehavior`) to a session that
+ * has `browserName` unless `"wdio:enforceWebDriverClassic": true` is set;
+ * {@link prepareSession} requires that key in such files. Each
  * instance is independent: no global or static state, two providers coexist.
  */
 export class AppiumSessionProvider implements SessionProvider {
@@ -80,7 +84,9 @@ export class AppiumSessionProvider implements SessionProvider {
         return await remote({
             ...this.client,
             ...definedOnly({ protocol, hostname, port, path, user, key }),
-            capabilities: context.capabilities,
+            // A copy: WebdriverIO writes into the capabilities object it is
+            // given, and the caller's object must stay exactly the file.
+            capabilities: structuredClone(context.capabilities),
         });
     }
 

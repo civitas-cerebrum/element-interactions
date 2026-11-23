@@ -65,6 +65,18 @@ test.describe('loadCapabilities', () => {
         }
     });
 
+    test('an empty CAPABILITIES counts as unset', () => {
+        expect(errorOf(() => loadCapabilities(undefined, 'ios', { CAPABILITIES: '' })).message)
+            .toMatch(/^No capabilities file for platform "ios"/);
+        const saved = process.env.CAPABILITIES;
+        process.env.CAPABILITIES = '';
+        try {
+            expect(errorOf(() => loadCapabilities(undefined, 'android')).message).toMatch(/^No capabilities file for platform "android"/);
+        } finally {
+            if (saved === undefined) delete process.env.CAPABILITIES; else process.env.CAPABILITIES = saved;
+        }
+    });
+
     test('the option wins over CAPABILITIES', () => {
         expect(loadCapabilities(IOS_EXAMPLE, 'ios', { CAPABILITIES: ANDROID_EXAMPLE }).file).toBe(IOS_EXAMPLE);
     });
@@ -96,6 +108,22 @@ test.describe('loadCapabilities', () => {
             const file = writeFile('scalar.json', content);
             expect(errorOf(() => loadCapabilities(file, 'ios', {})).message)
                 .toBe(`Capabilities file "${file}" must contain one JSON object of W3C capabilities.`);
+        }
+    });
+
+    test('a file wrapped in alwaysMatch / firstMatch is refused: capabilities files are flat', () => {
+        const cases: Array<[unknown, string]> = [
+            [{ alwaysMatch: { platformName: 'iOS', 'appium:bundleId': 'com.example.app' } }, '"alwaysMatch"'],
+            [{ firstMatch: [{ platformName: 'iOS' }] }, '"firstMatch"'],
+            [{ platformName: 'iOS', alwaysMatch: {}, firstMatch: [{}] }, '"alwaysMatch" and "firstMatch"'],
+        ];
+        for (const [content, keys] of cases) {
+            const file = writeFile('wrapped.json', JSON.stringify(content));
+            expect(errorOf(() => loadCapabilities(file, 'ios', {})).message).toBe(
+                `Capabilities file "${file}" has ${keys}: capabilities files are flat W3C objects `
+                + '(top-level keys such as "platformName" and "appium:automationName", no alwaysMatch / firstMatch wrapper). '
+                + 'Move the keys to the top level of the file.',
+            );
         }
     });
 
@@ -132,6 +160,46 @@ test.describe('prepareSession', () => {
         const prepared = prepareSession('ios', { capabilities: file, reset: 'none' }, {});
         expect(prepared.appId).toBeUndefined();
         expect(prepared.reset).toBe('none');
+    });
+
+    test('the app id is read from the nested appium:options form too; the message names both forms', () => {
+        const ios = writeFile('nested-ios.json', JSON.stringify({ platformName: 'iOS', 'appium:options': { bundleId: 'com.example.nested' } }));
+        expect(prepareSession('ios', { capabilities: ios }, {}).appId).toBe('com.example.nested');
+        const android = writeFile('nested-android.json', JSON.stringify({ platformName: 'Android', 'appium:options': { appPackage: 'com.example.nested' } }));
+        expect(prepareSession('android', { capabilities: android }, {}).appId).toBe('com.example.nested');
+
+        const iosMissing = writeFile('nested-none.json', JSON.stringify({ platformName: 'iOS', 'appium:options': { automationName: 'XCUITest' } }));
+        expect(errorOf(() => prepareSession('ios', { capabilities: iosMissing }, {})).message).toBe(
+            `Capabilities file "${iosMissing}" has no "appium:bundleId" (nor "appium:options": { "bundleId": ... }): session.reset `
+            + `'relaunch' relaunches the app under test between tests and needs it. Add "appium:bundleId" to the file, or set session.reset to 'none'.`,
+        );
+        const androidMissing = writeFile('nested-none-android.json', JSON.stringify({ platformName: 'Android' }));
+        expect(errorOf(() => prepareSession('android', { capabilities: androidMissing }, {})).message)
+            .toContain(`has no "appium:appPackage" (nor "appium:options": { "appPackage": ... })`);
+    });
+
+    test('unprefixed bundleId / appPackage are not the app id (CONTRACT B1 names the appium: keys)', () => {
+        const ios = writeFile('unprefixed-ios.json', JSON.stringify({ platformName: 'iOS', bundleId: 'com.example.app' }));
+        expect(errorOf(() => prepareSession('ios', { capabilities: ios }, {})).message).toContain('has no "appium:bundleId"');
+        const android = writeFile('unprefixed-android.json', JSON.stringify({ platformName: 'Android', appPackage: 'com.example.app' }));
+        expect(errorOf(() => prepareSession('android', { capabilities: android }, {})).message).toContain('has no "appium:appPackage"');
+    });
+
+    test('a file with browserName must set "wdio:enforceWebDriverClassic": true (WebdriverIO would add BiDi keys)', () => {
+        for (const extra of [{}, { 'wdio:enforceWebDriverClassic': false }, { 'wdio:enforceWebDriverClassic': 'true' }]) {
+            const file = writeFile('browser.json', JSON.stringify({
+                platformName: 'Android', browserName: 'Chrome', 'appium:automationName': 'UiAutomator2', ...extra,
+            }));
+            const err = errorOf(() => prepareSession('android', { capabilities: file, reset: 'none' }, {}));
+            expect(err.message).toContain(`Capabilities file "${file}" sets "browserName" but not "wdio:enforceWebDriverClassic": true.`);
+            expect(err.message).toContain('webSocketUrl, unhandledPromptBehavior');
+            expect(err.message).toContain('Add "wdio:enforceWebDriverClassic": true to the file: it stops WebdriverIO adding those keys.');
+        }
+        const ok = writeFile('browser-classic.json', JSON.stringify({
+            platformName: 'Android', browserName: 'Chrome', 'wdio:enforceWebDriverClassic': true,
+        }));
+        expect(prepareSession('android', { capabilities: ok, reset: 'none' }, {}).context.capabilities)
+            .toStrictEqual({ platformName: 'Android', browserName: 'Chrome', 'wdio:enforceWebDriverClassic': true });
     });
 
     test('an unknown reset value is refused', () => {

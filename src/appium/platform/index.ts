@@ -34,12 +34,20 @@ export function strategyFor(platform: Platform): PlatformStrategy {
 /**
  * The app under test named in a capabilities object (CONTRACT B1): the
  * platform's key (`appium:bundleId` on ios / macos, `appium:appPackage` on
- * android, `appium:app` on windows). The unprefixed form that Appium echoes
- * back in a session's capabilities is accepted too. `undefined` when absent.
+ * android, `appium:app` on windows), top-level or in Appium's nested form
+ * `"appium:options": { "bundleId" | "appPackage" | "app": ... }`. The
+ * top-level key wins when both are set. Unprefixed keys are not read.
+ * `undefined` when absent or empty.
  */
 export function appIdFromCapabilities(platform: Platform, capabilities: Record<string, unknown> | undefined): string | undefined {
     if (!capabilities) return undefined;
     const key = strategyFor(platform).appIdCapability;
-    const value = capabilities[key] ?? capabilities[key.replace(/^appium:/, '')];
-    return typeof value === 'string' && value.length > 0 ? value : undefined;
+    const top = capabilities[key];
+    if (typeof top === 'string' && top.length > 0) return top;
+    const nested = capabilities['appium:options'];
+    if (typeof nested === 'object' && nested !== null && !Array.isArray(nested)) {
+        const value = (nested as Record<string, unknown>)[key.replace(/^appium:/, '')];
+        if (typeof value === 'string' && value.length > 0) return value;
+    }
+    return undefined;
 }

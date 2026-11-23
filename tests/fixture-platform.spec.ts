@@ -1,7 +1,7 @@
 import { test as base, expect } from '@playwright/test';
 import * as fs from 'fs';
 import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
-import { baseFixture, resolvePlatform } from '../src/fixture/BaseFixture';
+import { attachPlatformEvidence, baseFixture, EVIDENCE_TIMEOUT_MS, resolvePlatform } from '../src/fixture/BaseFixture';
 import { PlatformInteractions } from '../src/fixture/PlatformInteractions';
 import { AppiumInteractions, AppiumVerifications, AppiumGestures, AppiumDevice } from '../src/appium';
 import { expectNotSupported } from './appium/mocks';
@@ -101,7 +101,20 @@ test.describe('platform resolution and web-only options', () => {
             .toThrow('PLATFORM is "mobile", which is not a platform. Expected one of: web, android, ios, macos, windows.');
         expect(() => resolvePlatform('iOS', {}))
             .toThrow('baseFixture option "platform" is "iOS", which is not a platform.');
-        expect(() => resolvePlatform(undefined, { PLATFORM: '' })).toThrow('PLATFORM is "", which is not a platform.');
+        expect(resolvePlatform(undefined, { PLATFORM: '' })).toBe('web');
+        expect(() => resolvePlatform('', { PLATFORM: 'ios' })).toThrow('baseFixture option "platform" is "", which is not a platform.');
+    });
+
+    test('an empty PLATFORM in process.env counts as unset: baseFixture builds the web fixture', () => {
+        const saved = process.env.PLATFORM;
+        process.env.PLATFORM = '';
+        try {
+            expect(resolvePlatform(undefined)).toBe('web');
+            // A platform fixture would refuse the web-only option; web accepts it.
+            expect(() => baseFixture(base, REPO, { blockedOrigins: /x/ })).not.toThrow();
+        } finally {
+            if (saved === undefined) delete process.env.PLATFORM; else process.env.PLATFORM = saved;
+        }
     });
 
     test('baseFixture reads PLATFORM when the option is absent', () => {
@@ -125,8 +138,41 @@ test.describe('platform resolution and web-only options', () => {
         expect(() => baseFixture(base, REPO, { platform: 'ios', session, mutationInjection: false, screenshotOnFailure: false })).not.toThrow();
     });
 
-    test('macos / windows build a fixture; the session start is what refuses them', () => {
+    test('macos / windows build a fixture; the session start is what refuses them (asserted in fixture-platform-run.spec.ts)', () => {
         expect(() => baseFixture(base, REPO, { platform: 'macos' })).not.toThrow();
-        expect(PlatformNotSupportedError).toBeDefined();
+        expect(() => baseFixture(base, REPO, { platform: 'windows' })).not.toThrow();
+    });
+});
+
+test.describe('failure evidence on a dead device', () => {
+    const never = () => new Promise<never>(() => undefined);
+
+    test('each evidence command is given up after the timeout; the teardown is not stalled', async () => {
+        expect(EVIDENCE_TIMEOUT_MS).toBe(10_000);
+        const attached: string[] = [];
+        const testInfo = { attach: async (name: string) => { attached.push(name); } };
+        const driver = { takeScreenshot: never, getPageSource: never } as unknown as WebdriverIO.Browser;
+        const started = Date.now();
+        await attachPlatformEvidence(driver, testInfo as never, true, 100);
+        const elapsed = Date.now() - started;
+        expect(elapsed).toBeGreaterThanOrEqual(190);
+        expect(elapsed).toBeLessThan(2000);
+        expect(attached).toEqual([]);
+    });
+
+    test('a hanging screenshot does not cost the page source', async () => {
+        const attached: string[] = [];
+        const testInfo = { attach: async (name: string) => { attached.push(name); } };
+        const driver = { takeScreenshot: never, getPageSource: async () => '<AppiumAUT/>' } as unknown as WebdriverIO.Browser;
+        await attachPlatformEvidence(driver, testInfo as never, true, 100);
+        expect(attached).toEqual(['page-source']);
+    });
+
+    test('answers within the timeout are attached', async () => {
+        const attached: Array<[string, string]> = [];
+        const testInfo = { attach: async (name: string, o: { contentType: string }) => { attached.push([name, o.contentType]); } };
+        const driver = { takeScreenshot: async () => 'cG5n', getPageSource: async () => '<AppiumAUT/>' } as unknown as WebdriverIO.Browser;
+        await attachPlatformEvidence(driver, testInfo as never, true, 1000);
+        expect(attached).toEqual([['failure-screenshot', 'image/png'], ['page-source', 'text/xml']]);
     });
 });

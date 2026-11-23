@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
+import * as http from 'http';
+import type { AddressInfo } from 'net';
 import {
     AppiumSessionProvider,
     DEFAULT_CLIENT_OPTIONS,
@@ -59,16 +61,35 @@ test.describe('AppiumSessionProvider.start', () => {
         expect(DEFAULT_CLIENT_OPTIONS).toEqual({ logLevel: 'error', waitforTimeout: 0 });
     });
 
-    test('passes the capabilities file content unchanged (same object, deep-equal to the file)', async () => {
+    test('passes a copy of the capabilities file content: deep-equal to the file, never the caller\'s object', async () => {
         const wdio = fakeWebdriverio();
         const provider = new AppiumSessionProvider({ importWebdriverio: wdio.importer });
         const prepared = prepareSession('ios', { capabilities: IOS_EXAMPLE, server: 'http://127.0.0.1:14732/wd/hub' }, {});
         await provider.start(prepared.context);
-        expect(wdio.calls[0].capabilities).toBe(prepared.context.capabilities);
+        expect(wdio.calls[0].capabilities).not.toBe(prepared.context.capabilities);
+        expect(wdio.calls[0].capabilities).toStrictEqual(prepared.context.capabilities);
         expect(wdio.calls[0].capabilities).toStrictEqual(JSON.parse(fs.readFileSync(IOS_EXAMPLE, 'utf-8')));
         expect(Object.keys(wdio.calls[0]).sort()).toEqual(
             ['capabilities', 'hostname', 'logLevel', 'path', 'port', 'protocol', 'waitforTimeout'],
         );
+    });
+
+    test('whatever remote() writes into its capabilities never reaches the caller\'s object', async () => {
+        const nested = { build: 'x' };
+        const ctx = context({ capabilities: { platformName: 'iOS', 'vendor:options': nested } });
+        const provider = new AppiumSessionProvider({
+            importWebdriverio: async () => ({
+                remote: async (options) => {
+                    const caps = options.capabilities as Record<string, unknown>;
+                    caps.webSocketUrl = true;
+                    (caps['vendor:options'] as Record<string, unknown>).added = 1;
+                    return {} as WebdriverIO.Browser;
+                },
+            }),
+        });
+        await provider.start(ctx);
+        expect(ctx.capabilities).toStrictEqual({ platformName: 'iOS', 'vendor:options': { build: 'x' } });
+        expect(nested).toStrictEqual({ build: 'x' });
     });
 
     test('leaves out connection fields that have no value', async () => {
@@ -164,6 +185,63 @@ test.describe('AppiumSessionProvider.start', () => {
         const provider = new AppiumSessionProvider();
         const mod = await (provider as unknown as { webdriverio(): Promise<WebdriverioModule> }).webdriverio();
         expect(typeof mod.remote).toBe('function');
+    });
+});
+
+/** A local WebDriver endpoint that records every request and answers the session lifecycle. */
+async function wireServer() {
+    const requests: Array<{ method: string; url: string; body: unknown }> = [];
+    const server = http.createServer((req, res) => {
+        let raw = '';
+        req.on('data', chunk => { raw += chunk; });
+        req.on('end', () => {
+            requests.push({ method: req.method ?? '', url: req.url ?? '', body: raw ? JSON.parse(raw) : undefined });
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            if (req.method === 'POST' && /\/session$/.test(req.url ?? '')) {
+                res.end(JSON.stringify({ value: { sessionId: 'wire-session', capabilities: { platformName: 'iOS' } } }));
+            } else if (req.method === 'DELETE') {
+                res.end(JSON.stringify({ value: null }));
+            } else {
+                res.statusCode = 404;
+                res.end(JSON.stringify({ value: { error: 'unknown command', message: `${req.method} ${req.url}` } }));
+            }
+        });
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    return {
+        requests,
+        url: `http://127.0.0.1:${port}/wd/hub`,
+        close: () => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }),
+    };
+}
+
+test.describe('AppiumSessionProvider on the wire (real webdriverio, local server)', () => {
+    test('POST /session carries exactly the capabilities file: nothing added, defaulted or rewritten', async () => {
+        const wire = await wireServer();
+        try {
+            const prepared = prepareSession('ios', { capabilities: IOS_EXAMPLE, server: wire.url }, {});
+            const provider = new AppiumSessionProvider({ client: { connectionRetryCount: 0, connectionRetryTimeout: 10_000 } });
+            const driver = await provider.start(prepared.context);
+            await provider.stop(driver);
+
+            const file = JSON.parse(fs.readFileSync(IOS_EXAMPLE, 'utf-8'));
+            const create = wire.requests.filter(r => r.method === 'POST' && r.url === '/wd/hub/session');
+            expect(create).toHaveLength(1);
+            expect(create[0].body).toStrictEqual({ capabilities: { alwaysMatch: file, firstMatch: [{}] } });
+            // After the session opens, WebdriverIO 10 itself sets the script
+            // timeout on iOS (a session command, not a capability); then stop() deletes it.
+            expect(wire.requests.map(r => `${r.method} ${r.url}`)).toEqual([
+                'POST /wd/hub/session',
+                'POST /wd/hub/session/wire-session/timeouts',
+                'DELETE /wd/hub/session/wire-session',
+            ]);
+            expect(wire.requests[1].body).toStrictEqual({ script: 30000 });
+            // The caller's object is still exactly the file.
+            expect(prepared.context.capabilities).toStrictEqual(file);
+        } finally {
+            await wire.close();
+        }
     });
 });
 

@@ -37,9 +37,26 @@ export interface SessionProvider {
 
 /** The `session` option of `baseFixture`, used only when the platform is in the Appium family. */
 export interface SessionOptions {
-    /** PATH to a JSON capabilities file. Default: `process.env.CAPABILITIES`. An inline object is not accepted. */
+    /**
+     * PATH to a JSON capabilities file: one flat W3C capabilities object (no
+     * `alwaysMatch` / `firstMatch` wrapper). Default: `process.env.CAPABILITIES`
+     * (an empty value counts as unset). An inline object is not accepted.
+     *
+     * A relative path resolves against `process.cwd()` (where Playwright was
+     * started, usually the project root), not against the file that calls
+     * `baseFixture`.
+     */
     capabilities?: string;
-    /** URL (with base path) or object. Default: `process.env.APPIUM_URL ?? 'http://127.0.0.1:4723'`. */
+    /**
+     * URL (with base path) or object. Default: `process.env.APPIUM_URL ?? 'http://127.0.0.1:4723'`
+     * (an empty `APPIUM_URL` counts as unset).
+     *
+     * The object form is a complete choice of server: a field it leaves out is
+     * filled from the built-in default `http://127.0.0.1:4723` (protocol
+     * `http`, hostname `127.0.0.1`, port `4723`, path `/`), never from
+     * `APPIUM_URL`. `user` / `key` left out are filled from `APPIUM_USER` /
+     * `APPIUM_KEY` in every form.
+     */
     server?: string | ServerOptions;
     /** Default: the built-in Appium provider ({@link AppiumSessionProvider}). */
     provider?: SessionProvider;

@@ -45,14 +45,15 @@ export interface FakeSession {
  * A SessionProvider whose `start` returns a mock driver (tests/appium/mocks)
  * extended with `$` / `$$` and `deleteSession`. When `logFile` is given, each
  * lifecycle event is appended to it as one line (`start`, `stop`, ...), so a
- * parent process can count them after the worker is gone.
+ * parent process can count them after the worker is gone. With `label`, each
+ * line is prefixed with it (`<label> start`), so several sessions can share a log.
  */
-export function fakeSession(logFile?: string): FakeSession {
+export function fakeSession(logFile?: string, label?: string): FakeSession {
     const mock = mockDriver({
         capabilities: { platformName: 'iOS', 'appium:bundleId': 'com.example.app' },
         pageSource: '<AppiumAUT><XCUIElementTypeApplication name="Example"/></AppiumAUT>',
     });
-    const event = (line: string) => { if (logFile) fs.appendFileSync(logFile, `${line}\n`); };
+    const event = (line: string) => { if (logFile) fs.appendFileSync(logFile, `${label ? `${label} ` : ''}${line}\n`); };
     const driver = mock.driver as unknown as Record<string, unknown>;
     const originalExecute = driver.execute as (script: string, args: unknown) => Promise<unknown>;
     const state: FakeSession = {

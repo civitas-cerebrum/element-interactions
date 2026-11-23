@@ -6,7 +6,8 @@ export const DEFAULT_APPIUM_URL = 'http://127.0.0.1:4723';
 /**
  * Resolves `session.server` to connection options (CONTRACT B1, B2).
  *
- * - `undefined`: `env.APPIUM_URL ?? 'http://127.0.0.1:4723'`.
+ * - `undefined`: `env.APPIUM_URL ?? 'http://127.0.0.1:4723'` (an empty
+ *   `APPIUM_URL` counts as unset).
  * - A URL string: parsed into protocol / hostname / port / path. The path is
  *   the Appium base path (`/wd/hub`), kept as given minus a trailing slash; a
  *   URL without a port gets its protocol's (80 / 443). Credentials in the URL
@@ -16,14 +17,16 @@ export const DEFAULT_APPIUM_URL = 'http://127.0.0.1:4723';
  *   choice of server).
  *
  * In every form `env.APPIUM_USER` / `env.APPIUM_KEY` fill `user` / `key` when
- * not given. Credentials are never read from the capabilities file. The
+ * not given (empty values count as unset). Credentials are never read from
+ * the capabilities file. The
  * result carries only the keys that have a value.
  */
 export function resolveServer(server: string | ServerOptions | undefined, env: NodeJS.ProcessEnv = process.env): ServerOptions {
     let resolved: ServerOptions;
     if (server === undefined) {
+        // An empty APPIUM_URL counts as unset, like every library env var.
         const fromEnv = env.APPIUM_URL;
-        resolved = fromEnv !== undefined
+        resolved = fromEnv !== undefined && fromEnv !== ''
             ? parseServerUrl(fromEnv, 'APPIUM_URL')
             : parseServerUrl(DEFAULT_APPIUM_URL, 'the default Appium URL');
     } else if (typeof server === 'string') {

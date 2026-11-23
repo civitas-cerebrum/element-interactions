@@ -91,6 +91,24 @@ test.describe('resolveServer', () => {
         expect(resolveServer(undefined, {})).not.toHaveProperty('key');
     });
 
+    test('an empty APPIUM_URL counts as unset: the built-in default is used', () => {
+        expect(resolveServer(undefined, { APPIUM_URL: '' })).toEqual({ protocol: 'http', hostname: '127.0.0.1', port: 4723, path: '/' });
+        withEnv({ APPIUM_URL: '' }, () => {
+            expect(resolveServer(undefined)).toEqual({ protocol: 'http', hostname: '127.0.0.1', port: 4723, path: '/' });
+        });
+    });
+
+    test('empty APPIUM_USER / APPIUM_KEY count as unset: no user or key', () => {
+        const env = { APPIUM_USER: '', APPIUM_KEY: '' };
+        for (const server of [undefined, 'http://h:1/wd/hub', { hostname: 'h' }] as const) {
+            const resolved = resolveServer(server, env);
+            expect(resolved).not.toHaveProperty('user');
+            expect(resolved).not.toHaveProperty('key');
+        }
+        expect(resolveServer(undefined, { APPIUM_USER: '', APPIUM_KEY: 'k' })).toMatchObject({ key: 'k' });
+        expect(resolveServer(undefined, { APPIUM_USER: '', APPIUM_KEY: 'k' })).not.toHaveProperty('user');
+    });
+
     test('refuses an invalid object', () => {
         expect(errorOf(() => resolveServer({ protocol: 'ftp' as never }, {})).message).toMatch(/protocol must be 'http' or 'https'/);
         expect(errorOf(() => resolveServer({ port: 0 }, {})).message).toMatch(/port must be an integer/);

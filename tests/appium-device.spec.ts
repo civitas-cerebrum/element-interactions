@@ -182,12 +182,23 @@ test.describe('strategyFor', () => {
 });
 
 test.describe('appIdFromCapabilities', () => {
-    test('reads the platform key, prefixed or as Appium echoes it unprefixed', () => {
+    test('reads the platform key, top-level or in the nested appium:options form; top-level wins', () => {
         expect(appIdFromCapabilities('android', CAPS.android)).toBe(APP.android);
         expect(appIdFromCapabilities('ios', CAPS.ios)).toBe(APP.ios);
-        expect(appIdFromCapabilities('ios', { bundleId: 'com.example.Echo' })).toBe('com.example.Echo');
-        expect(appIdFromCapabilities('android', { appPackage: 'com.example.echo' })).toBe('com.example.echo');
         expect(appIdFromCapabilities('windows', { 'appium:app': 'Example!App' })).toBe('Example!App');
+        expect(appIdFromCapabilities('ios', { 'appium:options': { bundleId: 'com.example.Nested' } })).toBe('com.example.Nested');
+        expect(appIdFromCapabilities('android', { 'appium:options': { appPackage: 'com.example.nested' } })).toBe('com.example.nested');
+        expect(appIdFromCapabilities('windows', { 'appium:options': { app: 'Nested!App' } })).toBe('Nested!App');
+        expect(appIdFromCapabilities('ios', { 'appium:bundleId': 'com.example.Top', 'appium:options': { bundleId: 'com.example.Nested' } }))
+            .toBe('com.example.Top');
+    });
+
+    test('unprefixed keys are not read (CONTRACT B1 names the appium: keys)', () => {
+        expect(appIdFromCapabilities('ios', { bundleId: 'com.example.Echo' })).toBeUndefined();
+        expect(appIdFromCapabilities('android', { appPackage: 'com.example.echo' })).toBeUndefined();
+        expect(appIdFromCapabilities('ios', { 'appium:options': { 'appium:bundleId': 'x' } })).toBeUndefined();
+        expect(appIdFromCapabilities('ios', { 'appium:options': 'com.example.app' })).toBeUndefined();
+        expect(appIdFromCapabilities('ios', { 'appium:options': { bundleId: '' } })).toBeUndefined();
     });
 
     test('never reads another platform\'s key; undefined when absent or empty', () => {

@@ -15,8 +15,11 @@ export interface LoadedCapabilities {
 /**
  * Reads the capabilities JSON file of a platform run (CONTRACT B1).
  *
- * - `file` is ALWAYS a path; `undefined` falls back to `env.CAPABILITIES`. An
- *   inline object is rejected: capabilities live only in files.
+ * - `file` is ALWAYS a path; `undefined` falls back to `env.CAPABILITIES` (an
+ *   empty value counts as unset). An inline object is rejected: capabilities
+ *   live only in files.
+ * - The file is a FLAT W3C capabilities object: a file wrapped in
+ *   `alwaysMatch` / `firstMatch` is rejected.
  * - The returned `capabilities` is the file's JSON object as parsed. The
  *   library adds, defaults and rewrites nothing.
  * - The file must contain `platformName`, and it must name `platform`
@@ -64,6 +67,14 @@ export function loadCapabilities(file: unknown, platform: Platform, env: NodeJS.
         throw new Error(`Capabilities file "${given}" must contain one JSON object of W3C capabilities.`);
     }
     const capabilities = parsed as Record<string, unknown>;
+    const wrappers = ['alwaysMatch', 'firstMatch'].filter(key => key in capabilities);
+    if (wrappers.length > 0) {
+        throw new Error(
+            `Capabilities file "${given}" has ${wrappers.map(k => `"${k}"`).join(' and ')}: capabilities files are flat W3C objects `
+            + '(top-level keys such as "platformName" and "appium:automationName", no alwaysMatch / firstMatch wrapper). '
+            + 'Move the keys to the top level of the file.',
+        );
+    }
 
     const platformName = capabilities.platformName;
     if (typeof platformName !== 'string' || platformName.trim() === '') {
