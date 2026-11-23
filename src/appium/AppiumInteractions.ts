@@ -10,7 +10,7 @@ import type {
 } from '../enum/Options';
 import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
 import { strategyFor } from './platform';
-import { AppiumUtils } from './AppiumUtils';
+import { Utils } from '../utils/ElementUtilities';
 import { dragSteps, performTouch } from './touch';
 import { pollUntil } from '../utils/poll';
 import { softRead } from '../utils/driverErrors';
@@ -63,14 +63,14 @@ function remainingUntil(deadline: number): number {
  * Web-only actions throw `PlatformNotSupportedError(method, platform)`.
  */
 export class AppiumInteractions implements IInteractions {
-    private readonly utils: AppiumUtils;
+    private readonly utils: Utils;
 
     constructor(
         private readonly driver: AppiumDriver,
         private readonly platform: Platform,
         private readonly timeout: number = 30000,
     ) {
-        this.utils = new AppiumUtils(timeout);
+        this.utils = new Utils(timeout);
     }
 
     /** The platform strategy; its `readText` is the text every match below is made on. */

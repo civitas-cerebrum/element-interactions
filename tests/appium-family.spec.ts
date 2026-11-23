@@ -9,12 +9,12 @@ import {
     AppiumVerifications,
     AppiumExtractions,
     AppiumNavigation,
-    AppiumUtils,
     AppiumGestures,
     AppiumDevice,
 } from '../src/appium';
 import { mockDriver, mockElement, touches, screenSwipes, expectNotSupported, methodsOf, changing, WINDOW, DEVICE_PLATFORMS, type Call } from './appium/mocks';
 import { DEVICE_METHODS } from './appium/methods';
+import { Utils } from '../src/utils/ElementUtilities';
 
 /**
  * Pure unit tests for the Appium family (factory, gestures, interactions,
@@ -137,7 +137,7 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(factory.createVerifications()).toBeInstanceOf(AppiumVerifications);
             expect(factory.createExtractions()).toBeInstanceOf(AppiumExtractions);
             expect(factory.createNavigation()).toBeInstanceOf(AppiumNavigation);
-            expect(factory.createUtils()).toBeInstanceOf(AppiumUtils);
+            expect(factory.createUtils()).toBeInstanceOf(Utils);
             expect(factory.createUtils().getTimeout()).toBe(1234);
             expect(factory.createGestures()).toBeInstanceOf(AppiumGestures);
             expect(factory.createDevice()).toBeInstanceOf(AppiumDevice);
@@ -666,9 +666,9 @@ for (const platform of DEVICE_PLATFORMS) {
         });
     });
 
-    test.describe(`AppiumUtils on ${platform}`, () => {
+    test.describe(`Utils on ${platform} elements`, () => {
         test('waitForState delegates to waitFor and throws on timeout', async () => {
-            const utils = new AppiumUtils(1000);
+            const utils = new Utils(1000);
             const el = mockElement();
             expect(await utils.waitForState(el, 'hidden', 300)).toBe(true);
             expect(el.calls).toEqual([['waitFor', { state: 'hidden', timeout: 300 }]]);
@@ -678,7 +678,7 @@ for (const platform of DEVICE_PLATFORMS) {
         });
 
         test('softProbe never throws and caps its wait at 2 s', async () => {
-            const utils = new AppiumUtils(60000);
+            const utils = new Utils(60000);
             const seen: unknown[] = [];
             const el = mockElement({ waitFor: async o => { seen.push(o); throw new Error('nope'); } });
             await expect(utils.softProbe(el)).resolves.toBeUndefined();
@@ -686,7 +686,7 @@ for (const platform of DEVICE_PLATFORMS) {
         });
 
         test('pace and repeat validate and run', async () => {
-            const utils = new AppiumUtils();
+            const utils = new Utils();
             await expect(utils.pace(-1)).rejects.toThrow(/non-negative/);
             expect(await utils.repeat(i => i * 2, 3, { intervalMs: 1 })).toEqual([0, 2, 4]);
             await expect(utils.repeat(() => 1, 1.5)).rejects.toThrow(/integer/);

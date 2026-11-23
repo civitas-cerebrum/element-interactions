@@ -4,7 +4,7 @@ import type { IExtractions } from '../interfaces/IExtractions';
 import type { ScreenshotOptions } from '../enum/Options';
 import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
 import { strategyFor } from './platform';
-import { AppiumUtils } from './AppiumUtils';
+import { Utils } from '../utils/ElementUtilities';
 import { webOnly } from './unsupported';
 
 /**
@@ -16,14 +16,14 @@ import { webOnly } from './unsupported';
  * The device's page source is `IDevice.getPageSource()`.
  */
 export class AppiumExtractions implements IExtractions {
-    private readonly utils: AppiumUtils;
+    private readonly utils: Utils;
 
     constructor(
         private readonly driver: AppiumDriver,
         private readonly platform: Platform,
         timeout: number = 30000,
     ) {
-        this.utils = new AppiumUtils(timeout);
+        this.utils = new Utils(timeout);
     }
 
     private get strategy(): PlatformStrategy {

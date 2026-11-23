@@ -7,7 +7,7 @@ import { AppiumInteractions } from './AppiumInteractions';
 import { AppiumVerifications } from './AppiumVerifications';
 import { AppiumExtractions } from './AppiumExtractions';
 import { AppiumNavigation } from './AppiumNavigation';
-import { AppiumUtils } from './AppiumUtils';
+import { Utils } from '../utils/ElementUtilities';
 import { AppiumGestures } from './AppiumGestures';
 import { AppiumDevice } from './AppiumDevice';
 
@@ -83,8 +83,9 @@ export class AppiumFactory implements IInteractionFactory {
         return new AppiumNavigation(this.platform);
     }
 
-    createUtils(): AppiumUtils {
-        return new AppiumUtils(this.timeout);
+    /** The driver-neutral `Utils`: every wait goes through the element's own `waitFor` primitive. */
+    createUtils(): Utils {
+        return new Utils(this.timeout);
     }
 
     createGestures(): AppiumGestures {
