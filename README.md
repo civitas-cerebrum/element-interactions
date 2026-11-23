@@ -2,7 +2,7 @@
 
 [![NPM Version](https://img.shields.io/npm/v/@civitas-cerebrum/element-interactions?color=rgb(88%2C%20171%2C%2070))](https://www.npmjs.com/package/@civitas-cerebrum/element-interactions)
 
-A robust, readable interaction-and-assertion facade for Playwright. The `Steps` API and `ElementRepository` decouple element acquisition from interaction, so raw selectors never appear in test code — and tests stay tight, semantic, and resistant to DOM churn.
+A robust, readable interaction-and-assertion facade for Playwright, with the same `Steps` API on Android and iOS apps through Appium ([Platform testing](#-platform-testing-android-ios)). The `Steps` API and `ElementRepository` decouple element acquisition from interaction, so raw selectors never appear in test code — and tests stay tight, semantic, and resistant to DOM churn.
 
 This package is the **framework** layer: a programmatic Playwright facade for humans + LLM agents to write against. If you want the **methodology** layer — agent skills, harness hooks, return-shape schemas, and the postinstall plumbing that drives Claude Code through an end-to-end autonomous QA pipeline — install [`@civitas-cerebrum/achilles`](https://www.npmjs.com/package/@civitas-cerebrum/achilles) alongside this package. Achilles depends on element-interactions and orchestrates it through eight documented phases.
 
@@ -53,7 +53,7 @@ await steps.click('submitButton', 'CheckoutPage');
 npm i @civitas-cerebrum/element-interactions
 ```
 
-**Peer dependencies:** `@playwright/test` is required.
+**Peer dependencies:** `@playwright/test` is required. `webdriverio@^10` is an optional peer, needed only for platform (Android, iOS) runs: see [Platform testing](#-platform-testing-android-ios).
 
 If you don't have a Playwright project yet:
 
@@ -84,7 +84,7 @@ npm i @civitas-cerebrum/element-interactions
 * **Role + accessible name selectors** — `{ "role": "button", "name": "Log in" }` resolves via `page.getByRole()` with regex support.
 * **Regex text selectors** — `{ "text": { "regex": "pattern", "flags": "i" } }` for matching dynamic content.
 * **Iframe-scoped pages** — Elements inside iframes are resolved transparently via `frame` property on page definitions.
-* **Cross-platform** — Enhanced selectors resolve natively on Android (UiSelector) and iOS (predicate strings).
+* **Platform testing (Android, iOS)** — One `PLATFORM` switch runs the same `Steps` API on native apps through Appium and WebdriverIO, with per-platform page blocks in one page repository. Steps that a platform cannot honour throw `PlatformNotSupportedError`. See [Platform testing](#-platform-testing-android-ios) for what is supported and what is verified on devices.
 
 ---
 
@@ -131,7 +131,7 @@ Each selector object supports `css`, `xpath`, `id`, or `text` as the locator str
 ```
 
 Supports `frameIndex` (`"first"`, `"last"`, or zero-based number) and nested frames (array of frame selectors).
-Cross-platform: role and regex selectors resolve via UiSelector on Android and predicate strings on iOS.
+On platform (Android, iOS) pages, element-repository translates the enhanced `role` + `name` selector into a UiSelector on Android and a predicate string on iOS; see [Platform testing](#-platform-testing-android-ios).
 
 **Naming conventions:**
 - `name` — PascalCase page identifier, e.g. `CheckoutPage`, `ProductDetailsPage`
@@ -295,6 +295,9 @@ For larger projects, manually initializing `repo` and `steps` in every test beco
 | `repo` | `ElementRepository` | Direct repository access for advanced locator queries |
 | `interactions` | `ElementInteractions` | Raw interactions API for custom locators |
 | `contextStore` | `ContextStore` | Shared in-memory store for passing data between steps |
+| `driver` | `WebdriverIO.Browser` | The device session on a platform run; throws `PlatformNotSupportedError` on web |
+
+`page` is Playwright's on web; on a platform run it throws. See [Fixture values per platform](#fixture-values-per-platform).
 
 `baseFixture` also attaches a full-page `failure-screenshot` to the Playwright HTML report on every failed test.
 
@@ -500,6 +503,295 @@ const problems = await mutation.verify();      // [] once the injection is prove
 
 ---
 
+## 📱 Platform testing (Android, iOS)
+
+The same `Steps` API drives native apps on Android and iOS through [Appium](https://appium.io) and [WebdriverIO](https://webdriver.io). One switch chooses the platform; test code, page names and element names stay the same, and only the page repository holds one block per platform.
+
+| Platform | Driver family | Status |
+|---|---|---|
+| `web` | Playwright | Supported (default, unchanged) |
+| `android` | Appium (UiAutomator2) | Supported; not yet verified on a real device (see [What is verified](#what-is-verified)) |
+| `ios` | Appium (XCUITest) | Supported (see [What is verified](#what-is-verified)) |
+| `macos`, `windows` | Appium | Declared, **not implemented**: the session start throws `Platform "<p>" is declared but not implemented yet.` |
+
+### Install
+
+`webdriverio` is an **optional** peer dependency. Web-only projects install nothing new; install it only for platform runs:
+
+```bash
+npm i -D webdriverio@^10
+```
+
+It is imported on the first session start, never at load time; a platform run without it fails with `webdriverio is not installed: install webdriverio@^10 ...`. WebdriverIO 10 declares Node `>=22.23.4 <23 || >=24.22.1 <25 || >=26.12.1` in its `engines`; use a matching Node version for platform runs.
+
+You also need an Appium server with the UiAutomator2 (Android) and/or XCUITest (iOS) driver, and a device, emulator or simulator it can reach.
+
+**TypeScript and the Appium API.** The package's typings name the driver type `WebdriverIO.Browser`. So that web projects compile without `webdriverio`, an empty global `WebdriverIO.Browser` interface ships with the typings; it merges with WebdriverIO's full one when `webdriverio` is installed. If you use the Appium API in TypeScript (the `driver` fixture, `AppiumFactory`, a custom `SessionProvider`), make WebdriverIO's global types visible: add `import type {} from 'webdriverio';` to one file of the project (for example the fixture file), or `"types": ["webdriverio"]` to `compilerOptions` in `tsconfig.json`. Without `skipLibCheck`, WebdriverIO 10's own declarations also need `puppeteer-core` types to be resolvable.
+
+### The switch: `platform` and `session`
+
+```ts
+// tests/platform/fixtures/base.ts
+import { test as base } from '@playwright/test';
+import { baseFixture } from '@civitas-cerebrum/element-interactions';
+
+export const test = baseFixture(base, 'tests/e2e/page-repository.json', {
+  // platform: 'ios',            // default: process.env.PLATFORM, else 'web'
+  session: {                     // used only when the platform is android / ios
+    // capabilities: 'tests/capabilities/iphone.json',  // PATH to a JSON file; default: CAPABILITIES
+    // server: 'http://<appium-server>:4723/wd/hub',    // URL with base path, or an object; default: APPIUM_URL
+    reset: 'relaunch',           // 'relaunch' (default) | 'none'
+    onSessionStarted: async (driver) => { /* once per worker, after the session opened */ },
+  },
+});
+export { expect } from '@playwright/test';
+```
+
+* **`platform`** — `'web' | 'android' | 'ios' | 'macos' | 'windows'`. Read once, when `baseFixture()` is called: the option, else `PLATFORM`, else `'web'`. Any other value throws, naming where it came from.
+* **`session.capabilities`** — always the **path** of a JSON capabilities file (default `CAPABILITIES`). An inline object is refused. A relative path resolves against the directory Playwright was started in (usually the project root).
+* **`session.server`** — a URL string including the Appium base path (`http://127.0.0.1:4723`, `https://<appium-server>/wd/hub`), or an object `{ protocol, hostname, port, path, user, key }`. Default: `APPIUM_URL`, else `http://127.0.0.1:4723`. A field the object form leaves out comes from `http://127.0.0.1:4723`, never from `APPIUM_URL`. `user` / `key` left out are filled from `APPIUM_USER` / `APPIUM_KEY` in every form, and are never read from the capabilities file.
+* **`session.provider`** — a `SessionProvider` (`start(context)` / `stop(driver)`) that opens and closes the WebdriverIO session. Default: the built-in `AppiumSessionProvider` (WebdriverIO `remote()`). Bring your own for a vendor that needs more than connection options (tunnels, app upload).
+* **`session.reset`** — what happens between tests (see [Reset policy](#reset-policy)).
+* **`session.onSessionStarted(driver)`** — called once per worker, right after the session opened. If it throws, the session is still closed and the error fails the test.
+
+The web-only options `blockedOrigins`, `mutationInjection` (unless `false`), `interceptionRetry` and the object form of `screenshotOnFailure` throw when `baseFixture()` is called for a platform, instead of being ignored. `timeout`, `repoTimeout`, `emailCredentials`, `apiBaseUrl` / `apiProviders` and `dbUrl` / `dbProviders` work on every platform.
+
+### Running a platform run
+
+The one documented form:
+
+```bash
+PLATFORM=<platform> CAPABILITIES=tests/capabilities/<device>.json APPIUM_URL=<server-with-base-path> \
+  npx playwright test -c playwright.platform.config.ts
+```
+
+A platform config holds one device session per worker, so use `workers: 1` per device and generous timeouts:
+
+```ts
+// playwright.platform.config.ts
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  testDir: 'tests/platform',
+  workers: 1,
+  timeout: 180_000,
+  expect: { timeout: 30_000 },
+  reporter: 'html',
+});
+```
+
+### Environment variables
+
+These five are the complete list; no other variable selects a platform, device or server. An **empty** value counts as unset (`PLATFORM=''` means `web`), so CI can pass blank inputs.
+
+| Variable | Meaning |
+|---|---|
+| `PLATFORM` | `web` (default) \| `android` \| `ios` \| `macos` \| `windows` |
+| `CAPABILITIES` | Path to the capabilities JSON file |
+| `APPIUM_URL` | Full Appium server URL, including the base path (e.g. `/wd/hub`) |
+| `APPIUM_USER`, `APPIUM_KEY` | Optional credentials for a remote or cloud server |
+
+### Capabilities files
+
+Capabilities live **only** in JSON files, one per device or device class, conventionally under `tests/capabilities/`. The library sends exactly the file's content: it adds, defaults and rewrites nothing, and holds no default device, app or automation name.
+
+```json
+{
+  "platformName": "iOS",
+  "appium:automationName": "XCUITest",
+  "appium:deviceName": "<device-name>",
+  "appium:udid": "<device-udid>",
+  "appium:bundleId": "com.example.app",
+  "appium:newCommandTimeout": 300,
+  "appium:autoAcceptAlerts": false,
+  "appium:noReset": true
+}
+```
+
+* **Flat W3C object.** Top-level keys only; a file wrapped in `alwaysMatch` / `firstMatch` is refused, naming the file.
+* **`platformName` is required** and must match the platform (case-insensitive), or the run fails before a session opens, naming both.
+* **The app under test** is read from `appium:appPackage` (android) or `appium:bundleId` (ios), at the top level or inside `"appium:options": { "appPackage": ... }` / `{ "bundleId": ... }`. Steps that take an optional `appId` default to it. A file that names only `appium:app` (a build path) has no app id: set `session.reset: 'none'` and pass `appId` to app steps explicitly.
+* **Mobile browser sessions.** A file with `browserName` must also set `"wdio:enforceWebDriverClassic": true`, or the fixture refuses it, naming the file and the key: without it WebdriverIO 10 adds WebDriver BiDi capabilities (`webSocketUrl`, `unhandledPromptBehavior`, `appium:chromedriverForwardBiDi`) and the file would not be sent as written. Native-app files do not need it.
+* **Set `appium:deviceName` and `appium:newCommandTimeout` explicitly.** Inspection tools such as `wdio session` inject their own defaults for keys the file leaves out; setting them keeps the inspected session and the test session identical.
+* **No secrets, no server addresses** in the file: the server comes from `APPIUM_URL`, credentials from `APPIUM_USER` / `APPIUM_KEY`. Do not commit real device names, UDIDs or signing team ids.
+
+### Fixture values per platform
+
+| Fixture | `web` | `android` / `ios` |
+|---|---|---|
+| `steps` | `Steps` on the Playwright page | `Steps` on the Appium family |
+| `repo` | `ElementRepository` with `{ platform: 'web' }` active | `ElementRepository` with the platform active |
+| `interactions` | `ElementInteractions` | A `PlatformInteractions` with the same members (`interact`, `verify`, `extract`, `navigate`, `email`) plus `gestures` and `device`; `request` throws. The fixture stays **typed** `ElementInteractions` for compatibility. |
+| `contextStore` | `ContextStore` | `ContextStore` |
+| `page`, `context` | Playwright's | Throw `PlatformNotSupportedError('page' \| 'context', <platform>)`; no browser starts |
+| `driver` | Throws `PlatformNotSupportedError('driver', 'web')` | The worker's `WebdriverIO.Browser` session |
+
+`steps.platform` tells a test which platform it runs on.
+
+### Reset policy
+
+One WebdriverIO session per Playwright worker, opened by the first test that needs it and closed at worker teardown (closing is time-boxed and best-effort: a dead device cannot stall the teardown or hide a test's own error).
+
+* `reset: 'relaunch'` (default) — before **every** test, the first one included, the app under test is terminated and activated again. It needs the app id from the capabilities file; without one the run fails before a session opens, naming the key to add.
+* `reset: 'none'` — the app is left as the previous test left it.
+
+Data reset (`appium:noReset`, `appium:fullReset`) is a capability and stays in the file.
+
+### Failure evidence
+
+A test that does not end as expected (the same trigger as the web failure screenshot: `status !== expectedStatus`) gets two attachments:
+
+| Name | Content type | Content |
+|---|---|---|
+| `failure-screenshot` | `image/png` | The device screenshot (skipped with `screenshotOnFailure: false`) |
+| `page-source` | `text/xml` | The UI hierarchy of the screen at the failure |
+
+Each is collected with a 10 s limit and is best-effort: when the device cannot answer, the attachment is skipped and the test's own failure is reported unchanged.
+
+### Page repository per platform
+
+One file may hold the same page name once per platform. A page without `platform` is a `web` page. Use the same element names on every platform so the spec is identical:
+
+```json
+{ "pages": [
+  { "name": "LoginPage", "platform": "web",     "elements": [ { "elementName": "submit", "selector": { "css": "button[type=submit]" } } ] },
+  { "name": "LoginPage", "platform": "android", "elements": [ { "elementName": "submit", "selector": { "accessibility id": "login-submit" } } ] },
+  { "name": "LoginPage", "platform": "ios",     "elements": [ { "elementName": "submit", "selector": { "accessibility id": "login-submit" } } ] }
+] }
+```
+
+The fixture's `repo` uses the page block of the active platform; a page that has no block for it throws `Page "<name>" has no entry for platform "<platform>". Available: <platforms>.` Platform selector keys are `accessibility id`, `id` (resource-id on Android, `name` on iOS, never CSS), `xpath`, `class name`, `uiautomator`, `predicate`, `class chain`, `text`, and the enhanced `role` + `name` (translated by element-repository into a UiSelector on Android and a predicate string on iOS). The flags `list`, `provisional` and `fallback` keep their meaning. Preferred order: accessibility id, then id (Android) / predicate (iOS), then class chain / uiautomator, then text, and xpath last.
+
+### Which steps run where
+
+Shared steps keep their names and `(elementName, pageName, ...)` argument order on every platform. A step that a platform cannot honour throws `PlatformNotSupportedError(<step>, <platform>)` before anything is sent; nothing warns and continues.
+
+| Kind | Steps | `web` | `android` / `ios` |
+|---|---|---|---|
+| **Shared** | `on`, `click`, `clickRandom`, `clickIfPresent`, `doubleClick`, `check`, `uncheck`, `scrollIntoView`, `fill`, `typeSequentially`, `clearInput`, `dragAndDrop`, `dragAndDropListedElement`, `getText`, `getAttribute`, `getCount`, `getInputValue`, `getBoundingBox`, `getAll`, `verifyPresence`, `verifyAllPresent`, `isPresent`, `isVisible`, `verifyAbsence`, `verifyText`, `verifyTextContains`, `verifyCount`, `verifyState`, `verifyAttribute`, `verifyInputValue`, `expect`, `verifyOrder`, `verifyListOrder`, `clickListedElement`, `verifyListedElement`, `getListedElementData`, `waitForState`, `waitAndClick`, `clickNth`, `fillForm`, `screenshot` | ✅ | ✅ (notes below) |
+| **Non-UI** | `pace`, `repeat`, `retryUntil`, `apiGet` … `verifyApiHeader`, `sql*` / `verifySql*`, `sendEmail` / `receiveEmail` / `receiveAllEmails` / `cleanEmails` / `markEmail`, `verifyRequestStatus` / `verifyRequestHeader` / `verifyRequestOk` | ✅ | ✅ |
+| **Web-only** | URL, history and tabs (`navigateTo`, `getUrl`, `getCurrentPath`, `waitForUrl`, `refresh`, `backOrForward`, `setViewport`, `switchToNewTab`, `forPage`, `closeTab`, `getTabCount`, `verifyTabCount`, `verifyUrlContains`); pointer, keyboard and form controls (`rightClick`, `hover`, `uploadFile`, `dropFiles`, `selectDropdown`, `selectMultiple`, `setSliderValue`, `pressKey`, `pressKeys`, `dispatchEvent`); HTML, CSS, page text, window and scripts (`getHtml`, `getPageHtml`, `getPageText`, `getCssProperty`, `getWindowProperty`, `setWindowProperty`, `evaluateScript`, `verifyImages`, `verifyHtml*`, `verifyPageHtml*`, `verifyCssProperty`, `verifyWindowProperty`, `verifyPageContainsText`, `verifyPageNotContainsText`, `verifyPageTitle`); storage (`*LocalStorage*`, `*SessionStorage*`); browser-session requests and network (`requestGet` … `requestHead`, `waitForNetworkIdle`, `waitForLoadState`, `waitForResponse`, `expectNoRequest`); `verifyVisualMatch` | ✅ | ❌ `PlatformNotSupportedError` |
+| **Element gestures** | `swipe`, `scrollUntilFound`, `longPress` | ✅ mouse gestures (the element primitive) | ✅ |
+| | `pinch`, `zoom` | ❌ `PlatformNotSupportedError`, before the element is resolved | ✅ |
+| **Platform-only** | App (`launchApp`, `activateApp`, `terminateApp`, `backgroundApp`, `resetApp`, `installApp`, `removeApp`, `openDeepLink`), screen gestures (`swipeScreen`, `tapAt`), device (`hideKeyboard`, `setOrientation`, `acceptAlert`, `dismissAlert`, `setPermission`), contexts (`getContexts`, `switchContext`), device assertions (`verifyAppInForeground`, `verifyOrientation`, `verifyKeyboardShown`, `verifyContext`), `getPageSource` | ❌ `PlatformNotSupportedError` | ✅ |
+| | `pressBack` | ❌ | ✅ android; ❌ ios (iOS has no system back: tap the on-screen back button) |
+| **`steps.on(...)` chain** | `findByRole`, `findByText`, `findBySelector`, `hover`, `rightClick`, `selectDropdown`, `selectMultiple`, `uploadFile`, `dropFiles`, `setSliderValue`, `getHtml`, `getCssProperty`, `verifyHtml*`, `verifyCssProperty`, `verifyImages`; matcher fields `html`, `outerHtml`, `css` | ✅ | ❌ `PlatformNotSupportedError` |
+
+On `macos` and `windows` no step runs: the session start throws `Platform "<p>" is declared but not implemented yet.`
+
+Notes for the shared steps on a device:
+
+* **Verifications poll.** Every `verify*` step and every `steps.expect(...)` / `steps.on(...)` matcher retries until its timeout on every platform.
+* **`verifyAbsence`** passes when the element is absent or not displayed, polling until the timeout; `"list": true` entries pass when no item of the list is displayed.
+* **`"list": true` entries and listed-element steps** work on platform pages. `child` and `withDescendant` are resolved inside the matched item; prefer the `{ pageName, elementName }` form. A string `child` is a platform selector as WebdriverIO accepts it (`~id`, an xpath, `-ios predicate string:...`), not CSS.
+* **`isVisible` / `ifVisible` probes and gates** re-resolve the entry within their budget, as on web.
+* **`fillForm`** refuses dropdown fields on a device (`selectDropdown` is web-only).
+* **`waitForState` / `verifyState`:** `focused` is supported on Android and throws `PlatformNotSupportedError("state('focused')", 'ios')` on iOS (XCUITest exposes no focus attribute).
+* **`click` on a device** taps the element once it is visible. `{ force: true }` taps the centre of its bounds with a positional tap instead of the element click command; `withoutScrolling` is accepted and changes nothing (a device tap never scrolls first).
+
+### Platform steps
+
+All return `Promise<void>` unless noted. `appId` defaults to the app under test from the capabilities file. `Direction` is `'up' | 'down' | 'left' | 'right'`; `Orientation` is `'portrait' | 'landscape'`.
+
+```ts
+// App
+steps.launchApp(appId?: string)
+steps.activateApp(appId?: string)
+steps.terminateApp(appId?: string)
+steps.backgroundApp(seconds: number)
+steps.resetApp()                                   // terminate + activate the app under test
+steps.installApp(appPath: string)                  // .apk / .app / .ipa path or URL the Appium server can reach
+steps.removeApp(appId: string)
+steps.openDeepLink(url: string, appId?: string)
+
+// Gestures (element-level ones delegate to the element's primitive)
+steps.swipe(elementName, pageName, direction: Direction, options?: { distance?: number })
+steps.swipeScreen(direction: Direction, options?: { distance?: number })
+steps.scrollIntoView(elementName, pageName, options?: StepOptions & { direction?: Direction })
+steps.scrollUntilFound(elementName, pageName, options?: { direction?: Direction; timeout?: number })
+steps.longPress(elementName, pageName, options?: { duration?: number })   // ms, default 1000
+steps.tapAt(x: number, y: number)                  // screen coordinates, px
+steps.pinch(elementName, pageName, options?: { scale?: number })          // (0, 1), default 0.5
+steps.zoom(elementName, pageName, options?: { scale?: number })           // > 1, default 2
+
+// Device
+steps.pressBack()                                  // android only
+steps.hideKeyboard()
+steps.setOrientation(orientation: Orientation)
+steps.acceptAlert()
+steps.dismissAlert()
+steps.setPermission(permission: string, state: 'grant' | 'deny' | 'reset')  // android 'reset' revokes
+
+// Contexts
+steps.getContexts(): Promise<string[]>
+steps.switchContext(name: string)                  // 'NATIVE_APP' or a 'WEBVIEW_*' name
+
+// Assertions (polling until the step timeout)
+steps.verifyAppInForeground(appId?: string)
+steps.verifyOrientation(orientation: Orientation)
+steps.verifyKeyboardShown(shown?: boolean)         // default true
+steps.verifyContext(name: string)
+
+// Extraction
+steps.getPageSource(): Promise<string>             // the screen's UI hierarchy as XML
+```
+
+**Swipe directions.** Two different meanings, on purpose:
+
+* `swipe` and `swipeScreen` take the **finger's** direction: `swipe(..., 'up')` moves the finger up, which reveals content further **down** the list.
+* `scrollIntoView({ direction })` and `scrollUntilFound({ direction })` take where the **target** lies relative to the view: `direction: 'down'` (the default for `scrollUntilFound`) looks further down the list.
+
+**Timeouts.**
+
+* Verifications and device assertions poll until the step timeout (the fixture's `timeout`, default 30000 ms).
+* `scrollUntilFound` re-reads the element after every swipe; its `timeout` bounds when a new swipe may start, and an in-flight swipe always finishes, so the step may run up to one swipe longer than `timeout`. Element-level `scrollIntoView` on a device is bounded by element-repository's swipe budget (20 swipes).
+* The first gesture of a fresh iOS session can take tens of seconds (XCUITest warms up); size the test timeout for it.
+
+### Without the fixture
+
+`Steps` also has a factory form, for a session you manage yourself:
+
+```ts
+import { AppiumFactory, Steps } from '@civitas-cerebrum/element-interactions';
+import { ElementRepository } from '@civitas-cerebrum/element-repository';
+
+const repo = new ElementRepository(driver, 'tests/e2e/page-repository.json', { platform: 'ios' });
+const steps = new Steps(new AppiumFactory(driver, 'ios', { appId: 'com.example.app' }), repo);
+```
+
+`new Steps(repo, options)` keeps building web Steps on the repository's Playwright page, as before.
+
+### CI
+
+`.github/workflows/platform.yml` runs the cross-platform spec (`tests/cross-platform`) on an Android emulator and an iOS simulator against the built-in Settings app, read-only. It is **manual only** (`workflow_dispatch`): it does not run on push or pull request until a maintainer changes the trigger, and it has not been run yet, so expect to adjust the emulator / simulator setup on its first run.
+
+### What is verified
+
+The library is unit-tested on both platforms with mock drivers, and the cross-platform spec runs on web in the default suite.
+
+**Verified on a real iPhone (iOS Settings app, read-only):**
+
+| Area | Status |
+|---|---|
+| Worker-scoped session from a capabilities file; app relaunch before every test | _to be verified_ |
+| `verifyAppInForeground`, `verifyCount`, `verifyText`, `verifyTextContains` (polling) | _to be verified_ |
+| `scrollIntoView` with `direction`, `getBoundingBox` | _to be verified_ |
+| `swipeScreen` up and down | _to be verified_ |
+| `scrollUntilFound` down and back up | _to be verified_ |
+| `click` into a screen and back through the on-screen back button; `verifyPresence`, `verifyAbsence` | _to be verified_ |
+| `getPageSource` | _to be verified_ |
+| A web-only step and `pressBack` throw `PlatformNotSupportedError` on iOS | _to be verified_ |
+| The cross-platform spec (`tests/cross-platform`) on iOS | _to be verified_ |
+
+**Not yet verified on a device:**
+
+* **Android: everything.** Android runs only against mock drivers so far; the Android page entries of the cross-platform spec are provisional.
+* iOS: app install / remove, deep links, `longPress`, `tapAt`, `pinch` / `zoom`, `hideKeyboard`, `setOrientation`, alerts, contexts on a hybrid app, `fill` on a text field, and `setPermission` (iOS `mobile: setPermission` may work on simulators only).
+* The CI workflow (emulator and simulator).
+* `macos` and `windows` are not implemented.
+
+---
+
 ## 🛠️ API Reference: `Steps`
 
 Every method below automatically fetches the Playwright `Locator` using your `pageName` and `elementName` keys from the repository.
@@ -537,7 +829,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 * **`check(elementName, pageName)`** — Checks a checkbox or radio button. No-op if already checked.
 * **`uncheck(elementName, pageName)`** — Unchecks a checkbox. No-op if already unchecked.
 * **`hover(elementName, pageName)`** — Hovers over an element to trigger dropdowns or tooltips.
-* **`scrollIntoView(elementName, pageName)`** — Smoothly scrolls an element into the viewport.
+* **`scrollIntoView(elementName, pageName, options?: StepOptions & { direction?: Direction })`** — Smoothly scrolls an element into the viewport. On a device, `direction` says where the element lies relative to the view (it swipes towards it); see [Platform steps](#platform-steps).
 * **`dragAndDrop(elementName, pageName, options: DragAndDropOptions)`** — Drags an element to a target element (`{ target: Locator | Element }`), by coordinate offset (`{ xOffset, yOffset }`), or both.
 * **`dragAndDropListedElement(elementName, pageName, elementText, options: DragAndDropOptions)`** — Finds a specific element by its text from a list, then drags it to a destination.
 * **`fill(elementName, pageName, text: string)`** — Clears and fills an input field with the provided text.

@@ -1,5 +1,123 @@
 # Changelog
 
+## 0.4.0 — 2026-11-23
+
+Platform testing: the same `Steps` API on native Android and iOS apps through
+Appium and WebdriverIO. Web behaviour is unchanged except for the items under
+**Changed / Breaking**. See the README section "Platform testing (Android, iOS)".
+
+### Added
+
+- **Platform testing.** `baseFixture(test, repo, { platform, session })`:
+  `platform` is `'web' | 'android' | 'ios' | 'macos' | 'windows'` (default
+  `PLATFORM`, else `web`; an empty value counts as unset). On `android` / `ios`
+  the fixture opens one WebdriverIO session per worker from a capabilities
+  file, relaunches the app under test before every test (`session.reset`,
+  default `'relaunch'`; `'none'` skips it), calls `session.onSessionStarted`
+  once, and closes the session at worker teardown (time-boxed, never masking
+  a test error). No browser starts; `page` / `context` throw
+  `PlatformNotSupportedError`. A failed test gets `failure-screenshot`
+  (image/png) and `page-source` (text/xml) attachments, each time-boxed.
+  `macos` / `windows` are declared but not implemented: the session start
+  throws `Platform "<p>" is declared but not implemented yet.`
+- **Environment variables**, the complete list: `PLATFORM`, `CAPABILITIES`,
+  `APPIUM_URL`, `APPIUM_USER`, `APPIUM_KEY`. Empty values count as unset.
+- **Session layer** (`src/session`): `SessionProvider` / `SessionOptions` /
+  `ServerOptions` / `SessionStartContext` types; `AppiumSessionProvider`
+  (dynamic `import('webdriverio')` on first start, WebdriverIO implicit wait 0,
+  capabilities sent as a deep copy of the file); `loadCapabilities` (one flat
+  W3C object per file, `platformName` must match the platform, wrapped files
+  refused, a `browserName` file must set `"wdio:enforceWebDriverClassic": true`);
+  `resolveServer` / `parseServerUrl` (URL with base path or object; credentials
+  from `APPIUM_USER` / `APPIUM_KEY`); `prepareSession`.
+- **Family interfaces**: `IInteractions`, `IVerifications`, `IExtractions`,
+  `INavigation`, `IUtils`, `IGestures`, `IDevice`, `IInteractionFactory`, with
+  the types `Direction`, `Orientation`, `PermissionState`, `VerifiableState`.
+- **Factories**: `PlaywrightFactory(page)` and `AppiumFactory(driver, platform,
+  { timeout, appId })`. `new Steps(factory, repo, options)` is the factory
+  form; `new Steps(repo, options)` keeps building web Steps.
+- **The Appium family** (`AppiumInteractions`, `AppiumVerifications`,
+  `AppiumExtractions`, `AppiumNavigation`, `AppiumUtils`, `AppiumGestures`,
+  `AppiumDevice`) over element-repository's `PlatformElement`, with
+  per-platform strategies (`androidStrategy`, `iosStrategy`, `strategyFor`,
+  `appIdFromCapabilities`). Every verification polls until its timeout. Also
+  `PlaywrightGestures` / `PlaywrightDevice` for the web family, and
+  `PlatformInteractions` (the `interactions` fixture on a device).
+- **Platform steps**: `launchApp`, `activateApp`, `terminateApp`,
+  `backgroundApp`, `resetApp`, `installApp`, `removeApp`, `openDeepLink`;
+  `swipe`, `swipeScreen`, `scrollUntilFound`, `longPress`, `tapAt`, `pinch`,
+  `zoom`, and `scrollIntoView` gains `{ direction }`; `pressBack` (android
+  only), `hideKeyboard`, `setOrientation`, `acceptAlert`, `dismissAlert`,
+  `setPermission`; `getContexts`, `switchContext`; polling
+  `verifyAppInForeground`, `verifyOrientation`, `verifyKeyboardShown`,
+  `verifyContext`; `getPageSource`. `steps.platform` names the active platform.
+- **Platform paths** for `"list": true` entries, `child` / `withDescendant` on
+  listed elements, `verifyAbsence`, `isVisible` / `ifVisible` probes and the
+  matcher tree on device platforms.
+- Re-exported from element-repository: `Platform`, `DriverFamily`, `PLATFORMS`,
+  `isPlatformName`, `familyOf`, `PlatformNotSupportedError` (one class across
+  both packages, so `instanceof` works).
+- **Step classification.** Web-only steps throw
+  `PlatformNotSupportedError(<step>, <platform>)` on a device; platform-only
+  steps throw it on web. Element gestures `swipe` / `longPress` /
+  `scrollUntilFound` work on web through the element's mouse primitive;
+  `pinch` / `zoom` throw on web.
+- **Cross-platform spec** (`tests/cross-platform`): one spec that runs
+  unchanged on web (in the default suite) and on Android / iOS
+  (`playwright.platform.config.ts`), plus example capabilities files in
+  `tests/capabilities/`.
+- **CI workflow** `.github/workflows/platform.yml`: the cross-platform spec on
+  an Android emulator and an iOS simulator. Manual only (`workflow_dispatch`);
+  not yet run.
+
+### Changed / Breaking
+
+- Depends on `@civitas-cerebrum/element-repository` **`^0.4.0`** (was `^0.3.4`).
+- **Deep imports moved.** The interaction classes moved from
+  `dist/interactions/*` to `dist/playwright/*`:
+  `interactions/Interaction` → `playwright/PlaywrightInteractions`,
+  `interactions/Verification` → `playwright/PlaywrightVerifications`,
+  `interactions/Extraction` → `playwright/PlaywrightExtractions`,
+  `interactions/Navigation` → `playwright/PlaywrightNavigation`,
+  `interactions/BrowserRequest` → `playwright/BrowserRequest`,
+  `interactions/facade/ElementInteractions` → `playwright/ElementInteractions`.
+  Deep imports of the old paths break; the package root exports are unchanged
+  (`Interactions`, `Verifications`, `Extractions`, `Navigation`,
+  `ElementInteractions` and `BrowserRequest` keep their names; the first four
+  are also exported as `PlaywrightInteractions`, `PlaywrightVerifications`,
+  `PlaywrightExtractions` and `PlaywrightNavigation`).
+- **Parameter types widened to `Element`.** The interaction, verification,
+  extraction and navigation methods take element-repository's `Element`
+  instead of `WebElement`. On web a non-web element is refused with an error;
+  code that passes `WebElement`s compiles unchanged.
+- **Web repository built with `{ platform: 'web' }`.** The web fixture's `repo`
+  now has `web` as its active platform, so a page name resolves to its web
+  block even when the file also holds android / ios blocks. The missing-page
+  error text changed from `ElementRepository: Page '<name>' not found.` to
+  `Page "<name>" has no entry for platform "web". Available: <platforms>.`
+  Tests that match the old text need updating.
+- **`baseFixture` has an explicit return type**, `BaseFixtureTest`, and a new
+  `driver` fixture (the WebdriverIO session on a device; on web requesting it
+  throws `PlatformNotSupportedError('driver', 'web')`).
+- **The published `.d.ts` declares an empty global `WebdriverIO.Browser`
+  interface**, so the typings compile without `webdriverio`; it merges with
+  WebdriverIO's own interface when that is installed. TypeScript users of the
+  Appium API add `import type {} from 'webdriverio'` (or
+  `"types": ["webdriverio"]`) to see the full driver type.
+- The web-only `baseFixture` options (`blockedOrigins`, `mutationInjection`,
+  `interceptionRetry`, `screenshotOnFailure: { fullPage }`) throw on a platform
+  run instead of being ignored.
+
+### Notes
+
+- `webdriverio@^10` is an **optional** peer dependency: install it only for
+  platform runs. It is imported on first use; web users never load it.
+  WebdriverIO 10 requires Node `>=22.23.4 <23 || >=24.22.1 <25 || >=26.12.1`.
+- `@civitas-cerebrum/element-repository` 0.4.0 must be published to npm before
+  this version can be installed.
+- Android is implemented and unit-tested against mock drivers, but not yet
+  verified on a device.
+
 ## 0.3.12 — 2026-11-01
 
 ### Added
