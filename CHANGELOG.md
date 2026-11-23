@@ -140,6 +140,8 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   text.
 - Android is implemented and unit-tested against mock drivers, but not yet
   verified on a device.
+- A read-only subset was verified on a real iPhone (the iOS Settings app); see
+  the "What is verified" table in the README.
 
 ## 0.3.12 — 2026-11-01
 

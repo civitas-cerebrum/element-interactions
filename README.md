@@ -797,6 +797,7 @@ The library is unit-tested on both platforms with mock drivers, and the cross-pl
 * iOS: app install / remove, deep links, `longPress`, `tapAt`, `pinch` / `zoom`, `hideKeyboard`, `setOrientation`, alerts, contexts on a hybrid app, `fill` on a text field, and `setPermission` (iOS `mobile: setPermission` may work on simulators only).
 * The CI workflow (emulator and simulator).
 * `macos` and `windows` are not implemented.
+* Any other step not listed in the verified table above.
 
 ---
 

@@ -2,7 +2,7 @@ import { PlatformNotSupportedError } from '../../src';
 import { test, expect, requireSettingsApp } from './fixture';
 
 /**
- * One spec, unchanged on web, Android and iOS (design 5.3 "Tests and CI").
+ * One spec, unchanged on web, Android and iOS.
  * The page and element names are the same on every platform; only the page
  * repository (tests/cross-platform/page-repository.json) holds one block per
  * platform:
