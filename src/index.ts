@@ -45,7 +45,9 @@ export { ElementType, WebElement, PlatformElement, ElementChain, isWeb, isPlatfo
 
 // Test Steps Facade
 export { Steps } from './steps/CommonSteps';
+export type { StepsOptions } from './steps/CommonSteps';
 export { ElementAction } from './steps/ElementAction';
+export type { ElementActionFamily } from './steps/platformGuard';
 
 // Expect Matcher Tree
 export {

@@ -1,6 +1,8 @@
 import { Locator } from '@playwright/test';
 import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
-import { ElementInteractions } from '../playwright/ElementInteractions';
+import type { Platform } from '@civitas-cerebrum/element-repository';
+import { requireWebElement } from '../playwright/requireWebElement';
+import { ElementActionFamily, requireBuiltPath, requireWebPlatform } from './platformGuard';
 import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ScreenshotOptions, IsVisibleOptions } from '../enum/Options';
 import {
     ElementSnapshot,
@@ -99,10 +101,22 @@ export class ElementAction {
         private _repo: ElementRepository,
         private _elementName: string,
         private _pageName: string,
-        private interactions: ElementInteractions,
+        private interactions: ElementActionFamily,
         private timeoutMs?: number,
     ) {
         this._timeout = timeoutMs ?? 30000;
+    }
+
+    /**
+     * The platform this chain acts on: the family's platform (the factory's,
+     * when built by `Steps`), `'web'` for the Playwright `ElementInteractions`
+     * facade.
+     */
+    get platform(): Platform { return this.interactions.platform ?? 'web'; }
+
+    /** Web-only terminal: throws `PlatformNotSupportedError(step, platform)` off the Playwright family. */
+    private requireWeb(step: string): void {
+        requireWebPlatform(step, this.platform);
     }
 
     /** Repository this chain resolves elements against. Readonly — set at construction. */
@@ -224,6 +238,9 @@ export class ElementAction {
      */
     private async shouldProceed(): Promise<boolean> {
         if (!this.conditionalVisible) return true;
+        // Outside the try: on a device platform the gate is not built yet, and
+        // swallowing that would silently skip the action.
+        requireBuiltPath('ifVisible / isVisible gate', this.platform);
         try {
             const element = await this.resolve();
             await element.waitFor({ state: 'visible', timeout: this.visibilityTimeout });
@@ -233,7 +250,7 @@ export class ElementAction {
         }
     }
 
-    private async resolve(): Promise<WebElement> {
+    private async resolve(): Promise<Element> {
         // Scoped chains never resolve via the repository — the stamped scoped
         // name has no repo entry. `narrowScoped` honours `visibleStrategy`, so
         // the check order here does not lose `.visible()` on scoped chains.
@@ -243,18 +260,21 @@ export class ElementAction {
         if (this.visibleStrategy) {
             // strict: true → throws when no visible match exists, matching the
             // throw-on-miss contract of every other strategy selector.
-            return (await this.repo.getVisible(this.elementName, this.pageName, true)) as WebElement;
+            const visible = await this.repo.getVisible(this.elementName, this.pageName, true);
+            // Unreachable with `strict: true` (it throws first); kept so the type is honest.
+            if (!visible) throw new Error(`No visible match for "${this.elementName}" in "${this.pageName}".`);
+            return visible;
         }
-        return (await this.repo.get(this.elementName, this.pageName, this.resolutionOptions)) as WebElement;
+        return await this.repo.get(this.elementName, this.pageName, this.resolutionOptions);
     }
 
-    private async resolveAll(): Promise<WebElement> {
+    private async resolveAll(): Promise<Element> {
         if (this.scopedChild) {
             // Collection-level: ignore any .first()/.nth() narrowing, return the
             // whole child set so count / order / image terminals see every match.
             return new WebElement(await this.scopedChild());
         }
-        return (await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL })) as WebElement;
+        return await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL });
     }
 
     /**
@@ -290,12 +310,12 @@ export class ElementAction {
      *   Defaults to the chain's visibility timeout. Clamped to at least 1ms,
      *   because a Playwright timeout of 0 means "wait forever".
      */
-    async probeTarget(timeout?: number): Promise<WebElement> {
+    async probeTarget(timeout?: number): Promise<Element> {
         if (this.scopedChild) {
             return new WebElement(this.narrowScoped(await this.scopedChild()));
         }
         const budget = Math.max(1, timeout ?? this.visibilityTimeout);
-        return (await this.repo.get(this.elementName, this.pageName, { ...this.resolutionOptions, timeout: budget })) as WebElement;
+        return await this.repo.get(this.elementName, this.pageName, { ...this.resolutionOptions, timeout: budget });
     }
 
     /**
@@ -349,6 +369,7 @@ export class ElementAction {
         const scoped = new ElementAction(this.repo, scopedName, this.pageName, this.interactions, this._timeout);
         scoped.scopedChild = async () => {
             const parent = await this.resolve();
+            requireWebElement('ElementAction.findBy*', parent);
             return childFactory(parent.locator);
         };
         return scoped;
@@ -369,6 +390,7 @@ export class ElementAction {
      * await steps.on('table', 'TablePage').findByRole('cell', { name: 'Alice Martin' }).getText();
      */
     findByRole(role: Parameters<Locator['getByRole']>[0], options?: { name?: string | RegExp; exact?: boolean }): ElementAction {
+        this.requireWeb('findByRole');
         const label = options?.name !== undefined ? `findByRole(${role}, name=${String(options.name)})` : `findByRole(${role})`;
         return this.spawnScoped(label, parent => parent.getByRole(role, options));
     }
@@ -379,6 +401,7 @@ export class ElementAction {
      * await steps.on('cartPanel', 'CartPage').findByText('Your cart is empty').verifyState('visible');
      */
     findByText(text: string | RegExp, options?: { exact?: boolean }): ElementAction {
+        this.requireWeb('findByText');
         return this.spawnScoped(`findByText(${String(text)})`, parent => parent.getByText(text, options));
     }
 
@@ -388,6 +411,7 @@ export class ElementAction {
      * await steps.on('panel', 'Page').findBySelector("input[name='email']").fill('a@b.com');
      */
     findBySelector(css: string): ElementAction {
+        this.requireWeb('findBySelector');
         return this.spawnScoped(`findBySelector(${css})`, parent => parent.locator(css));
     }
 
@@ -423,6 +447,7 @@ export class ElementAction {
 
     /** Hover over the resolved element. Skips silently if `ifVisible()` was set and element is hidden. */
     async hover(): Promise<void> {
+        this.requireWeb('hover');
         if (!await this.shouldProceed()) return;
         const element = await this.resolve();
         await element.action(this._timeout).hover();
@@ -444,6 +469,7 @@ export class ElementAction {
 
     /** Select a dropdown option. */
     async selectDropdown(options?: DropdownSelectOptions): Promise<string> {
+        this.requireWeb('selectDropdown');
         const element = await this.resolve();
         return await this.interactions.interact.selectDropdown(element, {
             ...options,
@@ -473,6 +499,7 @@ export class ElementAction {
 
     /** Right-click the resolved element. */
     async rightClick(): Promise<void> {
+        this.requireWeb('rightClick');
         const element = await this.resolve();
         await this.interactions.interact.rightClick(element, { timeout: this._timeout });
     }
@@ -485,12 +512,14 @@ export class ElementAction {
 
     /** Upload one or more files to a file input. Pass a string array for multi-file inputs. */
     async uploadFile(filePath: string | string[]): Promise<void> {
+        this.requireWeb('uploadFile');
         const element = await this.resolve();
         await this.interactions.interact.uploadFile(element, filePath, { timeout: this._timeout });
     }
 
     /** Simulate dropping files onto a drop-zone element via DataTransfer drag events. */
     async dropFiles(filenames: string[], mimeType?: string): Promise<void> {
+        this.requireWeb('dropFiles');
         const element = await this.resolve();
         await this.interactions.interact.dropFiles(element, filenames, { mimeType, timeout: this._timeout });
     }
@@ -512,12 +541,14 @@ export class ElementAction {
 
     /** Set slider value. */
     async setSliderValue(value: number): Promise<void> {
+        this.requireWeb('setSliderValue');
         const element = await this.resolve();
         await this.interactions.interact.setSliderValue(element, value, { timeout: this._timeout });
     }
 
     /** Select multiple options from a multi-select. */
     async selectMultiple(values: string[]): Promise<string[]> {
+        this.requireWeb('selectMultiple');
         const element = await this.resolve();
         return await this.interactions.interact.selectMultiple(element, values, { timeout: this._timeout });
     }
@@ -559,7 +590,9 @@ export class ElementAction {
 
     /** List presence: at least one match of the collection becomes visible within the chain timeout. */
     private async verifyListPresence(): Promise<void> {
+        requireBuiltPath('verifyPresence on a "list": true entry', this.platform);
         const all = await this.resolveAll();
+        requireWebElement('ElementAction.verifyPresence', all);
         try {
             await all.locator.filter({ visible: true }).first().waitFor({ state: 'visible', timeout: this._timeout });
         } catch {
@@ -602,6 +635,7 @@ export class ElementAction {
      * for it: asserting "child absent" requires the parent to exist.
      */
     async verifyAbsence(): Promise<void> {
+        requireBuiltPath('verifyAbsence', this.platform);
         if (this.scopedChild) {
             await this.interactions.verify.absence(
                 new WebElement(this.narrowScoped(await this.scopedChild())),
@@ -631,10 +665,12 @@ export class ElementAction {
             // back they were two walks over two different moments in the page's
             // life, so a perfectly ordinary single-match primary that attached
             // between them made the walks land on different nodes.
-            const [resolved, all] = (await Promise.all([
+            const [resolved, all] = await Promise.all([
                 this.repo.get(this.elementName, this.pageName, { timeout: slice }),
                 this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL, timeout: slice }),
-            ])) as [WebElement, WebElement];
+            ]);
+            requireWebElement('ElementAction.verifyAbsence', resolved);
+            requireWebElement('ElementAction.verifyAbsence', all);
             element = all;
             const handle = await resolved.locator.elementHandle({ timeout: slice }).catch(() => null);
             if (!handle) break;
@@ -790,6 +826,7 @@ export class ElementAction {
      * `SelectionStrategy.ALL` regardless of any strategy selector.
      */
     async verifyImages(scroll: boolean = true, options?: { verifyDecoded?: boolean }): Promise<void> {
+        this.requireWeb('verifyImages');
         const element = await this.resolveAll();
         await this.interactions.verify.images(element, scroll, options);
     }
@@ -802,6 +839,7 @@ export class ElementAction {
 
     /** Assert CSS property value. Delegates to the matcher tree's `.css(property).toBe(value)`. */
     async verifyCssProperty(property: string, expectedValue: string): Promise<void> {
+        this.requireWeb('verifyCssProperty');
         await this.expectBuilder().css(property).toBe(expectedValue);
     }
 
@@ -862,6 +900,7 @@ export class ElementAction {
 
     /** Get computed CSS property value. */
     async getCssProperty(property: string): Promise<string> {
+        this.requireWeb('getCssProperty');
         const element = await this.resolve();
         return await this.interactions.extract.getCssProperty(element, property);
     }
@@ -871,22 +910,26 @@ export class ElementAction {
      * pass `{ outer: true }` to get `outerHTML` (the element tag + subtree).
      */
     async getHtml(options?: { outer?: boolean }): Promise<string> {
+        this.requireWeb('getHtml');
         const element = await this.resolve();
         return await this.interactions.extract.getHtml(element, options);
     }
 
     /** Assert the element's HTML equals the expected string exactly. Delegates to the matcher tree's `.html.toBe(...)` (or `.outerHtml.toBe(...)` when `outer`). */
     async verifyHtml(expected: string, options?: { outer?: boolean }): Promise<void> {
+        this.requireWeb('verifyHtml');
         await (options?.outer ? this.expectBuilder().outerHtml : this.expectBuilder().html).toBe(expected);
     }
 
     /** Assert the element's HTML contains a substring. Delegates to the matcher tree's `.html.toContain(...)`. */
     async verifyHtmlContains(substring: string, options?: { outer?: boolean }): Promise<void> {
+        this.requireWeb('verifyHtmlContains');
         await (options?.outer ? this.expectBuilder().outerHtml : this.expectBuilder().html).toContain(substring);
     }
 
     /** Assert the element's HTML matches a regex. Delegates to the matcher tree's `.html.toMatch(...)`. */
     async verifyHtmlMatches(regex: RegExp, options?: { outer?: boolean }): Promise<void> {
+        this.requireWeb('verifyHtmlMatches');
         await (options?.outer ? this.expectBuilder().outerHtml : this.expectBuilder().html).toMatch(regex);
     }
 
@@ -906,6 +949,7 @@ export class ElementAction {
      * Snapshot fields are all primitives — no async access needed in predicates.
      */
     async captureSnapshot(): Promise<ElementSnapshot> {
+        requireBuiltPath('satisfy() predicate snapshot', this.platform);
         const element = await this.resolve();
         const first = element.first();
         // Count is always the un-narrowed match count so count-based matchers
@@ -914,7 +958,8 @@ export class ElementAction {
         // (nth / byText / byAttribute) still scope to the chosen element.
         const allElement = await this.resolveAll();
         // getAllAttributes is web-only (DOM iteration); narrow for that one read.
-        const firstAsWeb = first as WebElement;
+        const firstAsWeb = first;
+        requireWebElement('ElementAction.captureSnapshot', firstAsWeb);
 
         const [count, rawText, value, attributes, visible, enabled] = await Promise.all([
             allElement.count().catch(() => 0),
@@ -940,6 +985,7 @@ export class ElementAction {
             resolveAll: () => this.resolveAll(),
             captureSnapshot: () => this.captureSnapshot(),
             verify: this.interactions.verify,
+            platform: this.platform,
         };
     }
 

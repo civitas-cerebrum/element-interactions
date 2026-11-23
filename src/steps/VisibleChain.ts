@@ -1,6 +1,7 @@
 import { ElementAction } from './ElementAction';
 import { IsVisibleOptions, ClickOptions, DropdownSelectOptions, DragAndDropOptions } from '../enum/Options';
 import { createLogger } from '../logger/Logger';
+import { requireBuiltPath } from './platformGuard';
 
 const log = createLogger('visible');
 
@@ -106,6 +107,9 @@ export class VisibleChain implements PromiseLike<boolean> {
      * walk — a correct answer slightly late, rather than a wrong answer on time.
      */
     private async probe(): Promise<boolean> {
+        // The probe re-resolution has no device-platform path yet. Throw rather
+        // than answer `false`, which would make every gate silently skip.
+        requireBuiltPath('isVisible probe', this.action.platform);
         const { elementName: el, pageName: pg } = this.action;
         const timeout = this.options.timeout ?? 2000;
         const containsText = this.options.containsText;
