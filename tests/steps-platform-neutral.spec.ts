@@ -12,6 +12,10 @@ import {
 } from '../src/index';
 import type { IInteractionFactory } from '../src/index';
 import { PlatformPathPendingError } from '../src/steps/platformGuard';
+import { ElementAction } from '../src/steps/ElementAction';
+import { ExpectBuilder } from '../src/steps/ExpectMatchers';
+import { AppiumFactory } from '../src/appium';
+import { mockDriver, mockElement } from './appium/mocks';
 
 /**
  * Pure unit tests (no browser) for the platform-neutral Steps layer: Steps
@@ -84,6 +88,64 @@ const NOT_STEPS = [
     'resolveApiArgs', 'resolveApiArgsWithBody', 'getDbClient', 'resolveSqlArgs', 'bindBuilder',
 ];
 
+// ─── ElementAction (steps.on) and matcher-tree classification ────────────────
+
+/** Web-only `ElementAction` terminals, each with a call; they throw PlatformNotSupportedError(<name>, platform). */
+const WEB_ONLY_TERMINALS: Record<string, (action: ElementAction) => unknown> = {
+    hover: a => a.hover(),
+    rightClick: a => a.rightClick(),
+    selectDropdown: a => a.selectDropdown(),
+    uploadFile: a => a.uploadFile('f.txt'),
+    dropFiles: a => a.dropFiles(['f.txt']),
+    setSliderValue: a => a.setSliderValue(1),
+    selectMultiple: a => a.selectMultiple(['a']),
+    getCssProperty: a => a.getCssProperty('color'),
+    getHtml: a => a.getHtml(),
+    verifyHtml: a => a.verifyHtml('<b/>'),
+    verifyHtmlContains: a => a.verifyHtmlContains('b'),
+    verifyHtmlMatches: a => a.verifyHtmlMatches(/b/),
+    verifyCssProperty: a => a.verifyCssProperty('color', 'red'),
+    verifyImages: a => a.verifyImages(),
+    findByRole: a => a.findByRole('button'),
+    findByText: a => a.findByText('x'),
+    findBySelector: a => a.findBySelector('.x'),
+    // matcher-tree fields (refused when the chain is built)
+    html: a => a.html,
+    outerHtml: a => a.outerHtml,
+    css: a => a.css('color'),
+};
+
+/** Shared `ElementAction` terminals and matcher-tree fields: never refused for the platform. */
+const SHARED_TERMINALS = [
+    'click', 'clickIfPresent', 'fill', 'scrollIntoView', 'check', 'uncheck', 'doubleClick', 'typeSequentially',
+    'dragAndDrop', 'clearInput', 'verifyPresence', 'verifyAbsence', 'verifyText', 'verifyTextContains', 'verifyCount',
+    'isPresent', 'isVisible', 'verifyAttribute', 'verifyInputValue', 'verifyState', 'verifyOrder', 'verifyListOrder',
+    'getText', 'getAttribute', 'getCount', 'getAllTexts', 'getInputValue', 'screenshot', 'waitForState',
+    'text', 'value', 'count', 'visible', 'enabled', 'attributes', 'not', 'satisfy',
+];
+
+/** `ElementAction` members that are not terminals: chain modifiers, accessors and helpers. */
+const ACTION_CHAIN = [
+    'constructor', 'platform', 'repo', 'elementName', 'pageName', 'timeout', 'first', 'random', 'nth', 'byText',
+    'byAttribute', 'ifVisible', 'probeTarget', 'captureSnapshot', 'buildExpectContext',
+    'requireWeb', 'selectVisible', 'shouldProceed', 'resolve', 'resolveAll', 'narrowScoped', 'spawnScoped',
+    'isWholeListEntry', 'verifyListPresence', 'absenceAttachSlice', 'expectBuilder',
+];
+
+/** Matcher-tree (`ExpectBuilder`) fields that are web-only, and the shared ones. */
+const WEB_ONLY_FIELDS = ['html', 'outerHtml', 'css'];
+const SHARED_FIELDS = ['text', 'value', 'count', 'visible', 'enabled', 'attributes', 'satisfy', 'not'];
+/** `ExpectBuilder` members that are not fields: chain plumbing. */
+const BUILDER_PLUMBING = ['constructor', 'timeout', '_setCtxTimeout', 'throws', 'enqueue', 'then', 'consumeNot', 'flush', 'requireWeb'];
+
+function expectComplete(proto: object, groups: Record<string, readonly string[]>, what: string) {
+    const all = Object.values(groups).flat();
+    expect(new Set(all).size, `${what}: a name is classified twice`).toBe(all.length);
+    const names = Object.getOwnPropertyNames(proto);
+    expect(names.filter(n => !all.includes(n)), `${what}: classify every new member (${Object.keys(groups).join(' / ')})`).toEqual([]);
+    expect(all.filter(n => !names.includes(n)), `${what}: classified names that do not exist`).toEqual([]);
+}
+
 // ─── Stubs ───────────────────────────────────────────────────────────────────
 
 type Call = [string, string, ...unknown[]];
@@ -116,16 +178,20 @@ const RETURNS: Record<string, unknown> = {
     'extract.getBoundingBox': { x: 0, y: 0, width: 1, height: 1 },
     'extract.screenshot': Buffer.from(''),
     'utils.waitForState': true,
-    'utils.getTimeout': 30000,
     'utils.repeat': [],
     'interact.click': true,
 };
+
+/** The timeout every recording factory reports through its utils. */
+const FACTORY_TIMEOUT = 300;
 
 /** One family member: records every call as `[member, method, ...args]`. */
 function recordingMember(member: string, calls: Call[], listed: Element): object {
     return new Proxy({}, {
         get(_target, prop) {
             if (typeof prop !== 'string' || prop === 'then') return undefined;
+            // The factory's timeout, read synchronously by the Steps constructor.
+            if (member === 'utils' && prop === 'getTimeout') return () => FACTORY_TIMEOUT;
             return (...args: unknown[]) => {
                 calls.push([member, prop, ...args]);
                 if (member === 'interact' && prop === 'getListedElement') return Promise.resolve(listed);
@@ -173,7 +239,8 @@ function iosSteps() {
     const listed = stubElement('listed', calls);
     const factory = recordingFactory('ios', calls, listed);
     const repo = stubRepo(calls, element);
-    const steps = new Steps(factory, repo, { timeout: 300 });
+    const steps = new Steps(factory, repo, { timeout: FACTORY_TIMEOUT });
+    calls.length = 0; // the constructor builds the members; only step calls are asserted
     return { steps, calls, element, listed, factory, repo };
 }
 
@@ -210,6 +277,25 @@ test.describe('Step classification', () => {
         const stale = all.filter(n => !proto.includes(n));
         expect(stale, 'classified names that are not on Steps').toEqual([]);
     });
+
+    test('every ElementAction prototype member is classified exactly once', () => {
+        expectComplete(ElementAction.prototype, {
+            shared: SHARED_TERMINALS,
+            'web-only': Object.keys(WEB_ONLY_TERMINALS),
+            chain: ACTION_CHAIN,
+        }, 'ElementAction');
+    });
+
+    test('every matcher-tree (ExpectBuilder) member is classified exactly once', () => {
+        expectComplete(ExpectBuilder.prototype, {
+            shared: SHARED_FIELDS,
+            'web-only': WEB_ONLY_FIELDS,
+            plumbing: BUILDER_PLUMBING,
+        }, 'ExpectBuilder');
+        // The ElementAction shortcuts to the matcher tree are classified the same way.
+        for (const field of WEB_ONLY_FIELDS) expect(Object.keys(WEB_ONLY_TERMINALS)).toContain(field);
+        for (const field of SHARED_FIELDS) expect(SHARED_TERMINALS).toContain(field);
+    });
 });
 
 // ─── Web-only guard ──────────────────────────────────────────────────────────
@@ -232,32 +318,52 @@ test.describe('Web-only steps off the Playwright family', () => {
         expectNotSupported(await caught(() => steps.hover('el', 'Page')), 'hover', 'android');
     });
 
-    test('web-only fluent terminals on ElementAction throw too', async () => {
+    for (const [name, call] of Object.entries(WEB_ONLY_TERMINALS)) {
+        test(`steps.on().${name} throws PlatformNotSupportedError("${name}", "ios") before resolving`, async () => {
+            const { steps, calls } = iosSteps();
+            expectNotSupported(await caught(() => call(steps.on('el', 'Page'))), name, 'ios');
+            expect(calls).toEqual([]);
+        });
+    }
+
+    for (const name of SHARED_TERMINALS) {
+        test(`steps.on().${name} is not refused for the platform`, async () => {
+            const { steps } = iosSteps();
+            const action = steps.on('el', 'Page');
+            const descriptor = Object.getOwnPropertyDescriptor(ElementAction.prototype, name)!;
+            const error = await caught(async () => {
+                const member = descriptor.get ? descriptor.get.call(action) : descriptor.value.call(action, 'a', 'b');
+                // Fields return a matcher (not run); terminal calls run against the recording family.
+                if (!descriptor.get) await member;
+            });
+            expect(error).not.toBeInstanceOf(PlatformNotSupportedError);
+        });
+    }
+
+    test('matcher-tree html / outerHtml / css are refused by field name before resolving', async () => {
         const { steps, calls } = iosSteps();
-        const action = () => steps.on('el', 'Page');
-        const terminals: Array<[string, () => unknown]> = [
-            ['hover', () => action().hover()],
-            ['rightClick', () => action().rightClick()],
-            ['selectDropdown', () => action().selectDropdown()],
-            ['uploadFile', () => action().uploadFile('f.txt')],
-            ['dropFiles', () => action().dropFiles(['f.txt'])],
-            ['setSliderValue', () => action().setSliderValue(1)],
-            ['selectMultiple', () => action().selectMultiple(['a'])],
-            ['getCssProperty', () => action().getCssProperty('color')],
-            ['getHtml', () => action().getHtml()],
-            ['verifyHtml', () => action().verifyHtml('<b/>')],
-            ['verifyHtmlContains', () => action().verifyHtmlContains('b')],
-            ['verifyHtmlMatches', () => action().verifyHtmlMatches(/b/)],
-            ['verifyCssProperty', () => action().verifyCssProperty('color', 'red')],
-            ['verifyImages', () => action().verifyImages()],
-            ['findByRole', () => action().findByRole('button')],
-            ['findByText', () => action().findByText('x')],
-            ['findBySelector', () => action().findBySelector('.x')],
-        ];
-        for (const [name, call] of terminals) {
-            expectNotSupported(await caught(call), name, 'ios');
-        }
+        expectNotSupported(await caught(() => steps.expect('el', 'Page').html), 'html', 'ios');
+        expectNotSupported(await caught(() => steps.expect('el', 'Page').outerHtml), 'outerHtml', 'ios');
+        expectNotSupported(await caught(() => steps.expect('el', 'Page').css('color')), 'css', 'ios');
+        expectNotSupported(await caught(() => steps.on('el', 'Page').not.html), 'html', 'ios');
+        expectNotSupported(await caught(() => steps.isVisible('el', 'Page').css('color')), 'css', 'ios');
         expect(calls).toEqual([]);
+    });
+
+    test('a custom .throws() message never re-wraps a platform refusal', async () => {
+        const calls: Call[] = [];
+        const factory = recordingFactory('ios', calls, stubElement('l', calls));
+        const refusing = { ...factory, createVerifications: () => ({ text: async () => { throw new PlatformNotSupportedError('text', 'ios'); } }) };
+        const steps = new Steps(refusing as unknown as IInteractionFactory, stubRepo(calls, stubElement('t', calls)));
+        const error = await caught(() => Promise.resolve(steps.expect('el', 'Page').text.toBe('x').throws('custom header')));
+        expectNotSupported(error, 'text', 'ios');
+        expect((error as Error).message).not.toContain('custom header');
+
+        // An assertion failure is still re-headed with the custom message.
+        const failing = { ...factory, createVerifications: () => ({ text: async () => { throw new Error('mismatch'); } }) };
+        const steps2 = new Steps(failing as unknown as IInteractionFactory, stubRepo(calls, stubElement('t', calls)));
+        const error2 = await caught(() => Promise.resolve(steps2.expect('el', 'Page').text.toBe('x').throws('custom header')));
+        expect((error2 as Error).message).toBe('custom header\n  mismatch');
     });
 });
 
@@ -373,14 +479,29 @@ test.describe('Shared steps route to the factory with the neutral Element', () =
 // ─── Non-UI steps stay available ─────────────────────────────────────────────
 
 test.describe('API, SQL and email steps on a device platform', () => {
+    /** Steps that pace through the family utils; every other non-UI step touches no family member at all. */
+    const PACED = ['pace', 'repeat', 'retryUntil'];
+
     for (const name of NON_UI) {
-        test(`${name} is not refused for the platform`, async () => {
+        test(`${name} behaves exactly as on web and touches no UI member`, async () => {
             const { steps, calls } = iosSteps();
             const method = (steps as unknown as Record<string, (...args: unknown[]) => unknown>)[name];
-            // Dummy arguments: the step may fail on them, but never with the platform guard.
+            // Dummy arguments: the step may fail on them, but never with a platform refusal.
             const error = await caught(() => method.call(steps, 'a', 'b', 'c'));
             expect(error).not.toBeInstanceOf(PlatformNotSupportedError);
-            expect(memberCalls(calls, 'interact').length + memberCalls(calls, 'navigate').length).toBe(0);
+            expect(error).not.toBeInstanceOf(PlatformPathPendingError);
+
+            // Nothing resolved from the repository, nothing acted on; only the pacing steps use the utils.
+            const touched = calls.filter(c => !(PACED.includes(name) && c[0] === 'utils'));
+            expect(touched, 'no repository lookup or family member call').toEqual([]);
+
+            // The same call on web Steps ends the same way (same error class and message, or none).
+            const webCalls: Call[] = [];
+            const web = new Steps(stubRepo(webCalls, stubElement('t', webCalls, ElementType.WEB), { url: () => 'about:blank' }));
+            const webMethod = (web as unknown as Record<string, (...args: unknown[]) => unknown>)[name];
+            const webError = await caught(() => webMethod.call(web, 'a', 'b', 'c'));
+            expect(error?.constructor, 'same outcome type as on web').toBe(webError?.constructor);
+            expect((error as Error | undefined)?.message, 'same outcome as on web').toBe((webError as Error | undefined)?.message);
         });
     }
 
@@ -520,5 +641,133 @@ test.describe('Playwright family rejects a non-web element', () => {
         expect((error as Error).message).toContain('Interactions.dragAndDrop needs a web (Playwright) element');
         // The dragged web element was waited on (visible) before the target check; the device element never was.
         expect(calls.filter(c => c[0] === 'element:device')).toEqual([]);
+    });
+});
+
+// ─── The factory form: one timeout, validated arguments ──────────────────────
+
+test.describe('new Steps(factory, repo, options) validates its arguments', () => {
+    const fakePage = { url: () => 'about:blank', isClosed: () => false } as unknown as Page;
+
+    test('a forgotten repository argument throws a clear error', () => {
+        const calls: Call[] = [];
+        const factory = recordingFactory('ios', calls, stubElement('l', calls));
+        expect(() => new Steps(factory, { timeout: 300 } as unknown as ElementRepository))
+            .toThrow(/second argument must be the ElementRepository/);
+        expect(() => new Steps(factory, undefined as unknown as ElementRepository))
+            .toThrow(/second argument must be the ElementRepository/);
+    });
+
+    test('a factory whose family is not its platform\'s family is refused', () => {
+        const calls: Call[] = [];
+        const lying = { ...recordingFactory('ios', calls, stubElement('l', calls)), family: 'playwright' };
+        expect(() => new Steps(lying as IInteractionFactory, stubRepo(calls, stubElement('t', calls))))
+            .toThrow(/family "playwright" for platform "ios".*"appium" family/);
+        const web = { ...recordingFactory('web', calls, stubElement('l', calls)), family: 'appium' };
+        expect(() => new Steps(web as IInteractionFactory, stubRepo(calls, stubElement('t', calls), fakePage)))
+            .toThrow(/family "appium" for platform "web"/);
+    });
+
+    test('the factory timeout is the timeout of every step, chain and matcher', () => {
+        const calls: Call[] = [];
+        const steps = new Steps(recordingFactory('ios', calls, stubElement('l', calls)), stubRepo(calls, stubElement('t', calls)));
+        expect((steps as unknown as { timeout: number }).timeout).toBe(FACTORY_TIMEOUT);
+        expect(steps.on('el', 'Page').buildExpectContext().timeout).toBe(FACTORY_TIMEOUT);
+    });
+
+    test('options.timeout / interceptionRetry that conflict with the factory throw', () => {
+        const calls: Call[] = [];
+        const factory = recordingFactory('ios', calls, stubElement('l', calls));
+        const repo = stubRepo(calls, stubElement('t', calls));
+        expect(() => new Steps(factory, repo, { timeout: 5000 })).toThrow(/options.timeout \(5000ms\) conflicts with the factory's timeout \(300ms\)/);
+        expect(() => new Steps(factory, repo, { timeout: FACTORY_TIMEOUT })).not.toThrow();
+        expect(() => new Steps(factory, repo, { interceptionRetry: false })).toThrow(/"appium" factory has no interception setting/);
+
+        const webRepo = stubRepo(calls, stubElement('t', calls, ElementType.WEB), fakePage);
+        const pw = new PlaywrightFactory(fakePage, { timeout: 700, interceptionRetry: false });
+        expect(() => new Steps(pw, webRepo, { timeout: 30000 })).toThrow(/conflicts with the factory's timeout \(700ms\)/);
+        expect(() => new Steps(pw, webRepo, { interceptionRetry: true })).toThrow(/interceptionRetry \(true\) conflicts with the factory's \(false\)/);
+        expect(() => new Steps(pw, webRepo, { timeout: 700, interceptionRetry: false })).not.toThrow();
+        // A default PlaywrightFactory: 30000ms, interception retry on.
+        expect(() => new Steps(new PlaywrightFactory(fakePage), webRepo, { timeout: 30000, interceptionRetry: true })).not.toThrow();
+    });
+
+    test('a PlaywrightFactory on another page than repo.driver is refused', () => {
+        const calls: Call[] = [];
+        const other = { url: () => 'about:other' } as unknown as Page;
+        expect(() => new Steps(new PlaywrightFactory(other), stubRepo(calls, stubElement('t', calls, ElementType.WEB), fakePage)))
+            .toThrow(/different page than the repository resolves on/);
+    });
+
+    test('forPage carries the factory timeout and interception setting', () => {
+        const calls: Call[] = [];
+        const popup = { url: () => 'about:popup', isClosed: () => false } as unknown as Page;
+        // A repository whose `driver` reads `_driver`, as element-repository's does (forPage rebinds that field).
+        const proto = { get driver() { return (this as unknown as { _driver: unknown })._driver; } };
+        const repo = Object.assign(Object.create(proto), {
+            _driver: fakePage,
+            get: async () => stubElement('t', calls, ElementType.WEB),
+            getSelector: () => '#t',
+        }) as ElementRepository;
+        const steps = new Steps(new PlaywrightFactory(fakePage, { timeout: 700, interceptionRetry: false }), repo);
+        const bound = steps.forPage(popup) as unknown as {
+            page: unknown; timeout: number; interact: { ELEMENT_TIMEOUT: number; interceptionRetry: boolean };
+        };
+        expect(bound.page).toBe(popup);
+        expect(bound.timeout).toBe(700);
+        expect(bound.interact.ELEMENT_TIMEOUT).toBe(700);
+        expect(bound.interact.interceptionRetry).toBe(false);
+    });
+});
+
+// ─── A real AppiumFactory over the mock driver ───────────────────────────────
+
+test.describe('Steps on a real AppiumFactory (mock driver)', () => {
+    function appiumSteps(timeout: number) {
+        const repoCalls: Call[] = [];
+        const element = mockElement({ text: 'actual' });
+        const factory = new AppiumFactory(mockDriver().driver, 'ios', { timeout });
+        const steps = new Steps(factory, stubRepo(repoCalls, element));
+        return { steps, element, repoCalls };
+    }
+
+    test('verifyText on a mismatch fails near the factory timeout (not the 30s default)', async () => {
+        const { steps } = appiumSteps(400);
+        for (const run of [
+            () => steps.verifyText('el', 'Page', 'expected'),
+            () => steps.on('el', 'Page').verifyText('expected'),
+            () => Promise.resolve(steps.expect('el', 'Page').text.toBe('expected')),
+        ]) {
+            const started = Date.now();
+            const error = await caught(run);
+            const elapsed = Date.now() - started;
+            expect(error).toBeInstanceOf(Error);
+            expect((error as Error).message).toMatch(/expected/);
+            expect(elapsed, 'polled for the factory timeout').toBeGreaterThanOrEqual(350);
+            expect(elapsed, 'did not fall back to the 30000ms default').toBeLessThan(5000);
+        }
+    });
+
+    test('getAll with { child } is refused before anything resolves', async () => {
+        const { steps, element, repoCalls } = appiumSteps(400);
+        const error = await caught(() => steps.getAll('el', 'Page', { child: '~row' }));
+        expect(error).toBeInstanceOf(PlatformPathPendingError);
+        expect((error as PlatformPathPendingError).feature).toMatch(/getAll.*child/);
+        expect((error as PlatformPathPendingError).platform).toBe('ios');
+        expect(repoCalls).toEqual([]);
+        expect(element.calls).toEqual([]);
+        // Without `child`, getAll works on the device.
+        expect(await steps.getAll('el', 'Page')).toEqual(['actual']);
+    });
+
+    test('fillForm refuses a dropdown value before filling any field', async () => {
+        const { steps, element, repoCalls } = appiumSteps(400);
+        const error = await caught(() => steps.fillForm('Page', { name: 'Ada', country: { value: 'NL' } }));
+        expectNotSupported(error, 'selectDropdown', 'ios');
+        expect(repoCalls, 'no field resolved').toEqual([]);
+        expect(element.calls, 'no field filled').toEqual([]);
+        // String-only forms fill on the device.
+        await steps.fillForm('Page', { name: 'Ada' });
+        expect(element.calls.map(c => c[0])).toContain('fill');
     });
 });

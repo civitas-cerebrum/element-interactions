@@ -42,6 +42,22 @@ export function requireWebPlatform(stepName: string, platform: Platform): void {
 }
 
 /**
+ * Throws unless the factory's `family` is the family its `platform` belongs
+ * to. `Steps` asserts this once at construction, so its guards (which read
+ * `factory.platform` through {@link requireWebPlatform}) and the members the
+ * factory builds can never disagree about which family is acting.
+ */
+export function assertFactoryFamily(factory: IInteractionFactory): void {
+    const expected = familyOf(factory.platform);
+    if (factory.family !== expected) {
+        throw new Error(
+            `Steps: the factory reports family "${factory.family}" for platform "${factory.platform}", `
+            + `but "${factory.platform}" belongs to the "${expected}" family.`,
+        );
+    }
+}
+
+/**
  * Thrown by a shared feature whose device-platform implementation is not built
  * yet (list entries, `verifyAbsence`, visibility probes and gates, predicate
  * snapshots). Distinct from `PlatformNotSupportedError`: the feature is meant

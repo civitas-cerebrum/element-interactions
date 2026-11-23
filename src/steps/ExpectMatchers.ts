@@ -1,7 +1,7 @@
-import { Element } from '@civitas-cerebrum/element-repository';
+import { Element, PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
 import type { Platform } from '@civitas-cerebrum/element-repository';
 import type { IVerifications } from '../interfaces/IVerifications';
-import { PlatformPathPendingError, requireBuiltPath } from './platformGuard';
+import { PlatformPathPendingError, requireBuiltPath, requireWebPlatform } from './platformGuard';
 
 /**
  * Snapshot of an element's state at a single point in time.
@@ -77,6 +77,9 @@ async function runViaVerify(
         await action();
     } catch (err) {
         if (!messageOverride) throw err;
+        // A platform refusal is not an assertion failure: keep its type (and
+        // its step name) instead of re-wrapping it under the custom message.
+        if (err instanceof PlatformNotSupportedError || err instanceof PlatformPathPendingError) throw err;
         const original = err instanceof Error ? err.message : String(err);
         throw new Error(`${messageOverride}\n  ${original}`);
     }
@@ -436,9 +439,17 @@ export class ExpectBuilder implements PromiseLike<void> {
     get visible(): BooleanMatcher { return new BooleanMatcher(this, this.ctx, 'visible', this.consumeNot()); }
     get enabled(): BooleanMatcher { return new BooleanMatcher(this, this.ctx, 'enabled', this.consumeNot()); }
     get attributes(): AttributesMatcher { return new AttributesMatcher(this, this.ctx, this.consumeNot()); }
-    get html(): HtmlMatcher { return new HtmlMatcher(this, this.ctx, false, this.consumeNot()); }
-    get outerHtml(): HtmlMatcher { return new HtmlMatcher(this, this.ctx, true, this.consumeNot()); }
-    css(property: string): CssMatcher { return new CssMatcher(this, this.ctx, property, this.consumeNot()); }
+    // Web-only fields: refused with the matcher's own name when the chain is
+    // built, before anything is resolved (the family would otherwise throw
+    // later, under its own method name, after resolving the element).
+    get html(): HtmlMatcher { this.requireWeb('html'); return new HtmlMatcher(this, this.ctx, false, this.consumeNot()); }
+    get outerHtml(): HtmlMatcher { this.requireWeb('outerHtml'); return new HtmlMatcher(this, this.ctx, true, this.consumeNot()); }
+    css(property: string): CssMatcher { this.requireWeb('css'); return new CssMatcher(this, this.ctx, property, this.consumeNot()); }
+
+    /** Throws `PlatformNotSupportedError(field, platform)` off the Playwright family. */
+    private requireWeb(field: string): void {
+        requireWebPlatform(field, this.ctx.platform ?? 'web');
+    }
 
     /**
      * Predicate escape hatch. Queues a custom predicate assertion on this

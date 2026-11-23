@@ -1,5 +1,5 @@
 import { Page, Response, Locator } from '@playwright/test';
-import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy, PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
+import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
 import type { Platform } from '@civitas-cerebrum/element-repository';
 import { PlaywrightFactory } from '../playwright/PlaywrightFactory';
 import { BrowserRequest } from '../playwright/BrowserRequest';
@@ -12,7 +12,7 @@ import type { INavigation } from '../interfaces/INavigation';
 import type { IUtils } from '../interfaces/IUtils';
 import type { IGestures, Direction } from '../interfaces/IGestures';
 import type { IDevice } from '../interfaces/IDevice';
-import { actionFamilyOf } from './platformGuard';
+import { actionFamilyOf, assertFactoryFamily, requireBuiltPath, requireWebPlatform } from './platformGuard';
 import { EmailClient, EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
 import { SqlClient, SqlResult, QueryBuilder, UnsupportedEngineException } from '@civitas-cerebrum/sql-client';
@@ -141,6 +141,70 @@ function isInteractionFactory(value: unknown): value is IInteractionFactory {
         && typeof (value as IInteractionFactory).family === 'string';
 }
 
+/** `true` for anything usable as the repository argument (resolves elements through `get`). */
+function isElementRepository(value: unknown): value is ElementRepository {
+    return typeof value === 'object' && value !== null
+        && typeof (value as ElementRepository).get === 'function';
+}
+
+/**
+ * The factory form's single timeout: the factory's own (read through its
+ * utils, which every family implements). A `StepsOptions.timeout` that differs
+ * from it throws instead of letting the family members and the chains disagree.
+ */
+function factoryTimeout(utils: IUtils, optionTimeout: number | undefined): number {
+    const timeout = utils.getTimeout();
+    if (optionTimeout !== undefined && optionTimeout !== timeout) {
+        throw new Error(
+            `new Steps(factory, repo, options): options.timeout (${optionTimeout}ms) conflicts with the factory's timeout `
+            + `(${timeout}ms). In the factory form the timeout belongs to the factory: build the factory with `
+            + `{ timeout: ${optionTimeout} } and leave it out of the Steps options (or pass the same value).`,
+        );
+    }
+    return timeout;
+}
+
+/**
+ * The factory form's interception behaviour: the factory's own when it has
+ * one (`PlaywrightFactory.interceptionRetry`). A `StepsOptions.interceptionRetry`
+ * that differs from it, or that is set for a factory without the setting (the
+ * Appium family has no intercepted clicks), throws instead of being ignored.
+ */
+function factoryInterceptionRetry(factory: IInteractionFactory, optionRetry: boolean | undefined): boolean | undefined {
+    const own = (factory as { interceptionRetry?: unknown }).interceptionRetry;
+    const factoryRetry = typeof own === 'boolean' ? own : undefined;
+    if (optionRetry !== undefined && optionRetry !== factoryRetry) {
+        throw new Error(
+            factoryRetry === undefined
+                ? `new Steps(factory, repo, options): options.interceptionRetry is set, but the "${factory.family}" factory `
+                  + 'has no interception setting, so it would be ignored. Leave it out of the Steps options.'
+                : `new Steps(factory, repo, options): options.interceptionRetry (${optionRetry}) conflicts with the factory's `
+                  + `(${factoryRetry}). In the factory form it belongs to the factory: build the factory with `
+                  + `{ interceptionRetry: ${optionRetry} } and leave it out of the Steps options (or pass the same value).`,
+        );
+    }
+    return factoryRetry;
+}
+
+/**
+ * The factory form's Playwright page (Playwright family only; `undefined`
+ * otherwise). Elements resolve through `repo.driver` while the family members
+ * act on the factory's page, so the two must be the same page: a mismatch
+ * throws here instead of resolving on one page and acting on another.
+ */
+function factoryPage(factory: IInteractionFactory, repo: ElementRepository): Page | undefined {
+    if (factory.family !== 'playwright') return undefined;
+    const driver = repo.driver as Page | undefined;
+    const own = (factory as { page?: unknown }).page;
+    if (own !== undefined && own !== driver) {
+        throw new Error(
+            'new Steps(factory, repo, options): the PlaywrightFactory acts on a different page than the repository '
+            + "resolves on (repo.driver). Build both on the same page, or use steps.forPage(page) to bind another page.",
+        );
+    }
+    return (own as Page | undefined) ?? driver;
+}
+
 /**
  * The `Steps` class serves as a unified Facade for test orchestration.
  * It combines element acquisition (via `@civitas-cerebrum/element-repository`) with
@@ -186,8 +250,13 @@ export class Steps {
      * API, SQL and email steps work on every platform.
      *
      * @param factory - The driver family to act through; its `platform` is the platform of these steps.
-     * @param repo - The `ElementRepository` elements are resolved from (built for the same platform).
-     * @param options - As in the repository form; `timeout` and `interceptionRetry` are the factory's own business here.
+     * @param repo - The `ElementRepository` elements are resolved from (built for the same platform; for a
+     *   `PlaywrightFactory`, on the factory's page).
+     * @param options - As in the repository form, except that `timeout` and `interceptionRetry` belong to the
+     *   factory: every step, chain and matcher uses the factory's timeout. Passing either here is allowed only with
+     *   the factory's own value; a different value throws.
+     * @throws If `repo` is not a repository, if the factory's `family` is not its `platform`'s family, if a
+     *   `PlaywrightFactory`'s page is not `repo.driver`, or if `timeout` / `interceptionRetry` conflict with the factory.
      */
     constructor(factory: IInteractionFactory, repo: ElementRepository, options?: StepsOptions);
     /**
@@ -208,18 +277,42 @@ export class Steps {
         let options: StepsOptions | undefined;
         if (isInteractionFactory(repoOrFactory)) {
             this.factory = repoOrFactory;
-            this.repo = repoOrOptions as ElementRepository;
+            assertFactoryFamily(this.factory);
+            if (!isElementRepository(repoOrOptions)) {
+                throw new Error(
+                    'new Steps(factory, repo, options?): the second argument must be the ElementRepository elements are '
+                    + 'resolved from (an object with a "get" method). Did you pass the options in its place?',
+                );
+            }
+            this.repo = repoOrOptions;
             options = maybeOptions;
         } else {
             this.repo = repoOrFactory;
             options = repoOrOptions as StepsOptions | undefined;
             this.factory = new PlaywrightFactory(this.repo.driver, { timeout: options?.timeout, interceptionRetry: options?.interceptionRetry });
         }
-        const { emailCredentials, timeout, interceptionRetry, apiBaseUrl, apiProviders } = options ?? {};
-        this.pageIndependentOptions = { emailCredentials, timeout, interceptionRetry, dbConnectTimeoutMs: options?.dbConnectTimeoutMs };
-        // The Playwright family acts on the repository's page; no other family has one.
-        this.page = this.factory.family === 'playwright' ? this.repo.driver : undefined;
-        this.interceptionRetry = interceptionRetry;
+        const { emailCredentials, apiBaseUrl, apiProviders } = options ?? {};
+        this.utils = this.factory.createUtils();
+        if (isInteractionFactory(repoOrFactory)) {
+            // Factory form: the factory owns the timeout and the interception
+            // behaviour. One value flows everywhere (family members, ElementAction
+            // chains, matchers, list checks, forPage); a conflicting option is an
+            // error, never a silent pick.
+            this.timeout = factoryTimeout(this.utils, options?.timeout);
+            this.interceptionRetry = factoryInterceptionRetry(this.factory, options?.interceptionRetry);
+            this.page = factoryPage(this.factory, this.repo);
+        } else {
+            // Repository form: exactly as before the factory form existed.
+            this.timeout = options?.timeout;
+            this.interceptionRetry = options?.interceptionRetry;
+            this.page = this.repo.driver;
+        }
+        this.pageIndependentOptions = {
+            emailCredentials,
+            timeout: this.timeout,
+            interceptionRetry: this.interceptionRetry,
+            dbConnectTimeoutMs: options?.dbConnectTimeoutMs,
+        };
         this.interact = this.factory.createInteractions();
         this.navigate = this.factory.createNavigation();
         this.extract = this.factory.createExtractions();
@@ -227,8 +320,6 @@ export class Steps {
         this.gestures = this.factory.createGestures();
         this.device = this.factory.createDevice();
         this.request = this.page ? new BrowserRequest(this.page) : undefined;
-        this.timeout = timeout;
-        this.utils = this.factory.createUtils();
         this.email = emailCredentials ? new EmailClient(emailCredentials) : null;
         this.apiClients = new Map();
 
@@ -268,9 +359,9 @@ export class Steps {
      * step calls it first, before resolving or acting on anything.
      */
     private requireWeb(stepName: string): void {
-        if (this.factory.family !== 'playwright') {
-            throw new PlatformNotSupportedError(stepName, this.factory.platform);
-        }
+        // The same helper ElementAction uses; the constructor asserted that
+        // the factory's family is the one its platform belongs to.
+        requireWebPlatform(stepName, this.factory.platform);
     }
 
     /** The session-aware browser request client; call after {@link requireWeb}. */
@@ -524,6 +615,8 @@ export class Steps {
      * `ElementRepository` itself.
      *
      * The original `Steps` stays bound to its own page; nothing is switched.
+     * Steps built in the factory form bind with a `PlaywrightFactory` on the
+     * new page carrying the factory's timeout and interception setting.
      *
      * @param page - The page to bind, e.g. the `Page` returned by `switchToNewTab`.
      * @returns A new `Steps` whose element steps act on `page`.
@@ -1271,6 +1364,10 @@ export class Steps {
      */
     async getAll(elementName: string, pageName: string, getAllOptions?: GetAllOptions, options?: StepOptions): Promise<string[]> {
         log.extract('Extracting all from "%s" in "%s"', elementName, pageName);
+        // element-repository's platform `locateChild` is not scoped to the
+        // parent yet (a whole-screen lookup), so a device `child` would return
+        // the wrong elements. Refuse it before resolving anything.
+        if (getAllOptions?.child) requireBuiltPath('getAll with the "child" option', this.factory.platform);
         let element: Element = await this.getAllElement(elementName, pageName, options);
 
         if ((!options?.strategy || options.strategy === 'all') && isListEntry(this.repo, elementName, pageName)) {
@@ -2204,6 +2301,9 @@ export class Steps {
      */
     async fillForm(pageName: string, fields: Record<string, FillFormValue>): Promise<void> {
         log.interact('Filling form on "%s" with %d fields', pageName, Object.keys(fields).length);
+        // A dropdown value is web-only: refuse it before any field is filled,
+        // so a device run never leaves a half-filled form behind.
+        if (Object.values(fields).some(value => typeof value !== 'string')) this.requireWeb('selectDropdown');
         for (const [elementName, value] of Object.entries(fields)) {
             if (typeof value === 'string') {
                 await this.fill(elementName, pageName, value);

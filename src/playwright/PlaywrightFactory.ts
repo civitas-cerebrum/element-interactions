@@ -20,7 +20,16 @@ export class PlaywrightFactory implements IInteractionFactory {
     readonly platform = 'web' as const;
     readonly family = 'playwright' as const;
 
-    constructor(private readonly page: Page, private readonly options: PlaywrightFactoryOptions = {}) {}
+    /**
+     * @param page - The Playwright page every member acts on (read-only; `Steps` checks it is the repository's driver).
+     * @param options - Timeout and interception behaviour of the members.
+     */
+    constructor(readonly page: Page, private readonly options: PlaywrightFactoryOptions = {}) {}
+
+    /** Whether intercepted clicks fall back to a dispatched DOM click (the option, `true` when omitted). */
+    get interceptionRetry(): boolean {
+        return this.options.interceptionRetry ?? true;
+    }
 
     createInteractions(): Interactions {
         return new Interactions(this.page, this.options.timeout, this.options.interceptionRetry);
