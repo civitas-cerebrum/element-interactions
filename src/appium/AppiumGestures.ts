@@ -57,7 +57,9 @@ export class AppiumGestures implements IGestures {
      * screen centre, `distance` px (default half the window along that axis),
      * shortened to the platform's safe area (the window minus the system
      * gesture zones). A `distance` below {@link MIN_SWIPE_DISTANCE} px (it
-     * would register as a tap) or not a finite number is refused.
+     * would register as a tap) or not a finite number is refused. Like the
+     * compositions, it pauses {@link SETTLE_MS} after the swipe so the next
+     * read sees settled content.
      */
     async swipeScreen(direction: Direction, options?: { distance?: number }): Promise<void> {
         this.requireImplemented();
@@ -66,6 +68,7 @@ export class AppiumGestures implements IGestures {
             throw new Error(`swipeScreen: distance must be a number of px of at least ${MIN_SWIPE_DISTANCE} (a shorter swipe registers as a tap), got ${distance}`);
         }
         await this.strategy.swipeScreen(this.driver, direction, distance);
+        await this.settle();
     }
 
     /** `direction` names where the element lies relative to the current view (default `'down'`). */
@@ -78,6 +81,11 @@ export class AppiumGestures implements IGestures {
      * Swipes a third of the screen at a time toward `direction` (where the
      * element lies; default `'down'`) until the element is displayed, re-reading
      * it after every swipe. Throws when `timeout` (ms) expires first.
+     *
+     * `timeout` bounds when a new swipe may START: a swipe in flight always
+     * finishes and the element is re-read after it, so the call may run up to
+     * one swipe longer than `timeout` (the first gesture of a fresh iOS
+     * session can take tens of seconds).
      */
     async scrollUntilFound(element: Element, options?: { direction?: Direction; timeout?: number }): Promise<void> {
         this.requireImplemented();
@@ -111,6 +119,11 @@ export class AppiumGestures implements IGestures {
      * expires. Exact centring is best effort, but whichever way it stops the
      * element must be on screen (its centre inside the window, both axes):
      * otherwise it throws, as it does for an element without bounds.
+     *
+     * `timeout` bounds when a new swipe may START: a swipe in flight always
+     * finishes and the element is re-read after it, so the call may run up to
+     * one swipe longer than `timeout` (the first gesture of a fresh iOS
+     * session can take tens of seconds).
      */
     async centerElement(element: Element, options?: { timeout?: number }): Promise<void> {
         this.requireImplemented();

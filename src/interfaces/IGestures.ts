@@ -31,10 +31,16 @@ export interface IGestures {
     scrollIntoView(element: Element, options?: { direction?: Direction; timeout?: number }): Promise<void>;
     /**
      * Scrolls until the element is displayed or `timeout` (ms) expires, then throws; `direction`: where the
-     * target lies relative to the view.
+     * target lies relative to the view. On a device, `timeout` bounds when a new swipe may start: a swipe in
+     * flight always finishes and the element is re-read after it, so the call may run up to one swipe longer
+     * (the first gesture of a fresh iOS session can take tens of seconds).
      */
     scrollUntilFound(element: Element, options?: { direction?: Direction; timeout?: number }): Promise<void>;
-    /** Scrolls so the element sits in the middle of the viewport / screen. */
+    /**
+     * Scrolls so the element sits in the middle of the viewport / screen. On a device, `timeout` bounds when a
+     * new swipe may start: a swipe in flight always finishes and the element is re-read after it, so the call
+     * may run up to one swipe longer (the first gesture of a fresh iOS session can take tens of seconds).
+     */
     centerElement(element: Element, options?: { timeout?: number }): Promise<void>;
     /** Presses and holds the element; `duration` in ms (default 1000). */
     longPress(element: Element, options?: { duration?: number; timeout?: number }): Promise<void>;
