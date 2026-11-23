@@ -27,9 +27,9 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   import { Interactions, Verifications } from '@civitas-cerebrum/element-interactions';
   ```
 - **Element parameters widened to `Element`.** The methods of `Interactions`,
-  `Verifications`, `Extractions` and `Navigation` take element-repository's
-  `Element` instead of `WebElement`; on web a non-web element is refused with
-  an error. Code that passes `WebElement`s compiles unchanged, but a subclass
+  `Verifications`, `Extractions` and `Navigation`, and `Utils.softProbe` /
+  `Utils.waitForState`, take element-repository's `Element` instead of
+  `WebElement`; on web a non-web element is refused with an error. Code that passes `WebElement`s compiles unchanged, but a subclass
   that overrides one of these methods with a `WebElement` parameter no longer
   type-checks.
   **Migration:** type the overriding parameter as `Element` and narrow with
@@ -68,9 +68,13 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   custom `driver` fixture.
 - **The `interactions` fixture is typed `ElementInteractions | PlatformInteractions`**
   (it is a `PlatformInteractions` on a device run). The members both share
-  (`interact`, `verify`, `extract`, `navigate`, `email`) work as before.
+  (`interact`, `verify`, `extract`, `navigate`, `email`) work as before, but a
+  result they typed `WebElement` is now typed `Element` through the fixture,
+  e.g. `interactions.interact.getListedElement(...)`, so reading `.locator`
+  from it no longer compiles.
   **Migration:** to use a member only one side has, narrow first, e.g.
-  `if (interactions instanceof ElementInteractions) { await interactions.request.get(url); }`.
+  `if (interactions instanceof ElementInteractions) { await interactions.request.get(url); }`;
+  narrow a returned element with `isWeb(element)` before reading `.locator`.
 - **The published `.d.ts` declares an empty global `WebdriverIO.Browser`
   interface**, so the typings compile without `webdriverio`; it merges with
   WebdriverIO's own interface when that is installed, and with any global
@@ -118,7 +122,8 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
 - **Family interfaces**: `IInteractions`, `IVerifications`, `IExtractions`,
   `INavigation`, `IUtils`, `IGestures`, `IDevice`, `IInteractionFactory`, with
   the types `Direction` (an alias of element-repository's `SwipeDirection`),
-  `Orientation`, `PermissionState`, `VerifiableState`. The element gestures of
+  `Orientation`, `PermissionState`, `VerifiableState`, `DeviceVerifyOptions`,
+  `ScreenSwipeOptions` and `EntryTarget`. The element gestures of
   `IGestures` resolve to the element, as element-repository's primitives do.
 - **Gesture types re-exported from element-repository**: `SwipeDirection`,
   `SwipeOptions`, `ScrollIntoViewOptions`, `LongPressOptions`, `TapOffset`,
@@ -129,9 +134,8 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `AppiumFactoryOptions` and `AppiumDriver` types. `new Steps(factory, repo,
   options)` is the factory form; `new Steps(repo, options)` keeps building web
   Steps. The Appium family's classes and per-platform rules are internal and
-  reached through the factory. `PlaywrightGestures` / `PlaywrightDevice` are
-  the web family's gesture and device members; `PlatformInteractions` is the
-  `interactions` fixture on a device.
+  reached through the factory, and so are the web family's gesture and device
+  members. `PlatformInteractions` is the `interactions` fixture on a device.
 - **Errors catchable by type**: `MissingAppIdError` (an app step without an app
   id), `PollTimeoutError` (a polling device verification ran out of time; it
   carries `timeout`, `lastValue` and `lastError`) and `ProbeTimeoutError` (the
@@ -145,7 +149,12 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `scrollUntilFound`, `longPress`, `tapAt(offset, options?)`, `pinch` and
   `zoom`, and its `scrollIntoView` takes `ScrollIntoViewOptions`.
   `scrollUntilFound` is element-repository's `scrollIntoView` sweep with the
-  timeout always given (stops at the timeout or after `maxSwipes` swipes); `pressBack` (android
+  timeout always given (stops at the timeout or after `maxSwipes` swipes).
+  On a device it first hides a shown soft keyboard (best-effort), then sweeps
+  with fixed swipes up to `maxSwipes` (default 20), bounded by the step
+  timeout (default 30 s; pass a larger `timeout` for long lists, and allow for
+  the first gesture of a fresh iOS session taking tens of seconds).
+  `pressBack` (android
   only), `hideKeyboard`, `setOrientation`, `acceptAlert`, `dismissAlert`,
   `setPermission`; `getContexts`, `switchContext`; polling
   `verifyAppInForeground`, `verifyOrientation`, `verifyKeyboardShown`,

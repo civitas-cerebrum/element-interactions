@@ -224,6 +224,23 @@ await steps.on('table', 'TablePage').findByRole('row').nth(1).getText();
 
 `.first()` / `.nth(i)` narrow the scoped match the same way they narrow a repo-resolved element; count / order terminals see the whole scoped set.
 
+#### Gesture terminals
+
+The element gestures are chain terminals too. Each acts on the element the chain selects (`nth`, `byText`, `random`, ...) with the chain timeout unless its options carry a `timeout`, and returns `Promise<void>`. The option types are element-repository's, re-exported by this package.
+
+* **`.swipe(direction: SwipeDirection, options?: SwipeOptions)`** — Swipes on the element: the finger moves in `direction` (`'up'` reveals content below), `distance` in px. On web a mouse drag.
+* **`.scrollIntoView(options?: ScrollIntoViewOptions)`** — Scrolls the element into view; the no-argument form is unchanged. On a device `direction` says where the element lies (default `'down'`) and `maxSwipes` caps the sweep (default 20).
+* **`.scrollUntilFound(options?: ScrollIntoViewOptions)`** — Scrolls until the element is displayed; throws when the timeout or the swipe limit is reached first. Not gated by `ifVisible()`. On web the browser scrolls it into view.
+* **`.longPress(options?: LongPressOptions)`** — Presses and holds the element, `duration` in ms (default 1000). On web the mouse button is held.
+* **`.tapAt(offset: TapOffset, options?: TapAtOptions)`** — Taps the point `offset` px from the element's top-left corner. On web a mouse click at that point.
+* **`.pinch(options?: PinchOptions)`** — Two-finger pinch, `scale` in (0, 1), default 0.5. Platform only; throws `PlatformNotSupportedError` on web before the element is resolved.
+* **`.zoom(options?: ZoomOptions)`** — Two-finger zoom, `scale` above 1, default 2. Platform only; throws `PlatformNotSupportedError` on web before the element is resolved.
+
+```ts
+await steps.on('photo', 'GalleryPage').zoom({ scale: 3 });
+await steps.on('rows', 'SettingsPage').byText('Privacy').scrollUntilFound({ direction: 'down' });
+```
+
 ### Expect Matcher Tree
 
 A chain-style assertion API for the common case where you want to verify multiple things about a single element. Available at both `steps.expect(el, page)` (top-level) and as field getters on `steps.on(el, page)` (fluent). Each matcher call queues an assertion; awaiting flushes the queue and short-circuits on the first failure.
@@ -699,7 +716,7 @@ Notes for the shared steps on a device:
 
 ### Platform steps
 
-All return `Promise<void>` unless noted. `appId` defaults to the app under test from the capabilities file. `SwipeDirection` (also exported as `Direction`) is `'up' | 'down' | 'left' | 'right'`; `Orientation` is `'portrait' | 'landscape'`. The gesture option types (`SwipeOptions`, `ScrollIntoViewOptions`, `LongPressOptions`, `TapOffset`, `TapAtOptions`, `PinchOptions`, `ZoomOptions`) are element-repository's, re-exported by this package; every element gesture step also takes the `StepOptions` of the other element steps (`strategy`, `index`, a per-call `timeout`).
+All return `Promise<void>` unless noted. `appId` defaults to the app under test from the capabilities file. `SwipeDirection` (also exported as `Direction`) is `'up' | 'down' | 'left' | 'right'`; `Orientation` is `'portrait' | 'landscape'`. The gesture option types (`SwipeOptions`, `ScrollIntoViewOptions`, `LongPressOptions`, `TapOffset`, `TapAtOptions`, `PinchOptions`, `ZoomOptions`) are element-repository's, re-exported by this package; every element gesture step also takes the `StepOptions` of the other element steps (`strategy`, `index`, a per-call `timeout`). Each step has a bullet in the API Reference: [App](#-app), [Gestures](#-gestures), [Device](#-device), [Contexts and page source](#-contexts-and-page-source), [Device assertions](#-device-assertions).
 
 ```ts
 // App
@@ -768,7 +785,29 @@ Each is a terminal (`Promise<void>`). `pinch` / `zoom` throw `PlatformNotSupport
 
 * Verifications and device assertions poll until the step timeout (the fixture's `timeout`, default 30000 ms).
 * `scrollIntoView` and `scrollUntilFound` on a device are element-repository's `scrollIntoView` sweep, always given the step's timeout (`options.timeout`, else the step timeout): the sweep stops at that timeout or after `maxSwipes` swipes (default 20), whichever comes first. The timeout bounds when a new swipe may start and an in-flight swipe always finishes, so the step may run up to one swipe longer than `timeout`.
+* On a device, when the element is not already on screen, `scrollIntoView` / `scrollUntilFound` first hide a shown soft keyboard (best-effort, element-repository's behaviour), then sweep with fixed swipes up to `maxSwipes` (default 20), bounded by the step timeout too (default 30 s). Pass a larger `timeout` for long lists.
 * The first gesture of a fresh iOS session can take tens of seconds (XCUITest warms up); size the test timeout for it.
+
+**Errors.** Every error below can be caught by type:
+
+* **`PlatformNotSupportedError`** (element-repository's own class, re-exported so `instanceof` works across both packages; fields `method`, `platform`) — thrown first, before anything is resolved or sent, by a step the active platform cannot do: every platform-only step on web, `pinch` / `zoom` on web, a web-only step on a device, `pressBack` on ios, and the `page` / `context` / `driver` fixtures on the wrong platform.
+* **`PollTimeoutError`** (fields `timeout`, `lastValue`, `lastError`) — thrown when a polling step on a device runs out of time: the device assertions (`verifyAppInForeground`, `verifyOrientation`, `verifyKeyboardShown`, `verifyContext`), the element `verify*` steps (`verifyText`, `verifyState`, `verifyCount`, ...) and the listed-element steps. Its message names what was awaited, the timeout, the last observed value and the last error.
+* **`ProbeTimeoutError`** (field `budget`) — never thrown by a step itself: it is the `lastError` of a `PollTimeoutError` when a single device query did not answer within its share of the timeout.
+* **`MissingAppIdError`** (fields `caller`, `capability`, `platform`) — thrown when a step needs the app under test and neither an `appId` argument nor the capabilities file names one: `launchApp`, `activateApp`, `terminateApp`, `resetApp`, `setPermission` and `verifyAppInForeground`.
+
+```ts
+import { PlatformNotSupportedError, PollTimeoutError, ProbeTimeoutError } from '@civitas-cerebrum/element-interactions';
+
+try {
+  await steps.verifyKeyboardShown({ timeout: 5_000 });
+} catch (error) {
+  if (error instanceof PlatformNotSupportedError) test.skip(true, `${error.method} needs a device`);
+  if (error instanceof PollTimeoutError && error.lastError instanceof ProbeTimeoutError) {
+    throw new Error(`the device stopped answering: ${error.message}`);
+  }
+  throw error;
+}
+```
 
 ### Without the fixture
 
@@ -782,11 +821,25 @@ const repo = new ElementRepository(driver, 'tests/e2e/page-repository.json', { p
 const steps = new Steps(new AppiumFactory(driver, 'ios', { appId: 'com.example.app' }), repo);
 ```
 
+The web family has the same form: `new Steps(new PlaywrightFactory(page), repo)` (`PlaywrightFactory(page, { timeout?, interceptionRetry? })`).
+
 `new Steps(repo, options)` keeps building web Steps on the repository's Playwright page, as before.
+
+### Exported types
+
+Besides the classes above, the package exports these for platform code:
+
+* **Fixture and steps:** `BaseFixtureTest` (the fixture's test type), `BaseFixtureOptions`, `StepsOptions`, `ElementActionFamily` (the family a `steps.on(...)` chain acts through).
+* **Family interfaces:** `IInteractions`, `IVerifications` (with `VerifiableState`), `IExtractions`, `INavigation`, `IUtils`, `IGestures`, `IDevice`, `IInteractionFactory`; `EntryTarget` (a repository entry as the families resolve it) and `ElementSnapshot`.
+* **Device vocabulary:** `Orientation`, `PermissionState`, `DeviceVerifyOptions` (`{ timeout?, errorMessage? }` of the device assertions).
+* **Platforms:** `Platform`, `DriverFamily`, `PLATFORMS`, `isPlatformName`, `familyOf`, `resolvePlatform` (element-repository's vocabulary, re-exported).
+* **Gesture options:** `SwipeDirection`, `SwipeOptions`, `ScrollIntoViewOptions`, `LongPressOptions`, `TapOffset`, `TapAtOptions`, `PinchOptions`, `ZoomOptions` (element-repository's, re-exported), `ScreenSwipeOptions` (`swipeScreen`'s `{ distance? }`) and `Direction` (an alias of `SwipeDirection`).
+* **Session:** `ServerOptions`, `SessionOptions`, `SessionStartContext`, `SessionProvider`, `AppiumSessionProviderOptions`, `AppiumClientOptions`, `WebdriverioLogLevel`, `WebdriverioModule`, `AppiumFactoryOptions`, `AppiumDriver`, `PlaywrightFactoryOptions`.
+* **Errors:** `PlatformNotSupportedError`, `PollTimeoutError`, `ProbeTimeoutError`, `MissingAppIdError` (see [Errors](#platform-steps)).
 
 ### CI
 
-`.github/workflows/platform.yml` runs the cross-platform spec (`tests/cross-platform`) on an Android emulator and an iOS simulator against the built-in Settings app, read-only. It is **manual only** (`workflow_dispatch`): it does not run on push or pull request until a maintainer changes the trigger, and it has not been run yet, so expect to adjust the emulator / simulator setup on its first run.
+`.github/workflows/platform.yml` runs the cross-platform spec (`tests/cross-platform`) on an Android emulator and an iOS simulator against the built-in Settings app, read-only. It is **manual only** (`workflow_dispatch`): it does not run on push or pull request until a maintainer changes the trigger. Its status is under [What is verified](#what-is-verified).
 
 The iOS job prebuilds WebDriverAgent (`appium driver run xcuitest build-wda`) before the session opens, and both jobs run Playwright with `--timeout=600000` to leave room for emulator / simulator start-up and the first session.
 
@@ -1107,6 +1160,55 @@ await steps.verifyVisualMatch('dashboard.png', {
 **Baselines.** The first run writes the baseline; subsequent runs diff. Use `npx playwright test --update-snapshots` to refresh baselines intentionally. Playwright fingerprints baselines per OS / browser channel, so generate them in the same environment your CI runs.
 
 **Full options surface.** `mask`, `maskColor`, `fullPage`, `maxDiffPixelRatio`, `maxDiffPixels`, `timeout`, `errorMessage`. See [`VisualMatchOptions`](./src/enum/Options.ts).
+
+The steps below drive native apps (see [Platform testing](#-platform-testing-android-ios)). "Platform only" steps throw `PlatformNotSupportedError` on web before anything is resolved or sent. `appId` defaults to the app under test from the capabilities file (`appium:appPackage` / `appium:bundleId`); a step that needs one and finds none throws `MissingAppIdError`.
+
+### 📱 App
+
+* **`launchApp(appId?: string)`** — Launches the app, starting it when it is not running. Platform only; throws `PlatformNotSupportedError` on web.
+* **`activateApp(appId?: string)`** — Brings the app to the foreground, starting it when needed. Platform only; throws `PlatformNotSupportedError` on web.
+* **`terminateApp(appId?: string)`** — Terminates the app. Platform only; throws `PlatformNotSupportedError` on web.
+* **`backgroundApp(seconds: number)`** — Sends the app under test to the background for `seconds` (non-negative, finite), then brings it back. Platform only; throws `PlatformNotSupportedError` on web.
+* **`resetApp()`** — Terminates and re-activates the app under test. Platform only; throws `PlatformNotSupportedError` on web.
+* **`installApp(appPath: string)`** — Installs an app from an `.apk` / `.app` / `.ipa` path or URL the Appium server can reach. Platform only; throws `PlatformNotSupportedError` on web.
+* **`removeApp(appId: string)`** — Uninstalls the app `appId` (Android package / iOS bundle id). Platform only; throws `PlatformNotSupportedError` on web.
+* **`openDeepLink(url: string, appId?: string)`** — Opens a deep link (custom scheme or universal / app link) in `appId`, the app under test by default. Platform only; throws `PlatformNotSupportedError` on web.
+
+### 📱 Gestures
+
+* **`swipe(elementName, pageName, direction: SwipeDirection, options?: StepOptions & SwipeOptions)`** — Swipes on the element: the finger moves in `direction` through its centre (`'up'` reveals content below); `distance` is the finger travel in px. Every platform: on web a mouse drag.
+* **`swipeScreen(direction: SwipeDirection, options?: ScreenSwipeOptions)`** — Swipes across the screen through its centre, clear of the system gesture zones; `distance` defaults to half the screen along that axis. Platform only; throws `PlatformNotSupportedError` on web.
+* **`scrollUntilFound(elementName, pageName, options?: StepOptions & ScrollIntoViewOptions)`** — Swipes until the element is displayed; throws when `timeout` expires or `maxSwipes` (default 20) is reached first. `direction` is where the element lies (default `'down'`). Every platform: on web the browser scrolls the element into view.
+* **`longPress(elementName, pageName, options?: StepOptions & LongPressOptions)`** — Presses and holds the element for `duration` ms (default 1000). Every platform: on web the mouse button is held.
+* **`tapAt(x: number, y: number)`** — Taps the screen at (`x`, `y`) px, native-context screen coordinates. Platform only; throws `PlatformNotSupportedError` on web. To tap inside an element on every platform use the chain: `steps.on(el, page).tapAt({ x, y })`.
+* **`pinch(elementName, pageName, options?: StepOptions & PinchOptions)`** — Two-finger pinch (fingers move together) on the element, `scale` in (0, 1), default 0.5. Platform only; throws `PlatformNotSupportedError` on web.
+* **`zoom(elementName, pageName, options?: StepOptions & ZoomOptions)`** — Two-finger zoom (fingers spread) on the element, `scale` above 1, default 2. Platform only; throws `PlatformNotSupportedError` on web.
+
+`scrollIntoView(elementName, pageName, options?: StepOptions & ScrollIntoViewOptions)` is listed under [Interaction](#️-interaction). The fluent chain has the element gestures as terminals: see [Gesture terminals](#gesture-terminals).
+
+### 📱 Device
+
+* **`pressBack()`** — Presses the system back button. Android only; throws `PlatformNotSupportedError` on web and on ios (tap the on-screen back button there).
+* **`hideKeyboard()`** — Hides the on-screen keyboard. Platform only; throws `PlatformNotSupportedError` on web.
+* **`setOrientation(orientation: Orientation)`** — Rotates the device to `'portrait'` or `'landscape'`. Platform only; throws `PlatformNotSupportedError` on web.
+* **`acceptAlert()`** — Accepts the open system or app alert. Platform only; throws `PlatformNotSupportedError` on web.
+* **`dismissAlert()`** — Dismisses the open system or app alert. Platform only; throws `PlatformNotSupportedError` on web.
+* **`setPermission(permission: string, state: PermissionState)`** — Grants, denies or resets a permission of the app under test; `permission` is the platform's name (`android.permission.CAMERA`, or an iOS service such as `camera`), `state` is `'grant'`, `'deny'` or `'reset'` (on Android `'reset'` revokes). Platform only; throws `PlatformNotSupportedError` on web.
+
+### 📱 Contexts and page source
+
+* **`getContexts(): Promise<string[]>`** — Returns the available contexts (`'NATIVE_APP'`, `'WEBVIEW_*'`). Platform only; throws `PlatformNotSupportedError` on web.
+* **`switchContext(name: string)`** — Switches to the context `name` (`'NATIVE_APP'` or a `'WEBVIEW_*'` name). Platform only; throws `PlatformNotSupportedError` on web.
+* **`getPageSource(): Promise<string>`** — Returns the current screen's UI hierarchy as XML. Platform only; throws `PlatformNotSupportedError` on web. On web use `getPageHtml`.
+
+### 📱 Device assertions
+
+Each polls until `options.timeout` (default the step timeout) and then throws `PollTimeoutError` naming the last observed value; `errorMessage` replaces the failure header.
+
+* **`verifyAppInForeground(appId?: string, options?: DeviceVerifyOptions)`** — Asserts the app is in the foreground. Platform only; throws `PlatformNotSupportedError` on web.
+* **`verifyOrientation(orientation: Orientation, options?: DeviceVerifyOptions)`** — Asserts the device reports `orientation` (`'portrait'` or `'landscape'`; any other value throws at once). Platform only; throws `PlatformNotSupportedError` on web.
+* **`verifyKeyboardShown(options?: DeviceVerifyOptions & { negated?: boolean })`** — Asserts the on-screen keyboard is shown, or hidden with `{ negated: true }`. Platform only; throws `PlatformNotSupportedError` on web.
+* **`verifyContext(name: string, options?: DeviceVerifyOptions)`** — Asserts the current context is `name`. Platform only; throws `PlatformNotSupportedError` on web.
 
 ---
 

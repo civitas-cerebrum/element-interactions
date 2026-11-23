@@ -5,10 +5,12 @@ name: 📱 Platform (Android emulator, iOS simulator)
 #
 # - Manual only: triggered by `workflow_dispatch` and nothing else. It does not
 #   run on push or pull request until a maintainer changes the trigger.
-# - UNTESTED: this workflow has not been run yet. Expect to adjust emulator /
-#   simulator setup on its first run.
-# - `npm ci` needs @civitas-cerebrum/element-repository 0.4.0 on the npm
-#   registry; until it is published both jobs fail at install.
+# - android-emulator (ubuntu): installs Appium and the UiAutomator2 driver,
+#   starts an emulator with KVM, runs the spec, uploads the report and the
+#   Appium log.
+# - ios-simulator (macOS): installs Appium and the XCUITest driver, boots an
+#   iPhone simulator, prebuilds WebDriverAgent, runs the spec, uploads the
+#   report and the Appium log.
 # - Each job writes its capabilities file from a committed example in
 #   tests/capabilities/ (emulator and simulator values are not private) and
 #   starts the run in the one documented form:
@@ -17,8 +19,6 @@ name: 📱 Platform (Android emulator, iOS simulator)
 #   with `--timeout=600000` added for headroom (emulator / simulator start-up,
 #   driver server install); the config's own 180 s stays the local default.
 # - The written capabilities files are named *.local.json (ignored by version control).
-# - The Android page entries of the spec are provisional (never verified on a
-#   device); the first Android run verifies them.
 
 on:
   workflow_dispatch:
