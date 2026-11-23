@@ -23,7 +23,8 @@
     "dist"
   ],
   "peerDependencies": {
-    "@playwright/test": ">=1.0.0"
+    "@playwright/test": ">=1.0.0",
+    "webdriverio": "^10.0.0"
   },
   "devDependencies": {
     "@civitas-cerebrum/test-coverage": "^0.1.2",
@@ -31,7 +32,8 @@
     "@types/debug": "^4.1.13",
     "@types/node": "^20.0.0",
     "pg": "^8.13.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "webdriverio": "^10.2.0"
   },
   "keywords": [
     "playwright",
@@ -64,6 +66,14 @@
   },
   "overrides": {
     "nodemailer": "^10.3.1",
-    "html-to-text": "10.0.1"
+    "html-to-text": "10.0.1",
+    "@civitas-cerebrum/element-repository": {
+      "webdriverio": "$webdriverio"
+    }
+  },
+  "peerDependenciesMeta": {
+    "webdriverio": {
+      "optional": true
+    }
   }
 }
