@@ -1,7 +1,7 @@
 {
   "name": "@civitas-cerebrum/element-interactions",
   "version": "0.4.0",
-  "description": "A robust, readable interaction and assertion Facade for Playwright. Abstract away boilerplate into semantic, English-like methods, making your test automation framework cleaner, easier to maintain, and accessible to non-developers.",
+  "description": "A robust, readable interaction and assertion Facade for web tests with Playwright and native Android and iOS app tests with Appium and WebdriverIO. Abstract away boilerplate into semantic, English-like methods, making your test automation framework cleaner, easier to maintain, and accessible to non-developers.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -43,7 +43,12 @@
     "clean-code",
     "facade-pattern",
     "test-automation",
-    "steps-api"
+    "steps-api",
+    "appium",
+    "webdriverio",
+    "android",
+    "ios",
+    "mobile-testing"
   ],
   "publishConfig": {
     "access": "public",

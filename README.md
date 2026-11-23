@@ -1,10 +1,10 @@
-# Playwright Element Interactions
+# Element Interactions
 
 [![NPM Version](https://img.shields.io/npm/v/@civitas-cerebrum/element-interactions?color=rgb(88%2C%20171%2C%2070))](https://www.npmjs.com/package/@civitas-cerebrum/element-interactions)
 
-A robust, readable interaction-and-assertion facade for Playwright, with the same `Steps` API on Android and iOS apps through Appium ([Platform testing](#-platform-testing-android-ios)). The `Steps` API and `ElementRepository` decouple element acquisition from interaction, so raw selectors never appear in test code — and tests stay tight, semantic, and resistant to DOM churn.
+A robust, readable interaction-and-assertion facade for test automation: web apps through Playwright, and native Android and iOS apps through Appium and WebdriverIO, with one `Steps` API for both ([Platform testing](#-platform-testing-android-ios)). The `Steps` API and `ElementRepository` decouple element acquisition from interaction, so raw selectors never appear in test code — and tests stay tight, semantic, and resistant to DOM churn.
 
-This package is the **framework** layer: a programmatic Playwright facade for humans + LLM agents to write against. If you want the **methodology** layer — agent skills, harness hooks, return-shape schemas, and the postinstall plumbing that drives Claude Code through an end-to-end autonomous QA pipeline — install [`@civitas-cerebrum/achilles`](https://www.npmjs.com/package/@civitas-cerebrum/achilles) alongside this package. Achilles depends on element-interactions and orchestrates it through eight documented phases.
+This package is the **framework** layer: a programmatic test facade (Playwright on the web, Appium on devices) for humans + LLM agents to write against. If you want the **methodology** layer — agent skills, harness hooks, return-shape schemas, and the postinstall plumbing that drives Claude Code through an end-to-end autonomous QA pipeline — install [`@civitas-cerebrum/achilles`](https://www.npmjs.com/package/@civitas-cerebrum/achilles) alongside this package. Achilles depends on element-interactions and orchestrates it through eight documented phases.
 
 ---
 
@@ -84,7 +84,7 @@ npm i @civitas-cerebrum/element-interactions
 * **Role + accessible name selectors** — `{ "role": "button", "name": "Log in" }` resolves via `page.getByRole()` with regex support.
 * **Regex text selectors** — `{ "text": { "regex": "pattern", "flags": "i" } }` for matching dynamic content.
 * **Iframe-scoped pages** — Elements inside iframes are resolved transparently via `frame` property on page definitions.
-* **Platform testing (Android, iOS)** — One `PLATFORM` switch runs the same `Steps` API on native apps through Appium and WebdriverIO, with per-platform page blocks in one page repository. Steps that a platform cannot honour throw `PlatformNotSupportedError`. See [Platform testing](#-platform-testing-android-ios) for what is supported and what is verified on devices.
+* **Platform testing (Android, iOS)** — One `E2E_PLATFORM` switch runs the same `Steps` API on native apps through Appium and WebdriverIO, with per-platform page blocks in one page repository. Steps that a platform cannot honour throw `PlatformNotSupportedError`. See [Platform testing](#-platform-testing-android-ios) for what is supported and what is verified on devices.
 
 ---
 
@@ -536,9 +536,9 @@ import { test as base } from '@playwright/test';
 import { baseFixture } from '@civitas-cerebrum/element-interactions';
 
 export const test = baseFixture(base, 'tests/e2e/page-repository.json', {
-  // platform: 'ios',            // default: process.env.PLATFORM, else 'web'
+  // platform: 'ios',            // default: process.env.E2E_PLATFORM, else 'web'
   session: {                     // used only when the platform is android / ios
-    // capabilities: 'tests/capabilities/iphone.json',  // PATH to a JSON file; default: CAPABILITIES
+    // capabilities: 'tests/capabilities/iphone.json',  // PATH to a JSON file; default: E2E_CAPABILITIES
     // server: 'http://<appium-server>:4723/wd/hub',    // URL with base path, or an object; default: APPIUM_URL
     reset: 'relaunch',           // 'relaunch' (default) | 'none'
     onSessionStarted: async (driver) => { /* once per worker, after the session opened */ },
@@ -547,8 +547,8 @@ export const test = baseFixture(base, 'tests/e2e/page-repository.json', {
 export { expect } from '@playwright/test';
 ```
 
-* **`platform`** — `'web' | 'android' | 'ios' | 'macos' | 'windows'`. Read once, when `baseFixture()` is called: the option, else `PLATFORM`, else `'web'`. Any other value throws, naming where it came from.
-* **`session.capabilities`** — always the **path** of a JSON capabilities file (default `CAPABILITIES`). An inline object is refused. A relative path resolves against the directory Playwright was started in (usually the project root).
+* **`platform`** — `'web' | 'android' | 'ios' | 'macos' | 'windows'`. Read once, when `baseFixture()` is called: the option, else `E2E_PLATFORM`, else `'web'`. Any other value throws, naming where it came from.
+* **`session.capabilities`** — always the **path** of a JSON capabilities file (default `E2E_CAPABILITIES`). An inline object is refused. A relative path resolves against the directory Playwright was started in (usually the project root).
 * **`session.server`** — a URL string including the Appium base path (`http://127.0.0.1:4723`, `https://<appium-server>/wd/hub`), or an object `{ protocol, hostname, port, path, user, key }`. Default: `APPIUM_URL`, else `http://127.0.0.1:4723`. A field the object form leaves out comes from `http://127.0.0.1:4723`, never from `APPIUM_URL`. `user` / `key` left out are filled from `APPIUM_USER` / `APPIUM_KEY` in every form, and are never read from the capabilities file.
 * **`session.provider`** — a `SessionProvider` (`start(context)` / `stop(driver)`) that opens and closes the WebdriverIO session. Default: the built-in `AppiumSessionProvider` (WebdriverIO `remote()`). Bring your own for a vendor that needs more than connection options (tunnels, app upload).
 * **`session.reset`** — what happens between tests (see [Reset policy](#reset-policy)).
@@ -561,7 +561,7 @@ The web-only options `blockedOrigins`, `mutationInjection` (unless `false`), `in
 The one documented form:
 
 ```bash
-PLATFORM=<platform> CAPABILITIES=tests/capabilities/<device>.json APPIUM_URL=<server-with-base-path> \
+E2E_PLATFORM=<platform> E2E_CAPABILITIES=tests/capabilities/<device>.json APPIUM_URL=<server-with-base-path> \
   npx playwright test -c playwright.platform.config.ts
 ```
 
@@ -582,14 +582,16 @@ export default defineConfig({
 
 ### Environment variables
 
-These five are the complete list; no other variable selects a platform, device or server. An **empty** value counts as unset (`PLATFORM=''` means `web`), so CI can pass blank inputs.
+These five are the complete list; no other variable selects a platform, device or server. An **empty** value counts as unset (`E2E_PLATFORM=''` means `web`), so CI can pass blank inputs.
 
-`baseFixture` reads `PLATFORM` on **every** run, web projects included, and a value that is not a platform name throws. On Windows environment variable names are case-insensitive, so a `Platform=x64` set by Visual Studio developer prompts or AppVeyor shells counts as `PLATFORM` and makes a web project throw. Unset it for the test run, or pass `platform: 'web'` to `baseFixture`, which takes precedence over the variable.
+`E2E_PLATFORM` is namespaced so that nothing ambient can fail a web run: the library never reads `PLATFORM` or `CAPABILITIES` (a `Platform=x64` set by Windows developer shells is ignored). A set `E2E_PLATFORM` that is not a platform name throws, naming the variable. The `platform` option of `baseFixture` takes precedence over the variable.
+
+`resolvePlatform(option?, env = process.env)` is exported and applies the same rule (the option, else `E2E_PLATFORM`, else `'web'`; an unknown value throws). Use it in a platform config or fixture to read the active platform, for example to skip a device-only spec on web: `test.skip(resolvePlatform(undefined) !== 'ios', 'iOS only')`.
 
 | Variable | Meaning |
 |---|---|
-| `PLATFORM` | `web` (default) \| `android` \| `ios` \| `macos` \| `windows` |
-| `CAPABILITIES` | Path to the capabilities JSON file |
+| `E2E_PLATFORM` | `web` (default) \| `android` \| `ios` \| `macos` \| `windows` |
+| `E2E_CAPABILITIES` | Path to the capabilities JSON file |
 | `APPIUM_URL` | Full Appium server URL, including the base path (e.g. `/wd/hub`) |
 | `APPIUM_USER`, `APPIUM_KEY` | Optional credentials for a remote or cloud server |
 
@@ -623,7 +625,7 @@ Capabilities live **only** in JSON files, one per device or device class, conven
 |---|---|---|
 | `steps` | `Steps` on the Playwright page | `Steps` on the Appium family |
 | `repo` | `ElementRepository` with `{ platform: 'web' }` active | `ElementRepository` with the platform active |
-| `interactions` | `ElementInteractions` | A `PlatformInteractions` with the same members (`interact`, `verify`, `extract`, `navigate`, `email`) plus `gestures` and `device`; `request` throws. The fixture stays **typed** `ElementInteractions` for compatibility. |
+| `interactions` | `ElementInteractions` | A `PlatformInteractions` with the same members (`interact`, `verify`, `extract`, `navigate`, `email`) plus `gestures` and `device`; `request` throws. The fixture is typed `ElementInteractions \| PlatformInteractions`: narrow with `interactions instanceof PlatformInteractions` to reach `gestures` / `device`. |
 | `contextStore` | `ContextStore` | `ContextStore` |
 | `page`, `context` | Playwright's | Throw `PlatformNotSupportedError('page' \| 'context', <platform>)`; no browser starts |
 | `driver` | Throws `PlatformNotSupportedError('driver', 'web')` | The worker's `WebdriverIO.Browser` session |
@@ -1435,6 +1437,8 @@ PRs that skip step 1 will not be merged.
 **Logging.** Core interaction methods must not contain any logs. `Steps` wrappers are responsible for logging what action is being performed.
 
 **Unit tests.** Every new method must include a unit test. Tests run against the [Vue test app](https://github.com/civitas-cerebrum/vue-test-app), which is built from its Docker image during CI. If the component you need doesn't exist in the test app, open a PR there first and wait for it to merge before updating this repository.
+
+Platform (Android / iOS) code is unit-tested without a device: `tests/appium/mocks.ts` provides mock WebdriverIO drivers and elements, and every Appium-family method gets a test against them. Fixture tests that need a Playwright run of their own live in `tests/fixture-platform/` and are named `*.pw.ts`: the default `testMatch` skips that suffix on purpose, and a parent spec starts them as a nested run with `tests/fixture-platform/playwright.config.ts`. Live device checks (`tests/live/`, `tests/cross-platform/` on a device) run only with `playwright.platform.config.ts`.
 
 **Coverage.** CI gates on the report produced by `@civitas-cerebrum/test-coverage` (`npm run test:coverage` writes `test-coverage-report.txt`; `test:with-coverage` prints the CI-friendly variant). Note what that number means: it is **API (method-invocation) coverage** — every public method on `Steps`, `ElementAction`, the matcher classes, and the interaction layers is exercised by at least one test — **not** line/branch coverage.
 
