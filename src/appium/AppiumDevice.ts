@@ -1,7 +1,8 @@
-import type { Platform } from '@civitas-cerebrum/element-repository';
-import type { IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
+import { PlatformNotSupportedError, type Platform } from '@civitas-cerebrum/element-repository';
+import type { DeviceVerifyOptions, IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
 import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
 import { notImplementedError } from './platform/notImplemented';
+import { pollUntil } from '../utils/poll';
 
 /**
  * Thrown when a call needs an app id and there is none: none was passed and
@@ -35,12 +36,16 @@ export const NATIVE_CONTEXT = 'NATIVE_APP';
  * `appId` arguments default to the app under test the factory was given
  * (read from the capabilities file). A call that needs an app id
  * when there is none throws, naming the capability key to set.
+ *
+ * The `verify*` assertions poll a read-only query until it holds or their
+ * timeout (`options.timeout`, else the instance timeout) expires.
  */
 export class AppiumDevice implements IDevice {
     constructor(
         private readonly driver: AppiumDriver,
         private readonly strategy: PlatformStrategy,
         private readonly defaultAppId?: string,
+        private readonly timeout: number = 30000,
     ) {}
 
     private get platform(): Platform {
@@ -53,13 +58,13 @@ export class AppiumDevice implements IDevice {
     }
 
     /**
-     * Whether this platform can perform the device method `method` (`false`
+     * Whether this platform can perform the device step `step` (`false`
      * for one in the strategy's `unsupported` list, e.g. `pressBack` on ios).
      * Lets a caller refuse with `PlatformNotSupportedError` before doing
      * anything else (logging, resolving).
      */
-    supports(method: keyof IDevice): boolean {
-        return !this.strategy.unsupported.includes(method);
+    supports(step: string): boolean {
+        return !this.strategy.unsupported.includes(step);
     }
 
     /**
@@ -208,6 +213,83 @@ export class AppiumDevice implements IDevice {
     async getPageSource(): Promise<string> {
         this.requireImplemented();
         return this.driver.getPageSource();
+    }
+
+    // ── Polling assertions ──
+
+    async verifyAppInForeground(appId?: string, options?: DeviceVerifyOptions): Promise<void> {
+        const id = this.resolveAppId('verifyAppInForeground', appId);
+        await this.pollDevice(
+            () => this.isAppInForeground(id),
+            inForeground => inForeground === true,
+            `verifyAppInForeground: expected app "${id}" in the foreground`,
+            options,
+        );
+    }
+
+    async verifyOrientation(orientation: Orientation, options?: DeviceVerifyOptions): Promise<void> {
+        if (orientation !== 'portrait' && orientation !== 'landscape') {
+            throw new Error(`verifyOrientation: expected 'portrait' or 'landscape', got "${orientation}".`);
+        }
+        await this.pollDevice(
+            () => this.getOrientation(),
+            actual => actual === orientation,
+            `verifyOrientation: expected orientation "${orientation}"`,
+            options,
+        );
+    }
+
+    async verifyKeyboardShown(options?: DeviceVerifyOptions & { negated?: boolean }): Promise<void> {
+        const shown = options?.negated !== true;
+        await this.pollDevice(
+            () => this.isKeyboardShown(),
+            actual => actual === shown,
+            `verifyKeyboardShown: expected the keyboard ${shown ? 'shown' : 'hidden'}`,
+            options,
+        );
+    }
+
+    async verifyContext(name: string, options?: DeviceVerifyOptions): Promise<void> {
+        await this.pollDevice(
+            () => this.getContext(),
+            actual => actual === name,
+            `verifyContext: expected context "${name}"`,
+            options,
+        );
+    }
+
+    /**
+     * Polls a read-only device query until `accept` takes its value, for
+     * `options.timeout` (else the instance timeout). A
+     * `PlatformNotSupportedError` or a {@link MissingAppIdError} from the
+     * query is not retried: it is rethrown at once (neither can change while
+     * polling). On timeout the error leads with `options.errorMessage`, else
+     * `message` (the step and what was expected), then the last observed value.
+     */
+    private async pollDevice<T>(
+        probe: () => Promise<T>,
+        accept: (value: T) => boolean,
+        message: string,
+        options?: DeviceVerifyOptions,
+    ): Promise<void> {
+        let refusal: PlatformNotSupportedError | MissingAppIdError | undefined;
+        const REFUSED = Symbol('refused');
+        await pollUntil<T | typeof REFUSED>(
+            async () => {
+                try {
+                    return await probe();
+                } catch (error) {
+                    if (error instanceof PlatformNotSupportedError || error instanceof MissingAppIdError) {
+                        refusal = error;
+                        return REFUSED;
+                    }
+                    throw error;
+                }
+            },
+            value => value === REFUSED || accept(value as T),
+            { timeout: options?.timeout ?? this.timeout, message: options?.errorMessage ?? message },
+        );
+        if (refusal) throw refusal;
     }
 }
 

@@ -1,11 +1,14 @@
 import type { Page } from '@playwright/test';
-import { PlatformElement, PlatformNotSupportedError, type Element, type Platform } from '@civitas-cerebrum/element-repository';
+import { PlatformElement, PlatformNotSupportedError, SelectionStrategy, type Element, type Platform } from '@civitas-cerebrum/element-repository';
 import type { IVerifications, VerifiableState } from '../interfaces/IVerifications';
+import type { EntryTarget } from '../interfaces/IEntryTarget';
 import type { CountVerifyOptions, TextVerifyOptions, VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
 import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
-import { describeValue, pollUntil } from '../utils/poll';
+import { describeValue, pollUntil, PollTimeoutError } from '../utils/poll';
 import { webOnly } from './unsupported';
 import { softRead } from '../utils/driverErrors';
+import { ReResolvingElement } from './ReResolvingElement';
+import { DEVICE_POLL_ATTACH_MS, entryLabel, probeVisibleOnDevice } from './entry';
 
 type HtmlOptions = VerifyOptions & { outer?: boolean };
 
@@ -52,6 +55,77 @@ export class AppiumVerifications implements IVerifications {
 
     private readText(target: Element): () => Promise<string> {
         return async () => (await this.strategy.readText(target)).trim();
+    }
+
+    // ── Repository entries (fluent chains) ──
+
+    /**
+     * A {@link ReResolvingElement} that resolves the entry afresh (one
+     * existence check per `fallback` node) on every read, so a poll never
+     * keeps reading a node the repository picked earlier; with `collection`,
+     * the whole collection.
+     */
+    async pollTarget(entry: EntryTarget, collection: boolean = false): Promise<Element> {
+        return new ReResolvingElement(() => collection
+            ? entry.resolveAll(DEVICE_POLL_ATTACH_MS)
+            : entry.resolve(DEVICE_POLL_ATTACH_MS), entryLabel(entry));
+    }
+
+    /** The re-resolving visibility probe; a fatal driver error is thrown, never read as hidden. */
+    async visibleWithin(entry: EntryTarget, timeout: number): Promise<boolean> {
+        return probeVisibleOnDevice(entry, timeout, element => this.strategy.readText(element));
+    }
+
+    /** The re-resolving visibility probe; with `containsText`, the platform's visible text must contain it. */
+    async probeVisible(entry: EntryTarget, timeout: number, containsText?: string): Promise<boolean> {
+        return probeVisibleOnDevice(entry, timeout, element => this.strategy.readText(element), containsText);
+    }
+
+    /**
+     * At least one match of the collection is displayed within `timeout`,
+     * polled with the whole collection re-resolved on every poll. A fatal
+     * driver error is never read as "not displayed".
+     */
+    async listPresence(entry: EntryTarget, timeout: number): Promise<void> {
+        let lastCount = 0;
+        try {
+            await pollUntil(async () => {
+                const matches = await (await entry.resolveAll(DEVICE_POLL_ATTACH_MS)).all();
+                lastCount = matches.length;
+                for (const match of matches) {
+                    if (await softRead(() => match.isVisible(), false)) return true;
+                }
+                return false;
+            }, visible => visible, { timeout });
+        } catch (err) {
+            if (!(err instanceof PollTimeoutError)) throw err;
+            const cause = err.lastError instanceof Error ? ` Last error: ${err.lastError.message}` : '';
+            throw new Error(
+                `verifyPresence: ${entryLabel(entry)} is a list entry ("list": true) — ` +
+                `expected at least one visible match within ${timeout}ms, found ${lastCount} match(es) and none visible.${cause}`,
+            );
+        }
+    }
+
+    /**
+     * The entry is resolved once through the repository's `ALL` strategy with
+     * `attachSlice` per `fallback` node, so a `fallback` entry is asserted on
+     * the node the repository resolves (the first chain node that exists,
+     * exactly as an action would target; the terminal node when none does),
+     * and absence means every match of that node is hidden or gone, polled
+     * until `timeout`. A strategy selector does not narrow it (as on web).
+     *
+     * The web cross-check (default vs `ALL` resolution landing on different
+     * nodes) has no device counterpart: there is no element handle to
+     * compare, and both resolutions probe a node with the same first-match
+     * attach wait, so they walk the chain identically.
+     */
+    async entryAbsence(entry: EntryTarget, options: { timeout: number; attachSlice: number }): Promise<void> {
+        const all = await entry.repo.get(entry.elementName, entry.pageName, {
+            strategy: SelectionStrategy.ALL,
+            timeout: options.attachSlice,
+        });
+        await this.absence(all, { timeout: options.timeout });
     }
 
     // ── Text ──

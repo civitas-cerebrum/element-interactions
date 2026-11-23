@@ -1,6 +1,7 @@
 import { familyOf, PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
 import type { Platform } from '@civitas-cerebrum/element-repository';
 import type { IExtractions } from '../interfaces/IExtractions';
+import type { IGestures } from '../interfaces/IGestures';
 import type { IInteractionFactory } from '../interfaces/IInteractionFactory';
 import type { IInteractions } from '../interfaces/IInteractions';
 import type { IVerifications } from '../interfaces/IVerifications';
@@ -15,6 +16,8 @@ export interface ElementActionFamily {
     readonly interact: IInteractions;
     readonly verify: IVerifications;
     readonly extract: IExtractions;
+    /** The gestures behind the chain's gesture terminals (`swipe`, `longPress`, ...). Omitted: they throw. */
+    readonly gestures?: IGestures;
     /** The platform these members act on. Omitted means `'web'`. */
     readonly platform?: Platform;
 }
@@ -25,6 +28,7 @@ export function actionFamilyOf(factory: IInteractionFactory): ElementActionFamil
         interact: factory.createInteractions(),
         verify: factory.createVerifications(),
         extract: factory.createExtractions(),
+        gestures: factory.createGestures(),
         platform: factory.platform,
     };
 }

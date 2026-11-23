@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import type { Element } from '@civitas-cerebrum/element-repository';
 import type { CountVerifyOptions, TextVerifyOptions, VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
+import type { EntryTarget } from './IEntryTarget';
 
 /** The element states `state()` can assert. */
 export type VerifiableState =
@@ -19,8 +20,51 @@ type HtmlOptions = VerifyOptions & { outer?: boolean };
  * `windowProperty`, `images`, `tabCount`, every `cssProperty*`,
  * `visuallyMatches` (takes a Playwright `Page` and `Locator` masks), and
  * `state(selector: string, ...)` (a raw Playwright selector string).
+ *
+ * The Playwright types this interface mentions (`Page` in `visuallyMatches`)
+ * are parameters of web-only methods; no method a device platform supports
+ * takes or returns one.
+ *
+ * The entry-level methods (`pollTarget`, `visibleWithin`, `probeVisible`,
+ * `listPresence`, `entryAbsence`) take an {@link EntryTarget} instead of a
+ * resolved element, because how often an entry is resolved is the family's
+ * decision: the Playwright family resolves once (its locators re-query on
+ * every read), the Appium family re-resolves on every poll so a poll never
+ * keeps reading a node the repository picked earlier.
  */
 export interface IVerifications {
+    /**
+     * The element a polling verification of a fluent chain reads; with
+     * `collection`, the whole collection (count and order verifications).
+     */
+    pollTarget(entry: EntryTarget, collection?: boolean): Promise<Element>;
+    /**
+     * Whether the entry's element is visible within `timeout` ms: the
+     * `ifVisible()` / `isVisible()` gate in front of an action or a matcher.
+     * `false` when it is not; the Appium family throws a fatal driver error
+     * (dead session, invalid selector) instead of answering `false`.
+     */
+    visibleWithin(entry: EntryTarget, timeout: number): Promise<boolean>;
+    /**
+     * The `isVisible()` probe: whether the entry's element becomes visible
+     * within `timeout` ms (and, with `containsText`, whether its text then
+     * contains it). Re-resolves the entry on every attempt, so a primary that
+     * appears late is picked up. Never throws for a hidden or missing element;
+     * the Appium family throws a fatal driver error instead of answering `false`.
+     */
+    probeVisible(entry: EntryTarget, timeout: number, containsText?: string): Promise<boolean>;
+    /**
+     * List presence of a `"list": true` entry: at least one match of the
+     * collection is visible within `timeout` ms. Throws naming the entry, the
+     * match count and the timeout otherwise.
+     */
+    listPresence(entry: EntryTarget, timeout: number): Promise<void>;
+    /**
+     * Absence of a repository entry: every match of the `fallback` node the
+     * repository resolves is hidden or gone within `options.timeout` ms.
+     * `options.attachSlice` is the per-node attach wait of that resolution.
+     */
+    entryAbsence(entry: EntryTarget, options: { timeout: number; attachSlice: number }): Promise<void>;
     text(target: Element, expectedText?: string, options?: TextVerifyOptions & VerifyOptions): Promise<void>;
     textContains(target: Element, expectedText: string, options?: VerifyOptions): Promise<void>;
     textMatches(target: Element, regex: RegExp, options?: VerifyOptions): Promise<void>;

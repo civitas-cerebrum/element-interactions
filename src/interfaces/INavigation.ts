@@ -16,6 +16,10 @@ import type {
  * `waitForNetworkIdle`, `waitForLoadState`, `waitForResponse` (returns a
  * Playwright `Response`), `expectNoRequest`. App navigation on a device lives
  * on `IDevice` (`openDeepLink`, `pressBack`).
+ *
+ * The Playwright types this interface mentions (`Page`, `Response`) belong
+ * to those web-only methods only; no method a device platform supports takes
+ * or returns one.
  */
 export interface INavigation {
     /** Web only. Resolves the browser's main-frame response. */

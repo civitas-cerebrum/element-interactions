@@ -5,8 +5,9 @@ import { AppiumFactory, AppiumGestures } from '../src/appium';
 import { MissingAppIdError } from '../src/appium/AppiumDevice';
 import { PlaywrightFactory } from '../src/playwright/PlaywrightFactory';
 import { stepLog } from '../src/logger/Logger';
-import type { Direction } from '../src/interfaces/IGestures';
-import type { Orientation, PermissionState } from '../src/interfaces/IDevice';
+import type { Direction, LongPressOptions, PinchOptions, ScrollIntoViewOptions, SwipeOptions } from '../src/interfaces/IGestures';
+import type { DeviceVerifyOptions, Orientation, PermissionState } from '../src/interfaces/IDevice';
+import type { StepOptions } from '../src/enum/Options';
 import { PollTimeoutError } from '../src/utils/poll';
 import { mockDriver, mockElement, expectNotSupported, screenSwipes, touches, DEVICE_PLATFORMS, type Call } from './appium/mocks';
 
@@ -32,14 +33,14 @@ interface PlatformStepSurface {
     removeApp(appId: string): Promise<void>;
     openDeepLink(url: string, appId?: string): Promise<void>;
 
-    swipe(elementName: string, pageName: string, direction: Direction, options?: { distance?: number }): Promise<void>;
+    swipe(elementName: string, pageName: string, direction: Direction, options?: StepOptions & SwipeOptions): Promise<void>;
     swipeScreen(direction: Direction, options?: { distance?: number }): Promise<void>;
     scrollIntoView(elementName: string, pageName: string, options?: { direction?: Direction }): Promise<void>;
-    scrollUntilFound(elementName: string, pageName: string, options?: { direction?: Direction; timeout?: number }): Promise<void>;
-    longPress(elementName: string, pageName: string, options?: { duration?: number }): Promise<void>;
+    scrollUntilFound(elementName: string, pageName: string, options?: StepOptions & ScrollIntoViewOptions): Promise<void>;
+    longPress(elementName: string, pageName: string, options?: StepOptions & LongPressOptions): Promise<void>;
     tapAt(x: number, y: number): Promise<void>;
-    pinch(elementName: string, pageName: string, options?: { scale?: number }): Promise<void>;
-    zoom(elementName: string, pageName: string, options?: { scale?: number }): Promise<void>;
+    pinch(elementName: string, pageName: string, options?: StepOptions & PinchOptions): Promise<void>;
+    zoom(elementName: string, pageName: string, options?: StepOptions & PinchOptions): Promise<void>;
 
     pressBack(): Promise<void>;
     hideKeyboard(): Promise<void>;
@@ -51,10 +52,10 @@ interface PlatformStepSurface {
     getContexts(): Promise<string[]>;
     switchContext(name: string): Promise<void>;
 
-    verifyAppInForeground(appId?: string): Promise<void>;
-    verifyOrientation(orientation: 'portrait' | 'landscape'): Promise<void>;
-    verifyKeyboardShown(shown?: boolean): Promise<void>;
-    verifyContext(name: string): Promise<void>;
+    verifyAppInForeground(appId?: string, options?: DeviceVerifyOptions): Promise<void>;
+    verifyOrientation(orientation: 'portrait' | 'landscape', options?: DeviceVerifyOptions): Promise<void>;
+    verifyKeyboardShown(options?: DeviceVerifyOptions & { negated?: boolean }): Promise<void>;
+    verifyContext(name: string, options?: DeviceVerifyOptions): Promise<void>;
 
     getPageSource(): Promise<string>;
 }
@@ -521,14 +522,14 @@ for (const platform of DEVICE_PLATFORMS) {
             setTimeout(() => { mock.executeResults['mobile: isKeyboardShown'] = true; }, 250);
             await steps.verifyKeyboardShown();
             setTimeout(() => { mock.executeResults['mobile: isKeyboardShown'] = false; }, 250);
-            await steps.verifyKeyboardShown(false);
+            await steps.verifyKeyboardShown({ negated: true });
             expect(mock.calls.filter(c => c[1] === 'mobile: isKeyboardShown').length).toBeGreaterThan(2);
         });
 
         test('verifyKeyboardShown fails after the step timeout with the last value', async () => {
             const { steps, mock } = deviceSteps(platform, 300);
             mock.executeResults['mobile: isKeyboardShown'] = true;
-            const error = await caught(() => steps.verifyKeyboardShown(false));
+            const error = await caught(() => steps.verifyKeyboardShown({ negated: true }));
             expect(error).toBeInstanceOf(PollTimeoutError);
             expect((error as Error).message).toContain('verifyKeyboardShown: expected the keyboard hidden');
             expect((error as Error).message).not.toContain('whether it is');

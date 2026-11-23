@@ -30,6 +30,7 @@ export function notImplementedStrategy(platform: Platform, appIdCapability: stri
         appIdCapability,
         focusedAttribute: null,
         unsupported: Object.freeze([]) as readonly string[],
+        snapshotAttributes: Object.freeze([]) as readonly string[],
         ...methods,
     });
 }

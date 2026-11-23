@@ -4,8 +4,39 @@ type LocatorAssertions = ReturnType<typeof expect<Locator>>;
 import { CountVerifyOptions, TextVerifyOptions } from '../enum/Options';
 import type { VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
 export type { VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
-import { Element, WebElement } from '@civitas-cerebrum/element-repository';
+import { Element, SelectionStrategy, WebElement } from '@civitas-cerebrum/element-repository';
+import type { EntryTarget } from '../interfaces/IEntryTarget';
 import { requireWebElement } from './requireWebElement';
+
+/**
+ * Attach slice the visibility probe gives the repository per ATTEMPT (see
+ * {@link Verifications.probeVisible}), and the cap on each attempt's
+ * visibility wait.
+ *
+ * Deliberately a fixed duration rather than a fraction of the probe budget.
+ * The repository walks a `fallback` chain by attach-waiting every missing node
+ * (two waits per non-terminal node, one for the node the walk lands on), so a
+ * slice expressed as `budget / k` makes the walk's cost scale with the budget
+ * and blow it on any chain longer than `k / 2` nodes — which is how a five-node
+ * chain came to leave the node it landed on a 1ms visibility wait and report a
+ * plainly visible element hidden. With a fixed slice the walk costs the same
+ * `(2N-1) x 250ms` whatever the budget, and the attempt loop simply stops
+ * starting attempts once the budget is spent.
+ *
+ * 250ms is the floor at which a node that is ALREADY attached is seen
+ * reliably; shorter deadlines routinely expire before Playwright's first poll,
+ * which makes the walk step over a node that is sitting in the DOM.
+ */
+const PROBE_SLICE_MS = 250;
+
+/**
+ * How many times `entryAbsence` resolves the entry before it reports a
+ * divergence between the default and `ALL` resolutions. One extra attempt is
+ * enough: a node that attached while the two walks were in flight agrees on
+ * the retry, and a divergence that persists is a real disagreement about which
+ * chain node exists.
+ */
+const ABSENCE_RESOLVE_ATTEMPTS = 2;
 
 /** Reach the Playwright Locator under a WebElement — used for Playwright's `expect(locator)` assertions. */
 function resolveLocator(target: WebElement): Locator {
@@ -28,6 +59,176 @@ export class Verifications implements IVerifications {
      */
     constructor(private page: Page, timeout: number = 30000) {
         this.ELEMENT_TIMEOUT = timeout;
+    }
+
+    // ── Repository entries (fluent chains) ──
+
+    /** Resolves the entry once: a Playwright locator re-queries on every read. */
+    async pollTarget(entry: EntryTarget, collection: boolean = false): Promise<Element> {
+        return collection ? entry.resolveAll() : entry.resolve();
+    }
+
+    /** Resolves the entry once and waits up to `timeout` for it to be visible; any failure answers `false`. */
+    async visibleWithin(entry: EntryTarget, timeout: number): Promise<boolean> {
+        try {
+            const element = await entry.resolve();
+            await element.waitFor({ state: 'visible', timeout });
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Runs the visibility check (and optional `containsText` filter) without
+     * throwing. Resolves the probe target through `entry.probe()`, so scoped
+     * `findBy*` chains probe their child locator (the stamped scoped name has
+     * no repository entry) while repository chains resolve the entry's FULL
+     * selector through the repository — role+name, regex text, fallback and
+     * frame scope — exactly as an action on the same entry would. `timeout`
+     * is the probe's whole budget, so the 15s repository-resolution default
+     * is never imposed on a probe.
+     *
+     * The probe RE-RESOLVES on every attempt instead of resolving once and then
+     * waiting. A repository resolution is a point-in-time answer: the walk
+     * commits to the first `fallback` node that is attached *while the walk is
+     * running* and the caller is then stuck with that node. So an entry whose
+     * primary hydrates a second into the probe used to be answered on the
+     * fallback the walk had already settled on — reporting `false` for an
+     * element that the very action being gated goes on to find, and silently
+     * skipping a click on a visible element. Re-resolving means a late primary
+     * is picked up by a later attempt; the loop just stops starting attempts
+     * once the budget is spent.
+     *
+     * Each attempt is bounded by {@link PROBE_SLICE_MS}, both for the
+     * repository's per-node attach wait and for that attempt's visibility wait.
+     * A chain walk is not interruptible, so an entry with a long `fallback`
+     * chain can overrun the nominal budget by at most the cost of the final
+     * walk — a correct answer slightly late, rather than a wrong answer on time.
+     */
+    async probeVisible(entry: EntryTarget, timeout: number, containsText?: string): Promise<boolean> {
+        // `Math.max(1, …)`: a Playwright timeout of 0 means "wait forever", and
+        // a 0ms budget must still buy one attempt rather than no answer at all.
+        const deadline = Date.now() + Math.max(1, timeout);
+
+        for (;;) {
+            const slice = Math.max(1, Math.min(PROBE_SLICE_MS, deadline - Date.now()));
+            const element = await entry.probe(slice).catch(() => null);
+            if (element) {
+                // Look at the resolved node with no wait at all before waiting
+                // on it. The walk may have spent the entire budget and still
+                // landed on a node that is visible *right now*; a residual
+                // `waitFor({ timeout: 1 })` is not a substitute, because a 1ms
+                // deadline routinely expires before Playwright's first poll and
+                // reports an attached, visible node as hidden.
+                let visible = await element.isVisible().catch(() => false);
+                if (!visible) {
+                    const left = Math.min(deadline - Date.now(), slice);
+                    if (left > 0) {
+                        visible = await element
+                            .waitFor({ state: 'visible', timeout: left })
+                            .then(() => true, () => false);
+                    }
+                }
+                if (visible) {
+                    if (containsText) {
+                        const text = await element.textContent().catch(() => null);
+                        return text !== null && text.includes(containsText);
+                    }
+                    return true;
+                }
+            }
+            if (Date.now() >= deadline) return false;
+        }
+    }
+
+    /** At least one match of the collection becomes visible within `timeout`. */
+    async listPresence(entry: EntryTarget, timeout: number): Promise<void> {
+        const all = await entry.resolveAll();
+        requireWebElement('ElementAction.verifyPresence', all);
+        try {
+            await all.locator.filter({ visible: true }).first().waitFor({ state: 'visible', timeout });
+        } catch {
+            const count = await all.locator.count();
+            throw new Error(
+                `verifyPresence: '${entry.pageName}.${entry.elementName}' is a list entry ("list": true) — ` +
+                `expected at least one visible match within ${timeout}ms, found ${count} match(es) and none visible.`,
+            );
+        }
+    }
+
+    /**
+     * Asserts the entry hidden or detached with `toBeHidden()` on the first
+     * VISIBLE match of the entry's full match set (so it holds for every match,
+     * never a strict-mode violation on a multi-match entry), resolved through
+     * `repo.get(...)` with `attachSlice` per `fallback` chain node.
+     *
+     * A `fallback` entry is asserted on the variant the repository resolves:
+     * the first chain node that exists, exactly as an action would target. The
+     * assertion needs that node's FULL match set, so it reads the ALL
+     * resolution — and cross-checks it against the default one, refusing to
+     * assert when they land on different nodes: asserting on a node the action
+     * would not target (for an absent fallback, a false PASS) is worse than
+     * failing loudly. element-repository 0.3.4 and later probe a node by its
+     * first match under every strategy, so the two agree on a multi-match node;
+     * before that, ALL walked past it.
+     *
+     * The two resolutions run CONCURRENTLY, and a divergence is confirmed by a
+     * second round before it is reported. Run back to back they were two walks
+     * over two different moments in the page's life, so a perfectly ordinary
+     * single-match primary that attached between them made the walks land on
+     * different nodes.
+     */
+    async entryAbsence(entry: EntryTarget, options: { timeout: number; attachSlice: number }): Promise<void> {
+        const slice = options.attachSlice;
+        let element!: WebElement;
+        let divergence: Error | undefined;
+        for (let attempt = 1; attempt <= ABSENCE_RESOLVE_ATTEMPTS; attempt++) {
+            const lastAttempt = attempt === ABSENCE_RESOLVE_ATTEMPTS;
+            divergence = undefined;
+            const [resolved, all] = await Promise.all([
+                entry.repo.get(entry.elementName, entry.pageName, { timeout: slice }),
+                entry.repo.get(entry.elementName, entry.pageName, { strategy: SelectionStrategy.ALL, timeout: slice }),
+            ]);
+            requireWebElement('ElementAction.verifyAbsence', resolved);
+            requireWebElement('ElementAction.verifyAbsence', all);
+            element = all;
+            const handle = await resolved.locator.elementHandle({ timeout: slice }).catch(() => null);
+            if (!handle) break;
+            let inMatchSet: boolean;
+            try {
+                inMatchSet = await all.locator.evaluateAll((els, target) => (els as unknown[]).includes(target), handle);
+            } catch (error) {
+                // The membership check runs against a live handle, so it can
+                // fail for reasons that have nothing to do with the assertion
+                // (the node detached mid-evaluation, a navigation tore the
+                // execution context down). Retry rather than report a failure
+                // the page's own churn caused; on the final attempt let it
+                // surface — loudly wrong beats quietly passing.
+                if (lastAttempt) throw error;
+                continue;
+            } finally {
+                // `dispose()` must run on the throwing path too, or every failed
+                // membership check leaks a handle into the browser process for
+                // the lifetime of the page.
+                await handle.dispose().catch(() => undefined);
+            }
+            if (inMatchSet) break;
+            divergence = new Error(
+                `verifyAbsence: "${entry.elementName}" on "${entry.pageName}" is a fallback entry whose default and ALL resolutions ` +
+                `landed on different chain nodes on ${ABSENCE_RESOLVE_ATTEMPTS} consecutive attempts, so absence cannot be asserted reliably. ` +
+                `Check that @civitas-cerebrum/element-repository is 0.3.4 or later.`,
+            );
+        }
+        if (divergence) throw divergence;
+        // `toBeHidden()` is strict: on the ALL match set it throws "resolved to
+        // N elements" as soon as two nodes match, even when every one is hidden.
+        // Assert on the first VISIBLE match instead — hidden (passes) when every
+        // match is hidden or none exists, visible (fails) when any match shows.
+        await this.absence(
+            new WebElement(element.locator.filter({ visible: true }).first()),
+            { timeout: options.timeout },
+        );
     }
 
     /** Pick `expect(locator)` vs `expect(locator).not` based on options, with the right timeout and custom error message. */

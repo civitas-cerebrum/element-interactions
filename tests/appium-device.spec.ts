@@ -236,7 +236,10 @@ for (const platform of ['android', 'ios'] as const) {
         }
 
         test('every IDevice method is covered by the table', () => {
-            expect(methodsOf(AppiumDevice, ['requireImplemented', 'supports', 'resolveAppId'])).toEqual(Object.keys(EXPECTED).sort());
+            // The two queries send nothing; the polling assertions are covered in appium-entry.spec.ts.
+            const notInTable = ['requireImplemented', 'supports', 'resolveAppId', 'pollDevice',
+                'verifyAppInForeground', 'verifyOrientation', 'verifyKeyboardShown', 'verifyContext'];
+            expect(methodsOf(AppiumDevice, notInTable)).toEqual(Object.keys(EXPECTED).sort());
         });
 
         test('the factory appId option wins over the capabilities', async () => {

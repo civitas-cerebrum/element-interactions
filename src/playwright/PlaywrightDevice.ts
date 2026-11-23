@@ -1,4 +1,4 @@
-import type { IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
+import type { DeviceVerifyOptions, IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
 import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
 
 function unsupported(method: string): never {
@@ -9,9 +9,14 @@ function unsupported(method: string): never {
  * Device and app operations for the Playwright family (`web`). A browser has
  * no app lifecycle, system back, keyboard, orientation, native alerts,
  * permissions or contexts in this sense, so every method throws
- * `PlatformNotSupportedError(method, 'web')`.
+ * `PlatformNotSupportedError(method, 'web')`, except the two queries:
+ * `supports` answers `false` and `resolveAppId` `undefined`.
  */
 export class PlaywrightDevice implements IDevice {
+    /** A browser performs no device step. */
+    supports(_step: string): boolean { return false; }
+    /** A browser has no app under test. */
+    resolveAppId(_step: string, _appId?: string): string | undefined { return undefined; }
     async launchApp(_appId?: string): Promise<void> { unsupported('launchApp'); }
     async activateApp(_appId?: string): Promise<void> { unsupported('activateApp'); }
     async terminateApp(_appId?: string): Promise<void> { unsupported('terminateApp'); }
@@ -33,4 +38,8 @@ export class PlaywrightDevice implements IDevice {
     async getContext(): Promise<string> { return unsupported('getContext'); }
     async switchContext(_name: string): Promise<void> { unsupported('switchContext'); }
     async getPageSource(): Promise<string> { return unsupported('getPageSource'); }
+    async verifyAppInForeground(_appId?: string, _options?: DeviceVerifyOptions): Promise<void> { unsupported('verifyAppInForeground'); }
+    async verifyOrientation(_orientation: Orientation, _options?: DeviceVerifyOptions): Promise<void> { unsupported('verifyOrientation'); }
+    async verifyKeyboardShown(_options?: DeviceVerifyOptions & { negated?: boolean }): Promise<void> { unsupported('verifyKeyboardShown'); }
+    async verifyContext(_name: string, _options?: DeviceVerifyOptions): Promise<void> { unsupported('verifyContext'); }
 }

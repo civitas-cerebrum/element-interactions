@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { ElementRepository } from '@civitas-cerebrum/element-repository';
 import { Steps } from '../src/index';
 import { AppiumFactory } from '../src/appium';
-import { ReResolvingElement } from '../src/steps/ReResolvingElement';
+import { ReResolvingElement } from '../src/appium/ReResolvingElement';
 import { DEVICE_PLATFORMS, driverError, mockElement, mockUiDriver, type MockNode } from './appium/mocks';
 
 /**

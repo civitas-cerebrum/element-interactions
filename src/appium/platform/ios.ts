@@ -57,6 +57,8 @@ export const iosStrategy: PlatformStrategy = Object.freeze({
     // No focus attribute verified across XCUITest versions; state('focused') throws on iOS.
     focusedAttribute: null,
     unsupported: Object.freeze(['pressBack']),
+    snapshotAttributes: Object.freeze(['name', 'label', 'value', 'type', 'enabled', 'visible', 'accessible', 'selected',
+        'placeholderValue']),
 
     readText: iosReadText,
 

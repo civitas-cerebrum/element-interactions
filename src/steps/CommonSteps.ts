@@ -1,5 +1,5 @@
 import { Page, Response, Locator } from '@playwright/test';
-import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy, familyOf } from '@civitas-cerebrum/element-repository';
+import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
 import type { Platform } from '@civitas-cerebrum/element-repository';
 import { PlaywrightFactory } from '../playwright/PlaywrightFactory';
 import { BrowserRequest } from '../playwright/BrowserRequest';
@@ -10,14 +10,11 @@ import type { IVerifications } from '../interfaces/IVerifications';
 import type { IExtractions } from '../interfaces/IExtractions';
 import type { INavigation } from '../interfaces/INavigation';
 import type { IUtils } from '../interfaces/IUtils';
-import type { IGestures, Direction } from '../interfaces/IGestures';
-import type { IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
+import type { IGestures, Direction, LongPressOptions, PinchOptions, ScreenSwipeOptions, ScrollIntoViewOptions, SwipeOptions } from '../interfaces/IGestures';
+import type { DeviceVerifyOptions, IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
 import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
 import { actionFamilyOf, assertFactoryFamily, requireDevicePlatform, requireWebPlatform } from './platformGuard';
-import { pollUntil } from '../utils/poll';
 import { isFatalDriverError } from '../utils/driverErrors';
-import { AppiumDevice, MissingAppIdError } from '../appium/AppiumDevice';
-import { strategyFor } from '../appium/platform';
 import { EmailClient, EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
 import { SqlClient, SqlResult, QueryBuilder, UnsupportedEngineException } from '@civitas-cerebrum/sql-client';
@@ -34,6 +31,16 @@ import { ExpectBuilder } from './ExpectMatchers';
  * otherwise blow up a verifier's description string before its poll even runs.
  * Falls back to `String(value)` on any serialisation error.
  */
+/**
+ * `options` without its `undefined` fields, or `undefined` when none is set:
+ * a gesture step hands its family only the options the caller gave, so the
+ * family's own defaults apply to the rest.
+ */
+function definedOptions<T extends object>(options: T): Partial<T> | undefined {
+    const entries = Object.entries(options).filter(([, value]) => value !== undefined);
+    return entries.length > 0 ? Object.fromEntries(entries) as Partial<T> : undefined;
+}
+
 function safeStringify(value: unknown): string {
     try {
         const json = JSON.stringify(value);
@@ -820,7 +827,7 @@ export class Steps {
      *   device (`'down'` by default there). The browser scrolls whichever way
      *   is needed, so `direction` is ignored on web.
      */
-    async scrollIntoView(elementName: string, pageName: string, options?: StepOptions & { direction?: Direction }): Promise<void> {
+    async scrollIntoView(elementName: string, pageName: string, options?: StepOptions & Pick<ScrollIntoViewOptions, 'direction'>): Promise<void> {
         log.interact('Scrolling "%s" in "%s" into view', elementName, pageName);
         const element = await this.getElement(elementName, pageName, options);
         await this.gestures.scrollIntoView(element, options?.direction !== undefined ? { direction: options.direction } : undefined);
@@ -856,47 +863,26 @@ export class Steps {
      */
     private requireDeviceStep(stepName: keyof IDevice): void {
         this.requirePlatform(stepName);
-        if (this.device instanceof AppiumDevice && !this.device.supports(stepName)) {
+        if (!this.device.supports(stepName)) {
             throw new PlatformNotSupportedError(stepName, this.factory.platform);
         }
     }
 
     /**
-     * The app id a polling step queries: `appId`, else the app under test.
-     * On the Appium family a missing one throws {@link MissingAppIdError}
-     * naming the STEP and the capability key, before anything is polled or
-     * sent; any other device resolves it itself.
+     * The app id a polling step queries: `appId`, else the app under test,
+     * resolved by the family before anything is logged or polled (a family
+     * that needs one and has none throws, naming the step and the capability
+     * key to set).
      */
     private stepAppId(stepName: string, appId?: string): string | undefined {
-        return this.device instanceof AppiumDevice ? this.device.resolveAppId(stepName, appId) : appId;
+        return this.device.resolveAppId(stepName, appId);
     }
 
-    /**
-     * Polls a read-only device probe until `accept` takes its value, for the
-     * step timeout (the factory's). A `PlatformNotSupportedError` or a
-     * `MissingAppIdError` from the probe is not retried: it is rethrown at
-     * once (neither can change while polling). On timeout the error names
-     * the step, what was expected and the last observed value.
-     */
-    private async pollDevice<T>(probe: () => Promise<T>, accept: (value: T) => boolean, message: string): Promise<void> {
-        let refusal: PlatformNotSupportedError | MissingAppIdError | undefined;
-        const REFUSED = Symbol('refused');
-        await pollUntil<T | typeof REFUSED>(
-            async () => {
-                try {
-                    return await probe();
-                } catch (error) {
-                    if (error instanceof PlatformNotSupportedError || error instanceof MissingAppIdError) {
-                        refusal = error;
-                        return REFUSED;
-                    }
-                    throw error;
-                }
-            },
-            value => value === REFUSED || accept(value as T),
-            { timeout: this.timeout ?? this.utils.getTimeout(), message },
-        );
-        if (refusal) throw refusal;
+    /** The options of a polling device assertion: the per-call timeout, else the step timeout. */
+    private deviceVerifyOptions(options?: DeviceVerifyOptions): DeviceVerifyOptions {
+        const verifyOptions: DeviceVerifyOptions = { timeout: options?.timeout ?? this.timeout ?? this.utils.getTimeout() };
+        if (options?.errorMessage !== undefined) verifyOptions.errorMessage = options.errorMessage;
+        return verifyOptions;
     }
 
     // ── App lifecycle ──
@@ -983,12 +969,13 @@ export class Steps {
     /**
      * Swipes on an element: the finger moves in `direction` (`'up'` reveals content below), through the
      * element's centre. Delegates to the element's `swipe` primitive on every platform (on web a mouse drag).
-     * @param options - `distance`: finger travel in px (platform default when omitted).
+     * @param options - Optional step options for element resolution (`strategy`, `index`, ...; `timeout` is
+     *   also the gesture's), plus `distance`: finger travel in px (platform default when omitted).
      */
-    async swipe(elementName: string, pageName: string, direction: Direction, options?: { distance?: number }): Promise<void> {
+    async swipe(elementName: string, pageName: string, direction: Direction, options?: StepOptions & SwipeOptions): Promise<void> {
         log.interact('Swiping %s on "%s" in "%s"', direction, elementName, pageName);
-        const element = await this.getElement(elementName, pageName);
-        await this.gestures.swipe(element, direction, options?.distance !== undefined ? { distance: options.distance } : undefined);
+        const element = await this.getElement(elementName, pageName, options);
+        await this.gestures.swipe(element, direction, definedOptions({ distance: options?.distance, timeout: options?.timeout }));
     }
 
     /**
@@ -996,7 +983,7 @@ export class Steps {
      * content below), kept clear of the system gesture zones. Device platforms only.
      * @param options - `distance`: finger travel in px (default half the screen along that axis).
      */
-    async swipeScreen(direction: Direction, options?: { distance?: number }): Promise<void> {
+    async swipeScreen(direction: Direction, options?: ScreenSwipeOptions): Promise<void> {
         this.requirePlatform('swipeScreen');
         log.interact('Swiping the screen %s', direction);
         await this.gestures.swipeScreen(direction, options?.distance !== undefined ? { distance: options.distance } : undefined);
@@ -1005,28 +992,26 @@ export class Steps {
     /**
      * Scrolls the screen until the element is displayed, re-reading it after every swipe; throws when
      * `timeout` expires first. On web the browser scrolls the element into view directly.
-     * @param options - `direction`: where the element lies relative to the view (default `'down'`);
-     *   `timeout` in ms (default the step timeout). `timeout` bounds when a new swipe may start: an
-     *   in-flight swipe always finishes, so the step may run up to one swipe longer.
+     * @param options - Optional step options for element resolution, plus `direction`: where the element
+     *   lies relative to the view (default `'down'`). `timeout` in ms (default the step timeout) bounds when
+     *   a new swipe may start: an in-flight swipe always finishes, so the step may run up to one swipe longer.
      */
-    async scrollUntilFound(elementName: string, pageName: string, options?: { direction?: Direction; timeout?: number }): Promise<void> {
+    async scrollUntilFound(elementName: string, pageName: string, options?: StepOptions & ScrollIntoViewOptions): Promise<void> {
         log.interact('Scrolling %s until "%s" in "%s" is found', options?.direction ?? 'down', elementName, pageName);
-        const element = await this.getElement(elementName, pageName);
-        const gestureOptions: { direction?: Direction; timeout?: number } = {};
-        if (options?.direction !== undefined) gestureOptions.direction = options.direction;
-        if (options?.timeout !== undefined) gestureOptions.timeout = options.timeout;
-        await this.gestures.scrollUntilFound(element, gestureOptions);
+        const element = await this.getElement(elementName, pageName, options);
+        await this.gestures.scrollUntilFound(element, definedOptions({ direction: options?.direction, timeout: options?.timeout }) ?? {});
     }
 
     /**
      * Presses and holds an element. Delegates to the element's `longPress` primitive on every platform
      * (on web the mouse button is held).
-     * @param options - `duration`: hold time in ms (default 1000).
+     * @param options - Optional step options for element resolution (`timeout` is also the gesture's),
+     *   plus `duration`: hold time in ms (default 1000).
      */
-    async longPress(elementName: string, pageName: string, options?: { duration?: number }): Promise<void> {
+    async longPress(elementName: string, pageName: string, options?: StepOptions & LongPressOptions): Promise<void> {
         log.interact('Long-pressing "%s" in "%s"', elementName, pageName);
-        const element = await this.getElement(elementName, pageName);
-        await this.gestures.longPress(element, options?.duration !== undefined ? { duration: options.duration } : undefined);
+        const element = await this.getElement(elementName, pageName, options);
+        await this.gestures.longPress(element, definedOptions({ duration: options?.duration, timeout: options?.timeout }));
     }
 
     /**
@@ -1041,25 +1026,27 @@ export class Steps {
     /**
      * Two-finger pinch (fingers move together) on an element. Delegates to the element's `pinch` primitive.
      * Device platforms only: on web it throws `PlatformNotSupportedError('pinch', 'web')` before resolving.
-     * @param options - `scale` in (0, 1), default 0.5.
+     * @param options - Optional step options for element resolution (`timeout` is also the gesture's),
+     *   plus `scale` in (0, 1), default 0.5.
      */
-    async pinch(elementName: string, pageName: string, options?: { scale?: number }): Promise<void> {
+    async pinch(elementName: string, pageName: string, options?: StepOptions & PinchOptions): Promise<void> {
         this.requirePlatform('pinch');
         log.interact('Pinching "%s" in "%s"', elementName, pageName);
-        const element = await this.getElement(elementName, pageName);
-        await this.gestures.pinch(element, options?.scale !== undefined ? { scale: options.scale } : undefined);
+        const element = await this.getElement(elementName, pageName, options);
+        await this.gestures.pinch(element, definedOptions({ scale: options?.scale, timeout: options?.timeout }));
     }
 
     /**
      * Two-finger zoom (fingers spread) on an element. Delegates to the element's `zoom` primitive.
      * Device platforms only: on web it throws `PlatformNotSupportedError('zoom', 'web')` before resolving.
-     * @param options - `scale` above 1, default 2.
+     * @param options - Optional step options for element resolution (`timeout` is also the gesture's),
+     *   plus `scale` above 1, default 2.
      */
-    async zoom(elementName: string, pageName: string, options?: { scale?: number }): Promise<void> {
+    async zoom(elementName: string, pageName: string, options?: StepOptions & PinchOptions): Promise<void> {
         this.requirePlatform('zoom');
         log.interact('Zooming "%s" in "%s"', elementName, pageName);
-        const element = await this.getElement(elementName, pageName);
-        await this.gestures.zoom(element, options?.scale !== undefined ? { scale: options.scale } : undefined);
+        const element = await this.getElement(elementName, pageName, options);
+        await this.gestures.zoom(element, definedOptions({ scale: options?.scale, timeout: options?.timeout }));
     }
 
     // ── Device ──
@@ -1130,65 +1117,54 @@ export class Steps {
     // ── Assertions (polling, step timeout) ──
 
     /**
-     * Waits until the app is in the foreground; fails after the step timeout with the last observed state.
+     * Waits until the app is in the foreground; fails after the timeout with the last observed state.
      * Device platforms only.
      * @param appId - Android package / iOS bundle id; defaults to the app under test.
+     * @param options - `timeout` in ms (default the step timeout); `errorMessage` replaces the failure header.
      */
-    async verifyAppInForeground(appId?: string): Promise<void> {
+    async verifyAppInForeground(appId?: string, options?: DeviceVerifyOptions): Promise<void> {
         this.requirePlatform('verifyAppInForeground');
         const id = this.stepAppId('verifyAppInForeground', appId);
-        const app = id ?? '<app under test>';
-        log.verify('Verifying app "%s" is in the foreground', app);
-        await this.pollDevice(
-            () => this.device.isAppInForeground(id),
-            inForeground => inForeground === true,
-            `verifyAppInForeground: expected app "${app}" in the foreground`,
-        );
+        log.verify('Verifying app "%s" is in the foreground', id ?? '<app under test>');
+        await this.device.verifyAppInForeground(id, this.deviceVerifyOptions(options));
     }
 
     /**
-     * Waits until the device reports `orientation`; fails after the step timeout with the last observed one.
+     * Waits until the device reports `orientation`; fails after the timeout with the last observed one.
      * Device platforms only.
+     * @param options - `timeout` in ms (default the step timeout); `errorMessage` replaces the failure header.
      */
-    async verifyOrientation(orientation: Orientation): Promise<void> {
+    async verifyOrientation(orientation: Orientation, options?: DeviceVerifyOptions): Promise<void> {
         this.requirePlatform('verifyOrientation');
         if (orientation !== 'portrait' && orientation !== 'landscape') {
             throw new Error(`verifyOrientation: expected 'portrait' or 'landscape', got "${orientation}".`);
         }
         log.verify('Verifying orientation is %s', orientation);
-        await this.pollDevice(
-            () => this.device.getOrientation(),
-            actual => actual === orientation,
-            `verifyOrientation: expected orientation "${orientation}"`,
-        );
+        await this.device.verifyOrientation(orientation, this.deviceVerifyOptions(options));
     }
 
     /**
-     * Waits until the on-screen keyboard is shown (`shown`, default `true`) or hidden (`false`); fails after
-     * the step timeout with the last observed state. Device platforms only.
+     * Waits until the on-screen keyboard is shown (hidden with `negated`); fails after the timeout with the
+     * last observed state. Device platforms only.
+     * @param options - `negated`: wait for the keyboard to be hidden; `timeout` in ms (default the step
+     *   timeout); `errorMessage` replaces the failure header.
      */
-    async verifyKeyboardShown(shown: boolean = true): Promise<void> {
+    async verifyKeyboardShown(options?: DeviceVerifyOptions & { negated?: boolean }): Promise<void> {
         this.requirePlatform('verifyKeyboardShown');
-        log.verify('Verifying the keyboard is %s', shown ? 'shown' : 'hidden');
-        await this.pollDevice(
-            () => this.device.isKeyboardShown(),
-            actual => actual === shown,
-            `verifyKeyboardShown: expected the keyboard ${shown ? 'shown' : 'hidden'}`,
-        );
+        const negated = options?.negated === true;
+        log.verify('Verifying the keyboard is %s', negated ? 'hidden' : 'shown');
+        await this.device.verifyKeyboardShown({ ...this.deviceVerifyOptions(options), negated });
     }
 
     /**
-     * Waits until the current context is `name`; fails after the step timeout with the last observed context.
+     * Waits until the current context is `name`; fails after the timeout with the last observed context.
      * Device platforms only.
+     * @param options - `timeout` in ms (default the step timeout); `errorMessage` replaces the failure header.
      */
-    async verifyContext(name: string): Promise<void> {
+    async verifyContext(name: string, options?: DeviceVerifyOptions): Promise<void> {
         this.requirePlatform('verifyContext');
         log.verify('Verifying the current context is "%s"', name);
-        await this.pollDevice(
-            () => this.device.getContext(),
-            actual => actual === name,
-            `verifyContext: expected context "${name}"`,
-        );
+        await this.device.verifyContext(name, this.deviceVerifyOptions(options));
     }
 
     // ── Extraction ──
@@ -1749,44 +1725,20 @@ export class Steps {
         const childSelector = child === undefined
             ? undefined
             : typeof child === 'string' ? child : this.repo.getSelector(child.elementName, child.pageName);
-        let element: Element = await this.getAllElement(elementName, pageName, options);
+        const element: Element = await this.getAllElement(elementName, pageName, options);
 
         if ((!options?.strategy || options.strategy === 'all') && isListEntry(this.repo, elementName, pageName)) {
             await this.requireListMatch(element, elementName, pageName, 'getAll', options?.timeout);
         }
 
         // A narrowing strategy (index / text / attribute / random) picked ONE
-        // match. On a device `all()` on that picked element would answer every
-        // match of its selector again, so the picked element is the whole
-        // list, as the narrowed web locator is.
+        // match: the family reads that match as the whole list.
         const picked = !!options?.strategy && options.strategy !== 'all' && options.strategy !== 'first';
-        if (familyOf(this.factory.platform) !== 'playwright' && (picked || childSelector !== undefined)) {
-            const matches = picked ? [element] : await element.all();
-            // On a device a child is scoped to ONE parent match
-            // (element-repository's `locateChild` searches inside the parent's
-            // match), so the children of the whole collection are gathered
-            // match by match, in order: what the web locator `parent >> child`
-            // returns across every parent match.
-            const items = childSelector === undefined
-                ? matches
-                : (await Promise.all(matches.map(p => p.locateChild(childSelector).all()))).flat();
-            if (getAllOptions?.extractAttribute) {
-                const values = await Promise.all(items.map(el => el.getAttribute(getAllOptions.extractAttribute!)));
-                return values.filter((v): v is string => v !== null);
-            }
-            const strategy = strategyFor(this.factory.platform);
-            return await Promise.all(items.map(async el => (await strategy.readText(el)).trim()));
-        }
-
-        if (childSelector !== undefined) element = element.locateChild(childSelector);
-
-        if (getAllOptions?.extractAttribute) {
-            const elements = await element.all();
-            const values = await Promise.all(elements.map(el => el.getAttribute(getAllOptions.extractAttribute!)));
-            return values.filter((v): v is string => v !== null);
-        }
-
-        return await this.extract.getAllTexts(element);
+        const valueOptions: { child?: string; attribute?: string; picked?: boolean } = {};
+        if (childSelector !== undefined) valueOptions.child = childSelector;
+        if (getAllOptions?.extractAttribute) valueOptions.attribute = getAllOptions.extractAttribute;
+        if (picked) valueOptions.picked = true;
+        return await this.extract.getAllValues(element, valueOptions);
     }
 
     /**

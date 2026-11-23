@@ -73,6 +73,11 @@ const EXEMPT: Record<string, string> = {
     readText: 'private probe helper',
     allTexts: 'private probe helper',
     anyDisplayed: 'private probe helper behind absence (covered by its CASES row and the fatal-error case)',
+    pollTarget: 'builds the re-resolving handle the other verifications poll; covered in appium-entry.spec.ts',
+    visibleWithin: 'the visibility probe; covered in appium-entry.spec.ts',
+    probeVisible: 'the visibility probe; covered in appium-entry.spec.ts',
+    listPresence: 'polls the collection; retry and timeout covered in appium-entry.spec.ts',
+    entryAbsence: 'resolves the entry, then the absence CASES row; covered in appium-entry.spec.ts',
 };
 
 test('every polling device verification has a retry case or an explicit exemption', () => {

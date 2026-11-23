@@ -4,21 +4,8 @@ import type { IVerifications } from '../interfaces/IVerifications';
 import { requireWebPlatform } from './platformGuard';
 import { isFatalDriverError } from '../utils/driverErrors';
 
-/**
- * Snapshot of an element's state at a single point in time.
- *
- * Passed to predicates in `steps.expect(el, page).satisfy(predicate)` and
- * `steps.on(el, page).satisfy(predicate)`. All fields are primitives or plain
- * data — no async methods, no Playwright types.
- */
-export interface ElementSnapshot {
-    readonly text: string;
-    readonly value: string;
-    readonly attributes: Readonly<Record<string, string>>;
-    readonly visible: boolean;
-    readonly enabled: boolean;
-    readonly count: number;
-}
+import type { ElementSnapshot } from '../interfaces/IEntryTarget';
+export type { ElementSnapshot } from '../interfaces/IEntryTarget';
 
 /**
  * Surface the matcher tree needs from its host (typically an `ElementAction`).
@@ -41,9 +28,9 @@ export interface ExpectContext {
     /** The platform the context acts on. Omitted means `'web'`. */
     readonly platform?: Platform;
     /**
-     * The ifVisible / isVisible gate's probe, when the host has its own (a
-     * device chain: re-resolving, fatal driver errors rethrown). Omitted: the
-     * gate resolves once and waits for visibility (web).
+     * The ifVisible / isVisible gate: whether the element is visible within
+     * `timeout` ms. `ElementAction` passes its family's `visibleWithin`.
+     * Omitted: the gate resolves once and waits for visibility.
      */
     readonly probeVisible?: (timeout: number) => Promise<boolean>;
 }
@@ -62,8 +49,8 @@ interface QueuedAssertion {
 
 async function honorIfVisibleGate(ctx: ExpectContext): Promise<boolean> {
     if (!ctx.conditionalVisible) return true;
-    // A device gate is the re-resolving probe: it rethrows a fatal driver
-    // error instead of skipping the assertion.
+    // The host's gate (the family's `visibleWithin`); on a device it
+    // rethrows a fatal driver error instead of skipping the assertion.
     if (ctx.probeVisible) return ctx.probeVisible(ctx.visibilityTimeout);
     try {
         const element = await ctx.resolveElement();

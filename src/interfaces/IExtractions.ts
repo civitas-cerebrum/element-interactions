@@ -1,5 +1,6 @@
 import type { Element } from '@civitas-cerebrum/element-repository';
 import type { ScreenshotOptions } from '../enum/Options';
+import type { ElementSnapshot, EntryTarget } from './IEntryTarget';
 
 /**
  * Value extraction: the full contract every driver family implements.
@@ -12,6 +13,29 @@ import type { ScreenshotOptions } from '../enum/Options';
  */
 export interface IExtractions {
     getText(target: Element): Promise<string | null>;
+    /**
+     * The element's text, trimmed, read once it is attached (waiting up to
+     * `timeout` ms; a missing element is then read as is). The fluent chain's
+     * `getText()`. On a device, the platform's visible text.
+     */
+    readText(target: Element, timeout: number): Promise<string | null>;
+    /**
+     * Every value `steps.getAll` returns for `target` (already resolved with
+     * the step's strategy): each match's trimmed text, or with `attribute`
+     * the attribute's value (matches without it are left out). With `child`
+     * (a selector), the children matching it inside every match, in order.
+     * `picked`: `target` is ONE match a narrowing strategy chose, so it is the
+     * whole list.
+     */
+    getAllValues(target: Element, options?: { child?: string; attribute?: string; picked?: boolean }): Promise<string[]>;
+    /**
+     * The state of the entry's element at this moment, for `satisfy()`
+     * predicates and the matcher tree. `count` is the whole collection's;
+     * the other fields read the chain's element. `attributes` holds every
+     * attribute on web and the attributes the platform's driver documents on
+     * a device.
+     */
+    captureSnapshot(entry: EntryTarget): Promise<ElementSnapshot>;
     getAttribute(target: Element, attributeName: string): Promise<string | null>;
     getAllTexts(target: Element): Promise<string[]>;
     getInputValue(target: Element): Promise<string>;

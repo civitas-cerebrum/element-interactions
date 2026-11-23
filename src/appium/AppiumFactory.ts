@@ -93,6 +93,6 @@ export class AppiumFactory implements IInteractionFactory {
     }
 
     createDevice(): AppiumDevice {
-        return new AppiumDevice(this.driver, this.strategy, this.appId);
+        return new AppiumDevice(this.driver, this.strategy, this.appId, this.timeout);
     }
 }

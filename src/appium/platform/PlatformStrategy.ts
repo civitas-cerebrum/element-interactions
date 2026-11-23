@@ -40,6 +40,14 @@ export interface PlatformStrategy {
     readonly focusedAttribute: string | null;
     /** Device methods this platform cannot perform; each throws `PlatformNotSupportedError`. */
     readonly unsupported: readonly string[];
+    /**
+     * The attributes a `satisfy()` snapshot reads. A native element has no
+     * attribute map to enumerate (the web snapshot iterates the DOM node's
+     * attributes), so the snapshot reads the attributes the platform's driver
+     * documents; one the driver does not report is left out, as an absent DOM
+     * attribute is on web.
+     */
+    readonly snapshotAttributes: readonly string[];
 
     /**
      * The visible text of a native element as the element reports it (not

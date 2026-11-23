@@ -1,5 +1,6 @@
 import { Page } from '@playwright/test';
 import type { IExtractions } from '../interfaces/IExtractions';
+import type { ElementSnapshot, EntryTarget } from '../interfaces/IEntryTarget';
 import { Utils } from '../utils/ElementUtilities';
 import { ScreenshotOptions } from '../enum/Options';
 import type { Element as RepoElement, WebElement } from '@civitas-cerebrum/element-repository';
@@ -33,6 +34,55 @@ export class Extractions implements IExtractions {
         await this.softProbe(target);
         const text = await target.locator.textContent({ timeout: this.ELEMENT_TIMEOUT });
         return text?.trim() ?? null;
+    }
+
+    /** The element's trimmed text once attached, through the element's own chain (`action(timeout).getText()`). */
+    async readText(target: RepoElement, timeout: number): Promise<string | null> {
+        return target.action(timeout).getText();
+    }
+
+    /**
+     * `steps.getAll` on web: with `child`, the locator `target >> child`
+     * (every child of every match); then each match's attribute (matches
+     * without it are left out) or trimmed text. `picked` needs no handling:
+     * a narrowed locator already is the whole list.
+     */
+    async getAllValues(target: RepoElement, options?: { child?: string; attribute?: string; picked?: boolean }): Promise<string[]> {
+        let element = target;
+        if (options?.child !== undefined) element = element.locateChild(options.child);
+        const attribute = options?.attribute;
+        if (attribute) {
+            const elements = await element.all();
+            const values = await Promise.all(elements.map(el => el.getAttribute(attribute)));
+            return values.filter((v): v is string => v !== null);
+        }
+        return await this.getAllTexts(element);
+    }
+
+    /**
+     * Count is always the un-narrowed match count so count-based matchers
+     * work even when the default `.first()` narrowing has been applied. Other
+     * fields use the narrowed element so strategy selectors (nth / byText /
+     * byAttribute) still scope to the chosen element. Every read failure
+     * answers the field's empty value.
+     */
+    async captureSnapshot(entry: EntryTarget): Promise<ElementSnapshot> {
+        const element = await entry.resolve();
+        const first = element.first();
+        const allElement = await entry.resolveAll();
+        // getAllAttributes is web-only (DOM iteration); narrow for that one read.
+        requireWebElement('ElementAction.captureSnapshot', first);
+
+        const [count, rawText, value, attributes, visible, enabled] = await Promise.all([
+            allElement.count().catch(() => 0),
+            first.textContent().catch(() => null),
+            first.inputValue().catch(() => ''),
+            first.getAllAttributes().catch(() => ({} as Record<string, string>)),
+            first.isVisible().catch(() => false),
+            first.isEnabled().catch(() => false),
+        ]);
+
+        return { text: (rawText ?? '').trim(), value, attributes, visible, enabled, count };
     }
 
     /** Retrieves the value of a specified attribute. */

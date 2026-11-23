@@ -4,6 +4,14 @@ export type Orientation = 'portrait' | 'landscape';
 /** Target state for `setPermission`. */
 export type PermissionState = 'grant' | 'deny' | 'reset';
 
+/** Options of a polling device assertion. */
+export interface DeviceVerifyOptions {
+    /** How long to poll, in ms. Defaults to the family's timeout. */
+    timeout?: number;
+    /** Replaces the default description at the head of the failure message. */
+    errorMessage?: string;
+}
+
 /**
  * Device and app-level operations that have no element: app lifecycle, system
  * navigation, keyboard, orientation, alerts, permissions and contexts. The
@@ -18,6 +26,20 @@ export type PermissionState = 'grant' | 'deny' | 'reset';
  * platform.
  */
 export interface IDevice {
+    /**
+     * Whether this platform can perform the device step `step` (for example
+     * `false` for `pressBack` on ios). Lets a caller refuse with
+     * `PlatformNotSupportedError` before it logs or sends anything. The
+     * Playwright family answers `false`.
+     */
+    supports(step: string): boolean;
+    /**
+     * The app id a step works on: `appId`, else the app under test. A family
+     * that needs one and has none throws, naming `step` and the capability to
+     * set, before anything is sent. The Playwright family answers `undefined`.
+     */
+    resolveAppId(step: string, appId?: string): string | undefined;
+
     // App lifecycle
     launchApp(appId?: string): Promise<void>;
     activateApp(appId?: string): Promise<void>;
@@ -56,4 +78,15 @@ export interface IDevice {
     // Extraction
     /** The current screen's UI hierarchy as XML. */
     getPageSource(): Promise<string>;
+
+    // Polling assertions: each polls until it holds or `options.timeout`
+    // expires, then throws with the last observed value.
+    /** The app `appId` (default: the app under test) is in the foreground. */
+    verifyAppInForeground(appId?: string, options?: DeviceVerifyOptions): Promise<void>;
+    /** The device reports `orientation`. */
+    verifyOrientation(orientation: Orientation, options?: DeviceVerifyOptions): Promise<void>;
+    /** The on-screen keyboard is shown (hidden with `negated`). */
+    verifyKeyboardShown(options?: DeviceVerifyOptions & { negated?: boolean }): Promise<void>;
+    /** The current context is `name`. */
+    verifyContext(name: string, options?: DeviceVerifyOptions): Promise<void>;
 }

@@ -203,7 +203,18 @@ test.describe('PlaywrightDevice', () => {
         ['getContext', () => device.getContext()],
         ['switchContext', () => device.switchContext('NATIVE_APP')],
         ['getPageSource', () => device.getPageSource()],
+        ['verifyAppInForeground', () => device.verifyAppInForeground()],
+        ['verifyOrientation', () => device.verifyOrientation('portrait')],
+        ['verifyKeyboardShown', () => device.verifyKeyboardShown()],
+        ['verifyContext', () => device.verifyContext('NATIVE_APP')],
     ];
+
+    test('supports nothing and resolves no app id', () => {
+        expect(device.supports('pressBack')).toBe(false);
+        expect(device.supports('launchApp')).toBe(false);
+        expect(device.resolveAppId('launchApp')).toBeUndefined();
+        expect(device.resolveAppId('launchApp', 'com.example.app')).toBeUndefined();
+    });
 
     for (const [method, call] of calls) {
         test(`${method} throws PlatformNotSupportedError on web`, async () => {
@@ -213,7 +224,7 @@ test.describe('PlaywrightDevice', () => {
 
     test('every IDevice method is covered above', () => {
         const proto = Object.getOwnPropertyNames(PlaywrightDevice.prototype).filter(n => n !== 'constructor');
-        expect(proto.sort()).toEqual(calls.map(([m]) => m).sort());
+        expect(proto.sort()).toEqual([...calls.map(([m]) => m), 'supports', 'resolveAppId'].sort());
     });
 });
 

@@ -13,7 +13,8 @@ import {
 import type { IInteractionFactory } from '../src/index';
 import { ElementAction } from '../src/steps/ElementAction';
 import { ExpectBuilder } from '../src/steps/ExpectMatchers';
-import { ReResolvingElement } from '../src/steps/ReResolvingElement';
+import { ReResolvingElement } from '../src/appium/ReResolvingElement';
+import type { EntryTarget } from '../src/interfaces/IEntryTarget';
 import { AppiumFactory } from '../src/appium';
 import { mockDriver, mockElement } from './appium/mocks';
 
@@ -109,7 +110,7 @@ const NOT_STEPS = [
     'requireWeb', 'webPage', 'webRequest', 'toResolutionOptions', 'toAllResolutionOptions', 'getElement', 'getAllElement',
     'actionWithStrategy', 'requireListMatch', 'verifyStorage', 'resolveVisualMaskLocators', 'getApiClient',
     'resolveApiArgs', 'resolveApiArgsWithBody', 'getDbClient', 'resolveSqlArgs', 'bindBuilder',
-    'requirePlatform', 'requireDeviceStep', 'stepAppId', 'pollDevice',
+    'requirePlatform', 'requireDeviceStep', 'stepAppId', 'deviceVerifyOptions',
 ];
 
 // ─── ElementAction (steps.on) and matcher-tree classification ────────────────
@@ -148,13 +149,20 @@ const SHARED_TERMINALS = [
     'text', 'value', 'count', 'visible', 'enabled', 'attributes', 'not', 'satisfy',
 ];
 
+/**
+ * `ElementAction` gesture terminals: on a device they resolve the chain's element and call the family's
+ * gestures; on web `pinch` / `zoom` throw PlatformNotSupportedError before resolving
+ * (tests/steps-platform-options.spec.ts).
+ */
+const GESTURE_TERMINALS = ['swipe', 'scrollUntilFound', 'longPress', 'pinch', 'zoom'];
+
 /** `ElementAction` members that are not terminals: chain modifiers, accessors and helpers. */
 const ACTION_CHAIN = [
     'constructor', 'platform', 'repo', 'elementName', 'pageName', 'timeout', 'first', 'random', 'nth', 'byText',
     'byAttribute', 'ifVisible', 'probeTarget', 'captureSnapshot', 'buildExpectContext',
     'requireWeb', 'selectVisible', 'shouldProceed', 'resolve', 'resolveAll', 'narrowScoped', 'spawnScoped',
     'isWholeListEntry', 'verifyListPresence', 'absenceAttachSlice', 'expectBuilder',
-    'onDevice', 'verifyTarget', 'probeOnDevice', 'verifyListPresenceOnDevice', 'verifyAbsenceOnDevice', 'captureDeviceSnapshot',
+    'entry', 'verifyTarget', 'probeVisible', 'requireGestures',
 ];
 
 /** Matcher-tree (`ExpectBuilder`) fields that are web-only, and the shared ones. */
@@ -207,6 +215,21 @@ const RETURNS: Record<string, unknown> = {
     'interact.click': true,
 };
 
+/**
+ * Members whose answer the steps layer depends on: the entry-level methods
+ * resolve the entry as the Playwright family does (once, through the chain),
+ * so the element handed on is the repository Element; the visibility gates
+ * answer visible; the device queries answer as a device that supports every
+ * step and has the app id it was given.
+ */
+const BEHAVIOUR: Record<string, (...args: any[]) => unknown> = {
+    'verify.pollTarget': (entry: EntryTarget, collection?: boolean) => collection ? entry.resolveAll() : entry.resolve(),
+    'verify.visibleWithin': async () => true,
+    'verify.probeVisible': async () => true,
+    'device.supports': () => true,
+    'device.resolveAppId': (_step: string, appId?: string) => appId,
+};
+
 /** The timeout every recording factory reports through its utils. */
 const FACTORY_TIMEOUT = 300;
 
@@ -219,6 +242,8 @@ function recordingMember(member: string, calls: Call[], listed: Element): object
             if (member === 'utils' && prop === 'getTimeout') return () => FACTORY_TIMEOUT;
             return (...args: unknown[]) => {
                 calls.push([member, prop, ...args]);
+                const behaviour = BEHAVIOUR[`${member}.${prop}`];
+                if (behaviour) return behaviour(...args);
                 if (member === 'interact' && prop === 'getListedElement') return Promise.resolve(listed);
                 return Promise.resolve(RETURNS[`${member}.${prop}`]);
             };
@@ -306,6 +331,7 @@ test.describe('Step classification', () => {
     test('every ElementAction prototype member is classified exactly once', () => {
         expectComplete(ElementAction.prototype, {
             shared: SHARED_TERMINALS,
+            gestures: GESTURE_TERMINALS,
             'web-only': Object.keys(WEB_ONLY_TERMINALS),
             chain: ACTION_CHAIN,
         }, 'ElementAction');
@@ -351,7 +377,7 @@ test.describe('Web-only steps off the Playwright family', () => {
         });
     }
 
-    for (const name of SHARED_TERMINALS) {
+    for (const name of [...SHARED_TERMINALS, ...GESTURE_TERMINALS]) {
         test(`steps.on().${name} is not refused for the platform`, async () => {
             const { steps } = iosSteps();
             const action = steps.on('el', 'Page');
@@ -378,14 +404,15 @@ test.describe('Web-only steps off the Playwright family', () => {
     test('a custom .throws() message never re-wraps a platform refusal', async () => {
         const calls: Call[] = [];
         const factory = recordingFactory('ios', calls, stubElement('l', calls));
-        const refusing = { ...factory, createVerifications: () => ({ text: async () => { throw new PlatformNotSupportedError('text', 'ios'); } }) };
+        const pollTarget = (entry: EntryTarget) => entry.resolve();
+        const refusing = { ...factory, createVerifications: () => ({ pollTarget, text: async () => { throw new PlatformNotSupportedError('text', 'ios'); } }) };
         const steps = new Steps(refusing as unknown as IInteractionFactory, stubRepo(calls, stubElement('t', calls)));
         const error = await caught(() => Promise.resolve(steps.expect('el', 'Page').text.toBe('x').throws('custom header')));
         expectNotSupported(error, 'text', 'ios');
         expect((error as Error).message).not.toContain('custom header');
 
         // An assertion failure is still re-headed with the custom message.
-        const failing = { ...factory, createVerifications: () => ({ text: async () => { throw new Error('mismatch'); } }) };
+        const failing = { ...factory, createVerifications: () => ({ pollTarget, text: async () => { throw new Error('mismatch'); } }) };
         const steps2 = new Steps(failing as unknown as IInteractionFactory, stubRepo(calls, stubElement('t', calls)));
         const error2 = await caught(() => Promise.resolve(steps2.expect('el', 'Page').text.toBe('x').throws('custom header')));
         expect((error2 as Error).message).toBe('custom header\n  mismatch');
@@ -427,7 +454,7 @@ test.describe('Shared steps route to the factory with the neutral Element', () =
         ['getCount', s => s.getCount('el', 'Page'), 'extract', 'getCount'],
         ['getInputValue', s => s.getInputValue('el', 'Page'), 'extract', 'getInputValue'],
         ['getBoundingBox', s => s.getBoundingBox('el', 'Page'), 'extract', 'getBoundingBox'],
-        ['getAll', s => s.getAll('el', 'Page'), 'extract', 'getAllTexts'],
+        ['getAll', s => s.getAll('el', 'Page'), 'extract', 'getAllValues'],
         ['screenshot', s => s.screenshot('el', 'Page'), 'extract', 'screenshot'],
         ['verifyPresence', s => s.verifyPresence('el', 'Page'), 'verify', 'state'],
         ['verifyAllPresent', s => s.verifyAllPresent([{ elementName: 'el', pageName: 'Page' }]), 'verify', 'state'],
@@ -488,7 +515,7 @@ test.describe('Shared steps route to the factory with the neutral Element', () =
                 tapAt: [1, 2], setOrientation: ['portrait'], setPermission: ['camera', 'grant'], switchContext: ['NATIVE_APP'],
                 verifyOrientation: ['portrait'], verifyContext: ['NATIVE_APP'],
             };
-            // The recording members answer `undefined`, so the polling assertions time out; never a platform refusal.
+            // The recording members answer `undefined`; never a platform refusal.
             const error = await caught(() => method.apply(steps, args[name] ?? []));
             expect(error).not.toBeInstanceOf(PlatformNotSupportedError);
             expect(calls.filter(c => c[0] === 'repo'), 'no element resolved').toEqual([]);
@@ -571,14 +598,18 @@ test.describe('API, SQL and email steps on a device platform', () => {
 // ─── Device paths of shared features (behaviour: tests/platform-paths.spec.ts) ─
 
 test.describe('Shared features route to their device path', () => {
-    test('verifyAbsence asserts through the family absence on the ALL resolution', async () => {
+    test('verifyAbsence hands the entry to the family absence with the timeout and the attach slice', async () => {
         const { steps, calls } = iosSteps();
         await steps.verifyAbsence('el', 'Page');
         await steps.on('el', 'Page').verifyAbsence();
-        const gets = calls.filter(c => c[0] === 'repo' && c[1] === 'get');
-        expect(gets).toHaveLength(2);
-        for (const get of gets) expect(get[4]).toMatchObject({ strategy: 'all' });
-        expect(memberCalls(calls, 'verify').map(c => c[1])).toEqual(['absence', 'absence']);
+        const absences = memberCalls(calls, 'verify');
+        expect(absences.map(c => c[1])).toEqual(['entryAbsence', 'entryAbsence']);
+        for (const call of absences) {
+            const entry = call[2] as EntryTarget;
+            expect([entry.elementName, entry.pageName]).toEqual(['el', 'Page']);
+            expect(call[3]).toEqual({ timeout: FACTORY_TIMEOUT, attachSlice: 250 });
+        }
+        expect(calls.filter(c => c[0] === 'repo'), 'the family resolves; the steps layer does not').toEqual([]);
     });
 });
 

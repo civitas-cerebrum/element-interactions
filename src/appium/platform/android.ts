@@ -30,6 +30,8 @@ export const androidStrategy: PlatformStrategy = Object.freeze({
     appIdCapability: 'appium:appPackage',
     focusedAttribute: 'focused',
     unsupported: Object.freeze([]) as readonly string[],
+    snapshotAttributes: Object.freeze(['resource-id', 'content-desc', 'text', 'class', 'package', 'checkable', 'checked',
+        'clickable', 'enabled', 'focusable', 'focused', 'selected', 'displayed', 'bounds', 'hint']),
 
     /** The element's text (UiAutomator2 `text`), as `textContent` reads it. */
     async readText(element: Element) {
