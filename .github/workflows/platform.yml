@@ -12,7 +12,7 @@ name: 📱 Platform (Android emulator, iOS simulator)
 # - Each job writes its capabilities file from a committed example in
 #   tests/capabilities/ (emulator and simulator values are not private) and
 #   starts the run in the one documented form:
-#     PLATFORM=<platform> CAPABILITIES=<file> APPIUM_URL=<server> \
+#     E2E_PLATFORM=<platform> E2E_CAPABILITIES=<file> APPIUM_URL=<server> \
 #       npx playwright test -c playwright.platform.config.ts tests/cross-platform
 #   with `--timeout=600000` added for headroom (emulator / simulator start-up,
 #   driver server install); the config's own 180 s stays the local default.
@@ -39,10 +39,10 @@ jobs:
 
     steps:
       - name: 🗂️ Checkout repository
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v4
 
       - name: ⚙️ Set up Node.js
-        uses: actions/setup-node@v4.4.0
+        uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: 'npm'
@@ -79,7 +79,7 @@ jobs:
           echo "Appium did not start"; cat appium-android.log; exit 1
 
       - name: 🧪 Run the cross-platform spec on the emulator
-        uses: reactivecircus/android-emulator-runner@v2.38.0
+        uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
           target: google_apis
@@ -87,11 +87,11 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: PLATFORM=android CAPABILITIES=tests/capabilities/ci-android-emulator.local.json APPIUM_URL=http://127.0.0.1:4723 npx playwright test -c playwright.platform.config.ts --timeout=600000 tests/cross-platform
+          script: E2E_PLATFORM=android E2E_CAPABILITIES=tests/capabilities/ci-android-emulator.local.json APPIUM_URL=http://127.0.0.1:4723 npx playwright test -c playwright.platform.config.ts --timeout=600000 tests/cross-platform
 
       - name: 📦 Upload report and Appium log
         if: always()
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v4
         with:
           name: platform-android-emulator
           path: |
@@ -106,10 +106,10 @@ jobs:
 
     steps:
       - name: 🗂️ Checkout repository
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v4
 
       - name: ⚙️ Set up Node.js
-        uses: actions/setup-node@v4.4.0
+        uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: 'npm'
@@ -163,11 +163,11 @@ jobs:
           echo "Appium did not start"; cat appium-ios.log; exit 1
 
       - name: 🧪 Run the cross-platform spec on the simulator
-        run: PLATFORM=ios CAPABILITIES=tests/capabilities/ci-ios-simulator.local.json APPIUM_URL=http://127.0.0.1:4723 npx playwright test -c playwright.platform.config.ts --timeout=600000 tests/cross-platform
+        run: E2E_PLATFORM=ios E2E_CAPABILITIES=tests/capabilities/ci-ios-simulator.local.json APPIUM_URL=http://127.0.0.1:4723 npx playwright test -c playwright.platform.config.ts --timeout=600000 tests/cross-platform
 
       - name: 📦 Upload report and Appium log
         if: always()
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v4
         with:
           name: platform-ios-simulator
           path: |
