@@ -55,7 +55,7 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
 - **Missing-page error text changed.** The web fixture's `repo` is built with
   `{ platform: 'web' }`, so a page name resolves to its web block even when the
   file also holds android / ios blocks. A page with no entry now throws
-  `Page "<name>" has no entry for platform "web". Available: <platforms>.`
+  `ElementRepository: page '<name>' has no entry for platform 'web'. Available: <platforms>.`
   (was `ElementRepository: Page '<name>' not found.`).
   **Migration:** update assertions on the old text, e.g. match
   `/has no entry for platform/`.
@@ -117,7 +117,13 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   an object; credentials come from `APPIUM_USER` / `APPIUM_KEY`.
 - **Family interfaces**: `IInteractions`, `IVerifications`, `IExtractions`,
   `INavigation`, `IUtils`, `IGestures`, `IDevice`, `IInteractionFactory`, with
-  the types `Direction`, `Orientation`, `PermissionState`, `VerifiableState`.
+  the types `Direction` (an alias of element-repository's `SwipeDirection`),
+  `Orientation`, `PermissionState`, `VerifiableState`. The element gestures of
+  `IGestures` resolve to the element, as element-repository's primitives do.
+- **Gesture types re-exported from element-repository**: `SwipeDirection`,
+  `SwipeOptions`, `ScrollIntoViewOptions`, `LongPressOptions`, `TapOffset`,
+  `TapAtOptions`, `PinchOptions`, `ZoomOptions`. The package defines no copy of
+  its own.
 - **Factories**: `PlaywrightFactory(page)` and `AppiumFactory(driver, platform,
   { timeout, appId })`, with the `PlaywrightFactoryOptions`,
   `AppiumFactoryOptions` and `AppiumDriver` types. `new Steps(factory, repo,
@@ -134,7 +140,12 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
 - **Platform steps**: `launchApp`, `activateApp`, `terminateApp`,
   `backgroundApp`, `resetApp`, `installApp`, `removeApp`, `openDeepLink`;
   `swipe`, `swipeScreen`, `scrollUntilFound`, `longPress`, `tapAt`, `pinch`,
-  `zoom`, and `scrollIntoView` gains `{ direction }`; `pressBack` (android
+  `zoom`, and `scrollIntoView` gains `{ direction, maxSwipes }`; every element
+  gesture step takes `StepOptions` too. The fluent chain gains `swipe`,
+  `scrollUntilFound`, `longPress`, `tapAt(offset, options?)`, `pinch` and
+  `zoom`, and its `scrollIntoView` takes `ScrollIntoViewOptions`.
+  `scrollUntilFound` is element-repository's `scrollIntoView` sweep with the
+  timeout always given (stops at the timeout or after `maxSwipes` swipes); `pressBack` (android
   only), `hideKeyboard`, `setOrientation`, `acceptAlert`, `dismissAlert`,
   `setPermission`; `getContexts`, `switchContext`; polling
   `verifyAppInForeground`, `verifyOrientation`, `verifyKeyboardShown`,
@@ -148,8 +159,9 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
 - **Visible text on iOS** is the element's `label`, falling back to its
   `value` (never `name`; on a text field, secure text field, text view or
   search field the `value` wins), not WebdriverIO's raw `getText()`, which
-  answers `value` first. Every device text read uses this rule; Android reads
-  the element's text. On a device `getText` returns `''` (never `null`) when
+  answers `value` first. The rule is element-repository's
+  (`Element.textContent()`); every device text read goes through it, and
+  Android reads the element's text. On a device `getText` returns `''` (never `null`) when
   an element has no text.
 - Platform verifications, list presence, listed-element steps and probes fail
   at once on a fatal driver error (a dead session, an invalid selector, a lost

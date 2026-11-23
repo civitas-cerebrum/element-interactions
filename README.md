@@ -664,7 +664,7 @@ One file may hold the same page name once per platform. A page without `platform
 ] }
 ```
 
-The fixture's `repo` uses the page block of the active platform; a page that has no block for it throws `Page "<name>" has no entry for platform "<platform>". Available: <platforms>.` Platform selector keys are `accessibility id`, `id` (resource-id on Android, `name` on iOS, never CSS), `xpath`, `class name`, `uiautomator`, `predicate`, `class chain`, `text`, and the enhanced `role` + `name` (translated by element-repository into a UiSelector on Android and a predicate string on iOS). The flags `list`, `provisional` and `fallback` keep their meaning. Preferred order: accessibility id, then id (Android) / predicate (iOS), then class chain / uiautomator, then text, and xpath last.
+The fixture's `repo` uses the page block of the active platform; a page that has no block for it throws `ElementRepository: page '<name>' has no entry for platform '<platform>'. Available: <platforms>.` Platform selector keys are `accessibility id`, `id` (resource-id on Android, `name` on iOS, never CSS), `xpath`, `class name`, `uiautomator`, `predicate`, `class chain`, `text`, and the enhanced `role` + `name` (translated by element-repository into a UiSelector on Android and a predicate string on iOS). The flags `list`, `provisional` and `fallback` keep their meaning. Preferred order: accessibility id, then id (Android) / predicate (iOS), then class chain / uiautomator, then text, and xpath last.
 
 ### Which steps run where
 
@@ -685,7 +685,7 @@ On `macos` and `windows` no step runs: the session start throws `Platform "<p>" 
 
 Notes for the shared steps on a device:
 
-* **Visible text on iOS is the element's `label`, falling back to its `value`**, not WebdriverIO's raw `getText()` (which answers `value` first, so a settings row with a badge would read as its badge count); `name` (usually the accessibility id) is never read, and on a text field, secure text field, text view or search field the typed `value` wins. Every text read of the shared steps (`verifyText*`, `getText`, `getAll`, `verifyOrder`, `verifyListOrder`, listed-element `text`, matcher `text`, `isVisible({ containsText })`) uses it. Android reads the element's text.
+* **Visible text is the element's own `textContent()` (element-repository).** On iOS that is the `label`, falling back to the `value`, not WebdriverIO's raw `getText()` (which answers `value` first, so a settings row with a badge would read as its badge count); `name` (usually the accessibility id) is never read, and on a text field, secure text field, text view or search field the typed `value` wins. Every text read of the shared steps (`verifyText*`, `getText`, `getAll`, `verifyOrder`, `verifyListOrder`, listed-element `text`, matcher `text`, `isVisible({ containsText })`) uses it, and so does element-repository's own text lookup. Android reads the element's text.
 * **A control's value (switch state, slider position) is read with `getInputValue` / `verifyInputValue`, not `getText`**; `getText` returns the visible label.
 * **Verifications poll.** Every `verify*` step and every `steps.expect(...)` / `steps.on(...)` matcher retries until its timeout on every platform.
 * **A fatal driver error fails at once.** A dead session, an invalid selector or a lost server connection is not retried: verifications, list presence, listed-element steps and probes fail at once with the driver's error instead of at the timeout, and such an error never counts as "absent" or "not visible".
@@ -699,7 +699,7 @@ Notes for the shared steps on a device:
 
 ### Platform steps
 
-All return `Promise<void>` unless noted. `appId` defaults to the app under test from the capabilities file. `Direction` is `'up' | 'down' | 'left' | 'right'`; `Orientation` is `'portrait' | 'landscape'`.
+All return `Promise<void>` unless noted. `appId` defaults to the app under test from the capabilities file. `SwipeDirection` (also exported as `Direction`) is `'up' | 'down' | 'left' | 'right'`; `Orientation` is `'portrait' | 'landscape'`. The gesture option types (`SwipeOptions`, `ScrollIntoViewOptions`, `LongPressOptions`, `TapOffset`, `TapAtOptions`, `PinchOptions`, `ZoomOptions`) are element-repository's, re-exported by this package; every element gesture step also takes the `StepOptions` of the other element steps (`strategy`, `index`, a per-call `timeout`).
 
 ```ts
 // App
@@ -713,14 +713,14 @@ steps.removeApp(appId: string)
 steps.openDeepLink(url: string, appId?: string)
 
 // Gestures (element-level ones delegate to the element's primitive)
-steps.swipe(elementName, pageName, direction: Direction, options?: { distance?: number })
-steps.swipeScreen(direction: Direction, options?: { distance?: number })
-steps.scrollIntoView(elementName, pageName, options?: StepOptions & { direction?: Direction })
-steps.scrollUntilFound(elementName, pageName, options?: { direction?: Direction; timeout?: number })
-steps.longPress(elementName, pageName, options?: { duration?: number })   // ms, default 1000
+steps.swipe(elementName, pageName, direction: SwipeDirection, options?: StepOptions & SwipeOptions)    // distance
+steps.swipeScreen(direction: SwipeDirection, options?: { distance?: number })
+steps.scrollIntoView(elementName, pageName, options?: StepOptions & ScrollIntoViewOptions)              // direction, maxSwipes
+steps.scrollUntilFound(elementName, pageName, options?: StepOptions & ScrollIntoViewOptions)            // direction, maxSwipes
+steps.longPress(elementName, pageName, options?: StepOptions & LongPressOptions)    // duration ms, default 1000
 steps.tapAt(x: number, y: number)                  // screen coordinates, px
-steps.pinch(elementName, pageName, options?: { scale?: number })          // (0, 1), default 0.5
-steps.zoom(elementName, pageName, options?: { scale?: number })           // > 1, default 2
+steps.pinch(elementName, pageName, options?: StepOptions & PinchOptions)            // scale in (0, 1), default 0.5
+steps.zoom(elementName, pageName, options?: StepOptions & ZoomOptions)              // scale > 1, default 2
 
 // Device
 steps.pressBack()                                  // android only
@@ -734,15 +734,30 @@ steps.setPermission(permission: string, state: 'grant' | 'deny' | 'reset')  // a
 steps.getContexts(): Promise<string[]>
 steps.switchContext(name: string)                  // 'NATIVE_APP' or a 'WEBVIEW_*' name
 
-// Assertions (polling until the step timeout)
-steps.verifyAppInForeground(appId?: string)
-steps.verifyOrientation(orientation: Orientation)
-steps.verifyKeyboardShown(shown?: boolean)         // default true
-steps.verifyContext(name: string)
+// Assertions (polling until the step timeout, or options.timeout)
+steps.verifyAppInForeground(appId?: string, options?: { timeout?: number; errorMessage?: string })
+steps.verifyOrientation(orientation: Orientation, options?: { timeout?: number; errorMessage?: string })
+steps.verifyKeyboardShown(options?: { negated?: boolean; timeout?: number; errorMessage?: string })
+steps.verifyContext(name: string, options?: { timeout?: number; errorMessage?: string })
 
 // Extraction
 steps.getPageSource(): Promise<string>             // the screen's UI hierarchy as XML
 ```
+
+The element gestures are on the fluent chain too, acting on the element the chain selects (`nth`, `byText`, ...) with the chain timeout unless the options carry one:
+
+```ts
+steps.on(elementName, pageName)
+    .swipe(direction: SwipeDirection, options?: SwipeOptions)
+    .scrollIntoView(options?: ScrollIntoViewOptions)      // the no-argument form is unchanged
+    .scrollUntilFound(options?: ScrollIntoViewOptions)
+    .longPress(options?: LongPressOptions)
+    .tapAt(offset: TapOffset, options?: TapAtOptions)     // offset from the element's top-left corner; on web a mouse click there
+    .pinch(options?: PinchOptions)                        // device platforms only
+    .zoom(options?: ZoomOptions)                          // device platforms only
+```
+
+Each is a terminal (`Promise<void>`). `pinch` / `zoom` throw `PlatformNotSupportedError` on web before the element is resolved.
 
 **Swipe directions.** Two different meanings, on purpose:
 
@@ -752,7 +767,7 @@ steps.getPageSource(): Promise<string>             // the screen's UI hierarchy 
 **Timeouts.**
 
 * Verifications and device assertions poll until the step timeout (the fixture's `timeout`, default 30000 ms).
-* `scrollUntilFound` re-reads the element after every swipe; its `timeout` bounds when a new swipe may start, and an in-flight swipe always finishes, so the step may run up to one swipe longer than `timeout`. Element-level `scrollIntoView` on a device is bounded by element-repository's swipe budget (20 swipes).
+* `scrollIntoView` and `scrollUntilFound` on a device are element-repository's `scrollIntoView` sweep, always given the step's timeout (`options.timeout`, else the step timeout): the sweep stops at that timeout or after `maxSwipes` swipes (default 20), whichever comes first. The timeout bounds when a new swipe may start and an in-flight swipe always finishes, so the step may run up to one swipe longer than `timeout`.
 * The first gesture of a fresh iOS session can take tens of seconds (XCUITest warms up); size the test timeout for it.
 
 ### Without the fixture
@@ -840,7 +855,7 @@ Every method below automatically resolves the element (a Playwright locator on w
 * **`check(elementName, pageName)`** — Checks a checkbox or radio button. No-op if already checked.
 * **`uncheck(elementName, pageName)`** — Unchecks a checkbox. No-op if already unchecked.
 * **`hover(elementName, pageName)`** — Hovers over an element to trigger dropdowns or tooltips.
-* **`scrollIntoView(elementName, pageName, options?: StepOptions & { direction?: Direction })`** — Smoothly scrolls an element into the viewport. On a device, `direction` says where the element lies relative to the view (it swipes towards it); see [Platform steps](#platform-steps).
+* **`scrollIntoView(elementName, pageName, options?: StepOptions & ScrollIntoViewOptions)`** — Smoothly scrolls an element into the viewport. On a device, `direction` says where the element lies relative to the view (it swipes towards it) and `maxSwipes` caps the sweep (default 20); see [Platform steps](#platform-steps).
 * **`dragAndDrop(elementName, pageName, options: DragAndDropOptions)`** — Drags an element to a target element (`{ target: Locator | Element }`), by coordinate offset (`{ xOffset, yOffset }`), or both.
 * **`dragAndDropListedElement(elementName, pageName, elementText, options: DragAndDropOptions)`** — Finds a specific element by its text from a list, then drags it to a destination.
 * **`fill(elementName, pageName, text: string)`** — Clears and fills an input field with the provided text.
