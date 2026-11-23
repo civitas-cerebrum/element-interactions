@@ -138,8 +138,9 @@ jobs:
 
       - name: 🔨 Prebuild WebDriverAgent for the simulator
         # Builds WDA ahead of the session (the driver's documented `build-wda`
-        # script), so the first session does not spend minutes in xcodebuild
-        # inside the Playwright timeout. The session then reuses the build.
+        # script), so most of the xcodebuild work happens outside the Playwright
+        # timeout. The session still runs xcodebuild, but it rebuilds
+        # incrementally on top of this build instead of from scratch.
         run: appium driver run xcuitest build-wda
 
       - name: 🧾 Write the capabilities file (simulator, Settings)

@@ -29,6 +29,9 @@ if (platform === 'web') {
 export default defineConfig({
     testDir: './tests',
     testMatch: ['cross-platform/**/*.spec.ts', 'live/**/*.spec.ts'],
+    // Pure unit tests of the Settings guard: they open no session, so they run
+    // in the default web suite only, never against a device.
+    testIgnore: ['cross-platform/settingsGuard.spec.ts'],
     workers: 1,
     fullyParallel: false,
     retries: 0,

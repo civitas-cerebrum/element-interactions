@@ -7,30 +7,67 @@ import type { Platform } from '../../src';
  * Both specs drive ONLY the platform's built-in Settings app, read-only. On a
  * device platform the capabilities file is read the way the library reads it
  * (`loadCapabilities`: `CAPABILITIES`, flat object, `platformName` agreeing
- * with the platform) and refused BEFORE any session opens unless:
+ * with the platform) and checked against an ALLOW-LIST before any session
+ * opens:
  *
- * - the app id (`appium:bundleId` on iOS, `appium:appPackage` on Android, top
- *   level) is the platform's Settings app;
- * - none of `appium:app`, `appium:otherApps`, `appium:options`, `browserName`
- *   is present at all (whatever its value);
- * - `appium:fullReset`, when present, is exactly `false`;
- * - `appium:noReset`, when present, is exactly `true`.
+ * - Keys are compared without a leading `appium:` (Appium accepts both forms).
+ *   A file that sets the same key both with and without the prefix is refused,
+ *   and so is `appium:options` (the nested form).
+ * - Only the keys in {@link ALLOWED_KEYS} (plus the platform's app keys) may
+ *   appear; anything else (`app`, `otherApps`, `browserName`, `intentAction`,
+ *   `processArguments`, ...) is refused whatever its value.
+ * - The app id is the platform's Settings app: `bundleId` exactly
+ *   `com.apple.Preferences` on iOS; `appPackage` exactly `com.android.settings`
+ *   on Android, with `appActivity` (optional) one of {@link SETTINGS_ACTIVITIES}.
+ * - `noReset` is present and exactly `true` (absent, the driver's fast reset may
+ *   clear app data); `fullReset` is absent or exactly `false`.
  *
- * Every error names the file and the offending key. A no-op on web.
+ * Every error names the file and the offending key as written. A no-op on web.
  */
 
-/** The built-in Settings app of each device platform. */
+/** The built-in Settings app of each device platform (bare key, without `appium:`). */
 export const SETTINGS_APPS: Readonly<Partial<Record<Platform, { key: string; id: string }>>> = {
-    ios: { key: 'appium:bundleId', id: 'com.apple.Preferences' },
-    android: { key: 'appium:appPackage', id: 'com.android.settings' },
+    ios: { key: 'bundleId', id: 'com.apple.Preferences' },
+    android: { key: 'appPackage', id: 'com.android.settings' },
 };
 
-/** Keys that would install, launch or wrap another app or a browser: refused whatever their value. */
-export const FORBIDDEN_KEYS: readonly string[] = ['appium:app', 'appium:otherApps', 'appium:options', 'browserName'];
+/** The Settings main activity, the only `appActivity` allowed on Android. */
+export const SETTINGS_ACTIVITIES: readonly string[] = ['.Settings', 'com.android.settings.Settings'];
+
+/** Bare keys allowed on every device platform (the app keys are added per platform). */
+export const ALLOWED_KEYS: readonly string[] = [
+    'platformName',
+    'automationName',
+    'deviceName',
+    'udid',
+    'platformVersion',
+    'newCommandTimeout',
+    'noReset',
+    'fullReset',
+    'autoAcceptAlerts',
+    'autoDismissAlerts',
+    'autoGrantPermissions',
+    'wdaLaunchTimeout',
+    'wdaConnectionTimeout',
+    'uiautomator2ServerInstallTimeout',
+    'uiautomator2ServerLaunchTimeout',
+    'adbExecTimeout',
+    'usePrebuiltWDA',
+    'showXcodeLog',
+];
+
+/** App keys allowed per platform, on top of {@link ALLOWED_KEYS}. */
+export const PLATFORM_APP_KEYS: Readonly<Partial<Record<Platform, readonly string[]>>> = {
+    ios: ['bundleId'],
+    android: ['appPackage', 'appActivity'],
+};
+
+const PREFIX = 'appium:';
 
 /**
  * Throws unless the capabilities file of a device run targets only the
- * built-in Settings app without installing, resetting or wrapping anything.
+ * built-in Settings app without installing, resetting or launching anything
+ * else.
  *
  * @param platform - The resolved platform of the run.
  * @param env - Environment to read `CAPABILITIES` from (default `process.env`).
@@ -47,17 +84,47 @@ export function requireSettingsCapabilities(platform: Platform, env: NodeJS.Proc
         );
     };
 
-    const appId = capabilities[expected.key];
-    if (appId !== expected.id) {
-        refuse(expected.key, `must set "${expected.key}": "${expected.id}", found ${JSON.stringify(appId)}`);
+    // Normalise: bare key -> the key as written and its value.
+    const bare = new Map<string, { written: string; value: unknown }>();
+    for (const written of Object.keys(capabilities)) {
+        if (written === `${PREFIX}options`) {
+            refuse(written, `must not use the nested "${written}" form: write each capability at the top level`);
+        }
+        const key = written.startsWith(PREFIX) ? written.slice(PREFIX.length) : written;
+        const other = bare.get(key);
+        if (other) {
+            refuse(written, `sets "${key}" twice, as "${other.written}" and as "${written}"`);
+        }
+        bare.set(key, { written, value: capabilities[written] });
     }
-    for (const key of FORBIDDEN_KEYS) {
-        if (key in capabilities) refuse(key, `must not contain "${key}"`);
+
+    const allowed = new Set([...ALLOWED_KEYS, ...(PLATFORM_APP_KEYS[platform] ?? [])]);
+    for (const [key, { written }] of bare) {
+        if (!allowed.has(key)) {
+            refuse(written, `sets "${written}", which is not on the Settings allow-list `
+                + `(${[...allowed].join(', ')}; each with or without "${PREFIX}")`);
+        }
     }
-    if ('appium:fullReset' in capabilities && capabilities['appium:fullReset'] !== false) {
-        refuse('appium:fullReset', `must not reset the device: "appium:fullReset" is ${JSON.stringify(capabilities['appium:fullReset'])}, only false or absent is allowed`);
+
+    const appId = bare.get(expected.key);
+    if (appId?.value !== expected.id) {
+        refuse(appId?.written ?? `${PREFIX}${expected.key}`,
+            `must set "${PREFIX}${expected.key}": "${expected.id}", found ${JSON.stringify(appId?.value)}`);
     }
-    if ('appium:noReset' in capabilities && capabilities['appium:noReset'] !== true) {
-        refuse('appium:noReset', `must not reset the app: "appium:noReset" is ${JSON.stringify(capabilities['appium:noReset'])}, only true or absent is allowed`);
+    const activity = bare.get('appActivity');
+    if (activity && !SETTINGS_ACTIVITIES.includes(activity.value as string)) {
+        refuse(activity.written, `must launch only the Settings main activity: "${activity.written}" is `
+            + `${JSON.stringify(activity.value)}, allowed: ${SETTINGS_ACTIVITIES.map(a => JSON.stringify(a)).join(', ')} or absent`);
+    }
+
+    const noReset = bare.get('noReset');
+    if (noReset?.value !== true) {
+        refuse(noReset?.written ?? `${PREFIX}noReset`, noReset
+            ? `must not reset the app: "${noReset.written}" is ${JSON.stringify(noReset.value)}, only true is allowed`
+            : `must set "${PREFIX}noReset": true (without it the driver's fast reset may clear app data)`);
+    }
+    const fullReset = bare.get('fullReset');
+    if (fullReset && fullReset.value !== false) {
+        refuse(fullReset.written, `must not reset the device: "${fullReset.written}" is ${JSON.stringify(fullReset.value)}, only false or absent is allowed`);
     }
 }

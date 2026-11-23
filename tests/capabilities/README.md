@@ -48,12 +48,32 @@ and the fixture refuses it. Native-app files do not need it.
 ## The Settings specs
 
 `tests/cross-platform` and `tests/live` drive only the built-in Settings app,
-read-only. Before any session opens they refuse a capabilities file unless the
-app id is the Settings app (`appium:bundleId: com.apple.Preferences` on iOS,
-`appium:appPackage: com.android.settings` on Android) and it has no
-`appium:app`, `appium:otherApps`, `appium:options` or `browserName` key, no
-`appium:fullReset` other than `false` and no `appium:noReset` other than
-`true` (`tests/cross-platform/settingsGuard.ts`).
+read-only. Before any session opens they check the capabilities file against an
+**allow-list** (`tests/cross-platform/settingsGuard.ts`) and refuse anything
+else, naming the file and the key:
+
+- Keys are compared without a leading `appium:`. A file that sets the same key
+  both with and without the prefix is refused, and so is `appium:options` (the
+  nested form).
+- Allowed keys: `platformName`, `automationName`, `deviceName`, `udid`,
+  `platformVersion`, `newCommandTimeout`, `noReset`, `fullReset`,
+  `autoAcceptAlerts`, `autoDismissAlerts`, `autoGrantPermissions`,
+  `wdaLaunchTimeout`, `wdaConnectionTimeout`,
+  `uiautomator2ServerInstallTimeout`, `uiautomator2ServerLaunchTimeout`,
+  `adbExecTimeout`, `usePrebuiltWDA`, `showXcodeLog`, plus the app keys:
+  `bundleId` on iOS, `appPackage` and (optional) `appActivity` on Android.
+  Anything else (`app`, `otherApps`, `browserName`, `intentAction`,
+  `optionalIntentArguments`, `processArguments`, ...) is refused whatever its
+  value.
+- The app is the Settings app: `appium:bundleId: com.apple.Preferences` on
+  iOS; `appium:appPackage: com.android.settings` on Android, with
+  `appium:appActivity`, when set, `.Settings` or `com.android.settings.Settings`.
+- `appium:noReset` **must be present and `true`** (without it the driver's fast
+  reset may clear app data); `appium:fullReset` is absent or `false`.
+
+The example files keep a placeholder app (`com.example.app`), so they are
+refused as they stand; with the Settings app id set (as the CI jobs do) they
+pass.
 
 ## No secrets
 

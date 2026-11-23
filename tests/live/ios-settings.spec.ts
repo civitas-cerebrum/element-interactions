@@ -15,10 +15,15 @@ import { requireSettingsCapabilities } from '../cross-platform/settingsGuard';
  *     npx playwright test -c playwright.platform.config.ts tests/live
  *
  * The capabilities file is a flat W3C object (see tests/capabilities/README.md)
- * with `"appium:bundleId": "com.apple.Preferences"` and no `appium:app`,
- * `appium:otherApps`, `appium:options`, `browserName`, `appium:fullReset: true`
- * or `appium:noReset: false`; the spec refuses anything else before a session
- * is opened (tests/cross-platform/settingsGuard.ts).
+ * checked against an ALLOW-LIST before a session is opened
+ * (tests/cross-platform/settingsGuard.ts): only `platformName`,
+ * `automationName`, `deviceName`, `udid`, `platformVersion`, `bundleId`,
+ * `newCommandTimeout`, `noReset`, `fullReset`, alert, permission and driver
+ * timeout keys (each with or without `appium:`, never both, never
+ * `appium:options`); `"appium:bundleId": "com.apple.Preferences"`;
+ * `"appium:noReset": true` REQUIRED; `appium:fullReset` absent or `false`.
+ * Anything else (`appium:app`, `appium:otherApps`, `browserName`, ...) is
+ * refused.
  *
  * The row labels and the General navigation bar title are read in English
  * (`General`); the accessibility ids (`com.apple.settings.*`) do not depend on
