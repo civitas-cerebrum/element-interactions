@@ -181,6 +181,19 @@ test.describe('requireSettingsCapabilities', () => {
         expect(() => requireSettingsCapabilities('ios', env({ ...without(IOS_OK, 'appium:noReset'), noReset: true }))).not.toThrow();
     });
 
+    for (const key of ['autoAcceptAlerts', 'autoDismissAlerts', 'autoGrantPermissions']) {
+        test(`"${key}" is allowed only as false, with or without the prefix`, () => {
+            for (const written of [key, `appium:${key}`]) {
+                expect(() => requireSettingsCapabilities('ios', env({ ...IOS_OK, [written]: false }))).not.toThrow();
+                expect(() => requireSettingsCapabilities('android', env({ ...ANDROID_OK, [written]: false }))).not.toThrow();
+                for (const value of [true, 'true', 'false', 1, 0, null]) {
+                    expect(expectRefused('ios', { ...IOS_OK, [written]: value }, written)).toContain('only false or absent');
+                    expectRefused('android', { ...ANDROID_OK, [written]: value }, written);
+                }
+            }
+        });
+    }
+
     test('a missing noReset is refused on both platforms', () => {
         expect(expectRefused('ios', without(IOS_OK, 'appium:noReset'), 'appium:noReset')).toContain('fast reset');
         expectRefused('android', without(ANDROID_OK, 'appium:noReset'), 'appium:noReset');

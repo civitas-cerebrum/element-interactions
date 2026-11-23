@@ -33,7 +33,7 @@ Required keys:
 - `appium:automationName`: `UiAutomator2` (Android) or `XCUITest` (iOS).
 - `appium:deviceName`: set it explicitly; tools that open inspection sessions inject their own default otherwise.
 - `appium:newCommandTimeout`: set it explicitly (the examples use 300 s) for the same reason.
-- The app under test: `appium:appPackage` (and usually `appium:appActivity`) on Android, `appium:bundleId` on iOS, or `appium:app` (a path to the build). Steps that take an optional app id default to it.
+- The app under test: `appium:appPackage` (and usually `appium:appActivity`) on Android, `appium:bundleId` on iOS. Steps that take an optional app id default to it. `appium:app` (a path to the build) installs a build but gives no app id: with it, set `session.reset: 'none'` (the default relaunch needs an app id) and pass `appId` to the app steps.
 
 Recommended: `appium:udid` for a real device, `appium:noReset: true` to keep
 the app's data between sessions, `appium:autoGrantPermissions: false`

@@ -21,6 +21,13 @@ import type { Platform } from '../../src';
  *   on Android, with `appActivity` (optional) one of {@link SETTINGS_ACTIVITIES}.
  * - `noReset` is present and exactly `true` (absent, the driver's fast reset may
  *   clear app data); `fullReset` is absent or exactly `false`.
+ * - `autoAcceptAlerts`, `autoDismissAlerts` and `autoGrantPermissions` are
+ *   absent or exactly `false`: the spec must never answer a system dialog or
+ *   grant a permission on its own.
+ *
+ * The guard checks the file named by `CAPABILITIES`. A fixture using it must
+ * therefore not set `session.capabilities`, which would open the session from
+ * another file than the one checked.
  *
  * Every error names the file and the offending key as written. A no-op on web.
  */
@@ -55,6 +62,9 @@ export const ALLOWED_KEYS: readonly string[] = [
     'usePrebuiltWDA',
     'showXcodeLog',
 ];
+
+/** Keys allowed only when absent or exactly `false` (no dialog answered, no permission granted). */
+export const FALSE_ONLY_KEYS: readonly string[] = ['autoAcceptAlerts', 'autoDismissAlerts', 'autoGrantPermissions'];
 
 /** App keys allowed per platform, on top of {@link ALLOWED_KEYS}. */
 export const PLATFORM_APP_KEYS: Readonly<Partial<Record<Platform, readonly string[]>>> = {
@@ -126,5 +136,12 @@ export function requireSettingsCapabilities(platform: Platform, env: NodeJS.Proc
     const fullReset = bare.get('fullReset');
     if (fullReset && fullReset.value !== false) {
         refuse(fullReset.written, `must not reset the device: "${fullReset.written}" is ${JSON.stringify(fullReset.value)}, only false or absent is allowed`);
+    }
+    for (const key of FALSE_ONLY_KEYS) {
+        const entry = bare.get(key);
+        if (entry && entry.value !== false) {
+            refuse(entry.written, `must not answer dialogs or grant permissions by itself: "${entry.written}" is `
+                + `${JSON.stringify(entry.value)}, only false or absent is allowed`);
+        }
     }
 }

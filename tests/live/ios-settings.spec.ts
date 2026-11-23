@@ -21,7 +21,9 @@ import { requireSettingsCapabilities } from '../cross-platform/settingsGuard';
  * `newCommandTimeout`, `noReset`, `fullReset`, alert, permission and driver
  * timeout keys (each with or without `appium:`, never both, never
  * `appium:options`); `"appium:bundleId": "com.apple.Preferences"`;
- * `"appium:noReset": true` REQUIRED; `appium:fullReset` absent or `false`.
+ * `"appium:noReset": true` REQUIRED; `appium:fullReset` absent or `false`;
+ * `autoAcceptAlerts`, `autoDismissAlerts` and `autoGrantPermissions` absent
+ * or `false`.
  * Anything else (`appium:app`, `appium:otherApps`, `browserName`, ...) is
  * refused.
  *
@@ -33,6 +35,8 @@ const platform = resolvePlatform(undefined);
 const ROOT = 'SettingsRoot';
 const GENERAL = 'GeneralScreen';
 
+// No `session.capabilities` here: the Settings guard checks the file named by
+// CAPABILITIES, so the session must open from that same file.
 const test = baseFixture(base, path.join(__dirname, 'page-repository.json'), {
     platform,
     // Generous: the first gesture in a fresh iOS session took 15-30 s live.

@@ -299,7 +299,7 @@ For larger projects, manually initializing `repo` and `steps` in every test beco
 
 `page` is Playwright's on web; on a platform run it throws. See [Fixture values per platform](#fixture-values-per-platform).
 
-`baseFixture` also attaches a full-page `failure-screenshot` to the Playwright HTML report on every failed test.
+`baseFixture` also attaches a full-page `failure-screenshot` to the Playwright HTML report on every failed test. On a platform run it attaches the device screenshot and the screen's page source instead; see [Failure evidence](#failure-evidence).
 
 > **Note:** `reporter: 'html'` must be set in `playwright.config.ts` for screenshots to appear. Run `npx playwright show-report` after a failed run to inspect them.
 
@@ -584,6 +584,8 @@ export default defineConfig({
 
 These five are the complete list; no other variable selects a platform, device or server. An **empty** value counts as unset (`PLATFORM=''` means `web`), so CI can pass blank inputs.
 
+`baseFixture` reads `PLATFORM` on **every** run, web projects included, and a value that is not a platform name throws. On Windows environment variable names are case-insensitive, so a `Platform=x64` set by Visual Studio developer prompts or AppVeyor shells counts as `PLATFORM` and makes a web project throw. Unset it for the test run, or pass `platform: 'web'` to `baseFixture`, which takes precedence over the variable.
+
 | Variable | Meaning |
 |---|---|
 | `PLATFORM` | `web` (default) \| `android` \| `ios` \| `macos` \| `windows` |
@@ -669,9 +671,9 @@ Shared steps keep their names and `(elementName, pageName, ...)` argument order 
 | Kind | Steps | `web` | `android` / `ios` |
 |---|---|---|---|
 | **Shared** | `on`, `click`, `clickRandom`, `clickIfPresent`, `doubleClick`, `check`, `uncheck`, `scrollIntoView`, `fill`, `typeSequentially`, `clearInput`, `dragAndDrop`, `dragAndDropListedElement`, `getText`, `getAttribute`, `getCount`, `getInputValue`, `getBoundingBox`, `getAll`, `verifyPresence`, `verifyAllPresent`, `isPresent`, `isVisible`, `verifyAbsence`, `verifyText`, `verifyTextContains`, `verifyCount`, `verifyState`, `verifyAttribute`, `verifyInputValue`, `expect`, `verifyOrder`, `verifyListOrder`, `clickListedElement`, `verifyListedElement`, `getListedElementData`, `waitForState`, `waitAndClick`, `clickNth`, `fillForm`, `screenshot` | ✅ | ✅ (notes below) |
-| **Non-UI** | `pace`, `repeat`, `retryUntil`, `apiGet` … `verifyApiHeader`, `sql*` / `verifySql*`, `sendEmail` / `receiveEmail` / `receiveAllEmails` / `cleanEmails` / `markEmail`, `verifyRequestStatus` / `verifyRequestHeader` / `verifyRequestOk` | ✅ | ✅ |
+| **Non-UI** | `pace`, `repeat`, `retryUntil`, `apiGet` … `verifyApiHeader`, `sql*` / `verifySql*`, `closeDbConnections`, `sendEmail` / `receiveEmail` / `receiveAllEmails` / `cleanEmails` / `markEmail`, `verifyRequestStatus` / `verifyRequestHeader` / `verifyRequestOk` | ✅ | ✅ |
 | **Web-only** | URL, history and tabs (`navigateTo`, `getUrl`, `getCurrentPath`, `waitForUrl`, `refresh`, `backOrForward`, `setViewport`, `switchToNewTab`, `forPage`, `closeTab`, `getTabCount`, `verifyTabCount`, `verifyUrlContains`); pointer, keyboard and form controls (`rightClick`, `hover`, `uploadFile`, `dropFiles`, `selectDropdown`, `selectMultiple`, `setSliderValue`, `pressKey`, `pressKeys`, `dispatchEvent`); HTML, CSS, page text, window and scripts (`getHtml`, `getPageHtml`, `getPageText`, `getCssProperty`, `getWindowProperty`, `setWindowProperty`, `evaluateScript`, `verifyImages`, `verifyHtml*`, `verifyPageHtml*`, `verifyCssProperty`, `verifyWindowProperty`, `verifyPageContainsText`, `verifyPageNotContainsText`, `verifyPageTitle`); storage (`*LocalStorage*`, `*SessionStorage*`); browser-session requests and network (`requestGet` … `requestHead`, `waitForNetworkIdle`, `waitForLoadState`, `waitForResponse`, `expectNoRequest`); `verifyVisualMatch` | ✅ | ❌ `PlatformNotSupportedError` |
-| **Element gestures** | `swipe`, `scrollUntilFound`, `longPress` | ✅ mouse gestures (the element primitive) | ✅ |
+| **Element gestures** | `swipe`, `scrollUntilFound`, `longPress` | ✅ `swipe` / `longPress`: mouse gestures (the element primitive); `scrollUntilFound`: scrolls the element into view | ✅ |
 | | `pinch`, `zoom` | ❌ `PlatformNotSupportedError`, before the element is resolved | ✅ |
 | **Platform-only** | App (`launchApp`, `activateApp`, `terminateApp`, `backgroundApp`, `resetApp`, `installApp`, `removeApp`, `openDeepLink`), screen gestures (`swipeScreen`, `tapAt`), device (`hideKeyboard`, `setOrientation`, `acceptAlert`, `dismissAlert`, `setPermission`), contexts (`getContexts`, `switchContext`), device assertions (`verifyAppInForeground`, `verifyOrientation`, `verifyKeyboardShown`, `verifyContext`), `getPageSource` | ❌ `PlatformNotSupportedError` | ✅ |
 | | `pressBack` | ❌ | ✅ android; ❌ ios (iOS has no system back: tap the on-screen back button) |
@@ -682,8 +684,10 @@ On `macos` and `windows` no step runs: the session start throws `Platform "<p>" 
 Notes for the shared steps on a device:
 
 * **Verifications poll.** Every `verify*` step and every `steps.expect(...)` / `steps.on(...)` matcher retries until its timeout on every platform.
+* **A fatal driver error fails at once.** A dead session, an invalid selector or a lost server connection is not retried: verifications, list presence, listed-element steps and probes fail at once with the driver's error instead of at the timeout, and such an error never counts as "absent" or "not visible".
 * **`verifyAbsence`** passes when the element is absent or not displayed, polling until the timeout; `"list": true` entries pass when no item of the list is displayed.
 * **`"list": true` entries and listed-element steps** work on platform pages. `child` and `withDescendant` are resolved inside the matched item; prefer the `{ pageName, elementName }` form. A string `child` is a platform selector as WebdriverIO accepts it (`~id`, an xpath, `-ios predicate string:...`), not CSS.
+* **Listed-element `text` and `withDescendant.text` match as on web**: a string is a case-insensitive substring with whitespace normalised, the first item in list order wins, and a RegExp is tested on the text as is (`{ text: 'Apple' }` on "Apple pie", "Apple" picks "Apple pie"). `repo.getByText` differs: on a device it prefers an exact match, then a substring, as element-repository's text strategy does.
 * **`isVisible` / `ifVisible` probes and gates** re-resolve the entry within their budget, as on web.
 * **`fillForm`** refuses dropdown fields on a device (`selectDropdown` is web-only).
 * **`waitForState` / `verifyState`:** `focused` is supported on Android and throws `PlatformNotSupportedError("state('focused')", 'ios')` on iOS (XCUITest exposes no focus attribute).
@@ -765,6 +769,8 @@ const steps = new Steps(new AppiumFactory(driver, 'ios', { appId: 'com.example.a
 
 `.github/workflows/platform.yml` runs the cross-platform spec (`tests/cross-platform`) on an Android emulator and an iOS simulator against the built-in Settings app, read-only. It is **manual only** (`workflow_dispatch`): it does not run on push or pull request until a maintainer changes the trigger, and it has not been run yet, so expect to adjust the emulator / simulator setup on its first run.
 
+The iOS job prebuilds WebDriverAgent (`appium driver run xcuitest build-wda`) before the session opens, and both jobs run Playwright with `--timeout=600000` to leave room for emulator / simulator start-up and the first session.
+
 ### What is verified
 
 The library is unit-tested on both platforms with mock drivers, and the cross-platform spec runs on web in the default suite.
@@ -794,7 +800,7 @@ The library is unit-tested on both platforms with mock drivers, and the cross-pl
 
 ## 🛠️ API Reference: `Steps`
 
-Every method below automatically fetches the Playwright `Locator` using your `pageName` and `elementName` keys from the repository.
+Every method below automatically resolves the element (a Playwright locator on web, a platform element on a device) using your `pageName` and `elementName` keys from the repository.
 
 ### 🧭 Navigation
 
@@ -864,7 +870,7 @@ Every method below automatically fetches the Playwright `Locator` using your `pa
 
 * **`verifyPresence(elementName, pageName)`** — Asserts that an element is attached to the DOM and visible. For an entry declared `"list": true` in the repository (and no narrowing `strategy`), asserts that **at least one** match is visible (count ≥ 1) rather than the first match.
 * **`verifyAllPresent(targets: Array<{ elementName, pageName, options? }>)`** — Asserts presence of multiple independent elements in parallel via `Promise.all`. Equivalent to sequential `verifyPresence` calls but resolves all assertions concurrently — useful when a page has many content blocks to assert at once. Example: `await steps.verifyAllPresent([{ elementName: 'title', pageName: 'PDP' }, { elementName: 'price', pageName: 'PDP' }])`.
-* **`verifyAbsence(elementName, pageName, options?)`** — Asserts that an element is hidden or detached from the DOM. It resolves the entry through the repository with a short attach slice per `fallback` chain node and passes when no match is visible. The slice is an eighth of the chain's effective timeout, clamped to 250–1000 ms, so `options.timeout` / `.timeout(ms)` buys a slow-hydrating primary more room to attach; the same timeout bounds the underlying `toBeHidden`. For a `fallback` entry it asserts on the variant the repository resolves — the first node that exists — so a primary that exists but is hidden is absent even if the fallback is visible, and a primary that takes longer than the attach slice to attach is treated as missing. A fallback entry whose resolved node matches several elements is asserted on that node's whole match set, so it is absent only when every match is hidden (requires `@civitas-cerebrum/element-repository` 0.3.4 or later).
+* **`verifyAbsence(elementName, pageName, options?)`** — Asserts that an element is hidden or detached from the DOM (on a device: absent or not displayed). It resolves the entry through the repository with a short attach slice per `fallback` chain node and passes when no match is visible. The slice is an eighth of the chain's effective timeout, clamped to 250–1000 ms, so `options.timeout` / `.timeout(ms)` buys a slow-hydrating primary more room to attach; the same timeout bounds the underlying `toBeHidden`. For a `fallback` entry it asserts on the variant the repository resolves — the first node that exists — so a primary that exists but is hidden is absent even if the fallback is visible, and a primary that takes longer than the attach slice to attach is treated as missing. A fallback entry whose resolved node matches several elements is asserted on that node's whole match set, so it is absent only when every match is hidden (requires `@civitas-cerebrum/element-repository` 0.3.4 or later).
 * **`verifyText(elementName, pageName, expectedText?)`** — Asserts element text. Provide `expectedText` for an exact match, or call with no args to assert not empty.
 * **`verifyCount(elementName, pageName, options: CountVerifyOptions)`** — Asserts element count. Accepts `{ exactly: number }`, `{ greaterThan: number }`, `{ lessThan: number }` (combinable with `greaterThan` for a range), `{ greaterThanOrEqual: number }`, or `{ lessThanOrEqual: number }` (combinable with `greaterThanOrEqual` for an inclusive range).
 * **`verifyImages(elementName, pageName, scroll?: boolean, options?: StepOptions & { verifyDecoded?: boolean })`** — Verifies image rendering: checks visibility, valid `src`, and `naturalWidth > 0`. Pass `{ verifyDecoded: true }` in `options` to also run the browser's native `decode()` round-trip (more thorough, adds a CDP round-trip per image; off by default). Scrolls into view by default.

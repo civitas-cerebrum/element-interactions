@@ -21,6 +21,8 @@ import { requireSettingsCapabilities } from './settingsGuard';
  */
 export const platform = resolvePlatform(undefined);
 
+// No `session.capabilities` here: the Settings guard checks the file named by
+// CAPABILITIES, so the session must open from that same file.
 const stepsTest = baseFixture(base, path.join(__dirname, 'page-repository.json'), {
     platform,
     // Generous: the first gesture in a fresh iOS session took 15-30 s live.

@@ -53,7 +53,13 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `verifyContext`; `getPageSource`. `steps.platform` names the active platform.
 - **Platform paths** for `"list": true` entries, `child` / `withDescendant` on
   listed elements, `verifyAbsence`, `isVisible` / `ifVisible` probes and the
-  matcher tree on device platforms.
+  matcher tree on device platforms. Listed-element `text` and
+  `withDescendant.text` match as on web (case-insensitive substring, whitespace
+  normalised, first item in list order; a RegExp tested as is), while
+  `repo.getByText` on a device prefers an exact match.
+- Platform verifications, list presence, listed-element steps and probes fail
+  at once on a fatal driver error (a dead session, an invalid selector, a lost
+  connection) instead of at the timeout; such an error never reads as absent.
 - Re-exported from element-repository: `Platform`, `DriverFamily`, `PLATFORMS`,
   `isPlatformName`, `familyOf`, `PlatformNotSupportedError` (one class across
   both packages, so `instanceof` works).
@@ -72,7 +78,15 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
 
 ### Changed / Breaking
 
+- **`baseFixture` reads `PLATFORM`** on every run, web projects included, and a
+  value that is not a platform name throws. On Windows environment variable
+  names are case-insensitive, so a `Platform=x64` set by Visual Studio
+  developer prompts or AppVeyor shells counts and makes a web project throw:
+  unset it for the test run, or pass `platform: 'web'` to `baseFixture`.
 - Depends on `@civitas-cerebrum/element-repository` **`^0.4.0`** (was `^0.3.4`).
+  Its `webdriverio` peer moves to `^10` (element-repository 0.3.4 declared
+  `^9.27`), so the effective `webdriverio` range for platform runs is `^10`.
+- `getAll` honours an empty-string `child` (`child: ''`) instead of ignoring it.
 - **Deep imports moved.** The interaction classes moved from
   `dist/interactions/*` to `dist/playwright/*`:
   `interactions/Interaction` → `playwright/PlaywrightInteractions`,
