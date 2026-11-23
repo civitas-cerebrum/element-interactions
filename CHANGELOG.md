@@ -29,17 +29,19 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
 - **Element parameters widened to `Element`.** The methods of `Interactions`,
   `Verifications`, `Extractions` and `Navigation`, and `Utils.softProbe` /
   `Utils.waitForState`, take element-repository's `Element` instead of
-  `WebElement`; on web a non-web element is refused with an error. Code that passes `WebElement`s compiles unchanged, but a subclass
-  that overrides one of these methods with a `WebElement` parameter no longer
-  type-checks.
+  `WebElement`; on web a non-web element is refused with an error. Code that
+  passes `WebElement`s compiles unchanged, but a subclass that overrides one of
+  these methods with a `WebElement` parameter no longer type-checks.
   **Migration:** type the overriding parameter as `Element` and narrow with
   `isWeb(element)` where the override needs `element.locator`.
 - **`ExpectContext` (exported type) is family-neutral.** `resolveElement()` and
   `resolveAll()` return `Promise<Element>` (was `Promise<WebElement>`), and
-  `verify` is typed `IVerifications` (was `Verifications`). Code that reads
-  `.locator` from a resolved element, or calls a `Verifications`-only method
-  through `ctx.verify`, no longer compiles.
-  **Migration:** narrow the element first:
+  `verify` is typed `IVerifications` (was `Verifications`). Likewise
+  `steps.on(...).probeTarget()` on the exported `ElementAction` resolves to
+  `Element` (was `WebElement`). Code that reads `.locator` from a resolved
+  element, or calls a `Verifications`-only method through `ctx.verify`, no
+  longer compiles.
+  **Migration:** narrow the element first (the same for `probeTarget()`):
   ```ts
   const el = await ctx.resolveElement();
   if (isWeb(el)) { /* el.locator is available here */ }
@@ -119,6 +121,15 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   platform, wrapped files are refused, and a `browserName` file must set
   `"wdio:enforceWebDriverClassic": true`. The server is a URL with base path or
   an object; credentials come from `APPIUM_USER` / `APPIUM_KEY`.
+- **Types of the steps and option shapes**: `StepsOptions` (the options of
+  `new Steps(...)`), `ElementActionFamily` (the family a `steps.on(...)` chain
+  acts through), `VerifyOptions` (the `{ negated?, timeout?, errorMessage? }`
+  every `Verifications` method accepts) and `VisualMatchPrimitiveOptions` (the
+  resolved options `Verifications.visuallyMatches` takes). The web classes are
+  also exported under their family names: `PlaywrightInteractions`,
+  `PlaywrightVerifications`, `PlaywrightExtractions`, `PlaywrightNavigation`
+  (the same classes as `Interactions`, `Verifications`, `Extractions`,
+  `Navigation`).
 - **Family interfaces**: `IInteractions`, `IVerifications`, `IExtractions`,
   `INavigation`, `IUtils`, `IGestures`, `IDevice`, `IInteractionFactory`, with
   the types `Direction` (an alias of element-repository's `SwipeDirection`),
@@ -150,13 +161,14 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `zoom`, and its `scrollIntoView` takes `ScrollIntoViewOptions`.
   `scrollUntilFound` is element-repository's `scrollIntoView` sweep with the
   timeout always given (stops at the timeout or after `maxSwipes` swipes).
-  On a device it first hides a shown soft keyboard (best-effort), then sweeps
-  with fixed swipes up to `maxSwipes` (default 20), bounded by the step
-  timeout (default 30 s; pass a larger `timeout` for long lists, and allow for
-  the first gesture of a fresh iOS session taking tens of seconds).
-  `pressBack` (android
-  only), `hideKeyboard`, `setOrientation`, `acceptAlert`, `dismissAlert`,
-  `setPermission`; `getContexts`, `switchContext`; polling
+  On a device an element already on screen returns at once; otherwise, only
+  when a soft keyboard is shown, the keyboard is hidden first (best-effort),
+  then the sweep runs with fixed swipes up to `maxSwipes` (default 20),
+  bounded by the step timeout (default 30 s; pass a larger `timeout` for long
+  lists, and allow for the first gesture of a fresh iOS session taking tens of
+  seconds).
+  `pressBack` (android only), `hideKeyboard`, `setOrientation`, `acceptAlert`,
+  `dismissAlert`, `setPermission`; `getContexts`, `switchContext`; polling
   `verifyAppInForeground`, `verifyOrientation`, `verifyKeyboardShown`,
   `verifyContext`; `getPageSource`. `steps.platform` names the active platform.
 - **Platform paths** for `"list": true` entries, `child` / `withDescendant` on

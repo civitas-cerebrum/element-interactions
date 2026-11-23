@@ -72,6 +72,13 @@ test.describe('web Verifications: entry probes', () => {
         expect(error?.message).toMatch(/'ProbePage\.note' is a list entry/);
         expect(error?.message).toMatch(/found 1 match\(es\) and none visible/);
     });
+
+    test('listPresence fails reporting zero matches for an entry that matches nothing', async ({ page }) => {
+        const verify = new Verifications(page, 1000);
+        const error = await verify.listPresence(entryOf(page, 'ul.empty li', 'empty'), 300).then(() => undefined, (e: Error) => e);
+        expect(error?.message).toMatch(/'ProbePage\.empty' is a list entry/);
+        expect(error?.message).toMatch(/found 0 match\(es\) and none visible/);
+    });
 });
 
 test.describe('ElementAction.probeVisible', () => {

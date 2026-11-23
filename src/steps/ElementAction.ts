@@ -322,6 +322,9 @@ export class ElementAction {
      * its text then contains it). The family's `probeVisible`: it re-resolves
      * the entry on every attempt; on a device a fatal driver error is thrown
      * instead of answering `false`.
+     *
+     * Internal plumbing of `isVisible()` / `ifVisible()`, public only so the
+     * visibility chain can reach it: tests use `isVisible()` instead.
      */
     async probeVisible(timeout: number, containsText?: string): Promise<boolean> {
         return this.interactions.verify.probeVisible(this.entry(), timeout, containsText);

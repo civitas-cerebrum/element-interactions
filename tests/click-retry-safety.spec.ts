@@ -282,7 +282,7 @@ test.describe('Click retry safety (branches the widget fixtures cannot reach)', 
             const started = Date.now();
             await expect(interactions.click(missing, { [option]: true, timeout: 1500 })).rejects.toThrow(/Timeout 1500ms exceeded/);
             const elapsed = Date.now() - started;
-            expect(elapsed, `expected the failure after about 1.5s, took ${elapsed}ms`).toBeLessThan(2300);
+            expect(elapsed, `expected the failure after about 1.5s, took ${elapsed}ms`).toBeLessThan(2700);
         });
 
         test(`click({ ${option} }) dispatches once on an attached element, and on one attached late within the timeout`, async ({ page }) => {

@@ -143,6 +143,10 @@ for (const platform of DEVICE_PLATFORMS) {
                 `verifyPresence: 'Screen.rows' is a list entry ("list": true) — expected at least one visible match within 250ms, ` +
                 'found 2 match(es) and none visible.',
             );
+            expect(error).not.toBeInstanceOf(PollTimeoutError);
+            const cause = (error as Error).cause;
+            expect(cause).toBeInstanceOf(PollTimeoutError);
+            expect((cause as PollTimeoutError).timeout).toBe(250);
         });
 
         test('listPresence rethrows a fatal driver error at once', async () => {

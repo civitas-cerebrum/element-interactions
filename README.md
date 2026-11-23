@@ -241,6 +241,11 @@ await steps.on('photo', 'GalleryPage').zoom({ scale: 3 });
 await steps.on('rows', 'SettingsPage').byText('Privacy').scrollUntilFound({ direction: 'down' });
 ```
 
+#### Chain platform and probe
+
+* **`.platform`** — The platform the chain acts on (`'web'`, `'android'`, `'ios'`, ...), read-only.
+* **`.probeVisible(timeout: number, containsText?: string): Promise<boolean>`** — Internal plumbing of `isVisible()` / `ifVisible()`, public so the visibility chain can reach it; tests use `isVisible()` instead.
+
 ### Expect Matcher Tree
 
 A chain-style assertion API for the common case where you want to verify multiple things about a single element. Available at both `steps.expect(el, page)` (top-level) and as field getters on `steps.on(el, page)` (fluent). Each matcher call queues an assertion; awaiting flushes the queue and short-circuits on the first failure.
@@ -784,14 +789,13 @@ Each is a terminal (`Promise<void>`). `pinch` / `zoom` throw `PlatformNotSupport
 **Timeouts.**
 
 * Verifications and device assertions poll until the step timeout (the fixture's `timeout`, default 30000 ms).
-* `scrollIntoView` and `scrollUntilFound` on a device are element-repository's `scrollIntoView` sweep, always given the step's timeout (`options.timeout`, else the step timeout): the sweep stops at that timeout or after `maxSwipes` swipes (default 20), whichever comes first. The timeout bounds when a new swipe may start and an in-flight swipe always finishes, so the step may run up to one swipe longer than `timeout`.
-* On a device, when the element is not already on screen, `scrollIntoView` / `scrollUntilFound` first hide a shown soft keyboard (best-effort, element-repository's behaviour), then sweep with fixed swipes up to `maxSwipes` (default 20), bounded by the step timeout too (default 30 s). Pass a larger `timeout` for long lists.
+* `scrollIntoView` and `scrollUntilFound` on a device are element-repository's `scrollIntoView` sweep, always given the step's timeout (`options.timeout`, else the step timeout, default 30 s): the sweep stops at that timeout or after `maxSwipes` swipes (default 20), whichever comes first. When the element is not already on screen, a shown soft keyboard is hidden first (best-effort, element-repository's behaviour), then the fixed swipes run. The timeout bounds when a new swipe may start and an in-flight swipe always finishes, so the step may run up to one swipe longer than `timeout`. Pass a larger `timeout` for long lists.
 * The first gesture of a fresh iOS session can take tens of seconds (XCUITest warms up); size the test timeout for it.
 
 **Errors.** Every error below can be caught by type:
 
 * **`PlatformNotSupportedError`** (element-repository's own class, re-exported so `instanceof` works across both packages; fields `method`, `platform`) — thrown first, before anything is resolved or sent, by a step the active platform cannot do: every platform-only step on web, `pinch` / `zoom` on web, a web-only step on a device, `pressBack` on ios, and the `page` / `context` / `driver` fixtures on the wrong platform.
-* **`PollTimeoutError`** (fields `timeout`, `lastValue`, `lastError`) — thrown when a polling step on a device runs out of time: the device assertions (`verifyAppInForeground`, `verifyOrientation`, `verifyKeyboardShown`, `verifyContext`), the element `verify*` steps (`verifyText`, `verifyState`, `verifyCount`, ...) and the listed-element steps. Its message names what was awaited, the timeout, the last observed value and the last error.
+* **`PollTimeoutError`** (fields `timeout`, `lastValue`, `lastError`) — thrown when a polling step on a device runs out of time: the device assertions (`verifyAppInForeground`, `verifyOrientation`, `verifyKeyboardShown`, `verifyContext`), the element `verify*` steps (`verifyText`, `verifyState`, `verifyCount`, ...) and the listed-element steps. Its message names what was awaited, the timeout, the last observed value and the last error. The exception is `verifyPresence` on a `"list": true` entry (list-entry presence): it throws a plain `Error` whose `cause` is the `PollTimeoutError`.
 * **`ProbeTimeoutError`** (field `budget`) — never thrown by a step itself: it is the `lastError` of a `PollTimeoutError` when a single device query did not answer within its share of the timeout.
 * **`MissingAppIdError`** (fields `caller`, `capability`, `platform`) — thrown when a step needs the app under test and neither an `appId` argument nor the capabilities file names one: `launchApp`, `activateApp`, `terminateApp`, `resetApp`, `setPermission` and `verifyAppInForeground`.
 
@@ -830,9 +834,10 @@ The web family has the same form: `new Steps(new PlaywrightFactory(page), repo)`
 Besides the classes above, the package exports these for platform code:
 
 * **Fixture and steps:** `BaseFixtureTest` (the fixture's test type), `BaseFixtureOptions`, `StepsOptions`, `ElementActionFamily` (the family a `steps.on(...)` chain acts through).
+* **Web family:** `PlaywrightInteractions`, `PlaywrightVerifications`, `PlaywrightExtractions`, `PlaywrightNavigation` (the same classes as `Interactions`, `Verifications`, `Extractions`, `Navigation`, under their family names); `VerifyOptions` (`{ negated?, timeout?, errorMessage? }`, accepted by every `Verifications` method) and `VisualMatchPrimitiveOptions` (the resolved options `Verifications.visuallyMatches` takes).
 * **Family interfaces:** `IInteractions`, `IVerifications` (with `VerifiableState`), `IExtractions`, `INavigation`, `IUtils`, `IGestures`, `IDevice`, `IInteractionFactory`; `EntryTarget` (a repository entry as the families resolve it) and `ElementSnapshot`.
 * **Device vocabulary:** `Orientation`, `PermissionState`, `DeviceVerifyOptions` (`{ timeout?, errorMessage? }` of the device assertions).
-* **Platforms:** `Platform`, `DriverFamily`, `PLATFORMS`, `isPlatformName`, `familyOf`, `resolvePlatform` (element-repository's vocabulary, re-exported).
+* **Platforms:** `Platform`, `DriverFamily`, `PLATFORMS`, `isPlatformName`, `familyOf`, `resolvePlatform` (the first five are element-repository's vocabulary, re-exported; `resolvePlatform(option?, env?)` is this package's, the fixture's platform rule).
 * **Gesture options:** `SwipeDirection`, `SwipeOptions`, `ScrollIntoViewOptions`, `LongPressOptions`, `TapOffset`, `TapAtOptions`, `PinchOptions`, `ZoomOptions` (element-repository's, re-exported), `ScreenSwipeOptions` (`swipeScreen`'s `{ distance? }`) and `Direction` (an alias of `SwipeDirection`).
 * **Session:** `ServerOptions`, `SessionOptions`, `SessionStartContext`, `SessionProvider`, `AppiumSessionProviderOptions`, `AppiumClientOptions`, `WebdriverioLogLevel`, `WebdriverioModule`, `AppiumFactoryOptions`, `AppiumDriver`, `PlaywrightFactoryOptions`.
 * **Errors:** `PlatformNotSupportedError`, `PollTimeoutError`, `ProbeTimeoutError`, `MissingAppIdError` (see [Errors](#platform-steps)).
@@ -1161,7 +1166,11 @@ await steps.verifyVisualMatch('dashboard.png', {
 
 **Full options surface.** `mask`, `maskColor`, `fullPage`, `maxDiffPixelRatio`, `maxDiffPixels`, `timeout`, `errorMessage`. See [`VisualMatchOptions`](./src/enum/Options.ts).
 
+### 📱 Platform
+
 The steps below drive native apps (see [Platform testing](#-platform-testing-android-ios)). "Platform only" steps throw `PlatformNotSupportedError` on web before anything is resolved or sent. `appId` defaults to the app under test from the capabilities file (`appium:appPackage` / `appium:bundleId`); a step that needs one and finds none throws `MissingAppIdError`.
+
+* **`platform: Platform`** — The platform these steps act on (`'web'`, `'android'`, `'ios'`, ...), read-only: `steps.platform`.
 
 ### 📱 App
 

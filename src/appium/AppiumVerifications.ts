@@ -102,6 +102,7 @@ export class AppiumVerifications implements IVerifications {
             throw new Error(
                 `verifyPresence: ${entryLabel(entry)} is a list entry ("list": true) — ` +
                 `expected at least one visible match within ${timeout}ms, found ${lastCount} match(es) and none visible.${cause}`,
+                { cause: err },
             );
         }
     }
