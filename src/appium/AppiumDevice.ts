@@ -17,8 +17,8 @@ export class MissingAppIdError extends Error {
         readonly platform: Platform,
     ) {
         super(
-            `${caller}: no app id. Pass one, or set "${capability}" `
-            + `in the capabilities file for platform "${platform}".`,
+            `${caller}: no app id. Pass one, or set "${capability}" in the capabilities file `
+            + `(top level, or "${capability.replace(/^appium:/, '')}" inside "appium:options") for platform "${platform}".`,
         );
         this.name = 'MissingAppIdError';
     }

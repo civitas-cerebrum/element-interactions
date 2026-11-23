@@ -17,9 +17,24 @@ export interface AppiumFactoryOptions {
     /**
      * The app under test (Android package / iOS bundle id), the default for
      * every optional `appId`. When omitted it is read from the driver's
-     * capabilities under the platform's key (CONTRACT B1).
+     * capabilities, see {@link appIdFromSession}.
      */
     appId?: string;
+}
+
+/**
+ * The app under test named by a live session's capabilities. The
+ * capabilities-file forms come first (`appium:<key>` at the top level, or
+ * `<key>` inside `appium:options`, as `appIdFromCapabilities` reads them);
+ * then the UNPREFIXED `<key>` (`appPackage` / `bundleId`), because Appium
+ * returns a session's capabilities with the vendor prefix stripped, so the
+ * `driver.capabilities` of a real session carries no `appium:` keys.
+ */
+export function appIdFromSession(platform: Platform, capabilities: Record<string, unknown> | undefined): string | undefined {
+    const fromFile = appIdFromCapabilities(platform, capabilities);
+    if (fromFile !== undefined || !capabilities) return fromFile;
+    const bare = capabilities[strategyFor(platform).appIdCapability.replace(/^appium:/, '')];
+    return typeof bare === 'string' && bare.length > 0 ? bare : undefined;
 }
 
 /**
@@ -49,7 +64,7 @@ export class AppiumFactory implements IInteractionFactory {
         if (!this.strategy.implemented) throw notImplementedError(platform);
         this.timeout = options.timeout ?? 30000;
         this.appId = options.appId
-            ?? appIdFromCapabilities(platform, driver.capabilities as Record<string, unknown> | undefined);
+            ?? appIdFromSession(platform, driver.capabilities as Record<string, unknown> | undefined);
     }
 
     createInteractions(): AppiumInteractions {

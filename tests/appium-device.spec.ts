@@ -6,6 +6,7 @@ import {
     AppiumFactory,
     strategyFor,
     appIdFromCapabilities,
+    appIdFromSession,
     androidStrategy,
     iosStrategy,
     macosStrategy,
@@ -255,14 +256,45 @@ for (const platform of ['android', 'ios'] as const) {
             expect(mock.calls).toEqual([]);
         });
 
+        test('the factory reads the app id from a live session\'s capabilities (prefix stripped, file forms first)', async () => {
+            const key = strategyFor(platform).appIdCapability;
+            const bare = key.replace(/^appium:/, '');
+            const appIdOf = (capabilities: Record<string, unknown>) =>
+                new AppiumFactory(mockDriver({ capabilities }).driver, platform).appId;
+            // What Appium returns for a session: unprefixed keys.
+            expect(appIdOf({ platformName: platform, [bare]: 'com.example.session' })).toBe('com.example.session');
+            // The capabilities-file forms, top level and inside appium:options, win over the bare key.
+            expect(appIdOf({ [key]: 'com.example.top', [bare]: 'com.example.session' })).toBe('com.example.top');
+            expect(appIdOf({ 'appium:options': { [bare]: 'com.example.nested' }, [bare]: 'com.example.session' })).toBe('com.example.nested');
+            // Empty or non-string values are no app id.
+            expect(appIdOf({ [bare]: '' })).toBeUndefined();
+            expect(appIdOf({ [bare]: 42 })).toBeUndefined();
+            expect(appIdOf({})).toBeUndefined();
+            // The exported helper is the same rule.
+            expect(appIdFromSession(platform, { [bare]: 'com.example.session' })).toBe('com.example.session');
+            expect(appIdFromSession(platform, undefined)).toBeUndefined();
+            // The other platform's key is not this platform's app id.
+            const otherBare = strategyFor(platform === 'android' ? 'ios' : 'android').appIdCapability.replace(/^appium:/, '');
+            expect(appIdOf({ [otherBare]: 'com.example.other' })).toBeUndefined();
+        });
+
+        test('MissingAppIdError is exported from the package entry points', async () => {
+            const root = await import('../src/index');
+            const appium = await import('../src/appium');
+            expect(root.MissingAppIdError).toBe(MissingAppIdError);
+            expect(appium.MissingAppIdError).toBe(MissingAppIdError);
+        });
+
         test('a missing app id is a MissingAppIdError naming the caller and the capability key', async () => {
             const mock = mockDriver({ capabilities: { platformName: platform } });
             const device = new AppiumFactory(mock.driver, platform).createDevice() as AppiumDevice;
             const key = strategyFor(platform).appIdCapability;
             const error = await device.isAppInForeground().catch((e: unknown) => e);
             expect(error).toBeInstanceOf(MissingAppIdError);
+            const bare = key.replace(/^appium:/, '');
             expect((error as MissingAppIdError).message).toBe(
-                `isAppInForeground: no app id. Pass one, or set "${key}" in the capabilities file for platform "${platform}".`,
+                `isAppInForeground: no app id. Pass one, or set "${key}" in the capabilities file `
+                + `(top level, or "${bare}" inside "appium:options") for platform "${platform}".`,
             );
             expect((error as MissingAppIdError).capability).toBe(key);
             expect(() => device.resolveAppId('verifyAppInForeground')).toThrow(/^verifyAppInForeground: no app id\./);
