@@ -26,7 +26,7 @@ import { log } from '../logger/Logger';
 import { AppiumFactory } from '../appium/AppiumFactory';
 import { AppiumSessionProvider } from '../session/AppiumSessionProvider';
 import { prepareSession, type PreparedSession } from '../session/prepareSession';
-import type { SessionOptions } from '../session/types';
+import type { SessionOptions, SessionProvider } from '../session/types';
 import { PlatformInteractions } from './PlatformInteractions';
 
 type StepFixture = {
@@ -652,7 +652,9 @@ function platformFixture(
                 if (options?.session?.onSessionStarted) await options.session.onSessionStarted(driver);
                 await use({ driver, prepared });
             } finally {
-                await provider.stop(driver);
+                // Never throws: a failing or hanging stop must not hide an
+                // onSessionStarted / test error, nor stall the worker teardown.
+                await stopSession(provider, driver);
             }
         }, { scope: 'worker' }],
 
@@ -750,6 +752,29 @@ export async function attachPlatformEvidence(
         await testInfo.attach('page-source', { body: source, contentType: 'text/xml' });
     } catch (error) {
         log.warn('Could not attach the page source: %s', error instanceof Error ? error.message : String(error));
+    }
+}
+
+/** How long closing the worker's session may take before it is given up, in ms. */
+export const STOP_TIMEOUT_MS = EVIDENCE_TIMEOUT_MS;
+
+/**
+ * Closes the worker's session at teardown. Best-effort, like the evidence: a
+ * `provider.stop()` that throws is logged and never replaces an error already
+ * on its way (an `onSessionStarted` failure); one that does not settle within
+ * `timeoutMs` is given up, so a dead device cannot stall the teardown.
+ *
+ * @internal Exported for the tests; not part of the package entry point.
+ */
+export async function stopSession(
+    provider: Pick<SessionProvider, 'stop'>,
+    driver: WebdriverIO.Browser,
+    timeoutMs: number = STOP_TIMEOUT_MS,
+): Promise<void> {
+    try {
+        await withTimeout(() => provider.stop(driver), timeoutMs, 'session stop');
+    } catch (error) {
+        log.warn('Could not close the platform session: %s', error instanceof Error ? error.message : String(error));
     }
 }
 

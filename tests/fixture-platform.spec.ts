@@ -1,7 +1,7 @@
 import { test as base, expect } from '@playwright/test';
 import * as fs from 'fs';
 import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
-import { attachPlatformEvidence, baseFixture, EVIDENCE_TIMEOUT_MS, resolvePlatform } from '../src/fixture/BaseFixture';
+import { attachPlatformEvidence, baseFixture, EVIDENCE_TIMEOUT_MS, resolvePlatform, STOP_TIMEOUT_MS, stopSession } from '../src/fixture/BaseFixture';
 import { PlatformInteractions } from '../src/fixture/PlatformInteractions';
 import { AppiumInteractions, AppiumVerifications, AppiumGestures, AppiumDevice } from '../src/appium';
 import { expectNotSupported } from './appium/mocks';
@@ -174,5 +174,28 @@ test.describe('failure evidence on a dead device', () => {
         const driver = { takeScreenshot: async () => 'cG5n', getPageSource: async () => '<AppiumAUT/>' } as unknown as WebdriverIO.Browser;
         await attachPlatformEvidence(driver, testInfo as never, true, 1000);
         expect(attached).toEqual([['failure-screenshot', 'image/png'], ['page-source', 'text/xml']]);
+    });
+});
+
+test.describe('closing the session at worker teardown', () => {
+    const driver = {} as WebdriverIO.Browser;
+
+    test('a hanging stop is given up after the timeout; the teardown is not stalled', async () => {
+        expect(STOP_TIMEOUT_MS).toBe(EVIDENCE_TIMEOUT_MS);
+        const started = Date.now();
+        await stopSession({ stop: () => new Promise<never>(() => undefined) }, driver, 100);
+        const elapsed = Date.now() - started;
+        expect(elapsed).toBeGreaterThanOrEqual(90);
+        expect(elapsed).toBeLessThan(2000);
+    });
+
+    test('a throwing stop is logged, not rethrown', async () => {
+        await expect(stopSession({ stop: async () => { throw new Error('dead device'); } }, driver, 100)).resolves.toBeUndefined();
+    });
+
+    test('a stop that answers in time is awaited, with the session driver', async () => {
+        const stopped: unknown[] = [];
+        await stopSession({ stop: async (d) => { stopped.push(d); } }, driver, 1000);
+        expect(stopped).toEqual([driver]);
     });
 });

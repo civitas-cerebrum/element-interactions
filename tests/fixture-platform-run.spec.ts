@@ -55,14 +55,14 @@ const names = (r: JsonResult | undefined) => (r?.attachments ?? [])
 const UNEXPECTED = ['evidence errors never mask the failure', 'fails and gets evidence', 'unexpected pass under test.fail() gets evidence'];
 
 test('the nested run ends unexpectedly exactly where it is built to', () => {
-    expect(bySpec.size).toBe(11);
+    expect(bySpec.size).toBe(12);
     expect([...outcome].filter(([, status]) => status !== 'expected').map(([title]) => title).sort()).toEqual(UNEXPECTED);
     expect([...outcome].filter(([, status]) => status === 'unexpected').map(([title]) => title).sort()).toEqual(UNEXPECTED);
     expect(exitCode).toBe(1);
 });
 
 /** Lifecycle events of the main ios session (the labelled sessions of other files left out). */
-const mainEvents = () => events.filter(e => !/^(hook-throws|macos) /.test(e));
+const mainEvents = () => events.filter(e => !/^(hook-throws|stop-throws|macos) /.test(e));
 
 test('one session per worker: started once, stopped once at worker teardown, relaunch before every test', () => {
     const main = mainEvents();
@@ -81,6 +81,15 @@ test('onSessionStarted throwing still stops the session, and its error fails the
     const r = bySpec.get('onSessionStarted throws')!;
     expect(r.status).toBe('failed');
     expect(r.error?.message).toContain('onSessionStarted failed on purpose');
+});
+
+test('a throwing provider.stop() at worker teardown is logged and never masks the onSessionStarted error', () => {
+    expect(events.filter(e => e.startsWith('stop-throws '))).toEqual(['stop-throws start', 'stop-throws stop']);
+    const r = bySpec.get('onSessionStarted error survives a throwing stop')!;
+    expect(r.status).toBe('failed');
+    expect(r.error?.message).toContain('onSessionStarted failed before a failing stop');
+    expect(r.error?.message ?? '').not.toContain('stop failed on purpose');
+    expect(outcome.get('onSessionStarted error survives a throwing stop')).toBe('expected');
 });
 
 test('macos through the fixture: the session start refuses it with the exact message, nothing is opened', () => {

@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as http from 'http';
+import * as os from 'os';
+import * as path from 'path';
 import type { AddressInfo } from 'net';
 import {
     AppiumSessionProvider,
@@ -241,6 +243,35 @@ test.describe('AppiumSessionProvider on the wire (real webdriverio, local server
             expect(prepared.context.capabilities).toStrictEqual(file);
         } finally {
             await wire.close();
+        }
+    });
+
+    test('a browserName file with "wdio:enforceWebDriverClassic": true goes out exactly as the file: no BiDi keys added', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ei-wire-browser-'));
+        const capsFile = path.join(dir, 'ios-safari.json');
+        const file = {
+            platformName: 'iOS',
+            browserName: 'Safari',
+            'appium:automationName': 'XCUITest',
+            'appium:deviceName': 'Example iPhone',
+            'wdio:enforceWebDriverClassic': true,
+        };
+        fs.writeFileSync(capsFile, JSON.stringify(file));
+        const wire = await wireServer();
+        try {
+            const prepared = prepareSession('ios', { capabilities: capsFile, server: wire.url, reset: 'none' }, {});
+            const provider = new AppiumSessionProvider({ client: { connectionRetryCount: 0, connectionRetryTimeout: 10_000 } });
+            const driver = await provider.start(prepared.context);
+            await provider.stop(driver);
+
+            const create = wire.requests.filter(r => r.method === 'POST' && r.url === '/wd/hub/session');
+            expect(create).toHaveLength(1);
+            expect(create[0].body).toStrictEqual({ capabilities: { alwaysMatch: file, firstMatch: [{}] } });
+            expect(wire.requests.at(-1)).toMatchObject({ method: 'DELETE', url: '/wd/hub/session/wire-session' });
+            expect(prepared.context.capabilities).toStrictEqual(file);
+        } finally {
+            await wire.close();
+            fs.rmSync(dir, { recursive: true, force: true });
         }
     });
 });
