@@ -3,6 +3,27 @@ import type { IDevice, Orientation, PermissionState } from '../interfaces/IDevic
 import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
 import { notImplementedError } from './platform/notImplemented';
 
+/**
+ * Thrown when a call needs an app id and there is none: none was passed and
+ * the capabilities file names no app under test. The message names `caller`
+ * (the step or method that needed it) and the capability key to set. It is a
+ * configuration error, so a polling step rethrows it at once instead of
+ * retrying it for the step timeout.
+ */
+export class MissingAppIdError extends Error {
+    constructor(
+        readonly caller: string,
+        readonly capability: string,
+        readonly platform: Platform,
+    ) {
+        super(
+            `${caller}: no app id. Pass one, or set "${capability}" `
+            + `in the capabilities file for platform "${platform}".`,
+        );
+        this.name = 'MissingAppIdError';
+    }
+}
+
 /** The context name Appium uses for the native UI. */
 export const NATIVE_CONTEXT = 'NATIVE_APP';
 
@@ -31,15 +52,24 @@ export class AppiumDevice implements IDevice {
         if (!this.strategy.implemented) throw notImplementedError(this.platform);
     }
 
-    /** The given app id, else the app under test, else a clear error. */
-    private appId(method: string, appId?: string): string {
+    /**
+     * Whether this platform can perform the device method `method` (`false`
+     * for one in the strategy's `unsupported` list, e.g. `pressBack` on ios).
+     * Lets a caller refuse with `PlatformNotSupportedError` before doing
+     * anything else (logging, resolving).
+     */
+    supports(method: keyof IDevice): boolean {
+        return !this.strategy.unsupported.includes(method);
+    }
+
+    /**
+     * The given app id, else the app under test, else a
+     * {@link MissingAppIdError} naming `caller` (the method or step asking)
+     * and the capability key to set. Sends nothing.
+     */
+    resolveAppId(caller: string, appId?: string): string {
         const id = appId ?? this.defaultAppId;
-        if (!id) {
-            throw new Error(
-                `${method}: no app id. Pass one, or set "${this.strategy.appIdCapability}" ` +
-                `in the capabilities file for platform "${this.platform}".`,
-            );
-        }
+        if (!id) throw new MissingAppIdError(caller, this.strategy.appIdCapability, this.platform);
         return id;
     }
 
@@ -47,17 +77,17 @@ export class AppiumDevice implements IDevice {
 
     async launchApp(appId?: string): Promise<void> {
         this.requireImplemented();
-        await this.strategy.launchApp(this.driver, this.appId('launchApp', appId));
+        await this.strategy.launchApp(this.driver, this.resolveAppId('launchApp', appId));
     }
 
     async activateApp(appId?: string): Promise<void> {
         this.requireImplemented();
-        await this.strategy.activateApp(this.driver, this.appId('activateApp', appId));
+        await this.strategy.activateApp(this.driver, this.resolveAppId('activateApp', appId));
     }
 
     async terminateApp(appId?: string): Promise<void> {
         this.requireImplemented();
-        await this.strategy.terminateApp(this.driver, this.appId('terminateApp', appId));
+        await this.strategy.terminateApp(this.driver, this.resolveAppId('terminateApp', appId));
     }
 
     async backgroundApp(seconds: number): Promise<void> {
@@ -71,7 +101,7 @@ export class AppiumDevice implements IDevice {
     /** Terminates and re-activates the app under test (CONTRACT B5). */
     async resetApp(): Promise<void> {
         this.requireImplemented();
-        await this.strategy.resetApp(this.driver, this.appId('resetApp'));
+        await this.strategy.resetApp(this.driver, this.resolveAppId('resetApp'));
     }
 
     async installApp(appPath: string): Promise<void> {
@@ -94,7 +124,7 @@ export class AppiumDevice implements IDevice {
 
     async isAppInForeground(appId?: string): Promise<boolean> {
         this.requireImplemented();
-        return this.strategy.isAppInForeground(this.driver, this.appId('isAppInForeground', appId));
+        return this.strategy.isAppInForeground(this.driver, this.resolveAppId('isAppInForeground', appId));
     }
 
     // ── System navigation and keyboard ──
@@ -151,7 +181,7 @@ export class AppiumDevice implements IDevice {
         if (state !== 'grant' && state !== 'deny' && state !== 'reset') {
             throw new Error(`setPermission: expected 'grant', 'deny' or 'reset', got "${state}".`);
         }
-        await this.strategy.setPermission(this.driver, permission, state, this.appId('setPermission'));
+        await this.strategy.setPermission(this.driver, permission, state, this.resolveAppId('setPermission'));
     }
 
     // ── Contexts ──

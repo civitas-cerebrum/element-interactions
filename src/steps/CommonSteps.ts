@@ -15,6 +15,7 @@ import type { IDevice, Orientation, PermissionState } from '../interfaces/IDevic
 import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
 import { actionFamilyOf, assertFactoryFamily, requireBuiltPath, requireDevicePlatform, requireWebPlatform } from './platformGuard';
 import { pollUntil } from '../utils/poll';
+import { AppiumDevice, MissingAppIdError } from '../appium/AppiumDevice';
 import { EmailClient, EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
 import { SqlClient, SqlResult, QueryBuilder, UnsupportedEngineException } from '@civitas-cerebrum/sql-client';
@@ -827,17 +828,18 @@ export class Steps {
     // PLATFORM STEPS (CONTRACT B5)
     // ==========================================
     //
-    // App lifecycle, device, contexts, device assertions, page source and the
-    // screen-level gestures (`swipeScreen`, `tapAt`) are platform-only: on web
-    // they throw `PlatformNotSupportedError(<step>, 'web')` first, before any
-    // element is resolved or anything is acted on. A step one device platform
-    // cannot do (`pressBack` on ios) throws the same error for that platform,
-    // from the platform strategy. The element-level gestures (`swipe`,
-    // `scrollUntilFound`, `longPress`, `pinch`, `zoom`) resolve the element and
-    // delegate to its element-repository primitive on every platform: on web
-    // `swipe` and `longPress` drag / hold with the mouse, `scrollUntilFound`
-    // scrolls the element into view, and `pinch` / `zoom` throw
-    // `PlatformNotSupportedError('pinch' | 'zoom', 'web')` from the element.
+    // App lifecycle, device, contexts, device assertions, page source, the
+    // screen-level gestures (`swipeScreen`, `tapAt`) and the two-finger
+    // gestures (`pinch`, `zoom`) refuse web: they throw
+    // `PlatformNotSupportedError(<step>, 'web')` first, before any element is
+    // resolved, anything is logged or anything is acted on. A step one device
+    // platform cannot do (`pressBack` on ios, listed in the strategy's
+    // `unsupported`) throws the same error for that platform, also first. The
+    // other element-level gestures (`swipe`, `scrollUntilFound`, `longPress`)
+    // resolve the element and delegate to its element-repository primitive on
+    // every platform: on web `swipe` and `longPress` drag / hold with the
+    // mouse and `scrollUntilFound` scrolls the element into view. `pinch` /
+    // `zoom` delegate to the element primitive on device platforms only.
 
     /** {@link requireDevicePlatform} on this factory's platform. */
     private requirePlatform(stepName: string): void {
@@ -845,20 +847,44 @@ export class Steps {
     }
 
     /**
+     * {@link requirePlatform}, then refuses a device step the platform cannot
+     * perform (the strategy's `unsupported` list, e.g. `pressBack` on ios)
+     * with `PlatformNotSupportedError(stepName, platform)`, before anything is
+     * logged or sent.
+     */
+    private requireDeviceStep(stepName: keyof IDevice): void {
+        this.requirePlatform(stepName);
+        if (this.device instanceof AppiumDevice && !this.device.supports(stepName)) {
+            throw new PlatformNotSupportedError(stepName, this.factory.platform);
+        }
+    }
+
+    /**
+     * The app id a polling step queries: `appId`, else the app under test.
+     * On the Appium family a missing one throws {@link MissingAppIdError}
+     * naming the STEP and the capability key, before anything is polled or
+     * sent; any other device resolves it itself.
+     */
+    private stepAppId(stepName: string, appId?: string): string | undefined {
+        return this.device instanceof AppiumDevice ? this.device.resolveAppId(stepName, appId) : appId;
+    }
+
+    /**
      * Polls a read-only device probe until `accept` takes its value, for the
-     * step timeout (the factory's). A `PlatformNotSupportedError` from the
-     * probe is not retried: it is rethrown at once. On timeout the error names
+     * step timeout (the factory's). A `PlatformNotSupportedError` or a
+     * `MissingAppIdError` from the probe is not retried: it is rethrown at
+     * once (neither can change while polling). On timeout the error names
      * the step, what was expected and the last observed value.
      */
     private async pollDevice<T>(probe: () => Promise<T>, accept: (value: T) => boolean, message: string): Promise<void> {
-        let refusal: PlatformNotSupportedError | undefined;
+        let refusal: PlatformNotSupportedError | MissingAppIdError | undefined;
         const REFUSED = Symbol('refused');
         await pollUntil<T | typeof REFUSED>(
             async () => {
                 try {
                     return await probe();
                 } catch (error) {
-                    if (error instanceof PlatformNotSupportedError) {
+                    if (error instanceof PlatformNotSupportedError || error instanceof MissingAppIdError) {
                         refusal = error;
                         return REFUSED;
                     }
@@ -1011,22 +1037,24 @@ export class Steps {
     }
 
     /**
-     * Two-finger pinch (fingers move together) on an element. Delegates to the element's `pinch` primitive;
-     * a web element throws `PlatformNotSupportedError('pinch', 'web')`.
+     * Two-finger pinch (fingers move together) on an element. Delegates to the element's `pinch` primitive.
+     * Device platforms only: on web it throws `PlatformNotSupportedError('pinch', 'web')` before resolving.
      * @param options - `scale` in (0, 1), default 0.5.
      */
     async pinch(elementName: string, pageName: string, options?: { scale?: number }): Promise<void> {
+        this.requirePlatform('pinch');
         log.interact('Pinching "%s" in "%s"', elementName, pageName);
         const element = await this.getElement(elementName, pageName);
         await this.gestures.pinch(element, options?.scale !== undefined ? { scale: options.scale } : undefined);
     }
 
     /**
-     * Two-finger zoom (fingers spread) on an element. Delegates to the element's `zoom` primitive;
-     * a web element throws `PlatformNotSupportedError('zoom', 'web')`.
+     * Two-finger zoom (fingers spread) on an element. Delegates to the element's `zoom` primitive.
+     * Device platforms only: on web it throws `PlatformNotSupportedError('zoom', 'web')` before resolving.
      * @param options - `scale` above 1, default 2.
      */
     async zoom(elementName: string, pageName: string, options?: { scale?: number }): Promise<void> {
+        this.requirePlatform('zoom');
         log.interact('Zooming "%s" in "%s"', elementName, pageName);
         const element = await this.getElement(elementName, pageName);
         await this.gestures.zoom(element, options?.scale !== undefined ? { scale: options.scale } : undefined);
@@ -1036,7 +1064,7 @@ export class Steps {
 
     /** System back. Android only: throws `PlatformNotSupportedError('pressBack', 'ios')` on ios. */
     async pressBack(): Promise<void> {
-        this.requirePlatform('pressBack');
+        this.requireDeviceStep('pressBack');
         log.navigate('Pressing system back');
         await this.device.pressBack();
     }
@@ -1106,12 +1134,13 @@ export class Steps {
      */
     async verifyAppInForeground(appId?: string): Promise<void> {
         this.requirePlatform('verifyAppInForeground');
-        const app = appId ?? '<app under test>';
+        const id = this.stepAppId('verifyAppInForeground', appId);
+        const app = id ?? '<app under test>';
         log.verify('Verifying app "%s" is in the foreground', app);
         await this.pollDevice(
-            () => this.device.isAppInForeground(appId),
+            () => this.device.isAppInForeground(id),
             inForeground => inForeground === true,
-            `verifyAppInForeground: expected app "${app}" in the foreground (last value: whether it is)`,
+            `verifyAppInForeground: expected app "${app}" in the foreground`,
         );
     }
 
@@ -1142,7 +1171,7 @@ export class Steps {
         await this.pollDevice(
             () => this.device.isKeyboardShown(),
             actual => actual === shown,
-            `verifyKeyboardShown: expected the keyboard ${shown ? 'shown' : 'hidden'} (last value: whether it is shown)`,
+            `verifyKeyboardShown: expected the keyboard ${shown ? 'shown' : 'hidden'}`,
         );
     }
 

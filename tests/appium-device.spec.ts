@@ -11,6 +11,7 @@ import {
     macosStrategy,
     windowsStrategy,
 } from '../src/appium';
+import { MissingAppIdError } from '../src/appium/AppiumDevice';
 import { STRATEGY_METHODS } from '../src/appium/platform/notImplemented';
 import { IOS_SWIPE_INSET } from '../src/appium/platform/ios';
 import { ANDROID_SWIPE_INSET } from '../src/appium/platform/android';
@@ -223,7 +224,7 @@ for (const platform of ['android', 'ios'] as const) {
         }
 
         test('every IDevice method is covered by the table', () => {
-            expect(methodsOf(AppiumDevice, ['requireImplemented', 'appId'])).toEqual(Object.keys(EXPECTED).sort());
+            expect(methodsOf(AppiumDevice, ['requireImplemented', 'supports', 'resolveAppId'])).toEqual(Object.keys(EXPECTED).sort());
         });
 
         test('the factory appId option wins over the capabilities', async () => {
@@ -241,6 +242,27 @@ for (const platform of ['android', 'ios'] as const) {
                 await expect(call()).rejects.toThrow(`set "${key}" in the capabilities file`);
             }
             expect(mock.calls).toEqual([]);
+        });
+
+        test('a missing app id is a MissingAppIdError naming the caller and the capability key', async () => {
+            const mock = mockDriver({ capabilities: { platformName: platform } });
+            const device = new AppiumFactory(mock.driver, platform).createDevice() as AppiumDevice;
+            const key = strategyFor(platform).appIdCapability;
+            const error = await device.isAppInForeground().catch((e: unknown) => e);
+            expect(error).toBeInstanceOf(MissingAppIdError);
+            expect((error as MissingAppIdError).message).toBe(
+                `isAppInForeground: no app id. Pass one, or set "${key}" in the capabilities file for platform "${platform}".`,
+            );
+            expect((error as MissingAppIdError).capability).toBe(key);
+            expect(() => device.resolveAppId('verifyAppInForeground')).toThrow(/^verifyAppInForeground: no app id\./);
+            expect(device.resolveAppId('x', 'com.example.given')).toBe('com.example.given');
+            expect(mock.calls).toEqual([]);
+        });
+
+        test('supports() follows the strategy\'s unsupported list', () => {
+            const device = build().device as AppiumDevice;
+            expect(device.supports('pressBack')).toBe(platform === 'android');
+            expect(device.supports('hideKeyboard')).toBe(true);
         });
 
         test('openDeepLink without any app id sends the url alone', async () => {

@@ -33,8 +33,9 @@ import { mockDriver, mockElement } from './appium/mocks';
 // non-ui   — API (wasapi), SQL, email, pacing and pure value checks: no driver, every platform.
 // platform-only — CONTRACT B5 steps with no element on web: throw PlatformNotSupportedError(step, 'web')
 //            before anything (tests/steps-platform-steps.spec.ts checks each one).
-// element gestures — CONTRACT B5 element-level gestures: on web they follow the element primitive
-//            (swipe / longPress / scrollUntilFound act, pinch / zoom throw from the WebElement).
+// element gestures — CONTRACT B5 element-level gestures: on a device they resolve the element and call
+//            its primitive. On web swipe / longPress / scrollUntilFound follow the element primitive;
+//            pinch / zoom throw PlatformNotSupportedError(step, 'web') before resolving anything.
 //            scrollIntoView, the pre-existing one, stays under shared.
 
 const PLATFORM_ONLY = [
@@ -108,7 +109,7 @@ const NOT_STEPS = [
     'requireWeb', 'webPage', 'webRequest', 'toResolutionOptions', 'toAllResolutionOptions', 'getElement', 'getAllElement',
     'actionWithStrategy', 'requireListMatch', 'verifyStorage', 'resolveVisualMaskLocators', 'getApiClient',
     'resolveApiArgs', 'resolveApiArgsWithBody', 'getDbClient', 'resolveSqlArgs', 'bindBuilder',
-    'requirePlatform', 'pollDevice',
+    'requirePlatform', 'requireDeviceStep', 'stepAppId', 'pollDevice',
 ];
 
 // ─── ElementAction (steps.on) and matcher-tree classification ────────────────

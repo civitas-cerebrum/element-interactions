@@ -2,6 +2,9 @@ import { test, expect, type Page } from '@playwright/test';
 import { PlatformNotSupportedError, WebElement, type Element, type ElementRepository, type Platform } from '@civitas-cerebrum/element-repository';
 import { Steps } from '../src/steps/CommonSteps';
 import { AppiumFactory, AppiumGestures } from '../src/appium';
+import { MissingAppIdError } from '../src/appium/AppiumDevice';
+import { PlaywrightFactory } from '../src/playwright/PlaywrightFactory';
+import { stepLog } from '../src/logger/Logger';
 import type { Direction } from '../src/interfaces/IGestures';
 import type { Orientation, PermissionState } from '../src/interfaces/IDevice';
 import { PollTimeoutError } from '../src/utils/poll';
@@ -96,9 +99,9 @@ const B5_STEPS = [
 type MissingFromList = Exclude<keyof B5, (typeof B5_STEPS)[number]>;
 export type _B5ListComplete = Expect<Equal<MissingFromList, never>>;
 
-/** Element-level gestures: on web they follow the element primitive (CONTRACT A5) instead of a step guard. */
-const ELEMENT_GESTURES = ['swipe', 'scrollIntoView', 'scrollUntilFound', 'longPress', 'pinch', 'zoom'] as const;
-/** Every other B5 step is platform-only: refused on web before anything happens. */
+/** Element-level gestures that work on web: they follow the element primitive (CONTRACT A5) instead of a step guard. */
+const ELEMENT_GESTURES = ['swipe', 'scrollIntoView', 'scrollUntilFound', 'longPress'] as const;
+/** Every other B5 step (`pinch` / `zoom` included) is platform-only: refused on web before anything happens. */
 const PLATFORM_ONLY = B5_STEPS.filter(n => !(ELEMENT_GESTURES as readonly string[]).includes(n));
 
 /** Sample arguments for every B5 step. */
@@ -472,7 +475,8 @@ for (const platform of DEVICE_PLATFORMS) {
             const error = await caught(() => steps.verifyAppInForeground());
             const elapsed = Date.now() - started;
             expect(error).toBeInstanceOf(PollTimeoutError);
-            expect((error as Error).message).toContain(`verifyAppInForeground: expected app "<app under test>" in the foreground`);
+            expect((error as Error).message).toContain(`verifyAppInForeground: expected app "${APP[platform]}" in the foreground`);
+            expect((error as Error).message).not.toContain('whether it is');
             expect((error as Error).message).toContain('timed out after 400 ms');
             expect((error as Error).message).toContain('Last value: false');
             expect(elapsed).toBeGreaterThanOrEqual(350);
@@ -517,6 +521,7 @@ for (const platform of DEVICE_PLATFORMS) {
             const error = await caught(() => steps.verifyKeyboardShown(false));
             expect(error).toBeInstanceOf(PollTimeoutError);
             expect((error as Error).message).toContain('verifyKeyboardShown: expected the keyboard hidden');
+            expect((error as Error).message).not.toContain('whether it is');
             expect((error as Error).message).toContain('Last value: true');
         });
 
@@ -534,6 +539,20 @@ for (const platform of DEVICE_PLATFORMS) {
             expect((error as Error).message).toContain('Last value: "NATIVE_APP"');
         });
 
+        test('verifyAppInForeground without any app id fails at once, naming the step and the capability key, sending nothing', async () => {
+            const mock = mockDriver({ capabilities: { platformName: platform } });
+            const steps = new Steps(new AppiumFactory(mock.driver, platform, { timeout: 5000 }), stubRepo([], mockElement()));
+            const started = Date.now();
+            const error = await caught(() => steps.verifyAppInForeground());
+            expect(Date.now() - started, 'not retried for the step timeout').toBeLessThan(1000);
+            expect(error).toBeInstanceOf(MissingAppIdError);
+            const message = (error as Error).message;
+            expect(message).toMatch(/^verifyAppInForeground: no app id\./);
+            expect(message).toContain(`set "${platform === 'ios' ? 'appium:bundleId' : 'appium:appPackage'}" in the capabilities file`);
+            expect(message).not.toContain('isAppInForeground:');
+            expect(mock.calls).toEqual([]);
+        });
+
         test('a PlatformNotSupportedError from a probe is not retried', async () => {
             const { steps, mock } = deviceSteps(platform, 5000);
             let probes = 0;
@@ -548,6 +567,43 @@ for (const platform of DEVICE_PLATFORMS) {
         });
     });
 }
+
+test.describe('pressBack refuses ios before anything else', () => {
+    /** Records the step log's navigate lines while `run` runs. */
+    async function navigateLines(run: () => Promise<unknown>): Promise<string[]> {
+        const lines: string[] = [];
+        const original = stepLog.navigate.log;
+        stepLog.navigate.log = (...args: unknown[]) => { lines.push(args.map(String).join(' ')); };
+        try {
+            await run();
+        } finally {
+            stepLog.navigate.log = original;
+        }
+        return lines;
+    }
+
+    test('ios: PlatformNotSupportedError("pressBack", "ios") before logging and before the device is reached', async () => {
+        const { steps, mock } = deviceSteps('ios');
+        const device = (steps as unknown as { device: Record<string, unknown> }).device;
+        let reached = 0;
+        device.pressBack = async () => { reached++; };
+        let refusal: unknown;
+        const lines = await navigateLines(async () => { refusal = await caught(() => steps.pressBack()); });
+        expect(refusal).toBeInstanceOf(PlatformNotSupportedError);
+        expect((refusal as PlatformNotSupportedError).message).toContain('"pressBack"');
+        expect((refusal as PlatformNotSupportedError).message).toContain('"ios"');
+        expect(reached, 'the device was never reached').toBe(0);
+        expect(lines.filter(l => l.includes('system back')), 'nothing was logged').toEqual([]);
+        expect(mock.calls).toEqual([]);
+    });
+
+    test('android: pressBack logs and reaches the device (control)', async () => {
+        const { steps, mock } = deviceSteps('android');
+        const lines = await navigateLines(() => steps.pressBack());
+        expect(mock.calls).toEqual([['back']]);
+        if (stepLog.navigate.enabled) expect(lines.some(l => l.includes('system back'))).toBe(true);
+    });
+});
 
 test.describe('macos / windows are not reachable', () => {
     for (const platform of ['macos', 'windows'] as const) {
@@ -598,6 +654,49 @@ test.describe('B5 on web (new Steps(repo))', () => {
         });
     }
 
+    /**
+     * A web factory (`PlaywrightFactory` over the recording page) whose
+     * gestures and device members record every property read: the guard order
+     * is pinned when no platform-only step ever reaches them.
+     */
+    function recordingWebFactorySteps() {
+        const { page, touched, arm } = recordingPage();
+        const reached: string[] = [];
+        const recorder = (member: string) => new Proxy({}, {
+            get(_t, prop) {
+                if (typeof prop === 'string') reached.push(`${member}.${prop}`);
+                return async () => undefined;
+            },
+        });
+        class RecordingWebFactory extends PlaywrightFactory {
+            override createGestures() { return recorder('gestures') as ReturnType<PlaywrightFactory['createGestures']>; }
+            override createDevice() { return recorder('device') as ReturnType<PlaywrightFactory['createDevice']>; }
+        }
+        const repoCalls: Call[] = [];
+        const element = mockElement();
+        const steps = new Steps(new RecordingWebFactory(page), stubRepo(repoCalls, element, page));
+        reached.length = 0;
+        arm();
+        return { steps, reached, repoCalls, touched, element };
+    }
+
+    test('the recording web factory does record (control): swipe reaches gestures.swipe', async () => {
+        const { steps, reached } = recordingWebFactorySteps();
+        await steps.swipe('el', 'Page', 'up');
+        expect(reached).toContain('gestures.swipe');
+    });
+
+    for (const name of PLATFORM_ONLY) {
+        test(`${name} on a web factory never reaches its gestures or device members`, async () => {
+            const { steps, reached, repoCalls, touched, element } = recordingWebFactorySteps();
+            await expectNotSupported(() => callStep(steps, name, ARGS[name]), name, 'web');
+            expect(reached, 'gestures / device never reached').toEqual([]);
+            expect(repoCalls).toEqual([]);
+            expect(touched).toEqual([]);
+            expect(element.calls).toEqual([]);
+        });
+    }
+
     test('swipe on web delegates to WebElement.swipe (a real mouse drag)', async () => {
         const mouse: unknown[][] = [];
         const fakePage = {
@@ -622,13 +721,16 @@ test.describe('B5 on web (new Steps(repo))', () => {
     });
 
     for (const name of ['pinch', 'zoom'] as const) {
-        test(`${name} on web throws PlatformNotSupportedError("${name}", "web") from the element primitive, acting on nothing`, async () => {
-            const touched: string[] = [];
-            const locator = new Proxy({}, { get(_t, prop) { touched.push(String(prop)); return () => undefined; } });
-            const web = new WebElement(locator as never, 'css=.map');
-            const steps = new Steps(stubRepo([], web, { url: () => 'about:blank' }));
-            await expectNotSupported(() => steps[name]('map', 'Page'), name, 'web');
-            expect(touched, 'the locator was never used').toEqual([]);
+        test(`${name} on web throws PlatformNotSupportedError("${name}", "web") before any repository call, even for an unknown name`, async () => {
+            const repoCalls: Call[] = [];
+            const repo = stubRepo(repoCalls, mockElement(), { url: () => 'about:blank' });
+            // A repository that would fail (or wait out a fallback chain) on any lookup.
+            (repo as unknown as { get: () => Promise<never> }).get = async () => { repoCalls.push(['repo', 'get']); throw new Error('unknown element'); };
+            const steps = new Steps(repo);
+            const started = Date.now();
+            await expectNotSupported(() => steps[name]('no-such-element', 'NoSuchPage'), name, 'web');
+            expect(Date.now() - started).toBeLessThan(1000);
+            expect(repoCalls, 'no repository resolution').toEqual([]);
         });
     }
 
