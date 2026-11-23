@@ -1,0 +1,61 @@
+{
+  "pages": [
+    {
+      "name": "StartScreen",
+      "platform": "web",
+      "elements": [
+        { "elementName": "landmark", "selector": { "css": "h1:has-text('UI Components Test Suite')" } },
+        { "elementName": "entries", "selector": { "css": "[data-testid^='home-card-']" } },
+        { "elementName": "destinationEntry", "selector": { "css": "[data-testid='home-card-forms']" } }
+      ]
+    },
+    {
+      "name": "DestinationScreen",
+      "platform": "web",
+      "elements": [
+        { "elementName": "landmark", "selector": { "css": "h1:has-text('Submission Form')" } },
+        { "elementName": "backButton", "selector": { "css": "[data-testid='sidebar-home-link']" } }
+      ]
+    },
+    {
+      "name": "StartScreen",
+      "platform": "ios",
+      "elements": [
+        { "elementName": "landmark", "selector": { "predicate": "type == \"XCUIElementTypeButton\" AND name == \"com.apple.settings.general\"" } },
+        { "elementName": "entries", "selector": { "class name": "XCUIElementTypeCell" } },
+        { "elementName": "destinationEntry", "selector": { "accessibility id": "com.apple.settings.general" } }
+      ]
+    },
+    {
+      "name": "DestinationScreen",
+      "platform": "ios",
+      "elements": [
+        { "elementName": "landmark", "selector": { "predicate": "type == \"XCUIElementTypeNavigationBar\" AND name == \"General\"" } },
+        {
+          "elementName": "backButton",
+          "selector": {
+            "accessibility id": "BackButton",
+            "fallback": { "class chain": "**/XCUIElementTypeNavigationBar/XCUIElementTypeButton[1]" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "StartScreen",
+      "platform": "android",
+      "elements": [
+        { "elementName": "landmark", "provisional": true, "note": "Unverified: no Android device yet. Android Settings home, the System row.", "selector": { "uiautomator": "new UiSelector().resourceId(\"android:id/title\").text(\"System\")" } },
+        { "elementName": "entries", "provisional": true, "note": "Unverified: no Android device yet. Row titles of Android Settings home.", "selector": { "id": "android:id/title" } },
+        { "elementName": "destinationEntry", "provisional": true, "note": "Unverified: no Android device yet. The System row; opening it changes nothing.", "selector": { "text": "System" } }
+      ]
+    },
+    {
+      "name": "DestinationScreen",
+      "platform": "android",
+      "elements": [
+        { "elementName": "landmark", "provisional": true, "note": "Unverified: no Android device yet. The System page title in the collapsing toolbar.", "selector": { "xpath": "//*[@resource-id='com.android.settings:id/collapsing_toolbar']//android.widget.TextView[@text='System']" } },
+        { "elementName": "backButton", "provisional": true, "note": "Unverified: no Android device yet. The toolbar's up button.", "selector": { "accessibility id": "Navigate up" } }
+      ]
+    }
+  ]
+}

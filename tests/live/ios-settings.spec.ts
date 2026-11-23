@@ -1,0 +1,125 @@
+import { test as base, expect } from '@playwright/test';
+import * as fs from 'fs';
+import * as path from 'path';
+import { baseFixture, resolvePlatform, PlatformNotSupportedError } from '../../src';
+
+/**
+ * Live iOS check of the platform steps against the built-in Settings app on a
+ * real device or simulator. READ-ONLY: it opens, reads, scrolls, swipes and
+ * navigates into General and back. It never toggles a switch, changes a
+ * setting, types into a field, opens the Apple Account page or another app.
+ *
+ * Skipped unless the resolved platform is `ios`. Run it (CONTRACT C2):
+ *
+ *   PLATFORM=ios CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \
+ *     npx playwright test -c playwright.platform.config.ts tests/live
+ *
+ * The capabilities file is a flat W3C object (see tests/capabilities/README.md)
+ * with `"appium:bundleId": "com.apple.Preferences"`; the spec refuses any other
+ * app before a session is opened.
+ *
+ * The row labels and the General navigation bar title are read in English
+ * (`General`); the accessibility ids (`com.apple.settings.*`) do not depend on
+ * the device language.
+ */
+const platform = resolvePlatform(undefined);
+const SETTINGS_BUNDLE_ID = 'com.apple.Preferences';
+const ROOT = 'SettingsRoot';
+const GENERAL = 'GeneralScreen';
+
+const test = baseFixture(base, path.join(__dirname, 'page-repository.json'), {
+    platform,
+    // Generous: the first gesture in a fresh iOS session took 15-30 s live.
+    timeout: 60_000,
+    session: { reset: 'relaunch' },
+});
+
+test.describe('live iOS Settings (read-only)', () => {
+    test.skip(platform !== 'ios', 'Live iOS check: runs only when PLATFORM=ios (with CAPABILITIES and APPIUM_URL).');
+    test.describe.configure({ timeout: 300_000 });
+
+    test.beforeAll(() => {
+        // Runs before the session opens: this read-only spec targets Settings only.
+        const file = process.env.CAPABILITIES;
+        if (!file) throw new Error('CAPABILITIES is not set: the live iOS check needs the path of a capabilities file.');
+        const capabilities = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), file), 'utf-8')) as Record<string, unknown>;
+        if (capabilities['appium:bundleId'] !== SETTINGS_BUNDLE_ID) {
+            throw new Error(
+                `The live iOS check is read-only on Settings: the capabilities file "${file}" must set `
+                + `"appium:bundleId": "${SETTINGS_BUNDLE_ID}", found ${JSON.stringify(capabilities['appium:bundleId'])}.`,
+            );
+        }
+    });
+
+    test('opens Settings in the foreground', async ({ steps }) => {
+        await steps.verifyAppInForeground();
+        await steps.verifyCount('cells', ROOT, { greaterThan: 0 });
+    });
+
+    test('verifyText reads a row label (polling)', async ({ steps }) => {
+        await steps.verifyText('generalRow', ROOT, 'General');
+        await steps.verifyTextContains('generalRowByPredicate', ROOT, 'Gen');
+    });
+
+    test('scrollIntoView with direction down reaches a row further down the root list', async ({ steps }) => {
+        await steps.scrollIntoView('privacyRow', ROOT, { direction: 'down' });
+        await steps.verifyPresence('privacyRow', ROOT);
+    });
+
+    test('swipeScreen up then down moves the list and back', async ({ steps }) => {
+        await steps.scrollIntoView('generalRow', ROOT, { direction: 'down' });
+        const before = await steps.getBoundingBox('generalRow', ROOT);
+        expect(before).not.toBeNull();
+
+        // Finger up: the content moves up, so the General row moves up (or leaves the tree).
+        await steps.swipeScreen('up');
+        const after = await steps.getBoundingBox('generalRow', ROOT, { timeout: 5_000 }).catch(() => null);
+        if (after) expect(after.y).toBeLessThan(before!.y);
+
+        // Finger down: the content comes back.
+        await steps.swipeScreen('down');
+        const back = await steps.getBoundingBox('generalRow', ROOT);
+        expect(back).not.toBeNull();
+        if (after) expect(back!.y).toBeGreaterThan(after.y);
+    });
+
+    test('scrollUntilFound finds a row down the list, then a row back up', async ({ steps }) => {
+        await steps.scrollUntilFound('privacyRow', ROOT, { direction: 'down', timeout: 120_000 });
+        await steps.verifyPresence('privacyRow', ROOT);
+        await steps.scrollUntilFound('generalRow', ROOT, { direction: 'up', timeout: 120_000 });
+        await steps.verifyPresence('generalRow', ROOT);
+    });
+
+    test('navigates into General and back with the on-screen back button', async ({ steps }) => {
+        await steps.scrollIntoView('generalRow', ROOT, { direction: 'down' });
+        await steps.click('generalRow', ROOT);
+        await steps.verifyPresence('title', GENERAL);
+        await steps.click('backButton', GENERAL);
+        await steps.verifyPresence('generalRow', ROOT);
+        await steps.verifyAbsence('title', GENERAL);
+    });
+
+    test('getPageSource returns the XCUITest tree', async ({ steps }) => {
+        const source = await steps.getPageSource();
+        expect(source).toContain('XCUIElementType');
+    });
+
+    test('a web-only step throws PlatformNotSupportedError', async ({ steps }) => {
+        let refusal: unknown;
+        try {
+            steps.getUrl();
+        } catch (error) {
+            refusal = error;
+        }
+        expect(refusal).toBeInstanceOf(PlatformNotSupportedError);
+        expect((refusal as PlatformNotSupportedError).method).toBe('getUrl');
+        expect((refusal as PlatformNotSupportedError).platform).toBe('ios');
+    });
+
+    test('pressBack throws PlatformNotSupportedError on ios', async ({ steps }) => {
+        const refusal = await steps.pressBack().then(() => undefined, (error: unknown) => error);
+        expect(refusal).toBeInstanceOf(PlatformNotSupportedError);
+        expect((refusal as PlatformNotSupportedError).method).toBe('pressBack');
+        expect((refusal as PlatformNotSupportedError).platform).toBe('ios');
+    });
+});
