@@ -4,7 +4,7 @@ type LocatorAssertions = ReturnType<typeof expect<Locator>>;
 import { CountVerifyOptions, TextVerifyOptions } from '../enum/Options';
 import type { VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
 export type { VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
-import { Element, SelectionStrategy, WebElement } from '@civitas-cerebrum/element-repository';
+import { Element, WebElement } from '@civitas-cerebrum/element-repository';
 import type { EntryTarget } from '../interfaces/IEntryTarget';
 import { requireWebElement } from './requireWebElement';
 
@@ -187,8 +187,8 @@ export class Verifications implements IVerifications {
             const lastAttempt = attempt === ABSENCE_RESOLVE_ATTEMPTS;
             divergence = undefined;
             const [resolved, all] = await Promise.all([
-                entry.repo.get(entry.elementName, entry.pageName, { timeout: slice }),
-                entry.repo.get(entry.elementName, entry.pageName, { strategy: SelectionStrategy.ALL, timeout: slice }),
+                entry.resolveDefault(slice),
+                entry.resolveAll(slice),
             ]);
             requireWebElement('ElementAction.verifyAbsence', resolved);
             requireWebElement('ElementAction.verifyAbsence', all);

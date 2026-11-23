@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { SelectionStrategy, type Element, type ElementRepository } from '@civitas-cerebrum/element-repository';
+import type { Element } from '@civitas-cerebrum/element-repository';
 import { AppiumFactory } from '../src/appium';
 import { MissingAppIdError } from '../src/appium/AppiumDevice';
 import { ReResolvingElement } from '../src/appium/ReResolvingElement';
@@ -7,7 +7,7 @@ import { DEVICE_POLL_ATTACH_MS, DEVICE_RESOLVE_SLICE_MS } from '../src/appium/en
 import { androidStrategy, iosStrategy } from '../src/appium/platform';
 import type { EntryTarget } from '../src/interfaces/IEntryTarget';
 import { PollTimeoutError } from '../src/utils/poll';
-import { mockDriver, mockElement, driverError, DEVICE_PLATFORMS, type Call } from './appium/mocks';
+import { mockDriver, mockElement, driverError, DEVICE_PLATFORMS } from './appium/mocks';
 
 /**
  * Unit tests (no device, no browser) for the Appium family's entry-level
@@ -23,20 +23,20 @@ const CAPS = {
     ios: { platformName: 'iOS', 'appium:bundleId': 'com.example.App' },
 } as const;
 
-type Resolution = ['resolve' | 'resolveAll' | 'probe', number | undefined];
+type Resolution = ['resolve' | 'resolveDefault' | 'resolveAll' | 'probe', number | undefined];
 
 /** An EntryTarget whose resolvers answer `next()` (an element, or a thrown error) and record their budgets. */
-function scriptedEntry(next: (kind: Resolution[0]) => Element, repo?: ElementRepository) {
+function scriptedEntry(next: (kind: Resolution[0]) => Element) {
     const resolutions: Resolution[] = [];
     const answer = (kind: Resolution[0]) => async (budget?: number) => {
         resolutions.push([kind, budget]);
         return next(kind);
     };
     const entry: EntryTarget = {
-        repo: repo ?? ({} as ElementRepository),
         elementName: 'rows',
         pageName: 'Screen',
         resolve: answer('resolve'),
+        resolveDefault: answer('resolveDefault'),
         resolveAll: answer('resolveAll'),
         probe: answer('probe'),
     };
@@ -154,20 +154,16 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(Date.now() - started).toBeLessThan(2000);
         });
 
-        test('entryAbsence resolves the entry with ALL and the attach slice, then polls absence', async () => {
+        test('entryAbsence resolves the whole collection once with the attach slice, then polls absence', async () => {
             const { verify } = family(platform);
-            const repoCalls: Call[] = [];
             let reads = 0;
             const element = mockElement({ visible: () => ++reads < 3 });
-            const repo = { get: async (...args: unknown[]) => { repoCalls.push(['get', ...args]); return element; } } as unknown as ElementRepository;
-            const { entry, resolutions } = scriptedEntry(() => element, repo);
+            const { entry, resolutions } = scriptedEntry(() => element);
             await verify.entryAbsence(entry, { timeout: 3000, attachSlice: 375 });
-            expect(repoCalls).toEqual([['get', 'rows', 'Screen', { strategy: SelectionStrategy.ALL, timeout: 375 }]]);
-            expect(resolutions, 'the chain resolvers are not used: a strategy selector does not narrow absence').toEqual([]);
+            expect(resolutions, 'only the whole-collection resolver: a strategy selector does not narrow absence').toEqual([['resolveAll', 375]]);
             expect(reads).toBeGreaterThanOrEqual(3);
 
-            const shown = { get: async () => mockElement() } as unknown as ElementRepository;
-            const error = await caught(() => verify.entryAbsence(scriptedEntry(() => mockElement(), shown).entry, { timeout: 250, attachSlice: 250 }));
+            const error = await caught(() => verify.entryAbsence(scriptedEntry(() => mockElement()).entry, { timeout: 250, attachSlice: 250 }));
             expect(error).toBeInstanceOf(PollTimeoutError);
         });
     });

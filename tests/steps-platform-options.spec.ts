@@ -3,7 +3,7 @@ import { SelectionStrategy, WebElement, type Element, type ElementRepository } f
 import { Steps } from '../src/steps/CommonSteps';
 import { AppiumFactory } from '../src/appium';
 import { PollTimeoutError } from '../src/utils/poll';
-import { mockDriver, mockElement, expectNotSupported, screenSwipes, DEVICE_PLATFORMS, type Call } from './appium/mocks';
+import { mockDriver, mockElement, driverError, expectNotSupported, screenSwipes, DEVICE_PLATFORMS, type Call } from './appium/mocks';
 
 /**
  * Unit tests (no device, no browser) for the step options of the gesture
@@ -90,6 +90,14 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(repoCalls).toEqual([['repo', 'get', 'cards', 'Home', INDEX_2]]);
             expect(new Set(screenSwipes(mock.calls).map(s => s.direction))).toEqual(new Set(['down']));
         });
+
+        test('scrollIntoView resolves with the strategy and forwards direction and the per-call timeout', async () => {
+            const { steps, element, repoCalls } = deviceSteps(platform);
+            await steps.scrollIntoView('cards', 'Home', { strategy: 'index', index: 2, direction: 'up', timeout: 650 });
+            await steps.scrollIntoView('cards', 'Home');
+            expect(repoCalls).toEqual([['repo', 'get', 'cards', 'Home', INDEX_2], ['repo', 'get', 'cards', 'Home', undefined]]);
+            expect(element.calls).toEqual([['scrollIntoView', { direction: 'up', timeout: 650 }], ['scrollIntoView', { timeout: 400 }]]);
+        });
     });
 
     test.describe(`gesture terminals on the fluent chain on ${platform}`, () => {
@@ -133,6 +141,21 @@ for (const platform of DEVICE_PLATFORMS) {
             await steps.on('cards', 'Home').ifVisible(150).swipe('left');
             await steps.on('cards', 'Home').ifVisible(150).longPress();
             expect(element.calls).toEqual([]);
+        });
+
+        test('an ifVisible() gate runs the gesture on a visible element', async () => {
+            const { steps, element } = deviceSteps(platform, 400, mockElement({ visible: true }));
+            await steps.on('cards', 'Home').ifVisible(150).swipe('left');
+            await steps.on('cards', 'Home').ifVisible(150).longPress();
+            expect(element.calls).toEqual([['swipe', 'left', { timeout: 400 }], ['longPress', { timeout: 400 }]]);
+        });
+
+        test('a fatal driver error in the ifVisible() gate is thrown and no gesture is sent', async () => {
+            const dead = driverError('invalid session id');
+            const { steps, element, mock } = deviceSteps(platform, 400, mockElement({ visible: () => { throw dead; } }));
+            expect(await caught(() => steps.on('cards', 'Home').ifVisible(150).swipe('left'))).toBe(dead);
+            expect(element.calls).toEqual([]);
+            expect(screenSwipes(mock.calls)).toEqual([]);
         });
     });
 
@@ -219,6 +242,17 @@ test.describe('gesture terminals on web', () => {
             'longPress [{"duration":700,"timeout":900}]',
             'scrollIntoView [{"timeout":500}]',
         ]);
+    });
+
+    test('scrollIntoView forwards the per-call timeout; without one the step timeout applies as before', async () => {
+        const { steps, repoCalls, calls } = webSteps();
+        await steps.scrollIntoView('cards', 'Home', { strategy: 'index', index: 1, timeout: 450 });
+        await steps.scrollIntoView('cards', 'Home');
+        expect(repoCalls).toEqual([
+            ['repo', 'get', 'cards', 'Home', { strategy: SelectionStrategy.INDEX, index: 1 }],
+            ['repo', 'get', 'cards', 'Home', undefined],
+        ]);
+        expect(calls).toEqual(['scrollIntoView [{"timeout":450}]', 'scrollIntoView [{"timeout":900}]']);
     });
 
     test('a web gesture step honours the strategy too', async () => {

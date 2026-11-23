@@ -271,6 +271,17 @@ export class ElementAction {
     }
 
     /**
+     * The entry's default resolution: no strategy selector applied (a scoped
+     * chain answers its first child match).
+     */
+    private async resolveDefault(attachBudget?: number): Promise<Element> {
+        if (this.scopedChild) {
+            return new WebElement((await this.scopedChild()).first());
+        }
+        return await this.repo.get(this.elementName, this.pageName, attachBudget === undefined ? {} : { timeout: attachBudget });
+    }
+
+    /**
      * This chain as an {@link EntryTarget}: the repository entry with the
      * chain's strategy selector and scope folded into its resolvers. The
      * family's entry-level methods (polling targets, visibility probes, list
@@ -278,10 +289,10 @@ export class ElementAction {
      */
     private entry(): EntryTarget {
         return {
-            repo: this.repo,
             elementName: this.elementName,
             pageName: this.pageName,
             resolve: (attachBudget?: number) => this.resolve(attachBudget),
+            resolveDefault: (attachBudget?: number) => this.resolveDefault(attachBudget),
             resolveAll: (attachBudget?: number) => this.resolveAll(attachBudget),
             probe: (attachBudget: number) => this.probeTarget(attachBudget),
         };

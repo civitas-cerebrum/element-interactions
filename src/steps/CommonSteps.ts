@@ -27,11 +27,6 @@ import { isListEntry, requireListedMatch } from './listEntry';
 import { ExpectBuilder } from './ExpectMatchers';
 
 /**
- * `JSON.stringify` that never throws — `bigint` and circular references would
- * otherwise blow up a verifier's description string before its poll even runs.
- * Falls back to `String(value)` on any serialisation error.
- */
-/**
  * `options` without its `undefined` fields, or `undefined` when none is set:
  * a gesture step hands its family only the options the caller gave, so the
  * family's own defaults apply to the rest.
@@ -41,6 +36,11 @@ function definedOptions<T extends object>(options: T): Partial<T> | undefined {
     return entries.length > 0 ? Object.fromEntries(entries) as Partial<T> : undefined;
 }
 
+/**
+ * `JSON.stringify` that never throws — `bigint` and circular references would
+ * otherwise blow up a verifier's description string before its poll even runs.
+ * Falls back to `String(value)` on any serialisation error.
+ */
 function safeStringify(value: unknown): string {
     try {
         const json = JSON.stringify(value);
@@ -825,12 +825,13 @@ export class Steps {
      * @param options - Optional step options for element resolution, plus
      *   `direction`: where the element is relative to the current view on a
      *   device (`'down'` by default there). The browser scrolls whichever way
-     *   is needed, so `direction` is ignored on web.
+     *   is needed, so `direction` is ignored on web. `timeout` in ms (default
+     *   the step timeout) bounds the scroll.
      */
-    async scrollIntoView(elementName: string, pageName: string, options?: StepOptions & Pick<ScrollIntoViewOptions, 'direction'>): Promise<void> {
+    async scrollIntoView(elementName: string, pageName: string, options?: StepOptions & ScrollIntoViewOptions): Promise<void> {
         log.interact('Scrolling "%s" in "%s" into view', elementName, pageName);
         const element = await this.getElement(elementName, pageName, options);
-        await this.gestures.scrollIntoView(element, options?.direction !== undefined ? { direction: options.direction } : undefined);
+        await this.gestures.scrollIntoView(element, definedOptions({ direction: options?.direction, timeout: options?.timeout }));
     }
 
     // ==========================================
@@ -999,7 +1000,7 @@ export class Steps {
     async scrollUntilFound(elementName: string, pageName: string, options?: StepOptions & ScrollIntoViewOptions): Promise<void> {
         log.interact('Scrolling %s until "%s" in "%s" is found', options?.direction ?? 'down', elementName, pageName);
         const element = await this.getElement(elementName, pageName, options);
-        await this.gestures.scrollUntilFound(element, definedOptions({ direction: options?.direction, timeout: options?.timeout }) ?? {});
+        await this.gestures.scrollUntilFound(element, definedOptions({ direction: options?.direction, timeout: options?.timeout }));
     }
 
     /**
@@ -1136,6 +1137,7 @@ export class Steps {
      */
     async verifyOrientation(orientation: Orientation, options?: DeviceVerifyOptions): Promise<void> {
         this.requirePlatform('verifyOrientation');
+        // The device validates too; checked here only so a bad argument is refused before the log line.
         if (orientation !== 'portrait' && orientation !== 'landscape') {
             throw new Error(`verifyOrientation: expected 'portrait' or 'landscape', got "${orientation}".`);
         }

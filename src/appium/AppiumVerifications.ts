@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { PlatformElement, PlatformNotSupportedError, SelectionStrategy, type Element, type Platform } from '@civitas-cerebrum/element-repository';
+import { PlatformElement, PlatformNotSupportedError, type Element, type Platform } from '@civitas-cerebrum/element-repository';
 import type { IVerifications, VerifiableState } from '../interfaces/IVerifications';
 import type { EntryTarget } from '../interfaces/IEntryTarget';
 import type { CountVerifyOptions, TextVerifyOptions, VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
@@ -108,8 +108,8 @@ export class AppiumVerifications implements IVerifications {
     }
 
     /**
-     * The entry is resolved once through the repository's `ALL` strategy with
-     * `attachSlice` per `fallback` node, so a `fallback` entry is asserted on
+     * The entry is resolved once through its whole-collection resolver (the
+     * repository's `ALL` strategy) with `attachSlice` per `fallback` node, so a `fallback` entry is asserted on
      * the node the repository resolves (the first chain node that exists,
      * exactly as an action would target; the terminal node when none does),
      * and absence means every match of that node is hidden or gone, polled
@@ -121,10 +121,7 @@ export class AppiumVerifications implements IVerifications {
      * attach wait, so they walk the chain identically.
      */
     async entryAbsence(entry: EntryTarget, options: { timeout: number; attachSlice: number }): Promise<void> {
-        const all = await entry.repo.get(entry.elementName, entry.pageName, {
-            strategy: SelectionStrategy.ALL,
-            timeout: options.attachSlice,
-        });
+        const all = await entry.resolveAll(options.attachSlice);
         await this.absence(all, { timeout: options.timeout });
     }
 

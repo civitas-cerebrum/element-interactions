@@ -1,8 +1,8 @@
-import type { Element, ElementRepository } from '@civitas-cerebrum/element-repository';
+import type { Element } from '@civitas-cerebrum/element-repository';
 
 /**
  * A repository entry as a fluent chain (`steps.on(element, page)`) holds it:
- * the chain's strategy selector and scope are already folded into the three
+ * the chain's strategy selector and scope are already folded into its
  * resolvers. The steps layer hands it to a family's entry-level methods
  * (`IVerifications.pollTarget`, `visibleWithin`, `probeVisible`,
  * `listPresence`, `entryAbsence`, `IExtractions.captureSnapshot`), so each
@@ -14,14 +14,14 @@ import type { Element, ElementRepository } from '@civitas-cerebrum/element-repos
  * repository spends; omitted, the repository's default.
  */
 export interface EntryTarget {
-    /** The repository the entry belongs to. */
-    readonly repo: ElementRepository;
-    /** The element name (a stamped label for a scoped `findBy*` chain). */
+    /** The element name (a stamped label for a scoped `findBy*` chain), for messages. */
     readonly elementName: string;
-    /** The page name. */
+    /** The page name, for messages. */
     readonly pageName: string;
     /** The chain's element: its strategy selector applied (`.nth()`, `.byText()`, `.visible()`, ...). */
     resolve(attachBudget?: number): Promise<Element>;
+    /** The entry's default resolution: no strategy selector applied. */
+    resolveDefault(attachBudget?: number): Promise<Element>;
     /** The whole collection (the `ALL` strategy), whatever the strategy selector. */
     resolveAll(attachBudget?: number): Promise<Element>;
     /** The element a visibility probe reads: the strategy selector applied, `.visible()` not. */
