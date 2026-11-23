@@ -1,5 +1,5 @@
 import type { Locator } from '@playwright/test';
-import { WebElement } from '@civitas-cerebrum/element-repository';
+import type { Element } from '@civitas-cerebrum/element-repository';
 
 /**
  * Defines the strategy for selecting an option from a dropdown element.
@@ -157,8 +157,8 @@ export type CountVerifyOptions =
  * You must provide either a `targetLocator` OR both `xOffset` and `yOffset`.
  */
 export interface DragAndDropOptions {
-    /** The destination `WebElement` to drop the dragged element onto. */
-    target?: WebElement;
+    /** The destination element to drop the dragged element onto (same family as the dragged element). */
+    target?: Element;
     /** The horizontal offset from the center of the element (positive moves right). */
     xOffset?: number;
     /** The vertical offset from the center of the element (positive moves down). */

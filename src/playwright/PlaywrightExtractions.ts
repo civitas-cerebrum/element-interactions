@@ -2,7 +2,8 @@ import { Page } from '@playwright/test';
 import type { IExtractions } from '../interfaces/IExtractions';
 import { Utils } from '../utils/ElementUtilities';
 import { ScreenshotOptions } from '../enum/Options';
-import { WebElement } from '@civitas-cerebrum/element-repository';
+import type { Element as RepoElement, WebElement } from '@civitas-cerebrum/element-repository';
+import { requireWebElement } from './requireWebElement';
 
 /**
  * Read-only accessors for element data: text, attributes, CSS, counts, and
@@ -27,20 +28,23 @@ export class Extractions implements IExtractions {
     }
 
     /** Safely retrieves and trims the text content of an element. */
-    async getText(target: WebElement): Promise<string | null> {
+    async getText(target: RepoElement): Promise<string | null> {
+        requireWebElement('Extractions.getText', target);
         await this.softProbe(target);
         const text = await target.locator.textContent({ timeout: this.ELEMENT_TIMEOUT });
         return text?.trim() ?? null;
     }
 
     /** Retrieves the value of a specified attribute. */
-    async getAttribute(target: WebElement, attributeName: string): Promise<string | null> {
+    async getAttribute(target: RepoElement, attributeName: string): Promise<string | null> {
+        requireWebElement('Extractions.getAttribute', target);
         await this.softProbe(target);
         return target.locator.getAttribute(attributeName, { timeout: this.ELEMENT_TIMEOUT });
     }
 
     /** Retrieves the trimmed text content of every element matching the locator. */
-    async getAllTexts(target: WebElement): Promise<string[]> {
+    async getAllTexts(target: RepoElement): Promise<string[]> {
+        requireWebElement('Extractions.getAllTexts', target);
         const all = await target.all();
         const texts = await Promise.all(
             all.map(e => (e as WebElement).locator.textContent({ timeout: this.ELEMENT_TIMEOUT })),
@@ -49,18 +53,21 @@ export class Extractions implements IExtractions {
     }
 
     /** Retrieves the current value of an input, textarea, or select element. */
-    async getInputValue(target: WebElement): Promise<string> {
+    async getInputValue(target: RepoElement): Promise<string> {
+        requireWebElement('Extractions.getInputValue', target);
         await this.softProbe(target);
         return target.locator.inputValue({ timeout: this.ELEMENT_TIMEOUT });
     }
 
     /** Returns the number of DOM elements matching the target. */
-    async getCount(target: WebElement): Promise<number> {
+    async getCount(target: RepoElement): Promise<number> {
+        requireWebElement('Extractions.getCount', target);
         return target.count();
     }
 
     /** Retrieves a computed CSS property value from an element. */
-    async getCssProperty(target: WebElement, property: string): Promise<string> {
+    async getCssProperty(target: RepoElement, property: string): Promise<string> {
+        requireWebElement('Extractions.getCssProperty', target);
         await this.softProbe(target);
         return target.locator.evaluate(
             (el: Element, prop: string) => window.getComputedStyle(el).getPropertyValue(prop),
@@ -74,7 +81,8 @@ export class Extractions implements IExtractions {
      * rendered. Use for layout/geometry assertions the DOM doesn't otherwise
      * surface: overlap, off-screen positioning, collapsed (`0×0`) regions.
      */
-    async getBoundingBox(target: WebElement): Promise<{ x: number; y: number; width: number; height: number } | null> {
+    async getBoundingBox(target: RepoElement): Promise<{ x: number; y: number; width: number; height: number } | null> {
+        requireWebElement('Extractions.getBoundingBox', target);
         // Soft attach-probe so a present element is measured promptly; if it is
         // not in the DOM at all, short-circuit to `null` rather than letting
         // `boundingBox()` block on its own (much longer) auto-wait.
@@ -93,7 +101,8 @@ export class Extractions implements IExtractions {
      * but does NOT wait for visibility — HTML inspection is a lower-level
      * read than the standard verification family.
      */
-    async getHtml(target: WebElement, options?: { outer?: boolean }): Promise<string> {
+    async getHtml(target: RepoElement, options?: { outer?: boolean }): Promise<string> {
+        requireWebElement('Extractions.getHtml', target);
         await this.softProbe(target);
         const locator = target.locator.first();
         if (options?.outer) {
@@ -278,8 +287,9 @@ export class Extractions implements IExtractions {
     }
 
     /** Captures a screenshot of the full page or a specific element. */
-    async screenshot(target?: WebElement, options?: ScreenshotOptions): Promise<Buffer> {
+    async screenshot(target?: RepoElement, options?: ScreenshotOptions): Promise<Buffer> {
         if (target) {
+            requireWebElement('Extractions.screenshot', target);
             return target.screenshot({ path: options?.path });
         }
         return await this.page.screenshot({
