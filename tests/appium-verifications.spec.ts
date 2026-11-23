@@ -3,6 +3,7 @@ import type { Element } from '@civitas-cerebrum/element-repository';
 import { AppiumFactory, AppiumVerifications } from '../src/appium';
 import { PollTimeoutError } from '../src/utils/poll';
 import { mockDriver, mockElement, changing, expectNotSupported, DEVICE_PLATFORMS, type MockElementSpec } from './appium/mocks';
+import { DEVICE_METHODS } from './appium/methods';
 
 /**
  * Pure unit tests: every Appium verification polls until its timeout. Each
@@ -57,6 +58,30 @@ const CASES: Record<string, Case> = {
     count: { getter: 'count', values: [0, 1, 3], run: (v, el, t) => v.count(el, { exactly: 3 }, { timeout: t }), message: 'count exactly 3' },
     'count range': { getter: 'count', values: [0, 9, 4], run: (v, el, t) => v.count(el, { greaterThan: 2, lessThan: 5 }, { timeout: t }), message: 'count > 2 and < 5' },
 };
+
+/**
+ * Device verifications with no row in CASES, and why. Every other method in
+ * DEVICE_METHODS.verifications must have a CASES row (keyed by the method
+ * name, optionally followed by a space and a variant).
+ */
+const EXEMPT: Record<string, string> = {
+    order: 'polls a list of texts; covered by "order and listOrder poll the texts of all matches"',
+    listOrder: 'polls a list of texts; covered by "order and listOrder poll the texts of all matches"',
+    expectEqual: 'compares two captured values; nothing to poll',
+    expectNotEqual: 'compares two captured values; nothing to poll',
+    expectEventually: 'private polling helper behind every case',
+    readText: 'private probe helper',
+    allTexts: 'private probe helper',
+};
+
+test('every polling device verification has a retry case or an explicit exemption', () => {
+    const covered = new Set(Object.keys(CASES).map(name => name.split(' ')[0]));
+    const missing = DEVICE_METHODS.verifications.filter(m => !covered.has(m) && !(m in EXEMPT));
+    expect(missing, 'device verifications with no CASES row and no exemption').toEqual([]);
+    const stale = [...Object.keys(EXEMPT), ...covered].filter(m => !DEVICE_METHODS.verifications.includes(m));
+    expect(stale, 'CASES rows or exemptions naming no device verification').toEqual([]);
+    expect(Object.keys(EXEMPT).filter(m => covered.has(m)), 'methods both covered and exempted').toEqual([]);
+});
 
 /** Builds an element whose `getter` answers the scripted values; reports how many reads happened. */
 function scripted(c: Case, values: unknown[]) {

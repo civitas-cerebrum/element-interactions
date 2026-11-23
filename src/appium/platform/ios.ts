@@ -10,15 +10,13 @@ const PERMISSION_ACCESS: Record<PermissionState, 'yes' | 'no' | 'unset'> = {
 };
 
 /** iOS (XCUITest driver). Every command is a W3C or `mobile:` command of Appium 3. */
-export const iosStrategy: PlatformStrategy = {
+export const iosStrategy: PlatformStrategy = Object.freeze({
     platform: 'ios',
     implemented: true,
     appIdCapability: 'appium:bundleId',
-    // XCUITest's element text is the accessibility label (`value` for text inputs).
-    textAttribute: 'label',
     // No focus attribute verified across XCUITest versions; state('focused') throws on iOS.
     focusedAttribute: null,
-    unsupported: ['pressBack'],
+    unsupported: Object.freeze(['pressBack']),
 
     async launchApp(driver: AppiumDriver, appId: string) {
         await mobile(driver, 'launchApp', { bundleId: appId });
@@ -72,4 +70,4 @@ export const iosStrategy: PlatformStrategy = {
             access: { [permission]: PERMISSION_ACCESS[state] },
         });
     },
-};
+});

@@ -1,4 +1,6 @@
 import type {} from 'webdriverio';
+// Keeps `WebdriverIO.Browser` resolvable in the published types without webdriverio installed.
+import '../../types/webdriverio-global';
 import type { Platform } from '@civitas-cerebrum/element-repository';
 import type { PermissionState } from '../../interfaces/IDevice';
 
@@ -11,7 +13,9 @@ export type AppiumDriver = WebdriverIO.Browser;
  * the platform name: they ask the strategy. Adding a platform means adding a
  * strategy file, not touching the classes.
  *
- * Every method takes the driver explicitly; a strategy holds no session state.
+ * Every method takes the driver explicitly; a strategy holds no session state
+ * and is frozen. Element text is not the strategy's business: it is read
+ * through the element's own `textContent` primitive (element-repository).
  * A method the platform cannot perform throws
  * `PlatformNotSupportedError(method, platform)` and is listed in
  * {@link PlatformStrategy.unsupported}.
@@ -30,8 +34,6 @@ export interface PlatformStrategy {
      * `appium:app` (windows).
      */
     readonly appIdCapability: string;
-    /** The native attribute that carries an element's visible text (android `text`, ios `label`). */
-    readonly textAttribute: string;
     /** The native attribute reading `'true'` on the focused element; `null` when the platform has none (state 'focused' then throws). */
     readonly focusedAttribute: string | null;
     /** Device methods this platform cannot perform; each throws `PlatformNotSupportedError`. */

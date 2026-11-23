@@ -14,12 +14,20 @@ import {
     AppiumDevice,
 } from '../src/appium';
 import { mockDriver, mockElement, touches, expectNotSupported, methodsOf, changing, WINDOW, DEVICE_PLATFORMS, type Call } from './appium/mocks';
+import { DEVICE_METHODS } from './appium/methods';
 
 /**
  * Pure unit tests for the Appium family (factory, gestures, interactions,
  * extractions, navigation, utils, web-only refusals) over a mock WebdriverIO
  * session and mock platform elements. No device, no server, no browser.
  */
+
+/** `options.timeout` is the time left of `total`: at most `total`, and not much less when nothing waited. */
+function expectTimeLeft(options: unknown, total: number): void {
+    const timeout = (options as { timeout: number }).timeout;
+    expect(timeout).toBeLessThanOrEqual(total);
+    expect(timeout).toBeGreaterThan(total - 50);
+}
 
 const CAPS = {
     android: { platformName: 'Android', 'appium:appPackage': 'com.example.app' },
@@ -106,18 +114,6 @@ const WEB_ONLY = {
         cssPropertyMatches: () => v.cssPropertyMatches(el, 'color', /red/),
         visuallyMatches: () => v.visuallyMatches(el),
     }),
-};
-
-/** Methods with a device meaning, per class (the complement of WEB_ONLY); tested below. */
-const DEVICE_METHODS = {
-    interactions: ['click', 'clickIfPresent', 'fill', 'scrollIntoView', 'dragAndDrop', 'getByText', 'typeSequentially',
-        'doubleClick', 'check', 'uncheck', 'clearInput', 'getListedElement', 'tap'],
-    extractions: ['getText', 'getAttribute', 'getAllTexts', 'getInputValue', 'getCount', 'getBoundingBox', 'screenshot'],
-    navigation: [] as string[],
-    verifications: ['text', 'textContains', 'textMatches', 'textStartsWith', 'textEndsWith', 'presence', 'absence', 'state',
-        'attribute', 'attributeContains', 'attributeMatches', 'hasAttribute', 'inputValue', 'inputValueContains',
-        'inputValueMatches', 'inputValueStartsWith', 'inputValueEndsWith', 'order', 'listOrder', 'count',
-        'expectEqual', 'expectNotEqual', 'expectEventually', 'readText', 'allTexts'],
 };
 
 for (const platform of DEVICE_PLATFORMS) {
@@ -362,6 +358,33 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(touches(calls)).toHaveLength(1);
         });
 
+        test('centerElement throws when the element is still off screen at its deadline', async () => {
+            const { factory } = setup();
+            // Moves 100 px closer per read but starts far below the window: never on screen within 250 ms.
+            let y = 5000;
+            const el = mockElement({ selector: '~far', box: async () => ({ x: 0, y: (y -= 100), width: 10, height: 10 }) });
+            const started = Date.now();
+            const error = await factory.createGestures().centerElement(el, { timeout: 250 }).catch(e => e);
+            expect(error).toBeInstanceOf(Error);
+            expect(error.message).toMatch(/^centerElement: element "~far" is not on screen \(centre at \(5, \d+\) outside the 400x800 window\) after \d+ swipe\(s\): timed out after 250 ms\.$/);
+            expect(Date.now() - started).toBeLessThan(250 + AppiumGestures.SETTLE_MS + 300);
+        });
+
+        test('centerElement throws when the content stops moving with the element off screen', async () => {
+            const { factory } = setup();
+            const error = await factory.createGestures()
+                .centerElement(mockElement({ box: { x: 0, y: 2000, width: 10, height: 10 } }), { timeout: 5000 }).catch(e => e);
+            expect(error.message).toMatch(/not on screen .* after 1 swipe\(s\): the content stopped moving\.$/);
+        });
+
+        test('centerElement at its deadline returns quietly when the element is on screen but not centred', async () => {
+            const { factory } = setup();
+            let y = 700;
+            // Slowly drifts (10 px per read): never centred, never stuck, always on screen.
+            const el = mockElement({ box: async () => ({ x: 0, y: (y -= 10), width: 10, height: 10 }) });
+            await expect(factory.createGestures().centerElement(el, { timeout: 250 })).resolves.toBeUndefined();
+        });
+
         test('centerElement does nothing for an element already centred, and throws without bounds', async () => {
             const { factory, calls } = setup();
             const g = factory.createGestures();
@@ -372,25 +395,37 @@ for (const platform of DEVICE_PLATFORMS) {
     });
 
     test.describe(`AppiumInteractions on ${platform}`, () => {
-        test('click waits for visible with the timeout, then calls the click primitive', async () => {
+        test('click waits for visible with the timeout, then calls the click primitive with the time left', async () => {
             const { factory } = setup(700);
             const el = mockElement();
             await factory.createInteractions().click(el);
-            expect(el.calls).toEqual([['waitFor', { state: 'visible', timeout: 700 }], ['click', { timeout: 700 }]]);
+            expect(el.calls).toEqual([['waitFor', { state: 'visible', timeout: 700 }], ['click', { timeout: expect.any(Number) }]]);
+            expectTimeLeft(el.calls[1][1], 700);
         });
 
         test('click({ timeout }) overrides the instance timeout', async () => {
             const { factory } = setup(700);
             const el = mockElement();
             await factory.createInteractions().click(el, { timeout: 90, withoutScrolling: true });
-            expect(el.calls).toEqual([['waitFor', { state: 'visible', timeout: 90 }], ['click', { timeout: 90 }]]);
+            expect(el.calls).toEqual([['waitFor', { state: 'visible', timeout: 90 }], ['click', { timeout: expect.any(Number) }]]);
+            expectTimeLeft(el.calls[1][1], 90);
+        });
+
+        test('click shares one timeout between the visibility wait and the primitive', async () => {
+            const { factory } = setup();
+            const el = mockElement({ waitFor: async () => { await new Promise(r => setTimeout(r, 200)); } });
+            await factory.createInteractions().click(el, { timeout: 500 });
+            const clickTimeout = (el.calls.find(c => c[0] === 'click')![1] as { timeout: number }).timeout;
+            expect(clickTimeout).toBeLessThanOrEqual(310);
+            expect(clickTimeout).toBeGreaterThan(200);
         });
 
         test('click({ force }) taps the element centre through the tapAt primitive', async () => {
             const { factory, calls } = setup(700);
             const el = mockElement({ box: { x: 10, y: 20, width: 81, height: 40 } });
             await factory.createInteractions().click(el, { force: true });
-            expect(el.calls).toEqual([['waitFor', { state: 'visible', timeout: 700 }], ['tapAt', { x: 40, y: 20 }, { timeout: 700 }]]);
+            expect(el.calls).toEqual([['waitFor', { state: 'visible', timeout: 700 }], ['tapAt', { x: 40, y: 20 }, { timeout: expect.any(Number) }]]);
+            expectTimeLeft(el.calls[1][2], 700);
             expect(calls).toEqual([]);
         });
 
@@ -441,7 +476,27 @@ for (const platform of DEVICE_PLATFORMS) {
             const source = mockElement();
             const target = mockElement({ selector: '~target' });
             await factory.createInteractions().dragAndDrop(source, { target: target as never });
-            expect(source.calls.filter(c => c[0] === 'dragTo')).toEqual([['dragTo', target, { timeout: 800 }]]);
+            const drags = source.calls.filter(c => c[0] === 'dragTo');
+            expect(drags).toEqual([['dragTo', target, { timeout: expect.any(Number) }]]);
+            expectTimeLeft(drags[0][2], 800);
+        });
+
+        test('dragAndDrop shares one timeout between both waits and the primitive', async () => {
+            const { factory } = setup();
+            const waits: number[] = [];
+            const slowWait = async (options: unknown) => {
+                waits.push((options as { timeout: number }).timeout);
+                await new Promise(r => setTimeout(r, 150));
+            };
+            const source = mockElement({ waitFor: slowWait });
+            const target = mockElement({ selector: '~target', waitFor: slowWait });
+            await factory.createInteractions().dragAndDrop(source, { target: target as never, timeout: 600 });
+            expect(waits[0]).toBe(600);
+            const targetWait = waits[1];
+            const dragTimeout = (source.calls.find(c => c[0] === 'dragTo')![2] as { timeout: number }).timeout;
+            expect(targetWait).toBeLessThanOrEqual(460);
+            expect(dragTimeout).toBeLessThanOrEqual(310);
+            expect(dragTimeout).toBeGreaterThan(150);
         });
 
         test('dragAndDrop by offset drags the element centre with one touch gesture', async () => {
@@ -454,7 +509,7 @@ for (const platform of DEVICE_PLATFORMS) {
             await expect(factory.createInteractions().dragAndDrop(el, { xOffset: 1 })).rejects.toThrow(/must provide either 'target'/);
         });
 
-        test('getByText picks the exact text first, then ignoring case; strict lists the texts', async () => {
+        test('getByText picks the exact text first, then a substring, then a substring ignoring case; strict lists the texts', async () => {
             const { factory } = setup();
             const i = factory.createInteractions();
             const a = mockElement({ text: ' Apple ' });
@@ -464,6 +519,21 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(await i.getByText(list, 'BANANA')).toBe(b);
             expect(await i.getByText(list, 'cherry')).toBeNull();
             await expect(i.getByText(list, 'cherry', true)).rejects.toThrow('Available texts: \n- Apple\n- banana');
+        });
+
+        test('getByText finds a substring like the web family ("Settings" in "Wi-Fi Settings")', async () => {
+            const { factory } = setup();
+            const i = factory.createInteractions();
+            const wifi = mockElement({ text: 'Wi-Fi Settings' });
+            const settings = mockElement({ text: 'Settings' });
+            const general = mockElement({ text: 'General' });
+            expect(await i.getByText(mockElement({ children: [general, wifi] }), 'Settings')).toBe(wifi);
+            // exact beats an earlier substring match
+            expect(await i.getByText(mockElement({ children: [wifi, settings] }), 'Settings')).toBe(settings);
+            // case-sensitive substring beats an earlier case-insensitive one
+            const lower = mockElement({ text: 'network settings' });
+            expect(await i.getByText(mockElement({ children: [lower, wifi] }), 'Settings')).toBe(wifi);
+            expect(await i.getByText(mockElement({ children: [general, lower] }), 'SETTINGS')).toBe(lower);
         });
 
         test('getListedElement matches text (substring, then ignoring case), regex and attribute', async () => {

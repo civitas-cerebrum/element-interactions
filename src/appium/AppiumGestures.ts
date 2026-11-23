@@ -99,8 +99,9 @@ export class AppiumGestures implements IGestures {
      * at most a third of the screen each, re-reading the element's bounds
      * from its `boundingBox` primitive. Stops when centred, when the content
      * no longer moves (scroll boundary or non-scrollable container), or when
-     * `timeout` expires. Best effort: it does not throw when it cannot centre,
-     * but an element without bounds throws.
+     * `timeout` expires. Exact centring is best effort, but when it stops
+     * short the element must at least be on screen (its centre inside the
+     * window): otherwise it throws, as it does for an element without bounds.
      */
     async centerElement(element: Element, options?: { timeout?: number }): Promise<void> {
         this.requireImplemented();
@@ -110,17 +111,27 @@ export class AppiumGestures implements IGestures {
         const centre: Point = { x: win.width / 2, y: win.height / 2 };
         const maxStep = win.height / 3;
         let previous = Number.POSITIVE_INFINITY;
+        let swipes = 0;
         for (;;) {
             const box = await element.boundingBox();
             if (!box) throw new Error('centerElement: the element has no bounds (is it in the UI tree?).');
             const offset = box.y + box.height / 2 - centre.y;
             if (Math.abs(offset) <= AppiumGestures.CENTERING_TOLERANCE) return;
-            if (Math.abs(offset - previous) < AppiumGestures.STALE_POSITION_THRESHOLD) return;
-            if (Date.now() >= deadline) return;
+            const stuck = Math.abs(offset - previous) < AppiumGestures.STALE_POSITION_THRESHOLD;
+            if (stuck || Date.now() >= deadline) {
+                const mid: Point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+                if (mid.x >= 0 && mid.x < win.width && mid.y >= 0 && mid.y < win.height) return;
+                throw new Error(
+                    `centerElement: element${element.selector ? ` "${element.selector}"` : ''} is not on screen ` +
+                    `(centre at (${Math.round(mid.x)}, ${Math.round(mid.y)}) outside the ${win.width}x${win.height} window) ` +
+                    `after ${swipes} swipe(s): ${stuck ? 'the content stopped moving' : `timed out after ${timeout} ms`}.`,
+                );
+            }
             previous = offset;
             // Element below the centre (offset > 0): the finger moves up by the offset.
             const distance = Math.min(Math.abs(offset), maxStep);
             await performTouch(this.driver, [swipeSteps(centre, travel(centre, offset > 0 ? 'up' : 'down', distance, win))]);
+            swipes++;
             await this.settle();
         }
     }

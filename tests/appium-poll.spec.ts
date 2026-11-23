@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { pollUntil, PollTimeoutError, DEFAULT_POLL_INTERVAL } from '../src/utils/poll';
+import { pollUntil, PollTimeoutError, ProbeTimeoutError, DEFAULT_POLL_INTERVAL } from '../src/utils/poll';
 
 /** Pure unit tests for the shared polling helper. Tiny real timeouts; no browser. */
 
@@ -96,6 +96,47 @@ test.describe('pollUntil', () => {
         // probes at ~0, 100, 200, 300 and a final one at the deadline
         expect(calls()).toBeGreaterThanOrEqual(4);
         expect(calls()).toBeLessThanOrEqual(6);
+    });
+
+    test('a probe that hangs is cut off at the deadline: the call fails at about timeout + interval', async () => {
+        const started = Date.now();
+        // Each probe answers only after 2 s (a driver's implicit wait), far past the 300 ms timeout.
+        const slow = () => new Promise<string>(resolve => setTimeout(() => resolve('late'), 2000).unref());
+        const error = await pollUntil(slow, v => v === 'never', { timeout: 300, interval: 50, message: 'Slow probe' }).catch(e => e);
+        const elapsed = Date.now() - started;
+        expect(error).toBeInstanceOf(PollTimeoutError);
+        expect(error.lastError).toBeInstanceOf(ProbeTimeoutError);
+        expect(error.message).toMatch(/^Slow probe: timed out after 300 ms\. Last value: \(no value; every probe failed\)\. Last error: the probe did not answer within \d+ ms$/);
+        expect(elapsed).toBeGreaterThanOrEqual(295);
+        expect(elapsed).toBeLessThan(300 + 50 + 150);
+    });
+
+    test('a slow probe that answers within the deadline is still accepted', async () => {
+        const value = await pollUntil(() => new Promise<string>(resolve => setTimeout(() => resolve('ok'), 150)), v => v === 'ok', { timeout: 1000 });
+        expect(value).toBe('ok');
+    });
+
+    test('a probe at timeout 0 still gets one interval to answer', async () => {
+        const value = await pollUntil(() => new Promise<string>(resolve => setTimeout(() => resolve('ok'), 20)), v => v === 'ok', { timeout: 0, interval: 200 });
+        expect(value).toBe('ok');
+        const started = Date.now();
+        const error = await pollUntil(() => new Promise<string>(() => undefined), () => true, { timeout: 0, interval: 60 }).catch(e => e);
+        expect(error.lastError).toBeInstanceOf(ProbeTimeoutError);
+        expect(Date.now() - started).toBeLessThan(60 + 150);
+    });
+
+    test('an abandoned probe that rejects late raises no unhandled rejection', async () => {
+        const unhandled: unknown[] = [];
+        const onUnhandled = (reason: unknown) => unhandled.push(reason);
+        process.on('unhandledRejection', onUnhandled);
+        try {
+            const late = () => new Promise<never>((_, reject) => setTimeout(() => reject(new Error('late failure')), 120));
+            await pollUntil(late, () => true, { timeout: 30, interval: 10 }).catch(() => undefined);
+            await new Promise(resolve => setTimeout(resolve, 250));
+            expect(unhandled).toEqual([]);
+        } finally {
+            process.off('unhandledRejection', onUnhandled);
+        }
     });
 
     test('rejects an invalid timeout or interval up front', async () => {

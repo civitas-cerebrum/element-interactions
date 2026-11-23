@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
 import type { IDevice } from '../src/interfaces';
 import {
     AppiumDevice,
@@ -164,9 +165,7 @@ test.describe('strategyFor', () => {
         expect(windowsStrategy.appIdCapability).toBe('appium:app');
     });
 
-    test('text and focus attributes, and the unsupported list', () => {
-        expect(androidStrategy.textAttribute).toBe('text');
-        expect(iosStrategy.textAttribute).toBe('label');
+    test('focus attribute, and the unsupported list', () => {
         expect(androidStrategy.focusedAttribute).toBe('focused');
         expect(iosStrategy.focusedAttribute).toBeNull();
         expect(androidStrategy.unsupported).toEqual([]);
@@ -345,6 +344,38 @@ test('STRATEGY_METHODS lists every method of the android and ios strategies', ()
     const methodNames = (s: object) => Object.entries(s).filter(([, v]) => typeof v === 'function').map(([k]) => k).sort();
     expect(methodNames(androidStrategy)).toEqual([...STRATEGY_METHODS].sort());
     expect(methodNames(iosStrategy)).toEqual([...STRATEGY_METHODS].sort());
+});
+
+test('each strategy\'s unsupported list is exactly the methods that throw PlatformNotSupportedError', async () => {
+    for (const strategy of [androidStrategy, iosStrategy]) {
+        const { driver } = mockDriver();
+        const methods = strategy as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>;
+        const refusing: string[] = [];
+        for (const method of STRATEGY_METHODS) {
+            const args = method === 'setPermission' ? ['camera', 'grant', 'com.example.app'] : ['com.example.app'];
+            const error = await methods[method](driver, ...args).then(() => undefined, (e: unknown) => e);
+            if (error instanceof PlatformNotSupportedError) {
+                expect(error.platform, `${strategy.platform}.${method}`).toBe(strategy.platform);
+                expect(error.method).toBe(method);
+                refusing.push(method);
+            } else {
+                expect(error, `${strategy.platform}.${method} should not throw with a working driver`).toBeUndefined();
+            }
+        }
+        expect(refusing.sort(), strategy.platform).toEqual([...strategy.unsupported].sort());
+    }
+    // a not-implemented strategy refuses everything with the not-implemented error, so it lists nothing as unsupported
+    expect(macosStrategy.unsupported).toEqual([]);
+    expect(windowsStrategy.unsupported).toEqual([]);
+});
+
+test('the strategy objects and their unsupported lists are frozen', () => {
+    for (const strategy of [androidStrategy, iosStrategy, macosStrategy, windowsStrategy]) {
+        expect(Object.isFrozen(strategy), strategy.platform).toBe(true);
+        expect(Object.isFrozen(strategy.unsupported), `${strategy.platform}.unsupported`).toBe(true);
+        expect(() => { (strategy as { implemented: boolean }).implemented = !strategy.implemented; }).toThrow(TypeError);
+        expect(() => { (strategy.unsupported as string[]).push('launchApp'); }).toThrow(TypeError);
+    }
 });
 
 test('the factory refuses web', () => {

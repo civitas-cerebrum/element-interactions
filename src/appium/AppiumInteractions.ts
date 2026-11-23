@@ -26,6 +26,15 @@ function textMatches(actual: string, matcher: TextMatcher, caseInsensitive = fal
 }
 
 /**
+ * Time left until `deadline`, in ms, never below 1: the waits and the
+ * primitive of one action share a single timeout, and `0` must not reach a
+ * primitive (where it can mean "no timeout").
+ */
+function remainingUntil(deadline: number): number {
+    return Math.max(1, deadline - Date.now());
+}
+
+/**
  * Element interactions for the Appium family. Each action delegates to the
  * element's own primitive (element-repository `PlatformElement`) with the
  * timeout filled in; list resolution (`getByText`, `getListedElement`)
@@ -57,8 +66,9 @@ export class AppiumInteractions implements IInteractions {
             await this.tap(element, timeout, options.force);
             return true;
         }
+        const deadline = Date.now() + timeout;
         await this.utils.waitForState(element, 'visible', timeout);
-        await this.tap(element, timeout, options?.force);
+        await this.tap(element, remainingUntil(deadline), options?.force);
     }
 
     private async tap(element: Element, timeout: number, force?: boolean): Promise<void> {
@@ -91,11 +101,12 @@ export class AppiumInteractions implements IInteractions {
      */
     async dragAndDrop(element: Element, options: DragAndDropOptions): Promise<void> {
         const timeout = options.timeout ?? this.timeout;
+        const deadline = Date.now() + timeout;
         await this.utils.waitForState(element, 'visible', timeout);
         const target = options.target as Element | undefined;
         if (target) {
-            await this.utils.waitForState(target, 'visible', timeout);
-            await element.dragTo(target, { timeout });
+            await this.utils.waitForState(target, 'visible', remainingUntil(deadline));
+            await element.dragTo(target, { timeout: remainingUntil(deadline) });
             return;
         }
         if (options.xOffset !== undefined && options.yOffset !== undefined) {
@@ -110,16 +121,23 @@ export class AppiumInteractions implements IInteractions {
     }
 
     /**
-     * The first match of `base` whose trimmed text equals `desiredText`
-     * (then, failing that, equals it ignoring case). `null` when none
-     * matches, or an error listing the texts seen when `strict`.
+     * The first match of `base` whose trimmed text matches `desiredText`, in
+     * the web family's order: equal, then containing it, then containing it
+     * ignoring case (the same substring tiers as {@link getListedElement}).
+     * `null` when none matches, or an error listing the texts seen when `strict`.
      */
     async getByText(base: Element, desiredText: string, strict: boolean = false): Promise<Element | null> {
         const all = await base.all();
         const texts = await Promise.all(all.map(async e => ((await e.textContent()) ?? '').trim()));
-        let index = texts.findIndex(t => t === desiredText);
-        if (index < 0) index = texts.findIndex(t => t.toLowerCase() === desiredText.toLowerCase());
-        if (index >= 0) return all[index];
+        const tiers: Array<(t: string) => boolean> = [
+            t => t === desiredText,
+            t => textMatches(t, desiredText),
+            t => textMatches(t, desiredText, true),
+        ];
+        for (const tier of tiers) {
+            const index = texts.findIndex(tier);
+            if (index >= 0) return all[index];
+        }
         if (strict) {
             const available = texts.filter(t => t.length > 0);
             throw new Error(

@@ -13,13 +13,12 @@ const PERMISSION_ACTION: Record<PermissionState, 'grant' | 'revoke'> = {
 };
 
 /** Android (UiAutomator2 driver). Every command is a W3C or `mobile:` command of Appium 3. */
-export const androidStrategy: PlatformStrategy = {
+export const androidStrategy: PlatformStrategy = Object.freeze({
     platform: 'android',
     implemented: true,
     appIdCapability: 'appium:appPackage',
-    textAttribute: 'text',
     focusedAttribute: 'focused',
-    unsupported: [],
+    unsupported: Object.freeze([]) as readonly string[],
 
     async launchApp(driver: AppiumDriver, appId: string) {
         // UiAutomator2 has no separate "launch": activateApp starts the app
@@ -75,4 +74,4 @@ export const androidStrategy: PlatformStrategy = {
             action: PERMISSION_ACTION[state],
         });
     },
-};
+});

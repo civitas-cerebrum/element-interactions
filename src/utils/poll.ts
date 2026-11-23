@@ -45,6 +45,33 @@ function errorText(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
+/** Thrown into `lastError` when a probe does not answer within its share of the timeout. */
+export class ProbeTimeoutError extends Error {
+    constructor(readonly budget: number) {
+        super(`the probe did not answer within ${budget} ms`);
+        this.name = 'ProbeTimeoutError';
+    }
+}
+
+/**
+ * Runs one probe, raced against `budget` ms. The timer is always cleared, so
+ * nothing keeps the process alive; an abandoned probe's late rejection is
+ * swallowed (it has already been replaced by a {@link ProbeTimeoutError}).
+ */
+async function boundedProbe<T>(probe: () => Promise<T> | T, budget: number): Promise<T> {
+    const running = Promise.resolve().then(probe);
+    running.catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new ProbeTimeoutError(budget)), budget);
+    });
+    try {
+        return await Promise.race([running, expired]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 /**
  * Runs `probe` until `check` accepts its value or `timeout` ms pass.
  *
@@ -54,6 +81,11 @@ function errorText(error: unknown): string {
  *   not thrown, until the deadline.
  * - Probes run every `interval` ms (100 by default); the last sleep is cut
  *   short at the deadline, and one final probe runs at the deadline.
+ * - A single probe is bounded too: it is raced against the time left (never
+ *   less than one `interval`, so a probe at the deadline or with timeout `0`
+ *   still gets a chance to answer). A probe that has not answered by then is
+ *   abandoned and recorded as the last error, so a call ends at most about
+ *   `timeout + interval` ms after it started, however slow the driver is.
  * - On timeout it throws {@link PollTimeoutError}, whose message names what
  *   was awaited, the timeout, the last observed value and the last error.
  *
@@ -80,7 +112,7 @@ export async function pollUntil<T>(
 
     for (;;) {
         try {
-            const value = await probe();
+            const value = await boundedProbe(probe, Math.max(deadline - Date.now(), interval));
             hasValue = true;
             lastValue = value;
             lastError = undefined;
