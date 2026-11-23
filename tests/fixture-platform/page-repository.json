@@ -1,0 +1,27 @@
+{
+  "pages": [
+    {
+      "name": "LoginPage",
+      "elements": [
+        { "elementName": "submit", "selector": { "css": "button[type=submit]" } },
+        { "elementName": "title", "selector": { "css": "h1" } }
+      ]
+    },
+    {
+      "name": "LoginPage",
+      "platform": "ios",
+      "elements": [
+        { "elementName": "submit", "selector": { "accessibility id": "login-submit" } },
+        { "elementName": "title", "selector": { "accessibility id": "login-title" } }
+      ]
+    },
+    {
+      "name": "LoginPage",
+      "platform": "android",
+      "elements": [
+        { "elementName": "submit", "selector": { "accessibility id": "login-submit" } },
+        { "elementName": "title", "selector": { "accessibility id": "login-title" } }
+      ]
+    }
+  ]
+}

@@ -1,20 +1,75 @@
 import { ElementInteractions } from '../playwright/ElementInteractions';
-import { ElementRepository } from '@civitas-cerebrum/element-repository';
+import {
+    ElementRepository,
+    PLATFORMS,
+    PlatformNotSupportedError,
+    familyOf,
+    isPlatformName,
+    type Platform,
+} from '@civitas-cerebrum/element-repository';
 import { EmailClientConfig } from '@civitas-cerebrum/email-client';
 import { ContextStore } from '@civitas-cerebrum/context-store';
 
-import { test as base, BrowserContext, Page } from '@playwright/test';
+import {
+    test as base,
+    BrowserContext,
+    Page,
+    TestInfo,
+    TestType,
+    PlaywrightTestArgs,
+    PlaywrightTestOptions,
+    PlaywrightWorkerArgs,
+    PlaywrightWorkerOptions,
+} from '@playwright/test';
 import { Steps } from '../steps/CommonSteps';
 import { log } from '../logger/Logger';
+import { AppiumFactory } from '../appium/AppiumFactory';
+import { AppiumSessionProvider } from '../session/AppiumSessionProvider';
+import { prepareSession, type PreparedSession } from '../session/prepareSession';
+import type { SessionOptions } from '../session/types';
+import { PlatformInteractions } from './PlatformInteractions';
 
 type StepFixture = {
+    /**
+     * On `web` the Playwright facade. On a platform run a
+     * {@link PlatformInteractions} with the same member names (`interact`,
+     * `verify`, `extract`, `navigate`, `email`), built from the Appium family;
+     * Playwright-only members (`request`) throw `PlatformNotSupportedError`.
+     */
     interactions: ElementInteractions;
     contextStore: ContextStore;
     repo: ElementRepository;
     steps: Steps;
+    /**
+     * The worker's WebdriverIO session (Appium family only). Requesting it on
+     * `web` throws `PlatformNotSupportedError('driver', 'web')`.
+     */
+    driver: WebdriverIO.Browser;
 };
 
+/** The `test` object `baseFixture` returns, on every platform. */
+export type BaseFixtureTest = TestType<
+    PlaywrightTestArgs & PlaywrightTestOptions & StepFixture,
+    PlaywrightWorkerArgs & PlaywrightWorkerOptions
+>;
+
 export interface BaseFixtureOptions {
+    /**
+     * The platform this run tests. Default: `process.env.PLATFORM`, else
+     * `'web'`. Read once, when `baseFixture()` is called.
+     *
+     * - `web`: the Playwright fixtures, unchanged.
+     * - `android` / `ios`: a worker-scoped Appium session (see `session`); no
+     *   browser starts, and `page` / `context` throw `PlatformNotSupportedError`.
+     * - `macos` / `windows`: declared, not implemented yet; the session start throws.
+     *
+     * The web-only options `blockedOrigins`, `mutationInjection` (unless
+     * `false`), `interceptionRetry` and the object form of
+     * `screenshotOnFailure` throw on a platform run instead of being ignored.
+     */
+    platform?: Platform;
+    /** The Appium session of a platform run. Ignored on `web`. */
+    session?: SessionOptions;
     /** Email credentials for the email client (SMTP/IMAP). */
     emailCredentials?: EmailClientConfig;
     /**
@@ -419,24 +474,86 @@ export async function forwardMutationInjection(
 }
 
 /**
+ * Resolves the `platform` option (CONTRACT B1, B2): the option, else
+ * `process.env.PLATFORM`, else `'web'`. A value that is not a {@link Platform}
+ * throws, naming where it came from.
+ */
+export function resolvePlatform(option: unknown, env: NodeJS.ProcessEnv = process.env): Platform {
+    const value = option !== undefined ? option : env.PLATFORM;
+    if (value === undefined) return 'web';
+    if (!isPlatformName(value)) {
+        const source = option !== undefined ? 'baseFixture option "platform"' : 'PLATFORM';
+        throw new Error(`${source} is "${String(value)}", which is not a platform. Expected one of: ${PLATFORMS.join(', ')}.`);
+    }
+    return value;
+}
+
+/**
+ * The options that only mean something on a Playwright page. Given on a
+ * platform run they throw instead of being ignored.
+ */
+function webOnlyOptionsGiven(options: BaseFixtureOptions | undefined): string[] {
+    if (!options) return [];
+    const given: string[] = [];
+    if (options.blockedOrigins !== undefined) given.push('blockedOrigins');
+    if (options.mutationInjection !== undefined && options.mutationInjection !== false) given.push('mutationInjection');
+    if (options.interceptionRetry !== undefined) given.push('interceptionRetry');
+    if (typeof options.screenshotOnFailure === 'object' && options.screenshotOnFailure !== null) {
+        given.push('screenshotOnFailure ({ fullPage })');
+    }
+    return given;
+}
+
+/**
  * Extends a Playwright `test` with the StepFixture surface — `repo`, `steps`,
- * `interactions`, `contextStore`, and a `page` wrapper that attaches a failure
- * screenshot on every failed test.
+ * `interactions`, `contextStore`, `driver` — for the platform chosen when this
+ * function is called (`options.platform`, else `PLATFORM`, else `web`).
+ *
+ * **web** — `repo` / `steps` / `interactions` on the Playwright `page`, and a
+ * `page` wrapper that attaches a failure screenshot on every failed test.
+ * `driver` throws `PlatformNotSupportedError('driver', 'web')`.
+ *
+ * **android / ios** — one WebdriverIO session per worker, opened through
+ * `options.session.provider` (default {@link AppiumSessionProvider}) with
+ * exactly the capabilities file's content, `onSessionStarted` called once,
+ * closed at worker teardown. Before every test the app under test is
+ * relaunched (terminate + activate) unless `session.reset` is `'none'`.
+ * `repo` has the platform as its active platform; `steps` and `interactions`
+ * are built from an `AppiumFactory`. No browser starts: `page` and `context`
+ * throw `PlatformNotSupportedError`. A failed test gets the device screenshot
+ * (`failure-screenshot`, image/png) and the page source (`page-source`,
+ * text/xml) attached.
  *
  * @param baseTest - The Playwright `test` (or an already-extended test) to build on.
  * @param locatorPath - Absolute or project-relative path to `page-repository.json`.
- * @param options - Optional fixture overrides: `timeout` (element-op default, 30000ms),
- *   `repoTimeout` (element resolution, 15000ms), `emailCredentials`,
- *   `blockedOrigins` (route filter), `screenshotOnFailure`, `mutationInjection`
- *   (forward an opted-in `E2E_MUTATION_INIT` / `E2E_MUTATION_CSS` payload to every
- *   page and frame of the context, announcing and verifying it).
+ * @param options - Optional fixture overrides: `platform`, `session`, `timeout`
+ *   (element-op default, 30000ms), `repoTimeout` (element resolution, 15000ms),
+ *   `emailCredentials`, `blockedOrigins` (route filter), `screenshotOnFailure`,
+ *   `mutationInjection` (forward an opted-in `E2E_MUTATION_INIT` /
+ *   `E2E_MUTATION_CSS` payload to every page and frame of the context,
+ *   announcing and verifying it).
  * @returns A new Playwright `test` object exposing the StepFixture surface.
  */
 export function baseFixture<T extends {}>(
     baseTest: ReturnType<typeof base.extend<T>>,
     locatorPath: string,
     options?: BaseFixtureOptions
-) {
+): BaseFixtureTest {
+    const platform = resolvePlatform(options?.platform);
+    if (familyOf(platform) === 'appium') {
+        const webOnly = webOnlyOptionsGiven(options);
+        if (webOnly.length > 0) {
+            throw new Error(
+                `baseFixture: ${webOnly.join(', ')} ${webOnly.length > 1 ? 'are' : 'is'} web-only and cannot be honoured on platform `
+                + `"${platform}". Remove ${webOnly.length > 1 ? 'them' : 'it'} from the options of this platform run.`,
+            );
+        }
+        return platformFixture(baseTest as typeof base, locatorPath, platform, options);
+    }
+    return webFixture(baseTest as typeof base, locatorPath, options);
+}
+
+function webFixture(baseTest: typeof base, locatorPath: string, options: BaseFixtureOptions | undefined): BaseFixtureTest {
     const mutationConfig = options?.mutationInjection ?? false;
     const mutationEnabled = mutationConfig !== false;
     const mutationStrict = typeof mutationConfig === 'object' ? mutationConfig.strict === true : false;
@@ -447,7 +564,7 @@ export function baseFixture<T extends {}>(
         ? (screenshotConfig.fullPage ?? true)
         : true;
 
-    return (baseTest as typeof base).extend<StepFixture>({
+    return baseTest.extend<StepFixture>({
         context: async ({ context }, use) => {
             if (!mutationEnabled) {
                 await use(context);
@@ -464,6 +581,9 @@ export function baseFixture<T extends {}>(
             }
         },
         repo: async ({ page }, use) => {
+            // Unchanged from 0.3.x: no active platform, first page with the name.
+            // (CONTRACT B3 asks for `{ platform: 'web' }`; held back so web keeps
+            // today's behaviour and messages — see the S4 report.)
             await use(new ElementRepository(page, locatorPath, options?.repoTimeout));
         },
         steps: async ({ repo }, use) => {
@@ -486,6 +606,9 @@ export function baseFixture<T extends {}>(
         contextStore: async ({ }, use) => {
             await use(new ContextStore());
         },
+        driver: async ({ }, use) => {
+            throw new PlatformNotSupportedError('driver', 'web');
+        },
         page: async ({ page }, use, testInfo) => {
             if (options?.blockedOrigins) {
                 await page.route(options.blockedOrigins, (route) => route.abort());
@@ -500,4 +623,119 @@ export function baseFixture<T extends {}>(
             }
         },
     });
+}
+
+/** The worker's open session. */
+interface PlatformSession {
+    driver: WebdriverIO.Browser;
+    prepared: PreparedSession;
+}
+
+type PlatformWorkerFixtures = { _eiPlatformSession: PlatformSession };
+type PlatformTestFixtures = StepFixture & { _eiPlatformTest: void; _eiFactory: AppiumFactory };
+
+function platformFixture(
+    baseTest: typeof base,
+    locatorPath: string,
+    platform: Platform,
+    options: BaseFixtureOptions | undefined,
+): BaseFixtureTest {
+    const screenshotEnabled = options?.screenshotOnFailure !== false;
+
+    const extended = baseTest.extend<PlatformTestFixtures, PlatformWorkerFixtures>({
+        // One session per worker, opened lazily by the first test that needs it.
+        _eiPlatformSession: [async ({ }, use) => {
+            const prepared = prepareSession(platform, options?.session);
+            const provider = options?.session?.provider ?? new AppiumSessionProvider();
+            const driver = await provider.start(prepared.context);
+            try {
+                if (options?.session?.onSessionStarted) await options.session.onSessionStarted(driver);
+                await use({ driver, prepared });
+            } finally {
+                await provider.stop(driver);
+            }
+        }, { scope: 'worker' }],
+
+        // Per test: relaunch the app before it, attach the evidence after a failure.
+        _eiPlatformTest: [async ({ _eiPlatformSession }, use, testInfo) => {
+            const { driver, prepared } = _eiPlatformSession;
+            if (prepared.reset === 'relaunch') {
+                await new AppiumFactory(driver, platform, { appId: prepared.appId }).createDevice().resetApp();
+            }
+            await use();
+            if (testFailed(testInfo)) {
+                await attachPlatformEvidence(driver, testInfo, screenshotEnabled);
+            }
+        }, { auto: true }],
+
+        _eiFactory: async ({ _eiPlatformSession }, use) => {
+            const { driver, prepared } = _eiPlatformSession;
+            await use(new AppiumFactory(driver, platform, { timeout: options?.timeout, appId: prepared.appId }));
+        },
+        driver: async ({ _eiPlatformSession }, use) => {
+            await use(_eiPlatformSession.driver);
+        },
+        repo: async ({ _eiPlatformSession }, use) => {
+            await use(new ElementRepository(_eiPlatformSession.driver, locatorPath, { platform, timeout: options?.repoTimeout }));
+        },
+        steps: async ({ _eiFactory, repo }, use) => {
+            // The factory owns timeout and interception (S2): neither is passed here.
+            const steps = new Steps(_eiFactory, repo, {
+                emailCredentials: options?.emailCredentials,
+                apiBaseUrl: options?.apiBaseUrl,
+                apiProviders: options?.apiProviders,
+                dbUrl: options?.dbUrl,
+                dbProviders: options?.dbProviders,
+                dbConnectTimeoutMs: options?.dbConnectTimeoutMs,
+            });
+            await use(steps);
+            await steps.closeDbConnections();
+        },
+        interactions: async ({ _eiFactory }, use) => {
+            const interactions = new PlatformInteractions(_eiFactory, { emailCredentials: options?.emailCredentials });
+            await use(interactions as unknown as ElementInteractions);
+        },
+        contextStore: async ({ }, use) => {
+            await use(new ContextStore());
+        },
+        // No browser on a platform run: nothing here depends on Playwright's
+        // page, context or browser, and asking for them is an error.
+        page: async ({ }, use) => {
+            throw new PlatformNotSupportedError('page', platform);
+        },
+        context: async ({ }, use) => {
+            throw new PlatformNotSupportedError('context', platform);
+        },
+    });
+    return extended as unknown as BaseFixtureTest;
+}
+
+/** A test that did not end as expected, or ended failed / timed out (also under `test.fail()`). */
+function testFailed(testInfo: TestInfo): boolean {
+    return testInfo.status !== testInfo.expectedStatus
+        || testInfo.status === 'failed'
+        || testInfo.status === 'timedOut';
+}
+
+/**
+ * Attaches the device screenshot and the page source of a failed test
+ * (CONTRACT B6). Each is best-effort: a failure to collect one is logged and
+ * never replaces the test's own failure.
+ */
+async function attachPlatformEvidence(driver: WebdriverIO.Browser, testInfo: TestInfo, screenshot: boolean): Promise<void> {
+    const wd = driver as unknown as { takeScreenshot(): Promise<string>; getPageSource(): Promise<string> };
+    if (screenshot) {
+        try {
+            const png = await wd.takeScreenshot();
+            await testInfo.attach('failure-screenshot', { body: Buffer.from(png, 'base64'), contentType: 'image/png' });
+        } catch (error) {
+            log.warn('Could not attach the failure screenshot: %s', error instanceof Error ? error.message : String(error));
+        }
+    }
+    try {
+        const source = await wd.getPageSource();
+        await testInfo.attach('page-source', { body: source, contentType: 'text/xml' });
+    } catch (error) {
+        log.warn('Could not attach the page source: %s', error instanceof Error ? error.message : String(error));
+    }
 }

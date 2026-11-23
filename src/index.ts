@@ -63,9 +63,52 @@ export {
 } from './steps/ExpectMatchers';
 export type { ElementSnapshot, ExpectContext } from './steps/ExpectMatchers';
 
+// Appium family (WebdriverIO is imported only by the session provider, on first use)
+export {
+    AppiumFactory,
+    AppiumInteractions,
+    AppiumVerifications,
+    AppiumExtractions,
+    AppiumNavigation,
+    AppiumUtils,
+    AppiumGestures,
+    AppiumDevice,
+    NATIVE_CONTEXT,
+    strategyFor,
+    appIdFromCapabilities,
+    androidStrategy,
+    iosStrategy,
+    macosStrategy,
+    windowsStrategy,
+    notImplementedError,
+    APP_STATE_FOREGROUND,
+} from './appium';
+export type { AppiumFactoryOptions, PlatformStrategy, AppiumDriver } from './appium';
+
+// Session layer (platform runs)
+export type { ServerOptions, SessionStartContext, SessionProvider, SessionOptions } from './session';
+export {
+    AppiumSessionProvider,
+    DEFAULT_CLIENT_OPTIONS,
+    loadCapabilities,
+    resolveServer,
+    parseServerUrl,
+    DEFAULT_APPIUM_URL,
+    prepareSession,
+} from './session';
+export type {
+    LoadedCapabilities,
+    AppiumSessionProviderOptions,
+    AppiumClientOptions,
+    WebdriverioLogLevel,
+    WebdriverioModule,
+    PreparedSession,
+} from './session';
+
 // Test Fixture
-export { baseFixture, BaseFixtureOptions, forwardMutationInjection, readMutationInjection, MUTATION_RUN_VAR } from './fixture/BaseFixture';
-export type { MutationInjection, MutationInjectionOptions, MutationInjectionHandle } from './fixture/BaseFixture';
+export { baseFixture, BaseFixtureOptions, forwardMutationInjection, readMutationInjection, resolvePlatform, MUTATION_RUN_VAR } from './fixture/BaseFixture';
+export type { BaseFixtureTest, MutationInjection, MutationInjectionOptions, MutationInjectionHandle } from './fixture/BaseFixture';
+export { PlatformInteractions } from './fixture/PlatformInteractions';
 
 // Re-exports from @civitas-cerebrum/email-client
 export { EmailClient } from '@civitas-cerebrum/email-client';
