@@ -11,11 +11,13 @@ export type Direction = 'up' | 'down' | 'left' | 'right';
  * `zoom`); this layer adds only composition and waiting. Screen-level gestures
  * (`swipeScreen`, `tapAt`) act on the device screen and have no element.
  *
- * The Playwright family (`web`) implements what has a browser meaning
- * (`scrollIntoView`, `scrollUntilFound`, `centerElement`, element `swipe`,
- * and `longPress` / `tapAtElement` through the element primitive) and throws
- * `PlatformNotSupportedError(method, 'web')` for `swipeScreen`, `tapAt`,
- * `pinch` and `zoom`.
+ * The Playwright family (`web`) delegates every element-level gesture to the
+ * element primitive (`scrollIntoView`, `scrollUntilFound`, `swipe`,
+ * `longPress`, `tapAtElement`, `pinch`, `zoom`; a web element's `pinch` /
+ * `zoom` throw `PlatformNotSupportedError` in element-repository), centres web
+ * elements with `centerElement` (any other element kind throws), and throws
+ * `PlatformNotSupportedError(method, 'web')` for the screen-level
+ * `swipeScreen` and `tapAt`.
  */
 export interface IGestures {
     /** Swipes on the element in `direction`; `distance` in px (family default when omitted). */

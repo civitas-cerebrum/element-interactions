@@ -1,5 +1,5 @@
 import type { IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
-import { PlatformNotSupportedError } from '../compat/elementRepository';
+import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
 
 function unsupported(method: string): never {
     throw new PlatformNotSupportedError(method, 'web');

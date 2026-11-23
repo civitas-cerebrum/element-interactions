@@ -1,4 +1,4 @@
-import type { DriverFamily, Platform } from '../compat/elementRepository';
+import type { DriverFamily, Platform } from '@civitas-cerebrum/element-repository';
 import type { IInteractions } from './IInteractions';
 import type { IVerifications } from './IVerifications';
 import type { IExtractions } from './IExtractions';

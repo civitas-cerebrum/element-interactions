@@ -2,34 +2,9 @@ import { Page, expect, Locator } from '@playwright/test';
 import type { IVerifications } from '../interfaces/IVerifications';
 type LocatorAssertions = ReturnType<typeof expect<Locator>>;
 import { CountVerifyOptions, TextVerifyOptions } from '../enum/Options';
-
-/**
- * Internal shape that `Verifications.visuallyMatches` consumes. The
- * high-level step layer (`steps.verifyVisualMatch`) resolves
- * {@link import('../enum/Options').VisualMaskTarget} entries to
- * Playwright Locators before calling in; this interface is therefore
- * already-resolved.
- */
-export interface VisualMatchPrimitiveOptions {
-    mask?: Locator[];
-    maskColor?: string;
-    fullPage?: boolean;
-    maxDiffPixelRatio?: number;
-    maxDiffPixels?: number;
-    timeout?: number;
-    errorMessage?: string;
-}
+import type { VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
+export type { VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
 import { Element, WebElement } from '@civitas-cerebrum/element-repository';
-
-/** Shared options every Verifications method accepts. */
-export interface VerifyOptions {
-    /** When `true`, flips the assertion — passes when the underlying condition fails. */
-    negated?: boolean;
-    /** Override the class-level timeout for this single assertion. */
-    timeout?: number;
-    /** Custom message prepended to Playwright's error on failure. */
-    errorMessage?: string;
-}
 
 /** Reach the Playwright Locator under a WebElement — used for Playwright's `expect(locator)` assertions. */
 function resolveLocator(target: WebElement): Locator {

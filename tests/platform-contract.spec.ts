@@ -1,6 +1,9 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
+import * as ElementRepositoryPackage from '@civitas-cerebrum/element-repository';
 import type { Element } from '@civitas-cerebrum/element-repository';
 import {
+    ElementType,
+    WebElement,
     PlatformNotSupportedError,
     PLATFORMS,
     isPlatformName,
@@ -8,6 +11,10 @@ import {
     PlaywrightFactory,
     PlaywrightGestures,
     PlaywrightDevice,
+    PlaywrightInteractions,
+    PlaywrightVerifications,
+    PlaywrightExtractions,
+    PlaywrightNavigation,
     Interactions,
     Verifications,
     Extractions,
@@ -29,6 +36,29 @@ const fakePage = {} as Page;
 /** A stand-in element; the gesture tests below never reach the browser. */
 function fakeElement(extra: Record<string, unknown> = {}): Element {
     return { ...extra } as unknown as Element;
+}
+
+/**
+ * A stand-in element recording every primitive call (name and arguments).
+ * `_type` makes element-repository's `isWeb` / `isPlatform` treat it as that kind.
+ */
+function recordingElement(type: ElementType, seen: unknown[][]): Element {
+    const record = (name: string) => async (...args: unknown[]) => { seen.push([name, ...args]); };
+    return fakeElement({
+        _type: type,
+        swipe: record('swipe'),
+        scrollIntoView: record('scrollIntoView'),
+        longPress: record('longPress'),
+        tapAt: record('tapAt'),
+        pinch: record('pinch'),
+        zoom: record('zoom'),
+        locator: { evaluate: record('locator.evaluate') },
+    });
+}
+
+/** Reads the private default timeout a Playwright family class was built with. */
+function timeoutOf(instance: object): number {
+    return (instance as unknown as { ELEMENT_TIMEOUT: number }).ELEMENT_TIMEOUT;
 }
 
 async function expectNotSupported(call: () => Promise<unknown>, method: string, platform: Platform) {
@@ -58,6 +88,10 @@ test.describe('Platform vocabulary', () => {
         expect(familyOf('windows')).toBe('appium');
     });
 
+    test('familyOf throws for a value that is not a platform', () => {
+        expect(() => familyOf('mobile' as never)).toThrow();
+    });
+
     test('isPlatformName accepts exactly the platform names', () => {
         for (const p of PLATFORMS) expect(isPlatformName(p)).toBe(true);
         for (const v of ['mobile', 'native', 'appium', 'selenium', 'Web', '', undefined, null, 1, {}]) {
@@ -75,6 +109,24 @@ test.describe('PlatformNotSupportedError', () => {
         expect(err.method).toBe('pressBack');
         expect(err.platform).toBe('ios');
         expect(err.message).toBe('"pressBack" is not supported on platform "ios".');
+    });
+});
+
+test.describe('Public names', () => {
+    test('the Playwright* names are the historical classes', () => {
+        expect(PlaywrightInteractions).toBe(Interactions);
+        expect(PlaywrightVerifications).toBe(Verifications);
+        expect(PlaywrightExtractions).toBe(Extractions);
+        expect(PlaywrightNavigation).toBe(Navigation);
+    });
+
+    test('vocabulary and error are element-repository\'s own (identity across packages)', () => {
+        expect(PlatformNotSupportedError).toBe(ElementRepositoryPackage.PlatformNotSupportedError);
+        expect(familyOf).toBe(ElementRepositoryPackage.familyOf);
+        expect(isPlatformName).toBe(ElementRepositoryPackage.isPlatformName);
+        expect(PLATFORMS).toBe(ElementRepositoryPackage.PLATFORMS);
+        expect(new PlatformNotSupportedError('x', 'ios')).toBeInstanceOf(ElementRepositoryPackage.PlatformNotSupportedError);
+        expect(new ElementRepositoryPackage.PlatformNotSupportedError('y', 'android')).toBeInstanceOf(PlatformNotSupportedError);
     });
 });
 
@@ -96,6 +148,34 @@ test.describe('PlaywrightFactory', () => {
         expect(utils.getTimeout()).toBe(1234);
         expect(factory.createGestures()).toBeInstanceOf(PlaywrightGestures);
         expect(factory.createDevice()).toBeInstanceOf(PlaywrightDevice);
+    });
+
+    test('timeout reaches gestures, interactions, verifications, extractions and utils', async () => {
+        const factory = new PlaywrightFactory(fakePage, { timeout: 4321 });
+        expect(timeoutOf(factory.createInteractions())).toBe(4321);
+        expect(timeoutOf(factory.createVerifications())).toBe(4321);
+        expect(timeoutOf(factory.createExtractions())).toBe(4321);
+        expect(factory.createUtils().getTimeout()).toBe(4321);
+        const seen: unknown[][] = [];
+        await factory.createGestures().longPress(recordingElement(ElementType.WEB, seen));
+        expect(seen).toEqual([['longPress', { timeout: 4321 }]]);
+    });
+
+    test('without options every member uses the default timeout (30000)', async () => {
+        const factory = new PlaywrightFactory(fakePage);
+        expect(timeoutOf(factory.createInteractions())).toBe(30000);
+        expect(timeoutOf(factory.createVerifications())).toBe(30000);
+        expect(timeoutOf(factory.createExtractions())).toBe(30000);
+        expect(factory.createUtils().getTimeout()).toBe(30000);
+        const seen: unknown[][] = [];
+        await factory.createGestures().swipe(recordingElement(ElementType.WEB, seen), 'down');
+        expect(seen).toEqual([['swipe', 'down', { timeout: 30000 }]]);
+    });
+
+    test('interceptionRetry reaches Interactions (default true, false when given)', () => {
+        const retryOf = (i: object) => (i as unknown as { interceptionRetry: boolean }).interceptionRetry;
+        expect(retryOf(new PlaywrightFactory(fakePage).createInteractions())).toBe(true);
+        expect(retryOf(new PlaywrightFactory(fakePage, { interceptionRetry: false }).createInteractions())).toBe(false);
     });
 });
 
@@ -140,57 +220,106 @@ test.describe('PlaywrightDevice', () => {
 test.describe('PlaywrightGestures', () => {
     const gestures = new PlaywrightGestures();
 
-    test('swipeScreen throws PlatformNotSupportedError on web', async () => {
-        await expectNotSupported(() => gestures.swipeScreen('up'), 'swipeScreen', 'web');
-    });
+    /** Screen-level gestures: no element and no browser meaning, so they throw on web. */
+    const throwsOnWeb: Array<[string, () => Promise<unknown>]> = [
+        ['swipeScreen', () => gestures.swipeScreen('up', { distance: 100 })],
+        ['tapAt', () => gestures.tapAt(10, 20)],
+    ];
 
-    test('tapAt (screen coordinates) throws PlatformNotSupportedError on web', async () => {
-        await expectNotSupported(() => gestures.tapAt(10, 20), 'tapAt', 'web');
-    });
+    /** Element-level gestures: each delegates to one Element primitive, options passed through. */
+    const delegates: Array<[string, (el: Element) => Promise<unknown>, unknown[]]> = [
+        ['swipe', el => gestures.swipe(el, 'left', { distance: 100, timeout: 500 }), ['swipe', 'left', { distance: 100, timeout: 500 }]],
+        ['scrollIntoView', el => gestures.scrollIntoView(el, { direction: 'down', timeout: 500 }), ['scrollIntoView', { direction: 'down', timeout: 500 }]],
+        ['scrollUntilFound', el => gestures.scrollUntilFound(el, { direction: 'up', timeout: 700 }), ['scrollIntoView', { direction: 'up', timeout: 700 }]],
+        ['longPress', el => gestures.longPress(el, { duration: 800, timeout: 500 }), ['longPress', { duration: 800, timeout: 500 }]],
+        ['tapAtElement', el => gestures.tapAtElement(el, { x: 3, y: 4 }, { timeout: 500 }), ['tapAt', { x: 3, y: 4 }, { timeout: 500 }]],
+        ['pinch', el => gestures.pinch(el, { scale: 0.4, timeout: 500 }), ['pinch', { scale: 0.4, timeout: 500 }]],
+        ['zoom', el => gestures.zoom(el, { scale: 3, timeout: 500 }), ['zoom', { scale: 3, timeout: 500 }]],
+    ];
 
-    test('pinch throws PlatformNotSupportedError on web', async () => {
-        await expectNotSupported(() => gestures.pinch(fakeElement(), { scale: 0.5 }), 'pinch', 'web');
-    });
+    /** Web-element-only composition (scrollIntoView, then centre in the viewport); tested below. */
+    const webElementOnly = ['centerElement'];
 
-    test('zoom throws PlatformNotSupportedError on web', async () => {
-        await expectNotSupported(() => gestures.zoom(fakeElement(), { scale: 2 }), 'zoom', 'web');
-    });
-
-    test('longPress delegates to the Element primitive when it exists', async () => {
-        const seen: unknown[] = [];
-        const el = fakeElement({ longPress: async (opts: unknown) => { seen.push(opts); } });
-        await gestures.longPress(el, { duration: 800, timeout: 500 });
-        expect(seen).toEqual([{ duration: 800, timeout: 500 }]);
-    });
-
-    test('longPress names the missing Element primitive when it does not exist', async () => {
-        await expect(gestures.longPress(fakeElement())).rejects.toThrow(/Element primitive "longPress"/);
-    });
-
-    test('tapAtElement delegates to the Element primitive when it exists', async () => {
-        const seen: unknown[] = [];
-        const el = fakeElement({ tapAt: async (offset: unknown, opts: unknown) => { seen.push([offset, opts]); } });
-        await gestures.tapAtElement(el, { x: 3, y: 4 }, { timeout: 500 });
-        expect(seen).toEqual([[{ x: 3, y: 4 }, { timeout: 500 }]]);
-    });
-
-    test('tapAtElement names the missing Element primitive when it does not exist', async () => {
-        await expect(gestures.tapAtElement(fakeElement(), { x: 1, y: 1 })).rejects.toThrow(/Element primitive "tapAt"/);
-    });
-
-    test('swipe, scrollIntoView and scrollUntilFound delegate to the Element', async () => {
-        const seen: unknown[] = [];
-        const el = fakeElement({
-            swipe: async (direction: unknown, opts: unknown) => { seen.push(['swipe', direction, opts]); },
-            scrollIntoView: async (opts: unknown) => { seen.push(['scrollIntoView', opts]); },
+    for (const [method, call] of throwsOnWeb) {
+        test(`${method} throws PlatformNotSupportedError on web`, async () => {
+            await expectNotSupported(call, method, 'web');
         });
-        await gestures.swipe(el, 'left', { distance: 100, timeout: 500 });
-        await gestures.scrollIntoView(el, { direction: 'down', timeout: 500 });
-        await gestures.scrollUntilFound(el, { direction: 'up', timeout: 700 });
+    }
+
+    for (const [method, call, expected] of delegates) {
+        test(`${method} delegates to the Element primitive`, async () => {
+            const seen: unknown[][] = [];
+            await call(recordingElement(ElementType.WEB, seen));
+            expect(seen).toEqual([expected]);
+        });
+    }
+
+    test('every IGestures method is covered above', () => {
+        const proto = Object.getOwnPropertyNames(PlaywrightGestures.prototype).filter(n => n !== 'constructor');
+        const covered = [...throwsOnWeb.map(([m]) => m), ...delegates.map(([m]) => m), ...webElementOnly];
+        expect(proto.sort()).toEqual(covered.sort());
+    });
+
+    test('omitted options fall back to the default timeout (30000)', async () => {
+        const seen: unknown[][] = [];
+        const el = recordingElement(ElementType.WEB, seen);
+        await gestures.swipe(el, 'up');
+        await gestures.scrollIntoView(el);
+        await gestures.scrollUntilFound(el);
+        await gestures.longPress(el);
+        await gestures.tapAtElement(el, { x: 1, y: 2 });
+        await gestures.pinch(el);
+        await gestures.zoom(el);
         expect(seen).toEqual([
-            ['swipe', 'left', { distance: 100, timeout: 500 }],
-            ['scrollIntoView', { direction: 'down', timeout: 500 }],
-            ['scrollIntoView', { direction: 'up', timeout: 700 }],
+            ['swipe', 'up', { timeout: 30000 }],
+            ['scrollIntoView', { timeout: 30000 }],
+            ['scrollIntoView', { timeout: 30000 }],
+            ['longPress', { timeout: 30000 }],
+            ['tapAt', { x: 1, y: 2 }, { timeout: 30000 }],
+            ['pinch', { timeout: 30000 }],
+            ['zoom', { timeout: 30000 }],
         ]);
+    });
+
+    test('a constructor timeout replaces the default; a per-call timeout wins over both', async () => {
+        const seen: unknown[][] = [];
+        const el = recordingElement(ElementType.WEB, seen);
+        const custom = new PlaywrightGestures(1500);
+        await custom.longPress(el, { duration: 200 });
+        await custom.longPress(el, { duration: 200, timeout: 50 });
+        expect(seen).toEqual([
+            ['longPress', { duration: 200, timeout: 1500 }],
+            ['longPress', { duration: 200, timeout: 50 }],
+        ]);
+    });
+
+    test('pinch and zoom on a real web element throw element-repository\'s PlatformNotSupportedError', async () => {
+        const el = new WebElement({} as Locator, 'css=.x', 1000);
+        await expectNotSupported(() => gestures.pinch(el), 'pinch', 'web');
+        await expectNotSupported(() => gestures.zoom(el), 'zoom', 'web');
+    });
+
+    test('centerElement scrolls a web element into view, then centres it, with the timeout', async () => {
+        const seen: unknown[][] = [];
+        await gestures.centerElement(recordingElement(ElementType.WEB, seen), { timeout: 900 });
+        expect(seen).toHaveLength(2);
+        expect(seen[0]).toEqual(['scrollIntoView', { timeout: 900 }]);
+        expect(seen[1][0]).toBe('locator.evaluate');
+        expect(typeof seen[1][1]).toBe('function');
+        expect(seen[1][3]).toEqual({ timeout: 900 });
+    });
+
+    test('centerElement uses the default timeout when none is given', async () => {
+        const seen: unknown[][] = [];
+        await gestures.centerElement(recordingElement(ElementType.WEB, seen));
+        expect(seen[0]).toEqual(['scrollIntoView', { timeout: 30000 }]);
+        expect(seen[1][3]).toEqual({ timeout: 30000 });
+    });
+
+    test('centerElement rejects a non-web element with a clear error and touches nothing', async () => {
+        const seen: unknown[][] = [];
+        await expect(gestures.centerElement(recordingElement(ElementType.PLATFORM, seen)))
+            .rejects.toThrow(/centerElement needs a web \(Playwright\) element/);
+        expect(seen).toEqual([]);
     });
 });

@@ -3,9 +3,7 @@ export * from './enum/Options';
 
 // Supporting Action Classes (Playwright family; the historical names are kept)
 export { Navigation, Navigation as PlaywrightNavigation } from './playwright/PlaywrightNavigation';
-export type { ExpectNoRequestOptions, ExpectRequestMethod, WaitUntilState, WaitForNetworkIdleOptions, LoadState } from './playwright/PlaywrightNavigation';
 export { Verifications, Verifications as PlaywrightVerifications } from './playwright/PlaywrightVerifications';
-export type { VerifyOptions, VisualMatchPrimitiveOptions } from './playwright/PlaywrightVerifications';
 export { Interactions, Interactions as PlaywrightInteractions } from './playwright/PlaywrightInteractions';
 export { Extractions, Extractions as PlaywrightExtractions } from './playwright/PlaywrightExtractions';
 export { BrowserRequest } from './playwright/BrowserRequest';
@@ -30,8 +28,9 @@ export type {
     PermissionState,
     IInteractionFactory,
 } from './interfaces';
-export type { Platform, DriverFamily } from './compat/elementRepository';
-export { PLATFORMS, isPlatformName, familyOf, PlatformNotSupportedError } from './compat/elementRepository';
+// (vocabulary and error are element-repository's own; re-exported so `instanceof` works across packages)
+export type { Platform, DriverFamily } from '@civitas-cerebrum/element-repository';
+export { PLATFORMS, isPlatformName, familyOf, PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
 
 // Utilities
 export { reformatDateString } from './utils/DateUtilities';

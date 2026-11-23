@@ -1,7 +1,6 @@
 import type { Page } from '@playwright/test';
 import type { Element } from '@civitas-cerebrum/element-repository';
-import type { CountVerifyOptions, TextVerifyOptions } from '../enum/Options';
-import type { VerifyOptions, VisualMatchPrimitiveOptions } from '../playwright/PlaywrightVerifications';
+import type { CountVerifyOptions, TextVerifyOptions, VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
 
 /** The element states `state()` can assert. */
 export type VerifiableState =

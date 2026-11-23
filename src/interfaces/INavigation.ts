@@ -4,7 +4,7 @@ import type {
     LoadState,
     WaitForNetworkIdleOptions,
     WaitUntilState,
-} from '../playwright/PlaywrightNavigation';
+} from '../enum/Options';
 
 /**
  * Navigation: the full contract every driver family implements.
