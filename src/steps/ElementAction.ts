@@ -324,7 +324,10 @@ export class ElementAction {
      * instead of answering `false`.
      *
      * Internal plumbing of `isVisible()` / `ifVisible()`, public only so the
-     * visibility chain can reach it: tests use `isVisible()` instead.
+     * visibility chain can reach it: test code should use `isVisible()` /
+     * `ifVisible()` instead.
+     *
+     * @internal
      */
     async probeVisible(timeout: number, containsText?: string): Promise<boolean> {
         return this.interactions.verify.probeVisible(this.entry(), timeout, containsText);

@@ -244,7 +244,7 @@ await steps.on('rows', 'SettingsPage').byText('Privacy').scrollUntilFound({ dire
 #### Chain platform and probe
 
 * **`.platform`** — The platform the chain acts on (`'web'`, `'android'`, `'ios'`, ...), read-only.
-* **`.probeVisible(timeout: number, containsText?: string): Promise<boolean>`** — Internal plumbing of `isVisible()` / `ifVisible()`, public so the visibility chain can reach it; tests use `isVisible()` instead.
+* **`.probeVisible(timeout: number, containsText?: string): Promise<boolean>`** — Internal plumbing of `isVisible()` / `ifVisible()`, public so the visibility chain can reach it; test code should use `isVisible()` / `ifVisible()` instead.
 
 ### Expect Matcher Tree
 
@@ -837,7 +837,7 @@ Besides the classes above, the package exports these for platform code:
 * **Web family:** `PlaywrightInteractions`, `PlaywrightVerifications`, `PlaywrightExtractions`, `PlaywrightNavigation` (the same classes as `Interactions`, `Verifications`, `Extractions`, `Navigation`, under their family names); `VerifyOptions` (`{ negated?, timeout?, errorMessage? }`, accepted by every `Verifications` method) and `VisualMatchPrimitiveOptions` (the resolved options `Verifications.visuallyMatches` takes).
 * **Family interfaces:** `IInteractions`, `IVerifications` (with `VerifiableState`), `IExtractions`, `INavigation`, `IUtils`, `IGestures`, `IDevice`, `IInteractionFactory`; `EntryTarget` (a repository entry as the families resolve it) and `ElementSnapshot`.
 * **Device vocabulary:** `Orientation`, `PermissionState`, `DeviceVerifyOptions` (`{ timeout?, errorMessage? }` of the device assertions).
-* **Platforms:** `Platform`, `DriverFamily`, `PLATFORMS`, `isPlatformName`, `familyOf`, `resolvePlatform` (the first five are element-repository's vocabulary, re-exported; `resolvePlatform(option?, env?)` is this package's, the fixture's platform rule).
+* **Platforms:** `Platform`, `DriverFamily`, `PLATFORMS`, `isPlatformName`, `familyOf`, `resolvePlatform` (the first five are element-repository's vocabulary, re-exported; `resolvePlatform(option, env?)` is this package's, the fixture's platform rule).
 * **Gesture options:** `SwipeDirection`, `SwipeOptions`, `ScrollIntoViewOptions`, `LongPressOptions`, `TapOffset`, `TapAtOptions`, `PinchOptions`, `ZoomOptions` (element-repository's, re-exported), `ScreenSwipeOptions` (`swipeScreen`'s `{ distance? }`) and `Direction` (an alias of `SwipeDirection`).
 * **Session:** `ServerOptions`, `SessionOptions`, `SessionStartContext`, `SessionProvider`, `AppiumSessionProviderOptions`, `AppiumClientOptions`, `WebdriverioLogLevel`, `WebdriverioModule`, `AppiumFactoryOptions`, `AppiumDriver`, `PlaywrightFactoryOptions`.
 * **Errors:** `PlatformNotSupportedError`, `PollTimeoutError`, `ProbeTimeoutError`, `MissingAppIdError` (see [Errors](#platform-steps)).

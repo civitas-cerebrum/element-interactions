@@ -151,7 +151,8 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   id), `PollTimeoutError` (a polling device verification ran out of time; it
   carries `timeout`, `lastValue` and `lastError`) and `ProbeTimeoutError` (the
   `lastError` when a device probe did not answer within its share of the
-  timeout).
+  timeout), except list-entry `verifyPresence`, which throws a plain `Error`
+  (same message as on web) with the `PollTimeoutError` as `cause`.
 - **Platform steps**: `launchApp`, `activateApp`, `terminateApp`,
   `backgroundApp`, `resetApp`, `installApp`, `removeApp`, `openDeepLink`;
   `swipe`, `swipeScreen`, `scrollUntilFound`, `longPress`, `tapAt`, `pinch`,
