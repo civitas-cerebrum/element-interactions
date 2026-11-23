@@ -341,6 +341,16 @@ for (const platform of DEVICE_PLATFORMS) {
             await expect(factory.createGestures().scrollUntilFound(el, { timeout: 5000 })).resolves.toBeUndefined();
         });
 
+        test('scrollUntilFound throws a fatal driver error at once instead of swiping on', async () => {
+            const { factory, calls } = setup();
+            const dead = Object.assign(new Error('invalid session id: the session is gone'), { name: 'invalid session id' });
+            const el = mockElement({ visible: async () => { throw dead; } });
+            const started = Date.now();
+            await expect(factory.createGestures().scrollUntilFound(el, { timeout: 5000 })).rejects.toThrow(/invalid session id/);
+            expect(Date.now() - started).toBeLessThan(1000);
+            expect(calls.filter(c => c[0] === 'performActions')).toEqual([]);
+        });
+
         test('centerElement swipes until the element is within tolerance of the centre', async () => {
             const { factory, calls } = setup();
             const box = changing([
@@ -470,6 +480,16 @@ for (const platform of DEVICE_PLATFORMS) {
             const shown = mockElement();
             expect(await i.clickIfPresent(shown, { timeout: 40 })).toBe(true);
             expect(shown.calls).toEqual([['click', { timeout: 40 }]]);
+        });
+
+        test('click({ ifPresent }) and clickIfPresent throw a fatal driver error instead of skipping', async () => {
+            const { factory } = setup();
+            const i = factory.createInteractions();
+            const dead = Object.assign(new Error('invalid session id: the session is gone'), { name: 'invalid session id' });
+            const el = mockElement({ visible: async () => { throw dead; } });
+            await expect(i.clickIfPresent(el)).rejects.toThrow(/invalid session id/);
+            await expect(i.click(el, { ifPresent: true })).rejects.toThrow(/invalid session id/);
+            expect(el.calls).toEqual([]);
         });
 
         test('fill, typeSequentially, doubleClick, check, uncheck, clearInput and scrollIntoView delegate with the timeout', async () => {

@@ -12,6 +12,7 @@ import type { AppiumDriver } from './platform/PlatformStrategy';
 import { AppiumUtils } from './AppiumUtils';
 import { dragSteps, performTouch } from './touch';
 import { pollUntil } from '../utils/poll';
+import { softRead } from '../utils/driverErrors';
 import { webOnly } from './unsupported';
 
 /** Finger travel time of an offset drag, in ms. */
@@ -25,16 +26,23 @@ function textMatches(actual: string, matcher: TextMatcher, caseInsensitive = fal
     return new RegExp(matcher.regex, matcher.flags).test(actual);
 }
 
+/** Whitespace runs collapsed to one space, ends trimmed (Playwright's text normalisation). */
+function normaliseWhitespace(text: string): string {
+    return text.replace(/\s+/g, ' ').trim();
+}
+
 /**
- * The text tiers of a listed-element match, tried in order across the whole
- * list (the first tier any item passes wins): a string matcher is equal, then
- * a substring, then a substring ignoring case; a regex matcher is one tier.
- * The same tiers as {@link AppiumInteractions.getByText}.
+ * The text rule of a listed-element match, exactly the web family's
+ * `filter({ hasText })`: a string matcher is a substring of the item's text,
+ * ignoring case, with whitespace normalised on both sides; a regex matcher is
+ * tested on the text as is. The first item in list order that passes wins
+ * (there are no tiers: `{ text: 'Apple' }` on ["Apple pie", "Apple"] picks
+ * "Apple pie", as on web). {@link AppiumInteractions.getByText} keeps its
+ * exact-first tiers: it mirrors element-repository's TEXT strategy instead.
  */
-function textTiers(matcher: TextMatcher | undefined): Array<(actual: string) => boolean> {
-    if (matcher === undefined) return [() => true];
-    if (typeof matcher !== 'string') return [t => textMatches(t, matcher)];
-    return [t => t === matcher, t => textMatches(t, matcher), t => textMatches(t, matcher, true)];
+function listedTextMatches(actual: string, matcher: TextMatcher): boolean {
+    if (typeof matcher !== 'string') return textMatches(actual, matcher);
+    return normaliseWhitespace(actual).toLowerCase().includes(normaliseWhitespace(matcher).toLowerCase());
 }
 
 async function trimmedText(el: Element): Promise<string> {
@@ -71,6 +79,9 @@ export class AppiumInteractions implements IInteractions {
     /**
      * Taps the element once it is visible.
      * - `ifPresent`: taps only when the element is displayed now; resolves `false` otherwise.
+     *   A transient miss (no such element, stale element) is "not displayed";
+     *   a fatal driver error (dead session, invalid selector) is thrown, never
+     *   read as a skip.
      * - `force`: taps the element's centre with a positional tap (`Element.tapAt`)
      *   instead of the element click command.
      * - `withoutScrolling`: accepted; a device tap never scrolls first.
@@ -78,7 +89,7 @@ export class AppiumInteractions implements IInteractions {
     async click(element: Element, options?: ClickOptions): Promise<boolean | void> {
         const timeout = options?.timeout ?? this.timeout;
         if (options?.ifPresent) {
-            if (!(await element.isVisible().catch(() => false))) return false;
+            if (!(await softRead(() => element.isVisible(), false))) return false;
             await this.tap(element, timeout, options.force);
             return true;
         }
@@ -139,7 +150,7 @@ export class AppiumInteractions implements IInteractions {
     /**
      * The first match of `base` whose trimmed text matches `desiredText`, in
      * the web family's order: equal, then containing it, then containing it
-     * ignoring case (the same substring tiers as {@link getListedElement}).
+     * ignoring case (element-repository's TEXT strategy on a device).
      * `null` when none matches, or an error listing the texts seen when `strict`.
      */
     async getByText(base: Element, desiredText: string, strict: boolean = false): Promise<Element | null> {
@@ -194,15 +205,14 @@ export class AppiumInteractions implements IInteractions {
      * polled (the list re-read on every poll) until the instance timeout, then
      * waited on until visible within what is left of it, as on web:
      *
-     * - `text`: the item's own text (`getText()`), in tiers across the list:
-     *   equal, then a substring, then a substring ignoring case; a regex is
-     *   one tier.
+     * - `text`: the item's own text (`getText()`) by the web `hasText` rule:
+     *   a substring ignoring case, whitespace normalised; a regex is tested
+     *   as is. The first item in list order wins.
      * - `attribute`: the exact value, or a regex.
      * - `withDescendant`: the item has a descendant matching `child` (a
      *   selector, or a repository reference), searched INSIDE the item only
      *   (element-repository's `locateChild` is scoped to its parent); with
-     *   `text`, one such descendant's text contains it ignoring case (the web
-     *   `hasText` rule) or matches the regex.
+     *   `text`, one such descendant's text passes the same `hasText` rule.
      * - `child`: the returned element is that descendant of the matched item,
      *   scoped to the item.
      */
@@ -235,21 +245,20 @@ export class AppiumInteractions implements IInteractions {
             const found = await e.locateChild(descendantSelector).all();
             if (descendant?.text === undefined) return found.length > 0;
             for (const d of found) {
-                if (textMatches(await trimmedText(d), descendant.text, true)) return true;
+                if (listedTextMatches(await trimmedText(d), descendant.text)) return true;
             }
             return false;
         };
 
         const pick = async (): Promise<Element | undefined> => {
             const all = await base.all();
-            const texts = options.text !== undefined ? await Promise.all(all.map(trimmedText)) : [];
-            for (const tier of textTiers(options.text)) {
-                for (let i = 0; i < all.length; i++) {
-                    if (options.text !== undefined && !tier(texts[i])) continue;
-                    if (!(await matchesAttribute(all[i]))) continue;
-                    if (!(await hasDescendant(all[i]))) continue;
-                    return all[i];
-                }
+            const text = options.text;
+            const texts = text !== undefined ? await Promise.all(all.map(trimmedText)) : [];
+            for (let i = 0; i < all.length; i++) {
+                if (text !== undefined && !listedTextMatches(texts[i], text)) continue;
+                if (!(await matchesAttribute(all[i]))) continue;
+                if (!(await hasDescendant(all[i]))) continue;
+                return all[i];
             }
             return undefined;
         };

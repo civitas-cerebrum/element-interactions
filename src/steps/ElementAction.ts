@@ -75,13 +75,24 @@ const ABSENCE_ATTACH_SLICE_CAP_MS = 1000;
 const ABSENCE_RESOLVE_ATTEMPTS = 2;
 
 /**
- * Attach budget, per `fallback` chain node, of ONE re-resolution on a device
- * platform: one attempt of the visibility probe, one poll of a matcher, one
- * poll of list presence. The web probe's slice, for the same reason: a fixed
- * slice keeps the cost of a chain walk independent of the overall budget, and
- * the caller's loop simply stops starting attempts once that budget is spent.
+ * Attach budget, per `fallback` chain node, of one attempt of the device
+ * visibility probe ({@link ElementAction.probeOnDevice}). The web probe's
+ * slice, for the same reason: a fixed slice keeps the cost of a chain walk
+ * independent of the overall budget, and the probe simply stops starting
+ * attempts once that budget is spent.
  */
 const DEVICE_RESOLVE_SLICE_MS = 250;
+
+/**
+ * Attach budget, per `fallback` chain node, of a POLL-DRIVEN re-resolution on
+ * a device platform: one poll of a matcher, of list presence, of a `satisfy()`
+ * snapshot. One existence check per node and no waiting: the poll loop
+ * (`pollUntil`) does the waiting, so a missing node costs one driver lookup per
+ * poll instead of an attach slice, and a short matcher timeout (a
+ * `.timeout(200)` on a missing element) still gets its polls in. 1 ms, never 0:
+ * a zero timeout means "the default" to some drivers.
+ */
+const DEVICE_POLL_ATTACH_MS = 1;
 
 /** Pause between two attempts of the device visibility probe, in ms (the Appium family's poll interval). */
 const DEVICE_PROBE_INTERVAL_MS = 100;
@@ -286,7 +297,8 @@ export class ElementAction {
     /**
      * @param attachBudget - Per-call attach budget for the repository (per
      *   `fallback` node). Omitted: the repository's default. Device
-     *   re-resolution passes {@link DEVICE_RESOLVE_SLICE_MS}.
+     *   re-resolution passes {@link DEVICE_POLL_ATTACH_MS} (poll-driven) or
+     *   {@link DEVICE_RESOLVE_SLICE_MS} (the visibility probe).
      */
     private async resolve(attachBudget?: number): Promise<Element> {
         // Scoped chains never resolve via the repository — the stamped scoped
@@ -321,17 +333,17 @@ export class ElementAction {
 
     /**
      * The element a verification polls. On a device: a
-     * {@link ReResolvingElement} that resolves the entry afresh (short attach
-     * slice) on every read, so a poll never keeps reading a node the
-     * repository picked earlier; `all` re-resolves the whole collection
-     * (count / order matchers). Web chains resolve once: their locators are
-     * lazy already.
+     * {@link ReResolvingElement} that resolves the entry afresh (one existence
+     * check per `fallback` node, {@link DEVICE_POLL_ATTACH_MS}) on every
+     * read, so a poll never keeps reading a node the repository picked
+     * earlier; `all` re-resolves the whole collection (count / order
+     * matchers). Web chains resolve once: their locators are lazy already.
      */
     private async verifyTarget(all: boolean = false): Promise<Element> {
         if (!this.onDevice) return all ? this.resolveAll() : this.resolve();
         return new ReResolvingElement(() => all
-            ? this.resolveAll(DEVICE_RESOLVE_SLICE_MS)
-            : this.resolve(DEVICE_RESOLVE_SLICE_MS));
+            ? this.resolveAll(DEVICE_POLL_ATTACH_MS)
+            : this.resolve(DEVICE_POLL_ATTACH_MS), `'${this.pageName}.${this.elementName}'`);
     }
 
     /**
@@ -347,6 +359,12 @@ export class ElementAction {
      * device fails loudly instead of skipping its action. A transient miss
      * (no match yet, a stale element, an eager strategy that found nothing)
      * is "not visible yet" and the probe keeps trying.
+     *
+     * One attempt is not bounded, as on web (`VisibleChain`'s web probe): the
+     * probe stops STARTING attempts at `timeout`, but an attempt in flight (a
+     * fallback walk of {@link DEVICE_RESOLVE_SLICE_MS} per missing node, then a
+     * displayed read on a slow driver) runs to its end, so the call can return
+     * up to one attempt after `timeout`.
      */
     async probeOnDevice(timeout: number, containsText?: string): Promise<boolean> {
         const deadline = Date.now() + Math.max(1, timeout);
@@ -712,7 +730,7 @@ export class ElementAction {
         let lastCount = 0;
         try {
             await pollUntil(async () => {
-                const matches = await (await this.resolveAll(DEVICE_RESOLVE_SLICE_MS)).all();
+                const matches = await (await this.resolveAll(DEVICE_POLL_ATTACH_MS)).all();
                 lastCount = matches.length;
                 for (const match of matches) {
                     if (await softRead(() => match.isVisible(), false)) return true;
@@ -1134,8 +1152,8 @@ export class ElementAction {
      */
     private async captureDeviceSnapshot(): Promise<ElementSnapshot> {
         const [element, allElement] = await Promise.all([
-            this.resolve(DEVICE_RESOLVE_SLICE_MS),
-            this.resolveAll(DEVICE_RESOLVE_SLICE_MS),
+            this.resolve(DEVICE_POLL_ATTACH_MS),
+            this.resolveAll(DEVICE_POLL_ATTACH_MS),
         ]);
         const first = element.first();
         const names = DEVICE_SNAPSHOT_ATTRIBUTES[this.platform] ?? [];

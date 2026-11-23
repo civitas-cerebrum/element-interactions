@@ -2,6 +2,7 @@ import type { Element } from '@civitas-cerebrum/element-repository';
 import type { Direction, IGestures } from '../interfaces/IGestures';
 import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
 import { notImplementedError } from './platform/notImplemented';
+import { softRead } from '../utils/driverErrors';
 import { MIN_SWIPE_DISTANCE, performTouch, tapSteps, windowSize, type Point } from './touch';
 
 /** The finger direction that reveals content lying in `direction` (content below -> finger moves up). */
@@ -97,7 +98,9 @@ export class AppiumGestures implements IGestures {
         const step = (finger === 'left' || finger === 'right' ? win.width : win.height) / 3;
         let swipes = 0;
         for (;;) {
-            if (await element.isVisible().catch(() => false)) return;
+            // A transient miss is "not displayed yet"; a fatal driver error
+            // (dead session) is thrown instead of swiping on until the timeout.
+            if (await softRead(() => element.isVisible(), false)) return;
             if (Date.now() >= deadline) break;
             await this.strategy.swipeScreen(this.driver, finger, step);
             swipes++;

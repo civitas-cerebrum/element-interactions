@@ -2,7 +2,8 @@ import { test, expect } from '@playwright/test';
 import { ElementRepository } from '@civitas-cerebrum/element-repository';
 import { Steps } from '../src/index';
 import { AppiumFactory } from '../src/appium';
-import { DEVICE_PLATFORMS, driverError, mockUiDriver, type MockNode } from './appium/mocks';
+import { ReResolvingElement } from '../src/steps/ReResolvingElement';
+import { DEVICE_PLATFORMS, driverError, mockElement, mockUiDriver, type MockNode } from './appium/mocks';
 
 /**
  * Platform paths of the shared features (verifyAbsence, "list": true
@@ -35,6 +36,13 @@ function pages(platform: string) {
                 {
                     elementName: 'dialog',
                     selector: { 'accessibility id': 'primary', fallback: { 'accessibility id': 'secondary' } },
+                },
+                {
+                    elementName: 'chain',
+                    selector: {
+                        'accessibility id': 'node-1',
+                        fallback: { 'accessibility id': 'node-2', fallback: { 'accessibility id': 'node-3' } },
+                    },
                 },
             ],
         }],
@@ -191,6 +199,31 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(await steps.getAll('rows', 'Screen', { child: '~badge' })).toEqual(['NEW']);
         });
 
+        test('getAll with a narrowing strategy returns the picked match only, as on web', async () => {
+            const { steps } = deviceSteps(platform, listTree());
+            const index1 = { strategy: 'index', index: 1 } as const;
+            expect(await steps.getAll('rows', 'Screen', undefined, index1)).toEqual(['Apple']);
+            expect(await steps.getAll('rows', 'Screen', { extractAttribute: 'name' }, index1)).toEqual(['r2']);
+            expect(await steps.getAll('rows', 'Screen', { child: '~title' }, index1)).toEqual(['title 2 second']);
+            expect(await steps.getAll('rows', 'Screen', { child: '~badge' }, index1)).toEqual([]);
+            expect(await steps.getAll('rows', 'Screen', { child: '~badge' }, { strategy: 'index', index: 2 })).toEqual(['NEW']);
+            expect(await steps.getAll('rows', 'Screen', undefined, { strategy: 'text', text: 'banana' })).toEqual(['banana']);
+            expect(await steps.getAll('rows', 'Screen', { child: '~title' }, { strategy: 'attribute', attribute: 'name', value: 'r1' }))
+                .toEqual(['title 1']);
+            // `all` (and the default) still read every match.
+            expect(await steps.getAll('rows', 'Screen', undefined, { strategy: 'all' })).toEqual(['Apple pie', 'Apple', 'banana']);
+        });
+
+        test('a dead session fails list presence and getAll with the driver error, never "found 0"', async () => {
+            const { steps, mock } = deviceSteps(platform, listTree());
+            mock.failWith(driverError('invalid session id', 'invalid session id: the session is gone'));
+            const presence = await caught(() => steps.verifyPresence('rows', 'Screen'));
+            expect(presence?.message).toMatch(/invalid session id/);
+            const all = await caught(() => steps.getAll('rows', 'Screen'));
+            expect(all?.message).toMatch(/invalid session id/);
+            expect(all?.message).not.toMatch(/found 0/);
+        });
+
         test('an empty-string child is honoured (checked with !== undefined, not truthiness)', async () => {
             const { steps } = deviceSteps(platform, listTree());
             // '' is a child selector nothing answers to: no texts, not the rows' own texts.
@@ -202,11 +235,14 @@ for (const platform of DEVICE_PLATFORMS) {
         const nameOf = (steps: Steps, options: Parameters<Steps['getListedElementData']>[2]) =>
             steps.getListedElementData('rows', 'Screen', { ...options, extractAttribute: 'name' });
 
-        test('text tiers: equal, then substring, then substring ignoring case; regex', async () => {
+        test('text: the web hasText rule (substring ignoring case, whitespace normalised, first in list order); regex', async () => {
             const { steps } = deviceSteps(platform, listTree());
-            expect(await nameOf(steps, { text: 'Apple' })).toBe('r2');
+            // No exact-match tier: "Apple pie" comes first and contains "Apple", as on web.
+            expect(await nameOf(steps, { text: 'Apple' })).toBe('r1');
             expect(await nameOf(steps, { text: 'pie' })).toBe('r1');
             expect(await nameOf(steps, { text: 'BANANA' })).toBe('r3');
+            expect(await nameOf(steps, { text: '  apple \t PIE ' })).toBe('r1');
+            expect(await nameOf(steps, { text: { regex: '^Apple$' } })).toBe('r2');
             expect(await nameOf(steps, { text: { regex: '^ban' } })).toBe('r3');
             expect(await nameOf(steps, { attribute: { name: 'name', value: 'r2' } })).toBe('r2');
             expect(await nameOf(steps, { attribute: { name: 'name', value: { regex: '3$' } } })).toBe('r3');
@@ -218,7 +254,8 @@ for (const platform of DEVICE_PLATFORMS) {
             // The orphan badge outside the list must not make row 1 match.
             expect(await nameOf(steps, { withDescendant: { child: '~badge' } })).toBe('r3');
             expect(await nameOf(steps, { withDescendant: { child: '~title', text: 'SECOND' } })).toBe('r2');
-            expect(await nameOf(steps, { text: 'Apple', withDescendant: { child: { pageName: 'Screen', elementName: 'title' } } })).toBe('r2');
+            expect(await nameOf(steps, { text: 'Apple', withDescendant: { child: { pageName: 'Screen', elementName: 'title' } } })).toBe('r1');
+            expect(await nameOf(steps, { withDescendant: { child: '~title', text: '  title  2 ' } })).toBe('r2');
             // No item has a descendant with that text; the orphan title does: no match.
             const error = await caught(() => nameOf(steps, { withDescendant: { child: '~title', text: 'Orphan' } }));
             expect(error?.message).toMatch(/No listed element matched/);
@@ -228,8 +265,9 @@ for (const platform of DEVICE_PLATFORMS) {
             const { steps } = deviceSteps(platform, listTree());
             expect(await steps.getListedElementData('rows', 'Screen', { text: 'pie', child: '~title' })).toBe('title 1');
             expect(await steps.getListedElementData('rows', 'Screen', { text: 'banana', child: { pageName: 'Screen', elementName: 'title' } })).toBe('title 3');
-            await steps.verifyListedElement('rows', 'Screen', { text: 'Apple', child: '~title', expectedText: 'title 2 second' });
-            await steps.verifyListedElement('rows', 'Screen', { text: 'Apple', expected: { name: 'name', value: 'r2' } });
+            await steps.verifyListedElement('rows', 'Screen', { text: 'Apple', child: '~title', expectedText: 'title 1' });
+            await steps.verifyListedElement('rows', 'Screen', { text: { regex: '^Apple$' }, child: '~title', expectedText: 'title 2 second' });
+            await steps.verifyListedElement('rows', 'Screen', { text: 'Apple', expected: { name: 'name', value: 'r1' } });
             await steps.verifyListedElement('rows', 'Screen', { text: 'Apple' });
         });
 
@@ -237,6 +275,19 @@ for (const platform of DEVICE_PLATFORMS) {
             const { steps, mock } = deviceSteps(platform, listTree());
             await steps.clickListedElement('rows', 'Screen', { text: 'banana', child: '~badge' });
             expect(mock.calls.filter(c => c[0] === 'click')).toEqual([['click', '~badge', '~row']]);
+        });
+
+        test('a dead session fails a listed-element step with the driver error', async () => {
+            const { steps, mock } = deviceSteps(platform, listTree());
+            mock.failWith(driverError('invalid session id', 'invalid session id: the session is gone'));
+            for (const run of [
+                () => steps.clickListedElement('rows', 'Screen', { text: 'banana' }),
+                () => steps.verifyListedElement('rows', 'Screen', { text: 'banana' }),
+                () => steps.getListedElementData('rows', 'Screen', { text: 'banana' }),
+            ]) {
+                expect((await caught(run))?.message).toMatch(/invalid session id/);
+            }
+            expect(mock.calls.filter(c => c[0] === 'click')).toEqual([]);
         });
 
         test('options that cannot identify an item, or a wrong reference, fail before anything resolves', async () => {
@@ -307,6 +358,24 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(await caught(() => steps.isVisible('banner', 'Screen', { timeout: 300 }).click())).toBeDefined();
             expect(await caught(() => steps.on('banner', 'Screen').ifVisible(300).click())).toBeDefined();
         });
+
+        test('clickIfPresent skips a missing element and taps a shown one', async () => {
+            let r = deviceSteps(platform, []);
+            expect(await r.steps.clickIfPresent('banner', 'Screen')).toBe(false);
+            r = deviceSteps(platform, [{ match: '~banner' }]);
+            expect(await r.steps.clickIfPresent('banner', 'Screen')).toBe(true);
+            expect(r.mock.calls.filter(c => c[0] === 'click')).toHaveLength(1);
+        });
+
+        test('a dead session is thrown by clickIfPresent and scrollUntilFound, never a skip or a swipe loop', async () => {
+            const { steps, mock } = deviceSteps(platform, [{ match: '~banner' }]);
+            mock.failWith(driverError('invalid session id', 'invalid session id: the session is gone'));
+            expect((await caught(() => steps.clickIfPresent('banner', 'Screen')))?.message).toMatch(/invalid session id/);
+            const { error, elapsed } = await timed(() => steps.scrollUntilFound('banner', 'Screen', { timeout: 5000 }));
+            expect(error?.message).toMatch(/invalid session id/);
+            expect(elapsed, 'fails at once instead of swiping until the timeout').toBeLessThan(2000);
+            expect(mock.calls.filter(c => c[0] === 'performActions')).toEqual([]);
+        });
     });
 
     test.describe(`matchers poll on ${platform}`, () => {
@@ -333,6 +402,20 @@ for (const platform of DEVICE_PLATFORMS) {
                 { match: '~secondary', text: 'fallback' },
             ]);
             await steps.expect('dialog', 'Screen').timeout(3000).text.toBe('primary');
+        });
+
+        test('a poll re-resolves without an attach wait: short timeouts pass on a missing node and a long chain', async () => {
+            // A missing element: each poll is one existence check, so a 200 ms matcher gets its polls in.
+            const missing = await timed(() => Promise.resolve(deviceSteps(platform, []).steps.on('banner', 'Screen').timeout(200).visible.toBeFalse()));
+            expect(missing.error, 'visible.toBeFalse on a missing element within 200 ms').toBeUndefined();
+            expect(missing.elapsed).toBeLessThan(1000);
+            // A 3-node fallback chain whose last node shows the text: two missing nodes cost no attach wait.
+            const { steps } = deviceSteps(platform, [{ match: '~node-3', text: 'third' }]);
+            const chain = await timed(() => Promise.resolve(steps.on('chain', 'Screen').timeout(800).text.toBe('third')));
+            expect(chain.error, 'text.toBe on the last chain node within 800 ms').toBeUndefined();
+            expect(chain.elapsed).toBeLessThan(800);
+            await steps.expect('chain', 'Screen').timeout(800).satisfy(el => el.text === 'third' && el.count === 1);
+            await steps.on('chain', 'Screen').timeout(800).count.toBe(1);
         });
 
         test('every poll re-resolves: a redrawn element is read afresh', async () => {
@@ -380,3 +463,20 @@ for (const platform of DEVICE_PLATFORMS) {
         });
     });
 }
+
+test.describe('ReResolvingElement (the handle device verifications poll)', () => {
+    test('dragTo is refused with a clear error naming the entry, on derived handles too', async () => {
+        const handle = new ReResolvingElement(async () => mockElement(), "'Screen.status'");
+        expect(handle.selector).toBeUndefined();
+        const error = await caught(() => handle.dragTo(mockElement()));
+        expect(error?.message).toMatch(/dragTo: 'Screen\.status' is a re-resolving element, used by verifications only/);
+        expect((await caught(() => handle.first().dragTo(mockElement())))?.message).toMatch(/'Screen\.status'/);
+    });
+
+    test('getters re-resolve on every read', async () => {
+        let resolutions = 0;
+        const handle = new ReResolvingElement(async () => { resolutions++; return mockElement({ text: `t${resolutions}` }); });
+        expect(await handle.textContent()).toBe('t1');
+        expect(await handle.textContent()).toBe('t2');
+    });
+});

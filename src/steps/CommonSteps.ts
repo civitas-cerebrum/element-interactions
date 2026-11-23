@@ -15,6 +15,7 @@ import type { IDevice, Orientation, PermissionState } from '../interfaces/IDevic
 import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
 import { actionFamilyOf, assertFactoryFamily, requireDevicePlatform, requireWebPlatform } from './platformGuard';
 import { pollUntil } from '../utils/poll';
+import { isFatalDriverError } from '../utils/driverErrors';
 import { AppiumDevice, MissingAppIdError } from '../appium/AppiumDevice';
 import { EmailClient, EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
@@ -1753,19 +1754,26 @@ export class Steps {
             await this.requireListMatch(element, elementName, pageName, 'getAll', options?.timeout);
         }
 
-        if (childSelector !== undefined && familyOf(this.factory.platform) !== 'playwright') {
+        // A narrowing strategy (index / text / attribute / random) picked ONE
+        // match. On a device `all()` on that picked element would answer every
+        // match of its selector again, so the picked element is the whole
+        // list, as the narrowed web locator is.
+        const picked = !!options?.strategy && options.strategy !== 'all' && options.strategy !== 'first';
+        if (familyOf(this.factory.platform) !== 'playwright' && (picked || childSelector !== undefined)) {
+            const matches = picked ? [element] : await element.all();
             // On a device a child is scoped to ONE parent match
             // (element-repository's `locateChild` searches inside the parent's
             // match), so the children of the whole collection are gathered
             // match by match, in order: what the web locator `parent >> child`
             // returns across every parent match.
-            const parents = await element.all();
-            const children = (await Promise.all(parents.map(p => p.locateChild(childSelector).all()))).flat();
+            const items = childSelector === undefined
+                ? matches
+                : (await Promise.all(matches.map(p => p.locateChild(childSelector).all()))).flat();
             if (getAllOptions?.extractAttribute) {
-                const values = await Promise.all(children.map(el => el.getAttribute(getAllOptions.extractAttribute!)));
+                const values = await Promise.all(items.map(el => el.getAttribute(getAllOptions.extractAttribute!)));
                 return values.filter((v): v is string => v !== null);
             }
-            return await Promise.all(children.map(async el => ((await el.textContent()) ?? '').trim()));
+            return await Promise.all(items.map(async el => ((await el.textContent()) ?? '').trim()));
         }
 
         if (childSelector !== undefined) element = element.locateChild(childSelector);
@@ -1784,14 +1792,16 @@ export class Steps {
      * timeout for the collection's first match to attach, and throws a message
      * naming the entry when nothing ever matches. A per-call
      * `StepOptions.timeout` takes precedence over the instance timeout, in both
-     * directions (shorter or longer).
+     * directions (shorter or longer). A fatal driver error (dead session,
+     * invalid selector) is rethrown as is: it is not "found 0".
      */
     private async requireListMatch(all: Element, elementName: string, pageName: string, step: string, timeoutOverride?: number): Promise<void> {
         const timeout = timeoutOverride ?? this.timeout ?? 30000;
         try {
             // Neutral primitives: on web this is `locator.first().waitFor(...)`.
             await all.first().waitFor({ state: 'attached', timeout });
-        } catch {
+        } catch (err) {
+            if (isFatalDriverError(err)) throw err;
             throw new Error(
                 `${step}: '${pageName}.${elementName}' is a list entry ("list": true) — ` +
                 `expected at least one match within ${timeout}ms, found 0.`,

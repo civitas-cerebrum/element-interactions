@@ -14,7 +14,9 @@ import type {
 /**
  * A device-platform `Element` that RE-RESOLVES on every call: each primitive
  * first runs `resolve()` (a fresh repository resolution) and then acts on the
- * element it returns.
+ * element it returns. It exists FOR VERIFICATIONS ONLY: `ElementAction` hands
+ * it to the Appium family's verifications and matchers, never to an action
+ * step, and it is not part of the public API.
  *
  * The Appium family's verifications poll an element's getters until their
  * timeout. Handed an element resolved once, that poll would keep reading the
@@ -25,12 +27,27 @@ import type {
  * Playwright's lazy locators and what the visibility probe does by hand.
  *
  * The derived elements (`first`, `nth`, `locateChild`, `filter`) re-resolve
- * too: they derive from a fresh resolution on every call.
+ * too: they derive from a fresh resolution on every call. The getters and the
+ * one-element primitives delegate to the element a fresh resolution returns.
+ * `dragTo` cannot work on it: a platform drag needs a native element bound on
+ * both ends, and this wrapper is not one, so it throws a clear error instead
+ * of the driver's own (a missing internal method on the drop target).
+ *
+ * `selector` is `undefined`: one entry may resolve to a different selector on
+ * every call (a `fallback` chain), so no single selector describes it.
+ * {@link description} names the entry in error messages instead.
  */
 export class ReResolvingElement implements Element {
     readonly _type = ElementType.PLATFORM;
 
-    constructor(private readonly resolve: () => Promise<Element>) {}
+    /**
+     * @param resolve - A fresh resolution of the entry; called on every primitive.
+     * @param description - Names the entry in error messages (e.g. `'LoginPage.submit'`).
+     */
+    constructor(
+        private readonly resolve: () => Promise<Element>,
+        readonly description: string = 'a re-resolving element',
+    ) {}
 
     get selector(): string | undefined { return undefined; }
 
@@ -39,7 +56,7 @@ export class ReResolvingElement implements Element {
     }
 
     private derived(step: (el: Element) => Element): ReResolvingElement {
-        return new ReResolvingElement(async () => step(await this.target()));
+        return new ReResolvingElement(async () => step(await this.target()), this.description);
     }
 
     action(timeout?: number): ElementChain { return new ElementChain(this, timeout); }
@@ -78,11 +95,15 @@ export class ReResolvingElement implements Element {
     async screenshot(options?: { path?: string }): Promise<Buffer> { return (await this.target()).screenshot(options); }
     async getTagName(): Promise<string> { return (await this.target()).getTagName(); }
     async exists(): Promise<boolean> { return (await this.target()).exists(); }
+    /** Not supported: a re-resolving element is for verifications only (see the class comment). */
     async dragTo(
-        target: Element,
-        options?: { timeout?: number; sourcePosition?: { x: number; y: number }; targetPosition?: { x: number; y: number } },
+        _target: Element,
+        _options?: { timeout?: number; sourcePosition?: { x: number; y: number }; targetPosition?: { x: number; y: number } },
     ): Promise<Element> {
-        return (await this.target()).dragTo(target, options);
+        throw new Error(
+            `dragTo: ${this.description} is a re-resolving element, used by verifications only; ` +
+            'drag a repository element (steps.dragAndDrop) instead.',
+        );
     }
     locateChild(selector: string): Element { return this.derived(el => el.locateChild(selector)); }
     async count(): Promise<number> { return (await this.target()).count(); }
