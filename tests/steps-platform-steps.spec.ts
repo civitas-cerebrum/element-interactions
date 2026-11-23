@@ -727,10 +727,23 @@ test.describe('B5 on web (new Steps(repo))', () => {
             // A repository that would fail (or wait out a fallback chain) on any lookup.
             (repo as unknown as { get: () => Promise<never> }).get = async () => { repoCalls.push(['repo', 'get']); throw new Error('unknown element'); };
             const steps = new Steps(repo);
+            // Capture the interaction log (forced on, so an empty capture means nothing was logged).
+            const lines: string[] = [];
+            const { log: originalLog, enabled: originalEnabled } = stepLog.interact;
+            stepLog.interact.enabled = true;
+            stepLog.interact.log = (...args: unknown[]) => { lines.push(args.map(String).join(' ')); };
             const started = Date.now();
-            await expectNotSupported(() => steps[name]('no-such-element', 'NoSuchPage'), name, 'web');
+            try {
+                stepLog.interact('capture check');
+                await expectNotSupported(() => steps[name]('no-such-element', 'NoSuchPage'), name, 'web');
+            } finally {
+                stepLog.interact.log = originalLog;
+                stepLog.interact.enabled = originalEnabled;
+            }
             expect(Date.now() - started).toBeLessThan(1000);
             expect(repoCalls, 'no repository resolution').toEqual([]);
+            expect(lines.some(l => l.includes('capture check')), 'the capture works').toBe(true);
+            expect(lines.filter(l => /Pinching|Zooming/.test(l)), 'no "Pinching" / "Zooming" line before the refusal').toEqual([]);
         });
     }
 
