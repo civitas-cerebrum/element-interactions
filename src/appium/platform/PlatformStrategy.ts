@@ -1,0 +1,74 @@
+import type {} from 'webdriverio';
+import type { Platform } from '@civitas-cerebrum/element-repository';
+import type { PermissionState } from '../../interfaces/IDevice';
+
+/** The WebdriverIO session the Appium family drives. */
+export type AppiumDriver = WebdriverIO.Browser;
+
+/**
+ * Everything that differs between Appium-family platforms, in one object per
+ * platform (`android.ts`, `ios.ts`, ...). The Appium classes never branch on
+ * the platform name: they ask the strategy. Adding a platform means adding a
+ * strategy file, not touching the classes.
+ *
+ * Every method takes the driver explicitly; a strategy holds no session state.
+ * A method the platform cannot perform throws
+ * `PlatformNotSupportedError(method, platform)` and is listed in
+ * {@link PlatformStrategy.unsupported}.
+ */
+export interface PlatformStrategy {
+    readonly platform: Platform;
+    /**
+     * `false` for a platform that is declared but not implemented yet
+     * (`macos`, `windows`): every strategy method throws, and the Appium
+     * classes refuse their driver-level calls too.
+     */
+    readonly implemented: boolean;
+    /**
+     * The capabilities-file key naming the app under test (CONTRACT B1):
+     * `appium:bundleId` (ios, macos), `appium:appPackage` (android),
+     * `appium:app` (windows).
+     */
+    readonly appIdCapability: string;
+    /** The native attribute that carries an element's visible text (android `text`, ios `label`). */
+    readonly textAttribute: string;
+    /** The native attribute reading `'true'` on the focused element; `null` when the platform has none (state 'focused' then throws). */
+    readonly focusedAttribute: string | null;
+    /** Device methods this platform cannot perform; each throws `PlatformNotSupportedError`. */
+    readonly unsupported: readonly string[];
+
+    // App lifecycle (appId is resolved by the caller; never empty here)
+    launchApp(driver: AppiumDriver, appId: string): Promise<void>;
+    activateApp(driver: AppiumDriver, appId: string): Promise<void>;
+    terminateApp(driver: AppiumDriver, appId: string): Promise<void>;
+    /** Terminates, then activates the app (CONTRACT B5, builder decision D5). */
+    resetApp(driver: AppiumDriver, appId: string): Promise<void>;
+    backgroundApp(driver: AppiumDriver, seconds: number): Promise<void>;
+    installApp(driver: AppiumDriver, appPath: string): Promise<void>;
+    removeApp(driver: AppiumDriver, appId: string): Promise<void>;
+    isAppInForeground(driver: AppiumDriver, appId: string): Promise<boolean>;
+    /** Opens `url`; `appId` (when known) names the app that should handle it. */
+    openDeepLink(driver: AppiumDriver, url: string, appId?: string): Promise<void>;
+
+    // System navigation and keyboard
+    pressBack(driver: AppiumDriver): Promise<void>;
+    hideKeyboard(driver: AppiumDriver): Promise<void>;
+    isKeyboardShown(driver: AppiumDriver): Promise<boolean>;
+
+    // Alerts and permissions
+    acceptAlert(driver: AppiumDriver): Promise<void>;
+    dismissAlert(driver: AppiumDriver): Promise<void>;
+    setPermission(driver: AppiumDriver, permission: string, state: PermissionState, appId: string): Promise<void>;
+}
+
+/**
+ * The result of Appium's `mobile: queryAppState` meaning "running in
+ * foreground" (0 not installed, 1 not running, 2 running in background
+ * suspended, 3 running in background, 4 running in foreground).
+ */
+export const APP_STATE_FOREGROUND = 4;
+
+/** Calls an Appium `mobile:` extension command with one argument object. */
+export async function mobile<T = unknown>(driver: AppiumDriver, command: string, args: Record<string, unknown> = {}): Promise<T> {
+    return await driver.execute(`mobile: ${command}`, args) as T;
+}
