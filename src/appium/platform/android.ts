@@ -1,3 +1,4 @@
+import type { Element } from '@civitas-cerebrum/element-repository';
 import type { PermissionState } from '../../interfaces/IDevice';
 import type { Direction } from '../../interfaces/IGestures';
 import { swipeScreenW3C, type SwipeInset } from '../touch';
@@ -29,6 +30,11 @@ export const androidStrategy: PlatformStrategy = Object.freeze({
     appIdCapability: 'appium:appPackage',
     focusedAttribute: 'focused',
     unsupported: Object.freeze([]) as readonly string[],
+
+    /** The element's text (UiAutomator2 `text`), as `textContent` reads it. */
+    async readText(element: Element) {
+        return (await element.textContent()) ?? '';
+    },
 
     async launchApp(driver: AppiumDriver, appId: string) {
         // UiAutomator2 has no separate "launch": activateApp starts the app

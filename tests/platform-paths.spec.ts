@@ -483,3 +483,47 @@ test.describe('ReResolvingElement (the handle device verifications poll)', () =>
         expect(await handle.textContent()).toBe('t2');
     });
 });
+
+test.describe('visible text on ios is the label, falling back to the value', () => {
+    // A settings row with a badge: XCUITest's getText answers the value "1";
+    // the label "General" is what the row shows. A title with no label reads
+    // its value; a navigation bar with neither reads "", never its name.
+    const badgeRow = (n: number): MockNode => ({
+        match: '~row', text: '1',
+        attributes: { label: `General ${n}`, value: '1', name: `row-${n}`, type: 'XCUIElementTypeButton' },
+        children: [{ match: '~title', text: '1', attributes: { label: `title ${n}`, value: '1' } }],
+    });
+    const tree = (): MockNode[] => [
+        { match: '~list', children: [badgeRow(1), badgeRow(2)] },
+        { match: '~banner', text: '1', attributes: { label: 'General', value: '1', type: 'XCUIElementTypeButton' } },
+        { match: '~status', text: 'ready', attributes: { label: null, value: 'ready' } },
+        { match: '~toast', text: '', attributes: { label: null, value: null, name: 'General' } },
+    ];
+
+    test('verifications, matchers, getText, snapshots and probes read the label', async () => {
+        const { steps } = deviceSteps('ios', tree());
+        await steps.verifyText('banner', 'Screen', 'General');
+        await steps.verifyTextContains('banner', 'Screen', 'Gen');
+        await steps.expect('banner', 'Screen').text.toBe('General');
+        await steps.expect('banner', 'Screen').satisfy(el => el.text === 'General');
+        expect(await steps.getText('banner', 'Screen')).toBe('General');
+        expect(await steps.on('banner', 'Screen').getText()).toBe('General');
+        expect(await steps.isVisible('banner', 'Screen', { timeout: 300, containsText: 'General' })).toBe(true);
+        expect(await steps.getText('status', 'Screen')).toBe('ready');
+        expect(await steps.getText('toast', 'Screen')).toBe('');
+        const error = await caught(() => steps.verifyText('banner', 'Screen', '1'));
+        expect(error?.message).toMatch(/Last value: "General"/);
+    });
+
+    test('lists, order and listed elements match on the label', async () => {
+        const { steps } = deviceSteps('ios', tree());
+        expect(await steps.getAll('rows', 'Screen')).toEqual(['General 1', 'General 2']);
+        expect(await steps.getAll('rows', 'Screen', { child: '~title' })).toEqual(['title 1', 'title 2']);
+        await steps.verifyOrder('rows', 'Screen', ['General 1', 'General 2']);
+        await steps.verifyListOrder('rows', 'Screen', 'asc');
+        expect(await steps.getListedElementData('rows', 'Screen', { text: 'general 2', extractAttribute: 'name' })).toBe('row-2');
+        expect(await steps.getListedElementData('rows', 'Screen', {
+            withDescendant: { child: '~title', text: 'title 2' }, extractAttribute: 'name',
+        })).toBe('row-2');
+    });
+});

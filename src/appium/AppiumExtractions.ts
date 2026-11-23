@@ -2,14 +2,16 @@ import { writeFile } from 'fs/promises';
 import type { Element, Platform } from '@civitas-cerebrum/element-repository';
 import type { IExtractions } from '../interfaces/IExtractions';
 import type { ScreenshotOptions } from '../enum/Options';
-import type { AppiumDriver } from './platform/PlatformStrategy';
+import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
+import { strategyFor } from './platform';
 import { AppiumUtils } from './AppiumUtils';
 import { webOnly } from './unsupported';
 
 /**
  * Value extraction for the Appium family. Element reads delegate to the
- * element's primitives (`textContent`, `getAttribute`, `inputValue`, `count`,
- * `boundingBox`, `screenshot`). Web-only reads (CSS, HTML, page text,
+ * element's primitives (`getAttribute`, `inputValue`, `count`,
+ * `boundingBox`, `screenshot`); text is the platform strategy's
+ * `readText` (on iOS the label, falling back to the value). Web-only reads (CSS, HTML, page text,
  * storage, window properties, scripts) throw `PlatformNotSupportedError`.
  * The device's page source is `IDevice.getPageSource()`.
  */
@@ -24,10 +26,13 @@ export class AppiumExtractions implements IExtractions {
         this.utils = new AppiumUtils(timeout);
     }
 
+    private get strategy(): PlatformStrategy {
+        return strategyFor(this.platform);
+    }
+
     async getText(target: Element): Promise<string | null> {
         await this.utils.softProbe(target, 'attached');
-        const text = await target.textContent();
-        return text?.trim() ?? null;
+        return (await this.strategy.readText(target)).trim();
     }
 
     async getAttribute(target: Element, attributeName: string): Promise<string | null> {
@@ -37,8 +42,7 @@ export class AppiumExtractions implements IExtractions {
 
     async getAllTexts(target: Element): Promise<string[]> {
         const all = await target.all();
-        const texts = await Promise.all(all.map(e => e.textContent()));
-        return texts.map(t => (t ?? '').trim());
+        return Promise.all(all.map(async e => (await this.strategy.readText(e)).trim()));
     }
 
     async getInputValue(target: Element): Promise<string> {

@@ -633,9 +633,9 @@ for (const platform of DEVICE_PLATFORMS) {
         test('element reads delegate to the primitives', async () => {
             const { factory } = setup();
             const x = factory.createExtractions();
-            const el = mockElement({ text: '  hi  ', inputValue: 'typed', attributes: { label: 'L' }, count: 3 });
+            const el = mockElement({ text: '  hi  ', inputValue: 'typed', attributes: { name: 'L' }, count: 3 });
             expect(await x.getText(el)).toBe('hi');
-            expect(await x.getAttribute(el, 'label')).toBe('L');
+            expect(await x.getAttribute(el, 'name')).toBe('L');
             expect(await x.getInputValue(el)).toBe('typed');
             expect(await x.getCount(el)).toBe(3);
             expect(await x.getBoundingBox(el)).toEqual({ x: 100, y: 600, width: 80, height: 40 });

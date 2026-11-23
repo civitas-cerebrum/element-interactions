@@ -29,7 +29,9 @@ import { requireSettingsCapabilities } from '../cross-platform/settingsGuard';
  *
  * The row labels and the General navigation bar title are read in English
  * (`General`); the accessibility ids (`com.apple.settings.*`) do not depend on
- * the device language.
+ * the device language. The title whose text is verified is the header static
+ * text inside the navigation bar: the bar itself has no label and no value,
+ * so its visible text is empty.
  */
 const platform = resolvePlatform(undefined);
 const ROOT = 'SettingsRoot';
@@ -98,7 +100,7 @@ test.describe('live iOS Settings (read-only)', () => {
         await steps.verifyText('title', GENERAL, 'General');
         await steps.click('backButton', GENERAL);
         await steps.verifyPresence('generalRow', ROOT);
-        await steps.verifyAbsence('title', GENERAL);
+        await steps.verifyAbsence('navigationBar', GENERAL);
     });
 
     test('getPageSource returns the XCUITest tree', async ({ steps }) => {

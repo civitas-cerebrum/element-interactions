@@ -17,6 +17,7 @@ import { actionFamilyOf, assertFactoryFamily, requireDevicePlatform, requireWebP
 import { pollUntil } from '../utils/poll';
 import { isFatalDriverError } from '../utils/driverErrors';
 import { AppiumDevice, MissingAppIdError } from '../appium/AppiumDevice';
+import { strategyFor } from '../appium/platform';
 import { EmailClient, EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
 import { SqlClient, SqlResult, QueryBuilder, UnsupportedEngineException } from '@civitas-cerebrum/sql-client';
@@ -1773,7 +1774,8 @@ export class Steps {
                 const values = await Promise.all(items.map(el => el.getAttribute(getAllOptions.extractAttribute!)));
                 return values.filter((v): v is string => v !== null);
             }
-            return await Promise.all(items.map(async el => ((await el.textContent()) ?? '').trim()));
+            const strategy = strategyFor(this.factory.platform);
+            return await Promise.all(items.map(async el => (await strategy.readText(el)).trim()));
         }
 
         if (childSelector !== undefined) element = element.locateChild(childSelector);

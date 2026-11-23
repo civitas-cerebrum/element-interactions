@@ -23,7 +23,11 @@ function rawElement(selector: string, calls: Call[]) {
         waitForExist: record('waitForExist', true),
         waitForDisplayed: record('waitForDisplayed', true),
         getText: record('getText', TEXTS[selector] ?? ''),
-        getAttribute: record('getAttribute', null),
+        // iOS keeps visible text in `label` (the Appium family's iOS text read).
+        getAttribute: async (name: string) => {
+            calls.push(['el.getAttribute', selector, name]);
+            return name === 'label' ? TEXTS[selector] ?? null : null;
+        },
         click: record('click'),
         clearValue: record('clearValue'),
         setValue: record('setValue'),

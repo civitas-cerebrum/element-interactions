@@ -13,6 +13,7 @@ import {
 import { VisibleChain } from './VisibleChain';
 import { isListEntry } from './listEntry';
 import { ReResolvingElement } from './ReResolvingElement';
+import { strategyFor } from '../appium/platform';
 import { isFatalDriverError, softRead } from '../utils/driverErrors';
 import { pollUntil, PollTimeoutError } from '../utils/poll';
 
@@ -381,7 +382,7 @@ export class ElementAction {
             if (visible && element) {
                 if (containsText === undefined) return true;
                 const target = element;
-                const text = await softRead(() => target.textContent(), null);
+                const text = await softRead(() => strategyFor(this.platform).readText(target), null);
                 return text !== null && text.includes(containsText);
             }
             const left = deadline - Date.now();
@@ -1037,9 +1038,19 @@ export class ElementAction {
 
     // -- Terminal actions: extractions --
 
-    /** Get the text content of the resolved element. */
+    /**
+     * Get the text content of the resolved element. On a device it is the
+     * platform strategy's `readText` (on iOS the label, falling back to the
+     * value), read once the element is attached.
+     */
     async getText(): Promise<string | null> {
         const element = await this.resolve();
+        if (this.onDevice) {
+            await element.waitFor({ state: 'attached', timeout: this._timeout }).catch(err => {
+                if (isFatalDriverError(err)) throw err;
+            });
+            return (await strategyFor(this.platform).readText(element)).trim();
+        }
         return element.action(this._timeout).getText();
     }
 
@@ -1168,7 +1179,7 @@ export class ElementAction {
         };
         const [count, rawText, value, attributes, visible, enabled] = await Promise.all([
             softRead(() => allElement.count(), 0),
-            softRead(() => first.textContent(), null),
+            softRead(() => strategyFor(this.platform).readText(first), null),
             softRead(() => first.inputValue(), ''),
             readAttributes(),
             softRead(() => first.isVisible(), false),

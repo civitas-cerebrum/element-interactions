@@ -1,4 +1,4 @@
-import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
+import { PlatformNotSupportedError, type Element } from '@civitas-cerebrum/element-repository';
 import type { PermissionState } from '../../interfaces/IDevice';
 import type { Direction } from '../../interfaces/IGestures';
 import { swipeScreenW3C, type SwipeInset } from '../touch';
@@ -19,6 +19,34 @@ const PERMISSION_ACCESS: Record<PermissionState, 'yes' | 'no' | 'unset'> = {
     reset: 'unset',
 };
 
+/** XCUITest element types whose `value` is the text typed into them. */
+export const IOS_TEXT_INPUT_TYPES: readonly string[] = Object.freeze([
+    'XCUIElementTypeTextField',
+    'XCUIElementTypeSecureTextField',
+    'XCUIElementTypeTextView',
+]);
+
+/**
+ * The visible text of an XCUITest element: its `label`, falling back to its
+ * `value`; `''` when both are empty (blank counts as empty). `name` is never
+ * read: it is usually the accessibility id. On a text input
+ * ({@link IOS_TEXT_INPUT_TYPES}) a non-empty `value` wins over a `label`.
+ * `label` and `value` are read together; `type` is read only when both are
+ * non-empty, the one case where it decides, so an ordinary labelled element
+ * costs two attribute reads. (A text input with a label and an empty value
+ * reads its label; XCUITest usually reports a placeholder as its value.)
+ */
+export async function iosReadText(element: Element): Promise<string> {
+    const [label, value] = (await Promise.all([
+        element.getAttribute('label'),
+        element.getAttribute('value'),
+    ])).map(v => v ?? '');
+    if (!label.trim()) return value.trim() ? value : '';
+    if (!value.trim()) return label;
+    const type = await element.getAttribute('type');
+    return type !== null && IOS_TEXT_INPUT_TYPES.includes(type) ? value : label;
+}
+
 /** iOS (XCUITest driver). Every command is a W3C or `mobile:` command of Appium 3. */
 export const iosStrategy: PlatformStrategy = Object.freeze({
     platform: 'ios',
@@ -27,6 +55,8 @@ export const iosStrategy: PlatformStrategy = Object.freeze({
     // No focus attribute verified across XCUITest versions; state('focused') throws on iOS.
     focusedAttribute: null,
     unsupported: Object.freeze(['pressBack']),
+
+    readText: iosReadText,
 
     async launchApp(driver: AppiumDriver, appId: string) {
         await mobile(driver, 'launchApp', { bundleId: appId });

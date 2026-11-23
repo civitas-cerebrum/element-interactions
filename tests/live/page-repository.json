@@ -14,7 +14,8 @@
       "name": "GeneralScreen",
       "platform": "ios",
       "elements": [
-        { "elementName": "title", "selector": { "predicate": "type == \"XCUIElementTypeNavigationBar\" AND name == \"General\"" } },
+        { "elementName": "navigationBar", "selector": { "predicate": "type == \"XCUIElementTypeNavigationBar\" AND name == \"General\"" } },
+        { "elementName": "title", "selector": { "class chain": "**/XCUIElementTypeNavigationBar[`name == \"General\"`]/XCUIElementTypeStaticText[`label == \"General\"`]" } },
         {
           "elementName": "backButton",
           "selector": {

@@ -8,7 +8,8 @@ import type {
     ListedElementMatch,
     TextMatcher,
 } from '../enum/Options';
-import type { AppiumDriver } from './platform/PlatformStrategy';
+import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
+import { strategyFor } from './platform';
 import { AppiumUtils } from './AppiumUtils';
 import { dragSteps, performTouch } from './touch';
 import { pollUntil } from '../utils/poll';
@@ -46,14 +47,6 @@ function listedTextMatches(actual: string, matcher: TextMatcher): boolean {
 }
 
 /**
- * An item's text as the driver reports it, untrimmed: a regex matcher sees the
- * full text, as web's `hasText` regex does; a string matcher normalises it.
- */
-async function itemText(el: Element): Promise<string> {
-    return (await el.textContent()) ?? '';
-}
-
-/**
  * Time left until `deadline`, in ms, never below 1: the waits and the
  * primitive of one action share a single timeout, and `0` must not reach a
  * primitive (where it can mean "no timeout").
@@ -78,6 +71,11 @@ export class AppiumInteractions implements IInteractions {
         private readonly timeout: number = 30000,
     ) {
         this.utils = new AppiumUtils(timeout);
+    }
+
+    /** The platform strategy; its `readText` is the text every match below is made on. */
+    private get strategy(): PlatformStrategy {
+        return strategyFor(this.platform);
     }
 
     /**
@@ -159,7 +157,7 @@ export class AppiumInteractions implements IInteractions {
      */
     async getByText(base: Element, desiredText: string, strict: boolean = false): Promise<Element | null> {
         const all = await base.all();
-        const texts = await Promise.all(all.map(async e => ((await e.textContent()) ?? '').trim()));
+        const texts = await Promise.all(all.map(async e => (await this.strategy.readText(e)).trim()));
         const tiers: Array<(t: string) => boolean> = [
             t => t === desiredText,
             t => textMatches(t, desiredText),
@@ -209,7 +207,8 @@ export class AppiumInteractions implements IInteractions {
      * polled (the list re-read on every poll) until the instance timeout, then
      * waited on until visible within what is left of it, as on web:
      *
-     * - `text`: the item's own text (`getText()`) by the web `hasText` rule:
+     * - `text`: the item's own text (the strategy's `readText`: on iOS the
+     *   label, falling back to the value) by the web `hasText` rule:
      *   a substring ignoring case, whitespace normalised; a regex is tested
      *   as is. The first item in list order wins.
      * - `attribute`: the exact value, or a regex.
@@ -249,7 +248,7 @@ export class AppiumInteractions implements IInteractions {
             const found = await e.locateChild(descendantSelector).all();
             if (descendant?.text === undefined) return found.length > 0;
             for (const d of found) {
-                if (listedTextMatches(await itemText(d), descendant.text)) return true;
+                if (listedTextMatches(await this.strategy.readText(d), descendant.text)) return true;
             }
             return false;
         };
@@ -257,7 +256,7 @@ export class AppiumInteractions implements IInteractions {
         const pick = async (): Promise<Element | undefined> => {
             const all = await base.all();
             const text = options.text;
-            const texts = text !== undefined ? await Promise.all(all.map(itemText)) : [];
+            const texts = text !== undefined ? await Promise.all(all.map(e => this.strategy.readText(e))) : [];
             for (let i = 0; i < all.length; i++) {
                 if (text !== undefined && !listedTextMatches(texts[i], text)) continue;
                 if (!(await matchesAttribute(all[i]))) continue;

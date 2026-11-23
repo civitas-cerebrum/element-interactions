@@ -8,6 +8,7 @@ export function notImplementedError(platform: Platform): Error {
 
 /** The strategy methods, each of which throws for a declared-but-unimplemented platform. */
 export const STRATEGY_METHODS = [
+    'readText',
     'launchApp', 'activateApp', 'terminateApp', 'resetApp', 'backgroundApp', 'installApp', 'removeApp',
     'isAppInForeground', 'openDeepLink', 'pressBack', 'hideKeyboard', 'isKeyboardShown', 'swipeScreen',
     'acceptAlert', 'dismissAlert', 'setPermission',

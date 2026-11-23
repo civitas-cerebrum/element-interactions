@@ -70,6 +70,9 @@ else, naming the file and the key:
   `appium:appActivity`, when set, `.Settings` or `com.android.settings.Settings`.
 - `appium:noReset` **must be present and `true`** (without it the driver's fast
   reset may clear app data); `appium:fullReset` is absent or `false`.
+- `autoAcceptAlerts`, `autoDismissAlerts` and `autoGrantPermissions` are absent
+  or exactly `false` (the spec never answers a dialog or grants a permission by
+  itself).
 
 The example files keep a placeholder app (`com.example.app`), so they are
 refused as they stand; with the Settings app id set (as the CI jobs do) they

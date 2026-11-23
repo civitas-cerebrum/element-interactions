@@ -51,7 +51,7 @@ export class AppiumVerifications implements IVerifications {
     }
 
     private readText(target: Element): () => Promise<string> {
-        return async () => ((await target.textContent()) ?? '').trim();
+        return async () => (await this.strategy.readText(target)).trim();
     }
 
     // ── Text ──
@@ -219,7 +219,7 @@ export class AppiumVerifications implements IVerifications {
     private allTexts(target: Element): () => Promise<string[]> {
         return async () => {
             const all = await target.all();
-            return Promise.all(all.map(async e => ((await e.textContent()) ?? '').trim()));
+            return Promise.all(all.map(async e => (await this.strategy.readText(e)).trim()));
         };
     }
 

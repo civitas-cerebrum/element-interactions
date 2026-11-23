@@ -683,6 +683,7 @@ On `macos` and `windows` no step runs: the session start throws `Platform "<p>" 
 
 Notes for the shared steps on a device:
 
+* **Visible text on iOS is the element's `label`, falling back to its `value`**, not WebdriverIO's raw `getText()` (which answers `value` first, so a settings row with a badge would read as its badge count); `name` (usually the accessibility id) is never read, and on a text field, secure text field or text view the typed `value` wins. Every text read of the shared steps (`verifyText*`, `getText`, `getAll`, `verifyOrder`, `verifyListOrder`, listed-element `text`, matcher `text`, `isVisible({ containsText })`) uses it. Android reads the element's text.
 * **Verifications poll.** Every `verify*` step and every `steps.expect(...)` / `steps.on(...)` matcher retries until its timeout on every platform.
 * **A fatal driver error fails at once.** A dead session, an invalid selector or a lost server connection is not retried: verifications, list presence, listed-element steps and probes fail at once with the driver's error instead of at the timeout, and such an error never counts as "absent" or "not visible".
 * **`verifyAbsence`** passes when the element is absent or not displayed, polling until the timeout; `"list": true` entries pass when no item of the list is displayed.

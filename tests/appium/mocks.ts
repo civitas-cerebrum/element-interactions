@@ -114,6 +114,11 @@ type Reader<T> = T | (() => T | Promise<T>);
 
 export interface MockElementSpec {
     selector?: string;
+    /**
+     * The element's visible text: what `textContent` answers (Android's text)
+     * and, unless `attributes.label` is given, the `label` attribute (where
+     * iOS keeps visible text). One spec then reads the same on both platforms.
+     */
     text?: Reader<string | null>;
     visible?: Reader<boolean>;
     enabled?: Reader<boolean>;
@@ -158,7 +163,9 @@ export function mockElement(spec: MockElementSpec = {}, calls: Call[] = []): Ele
         isChecked: () => read(spec.checked, false),
         exists: () => read(spec.exists, true),
         inputValue: () => read(spec.inputValue, ''),
-        getAttribute: (name: string) => read(spec.attributes?.[name], null),
+        getAttribute: (name: string) => name === 'label' && spec.attributes?.label === undefined
+            ? read(spec.text, 'text')
+            : read(spec.attributes?.[name], null),
         count: () => read(spec.count, spec.children?.length ?? 1),
         boundingBox: () => read(spec.box, { x: 100, y: 600, width: 80, height: 40 }),
         all: async () => spec.children ?? [el],
@@ -201,6 +208,7 @@ export const DEVICE_PLATFORMS = ['android', 'ios'] as const;
 export interface MockNode {
     /** The selector strings this node answers to (exact string match, as the repository formats them). */
     match: string | string[];
+    /** Visible text: `getText()` and, unless `attributes.label` is given, the `label` attribute (as {@link MockElementSpec.text}). */
     text?: Reader<string | null>;
     /** Displayed (default `true`). */
     visible?: Reader<boolean>;
@@ -300,7 +308,12 @@ export function mockUiDriver(nodes: MockNode[], options: Parameters<typeof mockD
             isEnabled: async () => read((await need()).enabled, true),
             isSelected: async () => false,
             getText: async () => read((await need()).text, ''),
-            getAttribute: async (name: string) => read((await need()).attributes?.[name], null),
+            getAttribute: async (name: string) => {
+                const node = await need();
+                return name === 'label' && node.attributes?.label === undefined
+                    ? read(node.text, '')
+                    : read(node.attributes?.[name], null);
+            },
             getValue: async () => read((await need()).attributes?.value, ''),
             click: async () => { await need(); base.calls.push(['click', selector, scopeLabel]); },
             waitForExist: async ({ timeout = 0, reverse = false }: { timeout?: number; reverse?: boolean } = {}) =>

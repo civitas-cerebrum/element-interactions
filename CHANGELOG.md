@@ -57,6 +57,13 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `withDescendant.text` match as on web (case-insensitive substring, whitespace
   normalised, first item in list order; a RegExp tested as is), while
   `repo.getByText` on a device prefers an exact match.
+- **Visible text on iOS** is the element's `label`, falling back to its
+  `value` (never `name`; on a text field, secure text field or text view the
+  `value` wins), not WebdriverIO's raw `getText()`, which answers `value`
+  first. Every device text read (text verifications and matchers, `getText`,
+  `getAll`, order checks, listed-element and `getByText` matching, probes with
+  `containsText`) goes through the platform strategy's `readText`; Android
+  reads the element's text.
 - Platform verifications, list presence, listed-element steps and probes fail
   at once on a fatal driver error (a dead session, an invalid selector, a lost
   connection) instead of at the timeout; such an error never reads as absent.
