@@ -30,12 +30,12 @@
       "name": "DestinationScreen",
       "platform": "ios",
       "elements": [
-        { "elementName": "landmark", "selector": { "predicate": "type == \"XCUIElementTypeNavigationBar\" AND name == \"General\"" } },
+        { "elementName": "landmark", "note": "English only: the navigation bar is named by its localized title (General); a device in another language needs its own title here.", "selector": { "predicate": "type == \"XCUIElementTypeNavigationBar\" AND name == \"General\"" } },
         {
           "elementName": "backButton",
           "selector": {
             "accessibility id": "BackButton",
-            "fallback": { "class chain": "**/XCUIElementTypeNavigationBar/XCUIElementTypeButton[1]" }
+            "fallback": { "class chain": "**/XCUIElementTypeNavigationBar[`name == \"General\"`]/XCUIElementTypeButton[1]" }
           }
         }
       ]
@@ -53,7 +53,7 @@
       "name": "DestinationScreen",
       "platform": "android",
       "elements": [
-        { "elementName": "landmark", "provisional": true, "note": "Unverified: no Android device yet. The System page title in the collapsing toolbar.", "selector": { "xpath": "//*[@resource-id='com.android.settings:id/collapsing_toolbar']//android.widget.TextView[@text='System']" } },
+        { "elementName": "landmark", "provisional": true, "note": "Unverified: no Android device yet. The System page title (uiautomator text first, then the collapsing toolbar title by xpath). English only.", "selector": { "uiautomator": "new UiSelector().text(\"System\")", "fallback": { "xpath": "//*[@resource-id='com.android.settings:id/collapsing_toolbar']//android.widget.TextView[@text='System']" } } },
         { "elementName": "backButton", "provisional": true, "note": "Unverified: no Android device yet. The toolbar's up button.", "selector": { "accessibility id": "Navigate up" } }
       ]
     }

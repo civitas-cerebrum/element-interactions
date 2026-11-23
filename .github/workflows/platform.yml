@@ -14,6 +14,9 @@ name: 📱 Platform (Android emulator, iOS simulator)
 #   starts the run in the one documented form:
 #     PLATFORM=<platform> CAPABILITIES=<file> APPIUM_URL=<server> \
 #       npx playwright test -c playwright.platform.config.ts tests/cross-platform
+#   with `--timeout=600000` added for headroom (emulator / simulator start-up,
+#   driver server install); the config's own 180 s stays the local default.
+# - The written capabilities files are named *.local.json (ignored by version control).
 # - The Android page entries of the spec are provisional (never verified on a
 #   device); the first Android run verifies them.
 
@@ -66,8 +69,8 @@ jobs:
               | .["appium:appActivity"] = ".Settings"
               | .["appium:uiautomator2ServerInstallTimeout"] = 120000
               | .["appium:adbExecTimeout"] = 120000' \
-            tests/capabilities/android.example.json > tests/capabilities/ci-android-emulator.json
-          cat tests/capabilities/ci-android-emulator.json
+            tests/capabilities/android.example.json > tests/capabilities/ci-android-emulator.local.json
+          cat tests/capabilities/ci-android-emulator.local.json
 
       - name: 🚀 Start Appium
         run: |
@@ -84,7 +87,7 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: PLATFORM=android CAPABILITIES=tests/capabilities/ci-android-emulator.json APPIUM_URL=http://127.0.0.1:4723 npx playwright test -c playwright.platform.config.ts tests/cross-platform
+          script: PLATFORM=android CAPABILITIES=tests/capabilities/ci-android-emulator.local.json APPIUM_URL=http://127.0.0.1:4723 npx playwright test -c playwright.platform.config.ts --timeout=600000 tests/cross-platform
 
       - name: 📦 Upload report and Appium log
         if: always()
@@ -133,6 +136,12 @@ jobs:
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
+      - name: 🔨 Prebuild WebDriverAgent for the simulator
+        # Builds WDA ahead of the session (the driver's documented `build-wda`
+        # script), so the first session does not spend minutes in xcodebuild
+        # inside the Playwright timeout. The session then reuses the build.
+        run: appium driver run xcuitest build-wda
+
       - name: 🧾 Write the capabilities file (simulator, Settings)
         env:
           SIM_UDID: ${{ steps.simulator.outputs.udid }}
@@ -143,8 +152,8 @@ jobs:
               | .["appium:udid"] = $udid
               | .["appium:bundleId"] = "com.apple.Preferences"
               | .["appium:wdaLaunchTimeout"] = 240000' \
-            tests/capabilities/ios.example.json > tests/capabilities/ci-ios-simulator.json
-          cat tests/capabilities/ci-ios-simulator.json
+            tests/capabilities/ios.example.json > tests/capabilities/ci-ios-simulator.local.json
+          cat tests/capabilities/ci-ios-simulator.local.json
 
       - name: 🚀 Start Appium
         run: |
@@ -153,7 +162,7 @@ jobs:
           echo "Appium did not start"; cat appium-ios.log; exit 1
 
       - name: 🧪 Run the cross-platform spec on the simulator
-        run: PLATFORM=ios CAPABILITIES=tests/capabilities/ci-ios-simulator.json APPIUM_URL=http://127.0.0.1:4723 npx playwright test -c playwright.platform.config.ts tests/cross-platform
+        run: PLATFORM=ios CAPABILITIES=tests/capabilities/ci-ios-simulator.local.json APPIUM_URL=http://127.0.0.1:4723 npx playwright test -c playwright.platform.config.ts --timeout=600000 tests/cross-platform
 
       - name: 📦 Upload report and Appium log
         if: always()

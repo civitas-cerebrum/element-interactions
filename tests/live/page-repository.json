@@ -19,7 +19,7 @@
           "elementName": "backButton",
           "selector": {
             "accessibility id": "BackButton",
-            "fallback": { "class chain": "**/XCUIElementTypeNavigationBar/XCUIElementTypeButton[1]" }
+            "fallback": { "class chain": "**/XCUIElementTypeNavigationBar[`name == \"General\"`]/XCUIElementTypeButton[1]" }
           }
         }
       ]

@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test';
+import { resolvePlatform } from './src';
 
 /**
  * Platform runs (CONTRACT C1, C2): the cross-platform spec and the live device
@@ -11,7 +12,20 @@ import { defineConfig } from '@playwright/test';
  * gesture of a fresh iOS session can take 15-30 s. No `use.baseURL`: a device
  * run opens no browser. (The cross-platform spec's web run belongs to the
  * default config, `npm run test:unit`, which has the test site's baseURL.)
+ *
+ * CI may need more headroom than 180 s (an iOS simulator builds
+ * WebDriverAgent on first use): pass Playwright's `--timeout <ms>` on the
+ * command line rather than editing this file.
  */
+const platform = resolvePlatform(undefined);
+if (platform === 'web') {
+    throw new Error(
+        'playwright.platform.config.ts runs device platforms only, but the platform resolved to "web" (PLATFORM unset, empty or "web"). '
+        + 'Set PLATFORM=ios or PLATFORM=android with CAPABILITIES and APPIUM_URL; '
+        + 'the web run of tests/cross-platform belongs to the default config (npx playwright test tests/cross-platform).',
+    );
+}
+
 export default defineConfig({
     testDir: './tests',
     testMatch: ['cross-platform/**/*.spec.ts', 'live/**/*.spec.ts'],

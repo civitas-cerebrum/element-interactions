@@ -1,7 +1,7 @@
 import { test as base } from '@playwright/test';
-import * as fs from 'fs';
 import * as path from 'path';
 import { baseFixture, resolvePlatform } from '../../src';
+import { requireSettingsCapabilities } from './settingsGuard';
 
 /**
  * The fixture of the cross-platform spec: one `baseFixture` call that serves
@@ -16,12 +16,15 @@ import { baseFixture, resolvePlatform } from '../../src';
  *
  * The capabilities file must name the built-in Settings app
  * (`appium:bundleId: com.apple.Preferences` on iOS,
- * `appium:appPackage: com.android.settings` on Android).
+ * `appium:appPackage: com.android.settings` on Android) and nothing that
+ * installs or resets (see `settingsGuard.ts`).
  */
 export const platform = resolvePlatform(undefined);
 
 const stepsTest = baseFixture(base, path.join(__dirname, 'page-repository.json'), {
     platform,
+    // Generous: the first gesture in a fresh iOS session took 15-30 s live.
+    timeout: 60_000,
     session: { reset: 'relaunch' },
 });
 
@@ -38,30 +41,15 @@ export const test = stepsTest.extend<{ startScreen: void }>({
     }, { auto: true }],
 });
 
-/** The app each device platform's page entries describe. */
-const SETTINGS_APP: Partial<Record<string, { key: string; id: string }>> = {
-    ios: { key: 'appium:bundleId', id: 'com.apple.Preferences' },
-    android: { key: 'appium:appPackage', id: 'com.android.settings' },
-};
-
 /**
- * A `beforeAll` guard: on a device platform the capabilities file must name
- * the built-in Settings app, because the page entries describe it and the
- * spec is read-only only there. It runs before the session opens, so a file
- * naming another app is refused without launching it. A no-op on web.
+ * A `beforeAll` guard: on a device platform the capabilities file must target
+ * only the built-in Settings app, because the page entries describe it and the
+ * spec is read-only only there (rules in `settingsGuard.ts`). It runs before
+ * the session opens, so an unsafe file is refused without launching anything.
+ * A no-op on web.
  */
 export function requireSettingsApp(): void {
-    const expected = SETTINGS_APP[platform];
-    if (!expected) return;
-    const file = process.env.CAPABILITIES;
-    if (!file) throw new Error(`CAPABILITIES is not set: a ${platform} run needs the path of a capabilities file.`);
-    const capabilities = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), file), 'utf-8')) as Record<string, unknown>;
-    if (capabilities[expected.key] !== expected.id) {
-        throw new Error(
-            `The cross-platform spec drives the built-in Settings app read-only: the capabilities file "${file}" must set `
-            + `"${expected.key}": "${expected.id}" on ${platform}, found ${JSON.stringify(capabilities[expected.key])}.`,
-        );
-    }
+    requireSettingsCapabilities(platform);
 }
 
 export { expect } from '@playwright/test';

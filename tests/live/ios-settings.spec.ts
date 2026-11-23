@@ -1,7 +1,7 @@
 import { test as base, expect } from '@playwright/test';
-import * as fs from 'fs';
 import * as path from 'path';
 import { baseFixture, resolvePlatform, PlatformNotSupportedError } from '../../src';
+import { requireSettingsCapabilities } from '../cross-platform/settingsGuard';
 
 /**
  * Live iOS check of the platform steps against the built-in Settings app on a
@@ -15,15 +15,16 @@ import { baseFixture, resolvePlatform, PlatformNotSupportedError } from '../../s
  *     npx playwright test -c playwright.platform.config.ts tests/live
  *
  * The capabilities file is a flat W3C object (see tests/capabilities/README.md)
- * with `"appium:bundleId": "com.apple.Preferences"`; the spec refuses any other
- * app before a session is opened.
+ * with `"appium:bundleId": "com.apple.Preferences"` and no `appium:app`,
+ * `appium:otherApps`, `appium:options`, `browserName`, `appium:fullReset: true`
+ * or `appium:noReset: false`; the spec refuses anything else before a session
+ * is opened (tests/cross-platform/settingsGuard.ts).
  *
  * The row labels and the General navigation bar title are read in English
  * (`General`); the accessibility ids (`com.apple.settings.*`) do not depend on
  * the device language.
  */
 const platform = resolvePlatform(undefined);
-const SETTINGS_BUNDLE_ID = 'com.apple.Preferences';
 const ROOT = 'SettingsRoot';
 const GENERAL = 'GeneralScreen';
 
@@ -38,18 +39,9 @@ test.describe('live iOS Settings (read-only)', () => {
     test.skip(platform !== 'ios', 'Live iOS check: runs only when PLATFORM=ios (with CAPABILITIES and APPIUM_URL).');
     test.describe.configure({ timeout: 300_000 });
 
-    test.beforeAll(() => {
-        // Runs before the session opens: this read-only spec targets Settings only.
-        const file = process.env.CAPABILITIES;
-        if (!file) throw new Error('CAPABILITIES is not set: the live iOS check needs the path of a capabilities file.');
-        const capabilities = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), file), 'utf-8')) as Record<string, unknown>;
-        if (capabilities['appium:bundleId'] !== SETTINGS_BUNDLE_ID) {
-            throw new Error(
-                `The live iOS check is read-only on Settings: the capabilities file "${file}" must set `
-                + `"appium:bundleId": "${SETTINGS_BUNDLE_ID}", found ${JSON.stringify(capabilities['appium:bundleId'])}.`,
-            );
-        }
-    });
+    // Runs before the session opens: refuses any file that is not the Settings
+    // app read-only (no other app, no install, no reset). See settingsGuard.ts.
+    test.beforeAll(() => requireSettingsCapabilities(platform));
 
     test('opens Settings in the foreground', async ({ steps }) => {
         await steps.verifyAppInForeground();
@@ -93,7 +85,8 @@ test.describe('live iOS Settings (read-only)', () => {
     test('navigates into General and back with the on-screen back button', async ({ steps }) => {
         await steps.scrollIntoView('generalRow', ROOT, { direction: 'down' });
         await steps.click('generalRow', ROOT);
-        await steps.verifyPresence('title', GENERAL);
+        // Polls through the push animation until the General title reads "General".
+        await steps.verifyText('title', GENERAL, 'General');
         await steps.click('backButton', GENERAL);
         await steps.verifyPresence('generalRow', ROOT);
         await steps.verifyAbsence('title', GENERAL);

@@ -9,6 +9,7 @@ import { test, expect, requireSettingsApp } from './fixture';
  *
  *   web:     the docker test site — home page -> Submission Form -> sidebar home link.
  *   ios:     Settings (read-only) — root -> General -> the navigation bar's back button.
+ *            (English device language: the General title is matched by its localized name.)
  *   android: Settings (read-only) — home -> System -> "Navigate up" (entries provisional:
  *            not yet verified on a device).
  *

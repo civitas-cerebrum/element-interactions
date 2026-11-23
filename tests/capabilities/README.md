@@ -5,7 +5,7 @@ run picks one with `CAPABILITIES` and the library sends its content exactly as
 written: it adds, defaults and rewrites nothing.
 
 ```
-PLATFORM=<platform> CAPABILITIES=tests/capabilities/<device>.json APPIUM_URL=<appium-server-url-with-base-path> \
+PLATFORM=<platform> CAPABILITIES=tests/capabilities/<device>.local.json APPIUM_URL=<appium-server-url-with-base-path> \
   npx playwright test -c playwright.platform.config.ts
 ```
 
@@ -13,12 +13,14 @@ PLATFORM=<platform> CAPABILITIES=tests/capabilities/<device>.json APPIUM_URL=<ap
 
 | File | Targets |
 |---|---|
-| `android.example.json` | An Android device or emulator through UiAutomator2. Placeholders for the device name and serial; `com.example.app` as the app. Used by the unit tests and as the template of the `android-emulator` job in `.github/workflows/platform.yml`, which writes its own file with the emulator's values and `com.android.settings`. |
-| `ios.example.json` | An iPhone (device or simulator) through XCUITest. Placeholders for the device name and UDID; `com.example.app` as the app. Used by the unit tests and as the template of the `ios-simulator` job, which writes its own file with the booted simulator's values and `com.apple.Preferences`. |
+| `android.example.json` | An Android device or emulator through UiAutomator2. Placeholders for the device name and serial; `com.example.app` as the app. Used by the unit tests and as the template of the `android-emulator` job in `.github/workflows/platform.yml`, which writes its own file (`ci-android-emulator.local.json`) with the emulator's values and `com.android.settings`. |
+| `ios.example.json` | An iPhone (device or simulator) through XCUITest. Placeholders for the device name and UDID; `com.example.app` as the app. Used by the unit tests and as the template of the `ios-simulator` job, which writes its own file (`ci-ios-simulator.local.json`) with the booted simulator's values and `com.apple.Preferences`. |
 
-The example files are templates: copy one to a new file (for example
-`tests/capabilities/my-iphone.json`), fill in the real values and keep that
-copy out of version control when it names a real device.
+The example files are templates: copy one to a new file named
+`<name>.local.json` (for example `tests/capabilities/my-iphone.local.json`) and
+fill in the real values. `tests/capabilities/*.local.json` is in `.gitignore`,
+so a file naming a real device stays out of version control. The CI jobs write
+their files under the same naming (`ci-*.local.json`).
 
 ## Shape
 
@@ -42,6 +44,16 @@ A mobile **browser** session (a file with `browserName`) must also set
 `"wdio:enforceWebDriverClassic": true`; without it WebdriverIO 10 adds BiDi
 capabilities to the session, so the file would no longer be sent as written,
 and the fixture refuses it. Native-app files do not need it.
+
+## The Settings specs
+
+`tests/cross-platform` and `tests/live` drive only the built-in Settings app,
+read-only. Before any session opens they refuse a capabilities file unless the
+app id is the Settings app (`appium:bundleId: com.apple.Preferences` on iOS,
+`appium:appPackage: com.android.settings` on Android) and it has no
+`appium:app`, `appium:otherApps`, `appium:options` or `browserName` key, no
+`appium:fullReset` other than `false` and no `appium:noReset` other than
+`true` (`tests/cross-platform/settingsGuard.ts`).
 
 ## No secrets
 
