@@ -1,21 +1,44 @@
 // Enums
 export * from './enum/Options';
 
-// Supporting Action Classes
-export { Navigation } from './interactions/Navigation';
-export type { ExpectNoRequestOptions, ExpectRequestMethod, WaitUntilState, WaitForNetworkIdleOptions, LoadState } from './interactions/Navigation';
-export { Verifications } from './interactions/Verification';
-export { Interactions } from './interactions/Interaction';
-export { Extractions } from './interactions/Extraction';
-export { BrowserRequest } from './interactions/BrowserRequest';
-export type { BrowserResponse, BrowserRequestOptions } from './interactions/BrowserRequest';
+// Supporting Action Classes (Playwright family; the historical names are kept)
+export { Navigation, Navigation as PlaywrightNavigation } from './playwright/PlaywrightNavigation';
+export type { ExpectNoRequestOptions, ExpectRequestMethod, WaitUntilState, WaitForNetworkIdleOptions, LoadState } from './playwright/PlaywrightNavigation';
+export { Verifications, Verifications as PlaywrightVerifications } from './playwright/PlaywrightVerifications';
+export type { VerifyOptions, VisualMatchPrimitiveOptions } from './playwright/PlaywrightVerifications';
+export { Interactions, Interactions as PlaywrightInteractions } from './playwright/PlaywrightInteractions';
+export { Extractions, Extractions as PlaywrightExtractions } from './playwright/PlaywrightExtractions';
+export { BrowserRequest } from './playwright/BrowserRequest';
+export type { BrowserResponse, BrowserRequestOptions } from './playwright/BrowserRequest';
+export { PlaywrightGestures } from './playwright/PlaywrightGestures';
+export { PlaywrightDevice } from './playwright/PlaywrightDevice';
+export { PlaywrightFactory } from './playwright/PlaywrightFactory';
+export type { PlaywrightFactoryOptions } from './playwright/PlaywrightFactory';
+
+// Platform contract: family interfaces, platform vocabulary, not-supported error
+export type {
+    IInteractions,
+    IVerifications,
+    VerifiableState,
+    IExtractions,
+    INavigation,
+    IUtils,
+    IGestures,
+    Direction,
+    IDevice,
+    Orientation,
+    PermissionState,
+    IInteractionFactory,
+} from './interfaces';
+export type { Platform, DriverFamily } from './compat/elementRepository';
+export { PLATFORMS, isPlatformName, familyOf, PlatformNotSupportedError } from './compat/elementRepository';
 
 // Utilities
 export { reformatDateString } from './utils/DateUtilities';
 export { Utils } from './utils/ElementUtilities';
 
 // Element Interactions Facade
-export { ElementInteractions } from './interactions/facade/ElementInteractions';
+export { ElementInteractions } from './playwright/ElementInteractions';
 
 // Re-exports from @civitas-cerebrum/element-repository
 export type { Element, ElementResolutionOptions, ElementActionOptions } from '@civitas-cerebrum/element-repository';

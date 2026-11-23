@@ -1,6 +1,6 @@
 import { Locator } from '@playwright/test';
 import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
-import { ElementInteractions } from '../interactions/facade/ElementInteractions';
+import { ElementInteractions } from '../playwright/ElementInteractions';
 import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ScreenshotOptions, IsVisibleOptions } from '../enum/Options';
 import {
     ElementSnapshot,

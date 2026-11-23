@@ -1,13 +1,13 @@
 import { Page, Response, Locator } from '@playwright/test';
 import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
-import { ElementInteractions } from '../interactions/facade/ElementInteractions';
+import { ElementInteractions } from '../playwright/ElementInteractions';
 import { Utils } from '../utils/ElementUtilities';
 import { EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
 import { SqlClient, SqlResult, QueryBuilder, UnsupportedEngineException } from '@civitas-cerebrum/sql-client';
 import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions, StorageVerifyOptions, WindowVerifyOptions, VisualMatchOptions, VisualMaskTarget } from '../enum/Options';
-import { BrowserResponse, BrowserRequestOptions } from '../interactions/BrowserRequest';
-import { ExpectNoRequestOptions, WaitUntilState, WaitForNetworkIdleOptions, LoadState } from '../interactions/Navigation';
+import { BrowserResponse, BrowserRequestOptions } from '../playwright/BrowserRequest';
+import { ExpectNoRequestOptions, WaitUntilState, WaitForNetworkIdleOptions, LoadState } from '../playwright/PlaywrightNavigation';
 import { stepLog as log } from '../logger/Logger';
 import { ElementAction } from './ElementAction';
 import { isListEntry } from './listEntry';

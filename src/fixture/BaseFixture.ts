@@ -1,4 +1,4 @@
-import { ElementInteractions } from '../interactions/facade/ElementInteractions';
+import { ElementInteractions } from '../playwright/ElementInteractions';
 import { ElementRepository } from '@civitas-cerebrum/element-repository';
 import { EmailClientConfig } from '@civitas-cerebrum/email-client';
 import { ContextStore } from '@civitas-cerebrum/context-store';

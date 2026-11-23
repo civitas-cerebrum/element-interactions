@@ -98,7 +98,7 @@ test.describe('Verifications — direct method validation', () => {
 
   test('presence — passes for visible element, fails for hidden', async ({ page, steps }) => {
     await steps.navigateTo('/buttons');
-    const { Verifications } = await import('../src/interactions/Verification');
+    const { Verifications } = await import('../src/playwright/PlaywrightVerifications');
     const shortVerify = new Verifications(page, 2000);
 
     await shortVerify.presence(new WebElement(page.locator('[data-testid="btn-primary"]')));
@@ -116,7 +116,7 @@ test.describe('Verifications — direct method validation', () => {
 
   test('attribute — fails for wrong attribute value', async ({ page, steps }) => {
     await steps.navigateTo('/buttons');
-    const { Verifications } = await import('../src/interactions/Verification');
+    const { Verifications } = await import('../src/playwright/PlaywrightVerifications');
     const shortVerify = new Verifications(page, 2000);
     const el = new WebElement(page.locator('[data-testid="btn-primary"]'));
 
@@ -143,7 +143,7 @@ test.describe('Verifications — direct method validation', () => {
 
   test('inputValue — fails when value does not match', async ({ page, steps }) => {
     await steps.navigateTo('/forms');
-    const { Verifications } = await import('../src/interactions/Verification');
+    const { Verifications } = await import('../src/playwright/PlaywrightVerifications');
     const shortVerify = new Verifications(page, 2000);
 
     const locator = page.locator('#name');
@@ -225,7 +225,7 @@ test.describe('Verifications — direct method validation', () => {
 
   test('urlContains — fails when URL does not match', async ({ page, steps }) => {
     await steps.navigateTo('/buttons');
-    const { Verifications } = await import('../src/interactions/Verification');
+    const { Verifications } = await import('../src/playwright/PlaywrightVerifications');
     const shortVerify = new Verifications(page, 2000);
 
     await shortVerify.urlContains('buttons');

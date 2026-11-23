@@ -1,4 +1,5 @@
 import { Page, expect, Locator } from '@playwright/test';
+import type { IVerifications } from '../interfaces/IVerifications';
 type LocatorAssertions = ReturnType<typeof expect<Locator>>;
 import { CountVerifyOptions, TextVerifyOptions } from '../enum/Options';
 
@@ -40,7 +41,7 @@ function resolveLocator(target: WebElement): Locator {
  * It standardizes timeouts and includes advanced custom, robust verifications
  * (like image decoding) to keep your test assertions clean and reliable.
  */
-export class Verifications {
+export class Verifications implements IVerifications {
     /** The standard timeout applied to all verifications in this class. */
     private ELEMENT_TIMEOUT: number;
 

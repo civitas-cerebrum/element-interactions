@@ -1,4 +1,5 @@
 import { Page, test, errors } from '@playwright/test';
+import type { IInteractions } from '../interfaces/IInteractions';
 import { ClickOptions, DropdownSelectOptions, DropdownSelectType, DragAndDropOptions, ListedElementMatch, ActionTimeoutOptions, TextMatcher } from '../enum/Options';
 import { Utils } from '../utils/ElementUtilities';
 import { Element, WebElement } from '@civitas-cerebrum/element-repository';
@@ -94,7 +95,7 @@ export function classifyClickFailure(error: unknown): ClickFailureClass {
  * Every method takes an `Element` from the repository. Wrap raw Playwright
  * Locators via `new WebElement(locator)` at the call site if you need to bridge.
  */
-export class Interactions {
+export class Interactions implements IInteractions {
     private ELEMENT_TIMEOUT: number;
     private utils: Utils;
 

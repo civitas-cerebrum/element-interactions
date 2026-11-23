@@ -1,6 +1,6 @@
 import { Locator } from '@playwright/test';
 import { Element, WebElement } from '@civitas-cerebrum/element-repository';
-import { Verifications } from '../interactions/Verification';
+import { Verifications } from '../playwright/PlaywrightVerifications';
 
 /**
  * Snapshot of an element's state at a single point in time.

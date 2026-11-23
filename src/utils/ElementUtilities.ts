@@ -1,4 +1,5 @@
 import { WebElement } from '@civitas-cerebrum/element-repository';
+import type { IUtils } from '../interfaces/IUtils';
 import { log } from '../logger/Logger';
 
 /**
@@ -7,7 +8,7 @@ import { log } from '../logger/Logger';
  * All waits go through `Element.waitFor` rather than raw Playwright so the
  * framework works consistently across web and platform drivers.
  */
-export class Utils {
+export class Utils implements IUtils {
     static readonly SOFT_PROBE_MS = 2_000;
     private readonly timeout: number;
     constructor(timeout: number = 30000) {

@@ -1,4 +1,5 @@
 import { Page, Response, Route, errors } from '@playwright/test';
+import type { INavigation } from '../interfaces/INavigation';
 import { logger } from '../logger/Logger';
 
 const log = logger('navigate');
@@ -110,7 +111,7 @@ function scrubQuery(url: string): string {
  * negative companion `expectNoRequest` — so request observation lives next to
  * the navigation calls that typically trigger requests.
  */
-export class Navigation {
+export class Navigation implements INavigation {
 
     /**
      * Initializes the Navigation class.

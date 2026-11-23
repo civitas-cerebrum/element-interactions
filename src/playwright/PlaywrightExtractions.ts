@@ -1,4 +1,5 @@
 import { Page } from '@playwright/test';
+import type { IExtractions } from '../interfaces/IExtractions';
 import { Utils } from '../utils/ElementUtilities';
 import { ScreenshotOptions } from '../enum/Options';
 import { WebElement } from '@civitas-cerebrum/element-repository';
@@ -12,7 +13,7 @@ import { WebElement } from '@civitas-cerebrum/element-repository';
  * Every method takes an `Element` from the repository. Wrap raw Playwright
  * Locators via `new WebElement(locator)` at the call site if you need to bridge.
  */
-export class Extractions {
+export class Extractions implements IExtractions {
     private ELEMENT_TIMEOUT: number;
     private utils: Utils;
 

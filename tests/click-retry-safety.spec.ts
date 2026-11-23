@@ -1,6 +1,6 @@
 import { test, expect } from './fixture/StepFixture';
 import { errors, type Page } from '@playwright/test';
-import { Interactions, classifyClickFailure, isTimeoutError } from '../src/interactions/Interaction';
+import { Interactions, classifyClickFailure, isTimeoutError } from '../src/playwright/PlaywrightInteractions';
 import { WebElement } from '@civitas-cerebrum/element-repository';
 
 /**
