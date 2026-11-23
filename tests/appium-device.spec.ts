@@ -587,7 +587,7 @@ test.describe('readText on ios: the label, falling back to the value', () => {
         expect(await iosStrategy.readText(nativeElement('', { label: '', value: '   ' }).el)).toBe('');
     });
 
-    for (const type of ['XCUIElementTypeTextField', 'XCUIElementTypeSecureTextField', 'XCUIElementTypeTextView']) {
+    for (const type of ['XCUIElementTypeTextField', 'XCUIElementTypeSecureTextField', 'XCUIElementTypeTextView', 'XCUIElementTypeSearchField']) {
         test(`a ${type} reads its typed value over its label`, async () => {
             const { el } = nativeElement('typed text', { label: 'Email', value: 'typed text', type });
             expect(await iosStrategy.readText(el)).toBe('typed text');

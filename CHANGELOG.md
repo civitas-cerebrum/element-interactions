@@ -58,8 +58,8 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   normalised, first item in list order; a RegExp tested as is), while
   `repo.getByText` on a device prefers an exact match.
 - **Visible text on iOS** is the element's `label`, falling back to its
-  `value` (never `name`; on a text field, secure text field or text view the
-  `value` wins), not WebdriverIO's raw `getText()`, which answers `value`
+  `value` (never `name`; on a text field, secure text field, text view or
+  search field the `value` wins), not WebdriverIO's raw `getText()`, which answers `value`
   first. Every device text read (text verifications and matchers, `getText`,
   `getAll`, order checks, listed-element and `getByText` matching, probes with
   `containsText`) goes through the platform strategy's `readText`; Android
@@ -136,6 +136,8 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   WebdriverIO 10 requires Node `>=22.23.4 <23 || >=24.22.1 <25 || >=26.12.1`.
 - `@civitas-cerebrum/element-repository` 0.4.0 must be published to npm before
   this version can be installed.
+- On a device `getText` returns `''` (never `null`) when an element has no
+  text.
 - Android is implemented and unit-tested against mock drivers, but not yet
   verified on a device.
 

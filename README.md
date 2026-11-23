@@ -683,7 +683,8 @@ On `macos` and `windows` no step runs: the session start throws `Platform "<p>" 
 
 Notes for the shared steps on a device:
 
-* **Visible text on iOS is the element's `label`, falling back to its `value`**, not WebdriverIO's raw `getText()` (which answers `value` first, so a settings row with a badge would read as its badge count); `name` (usually the accessibility id) is never read, and on a text field, secure text field or text view the typed `value` wins. Every text read of the shared steps (`verifyText*`, `getText`, `getAll`, `verifyOrder`, `verifyListOrder`, listed-element `text`, matcher `text`, `isVisible({ containsText })`) uses it. Android reads the element's text.
+* **Visible text on iOS is the element's `label`, falling back to its `value`**, not WebdriverIO's raw `getText()` (which answers `value` first, so a settings row with a badge would read as its badge count); `name` (usually the accessibility id) is never read, and on a text field, secure text field, text view or search field the typed `value` wins. Every text read of the shared steps (`verifyText*`, `getText`, `getAll`, `verifyOrder`, `verifyListOrder`, listed-element `text`, matcher `text`, `isVisible({ containsText })`) uses it. Android reads the element's text.
+* **A control's value (switch state, slider position) is read with `getInputValue` / `verifyInputValue`, not `getText`**; `getText` returns the visible label.
 * **Verifications poll.** Every `verify*` step and every `steps.expect(...)` / `steps.on(...)` matcher retries until its timeout on every platform.
 * **A fatal driver error fails at once.** A dead session, an invalid selector or a lost server connection is not retried: verifications, list presence, listed-element steps and probes fail at once with the driver's error instead of at the timeout, and such an error never counts as "absent" or "not visible".
 * **`verifyAbsence`** passes when the element is absent or not displayed, polling until the timeout; `"list": true` entries pass when no item of the list is displayed.
@@ -776,19 +777,19 @@ The iOS job prebuilds WebDriverAgent (`appium driver run xcuitest build-wda`) be
 
 The library is unit-tested on both platforms with mock drivers, and the cross-platform spec runs on web in the default suite.
 
-**Verified on a real iPhone (iOS Settings app, read-only):**
+**Verified on a real iPhone (iOS Settings app, read-only):** iOS 26, Appium 3 with the XCUITest driver, WebdriverIO 10, on 2026-11-23.
 
 | Area | Status |
 |---|---|
-| Worker-scoped session from a capabilities file; app relaunch before every test | _to be verified_ |
-| `verifyAppInForeground`, `verifyCount`, `verifyText`, `verifyTextContains` (polling) | _to be verified_ |
-| `scrollIntoView` with `direction`, `getBoundingBox` | _to be verified_ |
-| `swipeScreen` up and down | _to be verified_ |
-| `scrollUntilFound` down and back up | _to be verified_ |
-| `click` into a screen and back through the on-screen back button; `verifyPresence`, `verifyAbsence` | _to be verified_ |
-| `getPageSource` | _to be verified_ |
-| A web-only step and `pressBack` throw `PlatformNotSupportedError` on iOS | _to be verified_ |
-| The cross-platform spec (`tests/cross-platform`) on iOS | _to be verified_ |
+| Worker-scoped session opened from a capabilities file; app relaunched before every test | ✅ verified |
+| `verifyAppInForeground`, `verifyCount`, `verifyText` (label-first iOS text, polling), `verifyTextContains` | ✅ verified |
+| `scrollIntoView` with `direction: 'down'` to a row further down the list | ✅ verified |
+| `swipeScreen` up and down, checked with `getBoundingBox` | ✅ verified |
+| `scrollUntilFound` down and back up | ✅ verified |
+| `click` into General and back through the on-screen back button; `verifyPresence`, `verifyAbsence` | ✅ verified |
+| `getPageSource` | ✅ verified |
+| A web-only step (`getUrl`) and `pressBack` throw `PlatformNotSupportedError` on iOS | ✅ verified |
+| The cross-platform navigation spec (`tests/cross-platform/navigation.spec.ts`, the same file as the web run) on iOS, including its web-only step (`verifyUrlContains`) refused | ✅ verified |
 
 **Not yet verified on a device:**
 

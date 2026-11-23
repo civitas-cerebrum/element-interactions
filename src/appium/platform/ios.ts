@@ -24,6 +24,7 @@ export const IOS_TEXT_INPUT_TYPES: readonly string[] = Object.freeze([
     'XCUIElementTypeTextField',
     'XCUIElementTypeSecureTextField',
     'XCUIElementTypeTextView',
+    'XCUIElementTypeSearchField',
 ]);
 
 /**
@@ -33,8 +34,9 @@ export const IOS_TEXT_INPUT_TYPES: readonly string[] = Object.freeze([
  * ({@link IOS_TEXT_INPUT_TYPES}) a non-empty `value` wins over a `label`.
  * `label` and `value` are read together; `type` is read only when both are
  * non-empty, the one case where it decides, so an ordinary labelled element
- * costs two attribute reads. (A text input with a label and an empty value
- * reads its label; XCUITest usually reports a placeholder as its value.)
+ * costs two attribute reads. An empty text input reports its placeholder as
+ * its value, so it reads the placeholder; use `getInputValue` /
+ * `verifyInputValue` for the typed value.
  */
 export async function iosReadText(element: Element): Promise<string> {
     const [label, value] = (await Promise.all([
