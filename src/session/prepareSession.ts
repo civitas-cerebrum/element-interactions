@@ -13,7 +13,12 @@ export interface PreparedSession {
     /** The app under test read from the file; `undefined` when the file names none. */
     appId: string | undefined;
     reset: 'relaunch' | 'none';
+    /** With `reset: 'relaunch'`: how long the app may take to reach the foreground, in ms. */
+    relaunchTimeout: number;
 }
+
+/** Default of `session.relaunchTimeout`, in ms. */
+export const RELAUNCH_TIMEOUT_MS = 15_000;
 
 /**
  * Resolves `session` options for `platform` without opening anything: checks
@@ -35,6 +40,10 @@ export function prepareSession(platform: Platform, options: SessionOptions = {},
     if (reset !== 'relaunch' && reset !== 'none') {
         throw new Error(`session.reset must be 'relaunch' or 'none', got "${String(reset)}".`);
     }
+    const relaunchTimeout = options.relaunchTimeout ?? RELAUNCH_TIMEOUT_MS;
+    if (typeof relaunchTimeout !== 'number' || !Number.isFinite(relaunchTimeout) || relaunchTimeout < 0) {
+        throw new Error(`session.relaunchTimeout must be a non-negative, finite number of ms, got ${String(relaunchTimeout)}.`);
+    }
     const { file, capabilities } = loadCapabilities(options.capabilities, platform, env);
     if (capabilities.browserName !== undefined && capabilities['wdio:enforceWebDriverClassic'] !== true) {
         throw new Error(
@@ -54,5 +63,5 @@ export function prepareSession(platform: Platform, options: SessionOptions = {},
         );
     }
     const server = resolveServer(options.server, env);
-    return { context: { platform, capabilities, server }, capabilitiesFile: file, appId, reset };
+    return { context: { platform, capabilities, server }, capabilitiesFile: file, appId, reset, relaunchTimeout };
 }

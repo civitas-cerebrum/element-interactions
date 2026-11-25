@@ -12,7 +12,7 @@ import {
     macosStrategy,
     windowsStrategy,
 } from '../src/appium';
-import { MissingAppIdError } from '../src/appium/AppiumDevice';
+import { AppNotInForegroundError, MissingAppIdError } from '../src/appium/AppiumDevice';
 import { STRATEGY_METHODS } from '../src/appium/platform/notImplemented';
 import { IOS_SWIPE_INSET } from '../src/appium/platform/ios';
 import { ANDROID_SWIPE_INSET } from '../src/appium/platform/android';
@@ -237,8 +237,9 @@ for (const platform of ['android', 'ios'] as const) {
 
         test('every IDevice method is covered by the table', () => {
             // The two queries send nothing; the polling assertions are covered in appium-entry.spec.ts.
+            // waitForAppInForeground (not an IDevice method) is covered below.
             const notInTable = ['requireImplemented', 'supports', 'resolveAppId', 'pollDevice',
-                'verifyAppInForeground', 'verifyOrientation', 'verifyKeyboardShown', 'verifyContext'];
+                'verifyAppInForeground', 'verifyOrientation', 'verifyKeyboardShown', 'verifyContext', 'waitForAppInForeground'];
             expect(methodsOf(AppiumDevice, notInTable)).toEqual(Object.keys(EXPECTED).sort());
         });
 
@@ -325,6 +326,58 @@ for (const platform of ['android', 'ios'] as const) {
             }
         });
 
+        test('waitForAppInForeground polls queryAppState until 4, then sends nothing more', async () => {
+            const { device, calls, executeResults } = build();
+            executeResults['mobile: queryAppState'] = 3;
+            setTimeout(() => { executeResults['mobile: queryAppState'] = 4; }, 250);
+            await device.waitForAppInForeground(5000);
+            const key = platform === 'android' ? 'appId' : 'bundleId';
+            expect(calls.length).toBeGreaterThan(1);
+            expect(calls.every(c => c[1] === 'mobile: queryAppState' && (c[2] as Record<string, string>)[key] === APP[platform])).toBe(true);
+            const count = calls.length;
+            await new Promise(resolve => setTimeout(resolve, 150));
+            expect(calls).toHaveLength(count);
+        });
+
+        test('waitForAppInForeground times out with AppNotInForegroundError naming app, platform and last state', async () => {
+            const { device, executeResults } = build();
+            executeResults['mobile: queryAppState'] = 2;
+            const started = Date.now();
+            const error = await device.waitForAppInForeground(300).catch((e: unknown) => e);
+            expect(Date.now() - started).toBeLessThan(2000);
+            expect(error).toBeInstanceOf(AppNotInForegroundError);
+            expect((error as AppNotInForegroundError).message).toBe(
+                `App "${APP[platform]}" is not in the foreground on platform "${platform}" after 300 ms `
+                + '(last app state: 2, running in background (suspended)).',
+            );
+            expect((error as AppNotInForegroundError).lastState).toBe(2);
+        });
+
+        test('waitForAppInForeground with no answer at all names the last query error', async () => {
+            const { device, driver } = build();
+            (driver as unknown as { execute: () => Promise<never> }).execute = async () => { throw new Error('An unknown server-side error occurred'); };
+            const error = await device.waitForAppInForeground(200).catch((e: unknown) => e);
+            expect((error as Error).message).toBe(
+                `App "${APP[platform]}" is not in the foreground on platform "${platform}" after 200 ms `
+                + '(no app state could be read; last error: An unknown server-side error occurred).',
+            );
+        });
+
+        test('waitForAppInForeground rethrows a fatal driver error at once', async () => {
+            const { device, driver } = build();
+            let queries = 0;
+            (driver as unknown as { execute: () => Promise<never> }).execute = async () => {
+                queries++;
+                const dead = new Error('A session is either terminated or not started');
+                dead.name = 'invalid session id';
+                throw dead;
+            };
+            const started = Date.now();
+            await expect(device.waitForAppInForeground(10_000)).rejects.toThrow('A session is either terminated or not started');
+            expect(Date.now() - started).toBeLessThan(2000);
+            expect(queries).toBe(1);
+        });
+
         test('isKeyboardShown returns the driver answer as a boolean', async () => {
             const { device, executeResults } = build();
             executeResults['mobile: isKeyboardShown'] = true;
@@ -406,6 +459,7 @@ for (const platform of ['macos', 'windows'] as const) {
             for (const [method, { call }] of Object.entries(EXPECTED)) {
                 await expect(call(device), method).rejects.toThrow(message);
             }
+            await expect(device.waitForAppInForeground(100)).rejects.toThrow(message);
             expect(calls).toEqual([]);
         });
     });

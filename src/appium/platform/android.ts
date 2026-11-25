@@ -56,8 +56,11 @@ export const androidStrategy: PlatformStrategy = Object.freeze({
     async removeApp(driver: AppiumDriver, appId: string) {
         await mobile(driver, 'removeApp', { appId });
     },
+    async queryAppState(driver: AppiumDriver, appId: string) {
+        return await mobile<number>(driver, 'queryAppState', { appId });
+    },
     async isAppInForeground(driver: AppiumDriver, appId: string) {
-        return (await mobile<number>(driver, 'queryAppState', { appId })) === APP_STATE_FOREGROUND;
+        return (await androidStrategy.queryAppState(driver, appId)) === APP_STATE_FOREGROUND;
     },
     async openDeepLink(driver: AppiumDriver, url: string, appId?: string) {
         await mobile(driver, 'deepLink', appId ? { url, package: appId } : { url });

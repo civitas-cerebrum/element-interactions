@@ -207,6 +207,16 @@ test.describe('prepareSession', () => {
             .toStrictEqual({ platformName: 'Android', browserName: 'Chrome', 'wdio:enforceWebDriverClassic': true });
     });
 
+    test('relaunchTimeout defaults to 15000 ms; a given value is kept; a bad one is refused', () => {
+        expect(prepareSession('ios', { capabilities: IOS_EXAMPLE }, {}).relaunchTimeout).toBe(15_000);
+        expect(prepareSession('ios', { capabilities: IOS_EXAMPLE, relaunchTimeout: 0 }, {}).relaunchTimeout).toBe(0);
+        expect(prepareSession('ios', { capabilities: IOS_EXAMPLE, relaunchTimeout: 4000 }, {}).relaunchTimeout).toBe(4000);
+        for (const bad of [-1, Number.NaN, Infinity, '5000' as never]) {
+            expect(errorOf(() => prepareSession('ios', { capabilities: IOS_EXAMPLE, relaunchTimeout: bad }, {})).message)
+                .toBe(`session.relaunchTimeout must be a non-negative, finite number of ms, got ${String(bad)}.`);
+        }
+    });
+
     test('an unknown reset value is refused', () => {
         expect(errorOf(() => prepareSession('ios', { capabilities: IOS_EXAMPLE, reset: 'always' as never }, {})).message)
             .toBe(`session.reset must be 'relaunch' or 'none', got "always".`);

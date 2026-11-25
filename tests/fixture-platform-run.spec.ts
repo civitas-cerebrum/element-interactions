@@ -11,7 +11,7 @@ import * as path from 'path';
  * driver) is asserted here.
  */
 
-interface JsonResult { status: string; error?: { message?: string }; attachments: Array<{ name: string; contentType: string; body?: string }> }
+interface JsonResult { status: string; duration: number; error?: { message?: string }; attachments: Array<{ name: string; contentType: string; body?: string }> }
 interface JsonTest { expectedStatus: string; status: string; results: JsonResult[] }
 interface JsonSpec { title: string; tests: JsonTest[] }
 interface JsonSuite { specs?: JsonSpec[]; suites?: JsonSuite[] }
@@ -55,14 +55,14 @@ const names = (r: JsonResult | undefined) => (r?.attachments ?? [])
 const UNEXPECTED = ['evidence errors never mask the failure', 'fails and gets evidence', 'unexpected pass under test.fail() gets evidence'];
 
 test('the nested run ends unexpectedly exactly where it is built to', () => {
-    expect(bySpec.size).toBe(12);
+    expect(bySpec.size).toBe(17);
     expect([...outcome].filter(([, status]) => status !== 'expected').map(([title]) => title).sort()).toEqual(UNEXPECTED);
     expect([...outcome].filter(([, status]) => status === 'unexpected').map(([title]) => title).sort()).toEqual(UNEXPECTED);
     expect(exitCode).toBe(1);
 });
 
 /** Lifecycle events of the main ios session (the labelled sessions of other files left out). */
-const mainEvents = () => events.filter(e => !/^(hook-throws|stop-throws|macos) /.test(e));
+const mainEvents = () => events.filter(e => !/^(hook-throws|stop-throws|macos|foreground|foreground-never|foreground-dead|reset-none) /.test(e));
 
 test('one session per worker: started once, stopped once at worker teardown, relaunch before every test', () => {
     const main = mainEvents();
@@ -74,6 +74,62 @@ test('one session per worker: started once, stopped once at worker teardown, rel
     // Eight platform tests, each preceded by terminate + activate.
     expect(main.filter(e => e === 'execute mobile: terminateApp')).toHaveLength(8);
     expect(main.filter(e => e === 'execute mobile: activateApp')).toHaveLength(8);
+});
+
+/** The events of the session labelled `label`, label removed. */
+const labelled = (label: string) => events.filter(e => e.startsWith(`${label} `)).map(e => e.slice(label.length + 1));
+
+/** Playwright's error text without colour codes. */
+// eslint-disable-next-line no-control-regex
+const plain = (r: JsonResult | undefined) => (r?.error?.message ?? '').replace(/\u001b\[[0-9;]*m/g, '');
+
+test("relaunch: the body starts only once the app is in the foreground, so a non-polling first read sees the app", () => {
+    for (const title of ['the body starts with the app in the foreground: its first read sees the app',
+        'the next test waits for the foreground again after its own relaunch']) {
+        expect(bySpec.get(title)!.status, title).toBe('passed');
+    }
+    const perTest = [
+        'execute mobile: terminateApp', 'execute mobile: activateApp',
+        'execute mobile: queryAppState', 'appState 3',
+        'execute mobile: queryAppState', 'appState 3',
+        'execute mobile: queryAppState', 'appState 3',
+        'execute mobile: queryAppState', 'appState 4',
+        'body',
+    ];
+    expect(labelled('foreground').filter(e => e !== 'start' && e !== 'stop')).toEqual([...perTest, ...perTest]);
+});
+
+test('relaunch: an app that never reaches the foreground fails the setup within the bound, naming app, platform and last state', () => {
+    const r = bySpec.get('an app that never reaches the foreground fails the setup within the bound')!;
+    expect(r.status).toBe('failed');
+    expect(outcome.get('an app that never reaches the foreground fails the setup within the bound')).toBe('expected');
+    expect(plain(r)).toContain(
+        `session.reset 'relaunch': app "com.example.app" is not in the foreground on platform "android" 500 ms after it was `
+        + 'terminated and activated (last app state: 3, running in background). The test did not start. If the app needs '
+        + 'longer to come up, raise session.relaunchTimeout (default 15000 ms).',
+    );
+    expect(r.duration).toBeLessThan(5000);
+    const seen = labelled('foreground-never');
+    expect(seen).not.toContain('body');
+    expect(seen.filter(e => e === 'execute mobile: queryAppState').length).toBeGreaterThan(1);
+    expect(seen.filter(e => e.startsWith('appState ')).every(e => e === 'appState 3')).toBe(true);
+});
+
+test('relaunch: a dead session during the foreground wait fails the setup at once with the driver error', () => {
+    const r = bySpec.get('a dead session during the foreground wait fails the setup at once')!;
+    expect(r.status).toBe('failed');
+    expect(plain(r)).toContain('A session is either terminated or not started');
+    expect(plain(r)).not.toContain('is not in the foreground');
+    // relaunchTimeout is 20000 ms: failing at once is well below it.
+    expect(r.duration).toBeLessThan(5000);
+    const seen = labelled('foreground-dead');
+    expect(seen.filter(e => e === 'execute mobile: queryAppState')).toHaveLength(1);
+    expect(seen).not.toContain('body');
+});
+
+test("reset 'none': no relaunch and no foreground query before the test", () => {
+    expect(bySpec.get("reset 'none' neither relaunches the app nor waits for it")!.status).toBe('passed');
+    expect(labelled('reset-none')).toEqual(['start', 'body', 'stop']);
 });
 
 test('onSessionStarted throwing still stops the session, and its error fails the test', () => {

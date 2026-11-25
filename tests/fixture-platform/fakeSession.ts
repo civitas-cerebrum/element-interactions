@@ -36,6 +36,23 @@ function rawElement(selector: string, calls: Call[]) {
     };
 }
 
+/** The page source the fake device shows while the app under test is in the foreground. */
+export const APP_SOURCE = '<AppiumAUT><XCUIElementTypeApplication name="Example"/></AppiumAUT>';
+/** The page source the fake device shows while the app is not in the foreground (the home screen). */
+export const LAUNCHER_SOURCE = '<hierarchy><node package="com.example.launcher"/></hierarchy>';
+
+/** How the fake app reaches the foreground after `mobile: activateApp`. */
+export interface FakeAppOptions {
+    /**
+     * How many `mobile: queryAppState` queries after an activation still see
+     * the app in the background (state 3) before it is in the foreground
+     * (state 4). Default 0: in the foreground at once. `Infinity`: never.
+     */
+    backgroundQueries?: number;
+    /** Every `mobile: queryAppState` fails with a dead-session driver error. */
+    deadSession?: boolean;
+}
+
 export interface FakeSession {
     provider: SessionProvider;
     /** Every command the fake driver received (driver-level and element-level). */
@@ -54,10 +71,10 @@ export interface FakeSession {
  * parent process can count them after the worker is gone. With `label`, each
  * line is prefixed with it (`<label> start`), so several sessions can share a log.
  */
-export function fakeSession(logFile?: string, label?: string): FakeSession {
+export function fakeSession(logFile?: string, label?: string, app: FakeAppOptions = {}): FakeSession {
     const mock = mockDriver({
         capabilities: { platformName: 'iOS', 'appium:bundleId': 'com.example.app' },
-        pageSource: '<AppiumAUT><XCUIElementTypeApplication name="Example"/></AppiumAUT>',
+        pageSource: APP_SOURCE,
     });
     const event = (line: string) => { if (logFile) fs.appendFileSync(logFile, `${label ? `${label} ` : ''}${line}\n`); };
     const driver = mock.driver as unknown as Record<string, unknown>;
@@ -72,9 +89,31 @@ export function fakeSession(logFile?: string, label?: string): FakeSession {
     };
     driver.$ = async (selector: string) => rawElement(selector, mock.calls);
     driver.$$ = async (selector: string) => [rawElement(selector, mock.calls)];
+    // The app under test: in the foreground (4) when the session opens, not
+    // running (1) after terminateApp, and in the background (3) for
+    // `backgroundQueries` queries after activateApp.
+    let appState = 4;
+    let pendingBackground = 0;
     driver.execute = async (script: string, args: unknown) => {
         event(`execute ${script}`);
-        return originalExecute(script, args);
+        const result = await originalExecute(script, args);
+        if (script === 'mobile: terminateApp') appState = 1;
+        if (script === 'mobile: activateApp') {
+            pendingBackground = app.backgroundQueries ?? 0;
+            appState = pendingBackground > 0 ? 3 : 4;
+        }
+        if (script === 'mobile: queryAppState') {
+            if (app.deadSession) {
+                const error = new Error('A session is either terminated or not started');
+                error.name = 'invalid session id';
+                throw error;
+            }
+            if (pendingBackground > 0) pendingBackground--;
+            else if (appState === 3) appState = 4;
+            event(`appState ${appState}`);
+            return appState;
+        }
+        return result;
     };
     const takeScreenshot = driver.takeScreenshot as () => Promise<string>;
     const getPageSource = driver.getPageSource as () => Promise<string>;
@@ -84,7 +123,8 @@ export function fakeSession(logFile?: string, label?: string): FakeSession {
     };
     driver.getPageSource = async () => {
         if (state.failEvidence) throw new Error('page source unavailable');
-        return getPageSource();
+        const source = await getPageSource();
+        return appState === 4 ? source : LAUNCHER_SOURCE;
     };
     driver.deleteSession = async () => { mock.calls.push(['deleteSession']); };
 

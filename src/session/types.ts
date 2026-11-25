@@ -60,8 +60,19 @@ export interface SessionOptions {
     server?: string | ServerOptions;
     /** Default: the built-in Appium provider ({@link AppiumSessionProvider}). */
     provider?: SessionProvider;
-    /** Between tests. Default `'relaunch'` (terminate, then activate the app under test); `'none'` leaves the app as it is. */
+    /**
+     * Between tests. Default `'relaunch'`: terminate, then activate the app
+     * under test, then wait until it is in the foreground (`relaunchTimeout`)
+     * before the test body starts. `'none'` leaves the app as it is.
+     */
     reset?: 'relaunch' | 'none';
+    /**
+     * With `reset: 'relaunch'`: how long, in ms, the app under test may take
+     * to reach the foreground after it was activated. Default
+     * 15000. When it expires the test fails in
+     * its setup, naming the app id, the platform and the last app state.
+     */
+    relaunchTimeout?: number;
     /** Called once per worker, right after the session opened. */
     onSessionStarted?: (driver: WebdriverIO.Browser) => Promise<void>;
 }

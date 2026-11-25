@@ -563,6 +563,7 @@ export const test = baseFixture(base, 'tests/e2e/page-repository.json', {
     // capabilities: 'tests/capabilities/iphone.json',  // PATH to a JSON file; default: E2E_CAPABILITIES
     // server: 'http://<appium-server>:4723/wd/hub',    // URL with base path, or an object; default: APPIUM_URL
     reset: 'relaunch',           // 'relaunch' (default) | 'none'
+    // relaunchTimeout: 15000,   // ms the relaunched app may take to reach the foreground
     onSessionStarted: async (driver) => { /* once per worker, after the session opened */ },
   },
 });
@@ -574,6 +575,7 @@ export { expect } from '@playwright/test';
 * **`session.server`** — a URL string including the Appium base path (`http://127.0.0.1:4723`, `https://<appium-server>/wd/hub`), or an object `{ protocol, hostname, port, path, user, key }`. Default: `APPIUM_URL`, else `http://127.0.0.1:4723`. A field the object form leaves out comes from `http://127.0.0.1:4723`, never from `APPIUM_URL`. `user` / `key` left out are filled from `APPIUM_USER` / `APPIUM_KEY` in every form, and are never read from the capabilities file.
 * **`session.provider`** — a `SessionProvider` (`start(context)` / `stop(driver)`) that opens and closes the WebdriverIO session. Default: the built-in `AppiumSessionProvider` (WebdriverIO `remote()`). Bring your own for a vendor that needs more than connection options (tunnels, app upload).
 * **`session.reset`** — what happens between tests (see [Reset policy](#reset-policy)).
+* **`session.relaunchTimeout`** — with `reset: 'relaunch'`, how long (ms) the app under test may take to reach the foreground after it was activated. Default `15000`.
 * **`session.onSessionStarted(driver)`** — called once per worker, right after the session opened. If it throws, the session is still closed and the error fails the test.
 
 The web-only options `blockedOrigins`, `mutationInjection` (unless `false`), `interceptionRetry` and the object form of `screenshotOnFailure` throw when `baseFixture()` is called for a platform, instead of being ignored. `timeout`, `repoTimeout`, `emailCredentials`, `apiBaseUrl` / `apiProviders` and `dbUrl` / `dbProviders` work on every platform.
@@ -658,7 +660,7 @@ Capabilities live **only** in JSON files, one per device or device class, conven
 
 One WebdriverIO session per Playwright worker, opened by the first test that needs it and closed at worker teardown (closing is time-boxed and best-effort: a dead device cannot stall the teardown or hide a test's own error).
 
-* `reset: 'relaunch'` (default) — before **every** test, the first one included, the app under test is terminated and activated again. It needs the app id from the capabilities file; without one the run fails before a session opens, naming the key to add.
+* `reset: 'relaunch'` (default) — before **every** test, the first one included, the app under test is terminated and activated again. It needs the app id from the capabilities file; without one the run fails before a session opens, naming the key to add. The test body starts only once the app is in the foreground (`mobile: queryAppState` reports 4), so even a first step that does not poll (`getPageSource`) sees the app, not the home screen. If the app is not in the foreground within `session.relaunchTimeout` (default 15000 ms) the test fails in its setup: `session.reset 'relaunch': app "<app id>" is not in the foreground on platform "<platform>" <timeout> ms after it was terminated and activated (last app state: 3, running in background). ...`. A dead session fails at once with the driver's error.
 * `reset: 'none'` — the app is left as the previous test left it.
 
 Data reset (`appium:noReset`, `appium:fullReset`) is a capability and stays in the file.

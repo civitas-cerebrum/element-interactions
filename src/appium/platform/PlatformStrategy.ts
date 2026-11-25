@@ -58,6 +58,13 @@ export interface PlatformStrategy {
     backgroundApp(driver: AppiumDriver, seconds: number): Promise<void>;
     installApp(driver: AppiumDriver, appPath: string): Promise<void>;
     removeApp(driver: AppiumDriver, appId: string): Promise<void>;
+    /**
+     * Appium's `mobile: queryAppState` for the app: 0 not installed, 1 not
+     * running, 2 running in background (suspended), 3 running in background,
+     * 4 running in foreground ({@link APP_STATE_NAMES}).
+     */
+    queryAppState(driver: AppiumDriver, appId: string): Promise<number>;
+    /** Whether {@link PlatformStrategy.queryAppState} is {@link APP_STATE_FOREGROUND}. */
     isAppInForeground(driver: AppiumDriver, appId: string): Promise<boolean>;
     /** Opens `url`; `appId` (when known) names the app that should handle it. */
     openDeepLink(driver: AppiumDriver, url: string, appId?: string): Promise<void>;
@@ -94,6 +101,15 @@ export interface PlatformStrategy {
  * suspended, 3 running in background, 4 running in foreground).
  */
 export const APP_STATE_FOREGROUND = 4;
+
+/** What each `mobile: queryAppState` result means, for error messages. */
+export const APP_STATE_NAMES: Readonly<Record<number, string>> = Object.freeze({
+    0: 'not installed',
+    1: 'not running',
+    2: 'running in background (suspended)',
+    3: 'running in background',
+    4: 'running in foreground',
+});
 
 /** Calls an Appium `mobile:` extension command with one argument object. */
 export async function mobile<T = unknown>(driver: AppiumDriver, command: string, args: Record<string, unknown> = {}): Promise<T> {

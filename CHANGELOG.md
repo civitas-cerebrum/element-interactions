@@ -101,7 +101,10 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `E2E_PLATFORM`, else `web`; an empty value counts as unset). On `android` /
   `ios` the fixture opens one WebdriverIO session per worker from a
   capabilities file, relaunches the app under test before every test
-  (`session.reset`, default `'relaunch'`; `'none'` skips it), calls
+  (`session.reset`, default `'relaunch'`; `'none'` skips it) and starts the
+  test only once the app is in the foreground (`session.relaunchTimeout`,
+  default 15000 ms; otherwise the setup fails naming the app id, the platform
+  and the last app state; a dead session fails at once), calls
   `session.onSessionStarted` once, and closes the session at worker teardown
   (time-boxed, never masking a test error). No browser starts; `page` /
   `context` throw `PlatformNotSupportedError`. A failed test gets

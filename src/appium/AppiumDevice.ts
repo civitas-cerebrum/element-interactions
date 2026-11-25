@@ -1,8 +1,8 @@
 import { PlatformNotSupportedError, type Platform } from '@civitas-cerebrum/element-repository';
 import type { DeviceVerifyOptions, IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
-import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
+import { APP_STATE_FOREGROUND, APP_STATE_NAMES, type AppiumDriver, type PlatformStrategy } from './platform/PlatformStrategy';
 import { notImplementedError } from './platform/notImplemented';
-import { pollUntil } from '../utils/poll';
+import { pollUntil, PollTimeoutError } from '../utils/poll';
 
 /**
  * Thrown when a call needs an app id and there is none: none was passed and
@@ -23,6 +23,34 @@ export class MissingAppIdError extends Error {
         );
         this.name = 'MissingAppIdError';
     }
+}
+
+/**
+ * Thrown by {@link AppiumDevice.waitForAppInForeground} when the app is not
+ * in the foreground before the timeout. `lastState` is the last
+ * `mobile: queryAppState` answer (`undefined` when no query answered;
+ * `lastError` then holds the last query error).
+ */
+export class AppNotInForegroundError extends Error {
+    constructor(
+        readonly appId: string,
+        readonly platform: Platform,
+        readonly timeout: number,
+        readonly lastState: number | undefined,
+        readonly lastError?: unknown,
+    ) {
+        super(`App "${appId}" is not in the foreground on platform "${platform}" after ${timeout} ms (${describeAppState(lastState, lastError)}).`);
+        this.name = 'AppNotInForegroundError';
+    }
+}
+
+/** `last app state: 3, running in background`, or the last query error when no query answered. */
+export function describeAppState(state: number | undefined, error?: unknown): string {
+    if (state === undefined) {
+        const why = error === undefined ? '' : `; last error: ${error instanceof Error ? error.message : String(error)}`;
+        return `no app state could be read${why}`;
+    }
+    return `last app state: ${state}, ${APP_STATE_NAMES[state] ?? 'unknown state'}`;
 }
 
 /** The context name Appium uses for the native UI. */
@@ -130,6 +158,29 @@ export class AppiumDevice implements IDevice {
     async isAppInForeground(appId?: string): Promise<boolean> {
         this.requireImplemented();
         return this.strategy.isAppInForeground(this.driver, this.resolveAppId('isAppInForeground', appId));
+    }
+
+    /**
+     * Polls `mobile: queryAppState` until the app (default: the app under
+     * test) is in the foreground, for `timeout` ms. A fatal driver error (dead
+     * session, lost connection) is rethrown at once; any other query error is
+     * retried. On timeout it throws {@link AppNotInForegroundError} with the
+     * last observed app state.
+     */
+    async waitForAppInForeground(timeout: number, appId?: string): Promise<void> {
+        this.requireImplemented();
+        const id = this.resolveAppId('waitForAppInForeground', appId);
+        try {
+            await pollUntil(
+                () => this.strategy.queryAppState(this.driver, id),
+                state => state === APP_STATE_FOREGROUND,
+                { timeout },
+            );
+        } catch (error) {
+            if (!(error instanceof PollTimeoutError)) throw error;
+            const state = typeof error.lastValue === 'number' ? error.lastValue : undefined;
+            throw new AppNotInForegroundError(id, this.platform, timeout, state, error.lastError);
+        }
     }
 
     // ── System navigation and keyboard ──

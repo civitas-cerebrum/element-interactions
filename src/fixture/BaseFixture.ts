@@ -24,8 +24,9 @@ import {
 import { Steps } from '../steps/CommonSteps';
 import { log } from '../logger/Logger';
 import { AppiumFactory } from '../appium/AppiumFactory';
+import { AppNotInForegroundError, describeAppState } from '../appium/AppiumDevice';
 import { AppiumSessionProvider } from '../session/AppiumSessionProvider';
-import { prepareSession, type PreparedSession } from '../session/prepareSession';
+import { prepareSession, RELAUNCH_TIMEOUT_MS, type PreparedSession } from '../session/prepareSession';
 import type { SessionOptions, SessionProvider } from '../session/types';
 import { PlatformInteractions } from './PlatformInteractions';
 
@@ -521,7 +522,9 @@ function webOnlyOptionsGiven(options: BaseFixtureOptions | undefined): string[] 
  * `options.session.provider` (default {@link AppiumSessionProvider}) with
  * exactly the capabilities file's content, `onSessionStarted` called once,
  * closed at worker teardown. Before every test the app under test is
- * relaunched (terminate + activate) unless `session.reset` is `'none'`.
+ * relaunched (terminate + activate) unless `session.reset` is `'none'`, and
+ * the test body starts only once it is in the foreground
+ * (`session.relaunchTimeout`, default 15000ms; otherwise the setup fails).
  * `repo` has the platform as its active platform; `steps` and `interactions`
  * are built from an `AppiumFactory`. No browser starts: `page` and `context`
  * throw `PlatformNotSupportedError`. A failed test gets the device screenshot
@@ -664,9 +667,7 @@ function platformFixture(
         // Per test: relaunch the app before it, attach the evidence after a failure.
         _eiPlatformTest: [async ({ _eiPlatformSession }, use, testInfo) => {
             const { driver, prepared } = _eiPlatformSession;
-            if (prepared.reset === 'relaunch') {
-                await new AppiumFactory(driver, platform, { appId: prepared.appId }).createDevice().resetApp();
-            }
+            if (prepared.reset === 'relaunch') await relaunchApp(driver, platform, prepared);
             await use();
             if (testFailed(testInfo)) {
                 await attachPlatformEvidence(driver, testInfo, screenshotEnabled);
@@ -713,6 +714,31 @@ function platformFixture(
         },
     });
     return extended as unknown as BaseFixtureTest;
+}
+
+/**
+ * The `'relaunch'` reset: terminates and activates the app under test, then
+ * waits until it is in the foreground (polling `mobile: queryAppState` for
+ * `session.relaunchTimeout`), so the test body never starts on the home
+ * screen or another app. A fatal driver error fails at once; an app that
+ * never reaches the foreground fails the setup, naming the app id, the
+ * platform and the last app state.
+ */
+async function relaunchApp(driver: WebdriverIO.Browser, platform: Platform, prepared: PreparedSession): Promise<void> {
+    const device = new AppiumFactory(driver, platform, { appId: prepared.appId }).createDevice();
+    await device.resetApp();
+    try {
+        await device.waitForAppInForeground(prepared.relaunchTimeout);
+    } catch (error) {
+        if (!(error instanceof AppNotInForegroundError)) throw error;
+        throw new Error(
+            `session.reset 'relaunch': app "${error.appId}" is not in the foreground on platform "${error.platform}" `
+            + `${error.timeout} ms after it was terminated and activated (${describeAppState(error.lastState, error.lastError)}). `
+            + `The test did not start. If the app needs longer to come up, raise session.relaunchTimeout `
+            + `(default ${RELAUNCH_TIMEOUT_MS} ms).`,
+            { cause: error },
+        );
+    }
 }
 
 /**
