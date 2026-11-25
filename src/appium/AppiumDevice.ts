@@ -2,7 +2,7 @@ import { PlatformNotSupportedError, type Platform } from '@civitas-cerebrum/elem
 import type { DeviceVerifyOptions, IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
 import { APP_STATE_FOREGROUND, APP_STATE_NAMES, type AppiumDriver, type PlatformStrategy } from './platform/PlatformStrategy';
 import { notImplementedError } from './platform/notImplemented';
-import { pollUntil, PollTimeoutError } from '../utils/poll';
+import { describeValue, pollUntil, PollTimeoutError } from '../utils/poll';
 
 /**
  * Thrown when a call needs an app id and there is none: none was passed and
@@ -28,7 +28,8 @@ export class MissingAppIdError extends Error {
 /**
  * Thrown by {@link AppiumDevice.waitForAppInForeground} when the app is not
  * in the foreground before the timeout. `lastState` is the last
- * `mobile: queryAppState` answer (`undefined` when no query answered;
+ * `mobile: queryAppState` answer as the driver returned it (a number from 0
+ * to 4 from a working driver; `undefined` when no query answered, and
  * `lastError` then holds the last query error).
  */
 export class AppNotInForegroundError extends Error {
@@ -36,7 +37,7 @@ export class AppNotInForegroundError extends Error {
         readonly appId: string,
         readonly platform: Platform,
         readonly timeout: number,
-        readonly lastState: number | undefined,
+        readonly lastState: unknown,
         readonly lastError?: unknown,
     ) {
         super(`App "${appId}" is not in the foreground on platform "${platform}" after ${timeout} ms (${describeAppState(lastState, lastError)}).`);
@@ -44,12 +45,17 @@ export class AppNotInForegroundError extends Error {
     }
 }
 
-/** `last app state: 3, running in background`, or the last query error when no query answered. */
-export function describeAppState(state: number | undefined, error?: unknown): string {
+/**
+ * `last app state: 3, running in background`; a last answer that is not a
+ * number is shown as the driver returned it; with no answer at all, the last
+ * query error.
+ */
+export function describeAppState(state: unknown, error?: unknown): string {
     if (state === undefined) {
         const why = error === undefined ? '' : `; last error: ${error instanceof Error ? error.message : String(error)}`;
         return `no app state could be read${why}`;
     }
+    if (typeof state !== 'number') return `last answer: ${describeValue(state)}, not an app state`;
     return `last app state: ${state}, ${APP_STATE_NAMES[state] ?? 'unknown state'}`;
 }
 
@@ -178,8 +184,7 @@ export class AppiumDevice implements IDevice {
             );
         } catch (error) {
             if (!(error instanceof PollTimeoutError)) throw error;
-            const state = typeof error.lastValue === 'number' ? error.lastValue : undefined;
-            throw new AppNotInForegroundError(id, this.platform, timeout, state, error.lastError);
+            throw new AppNotInForegroundError(id, this.platform, timeout, error.lastValue, error.lastError);
         }
     }
 

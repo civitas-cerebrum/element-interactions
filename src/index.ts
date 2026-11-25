@@ -78,7 +78,7 @@ export type { ElementSnapshot, ExpectContext } from './steps/ExpectMatchers';
 // Appium family: the factory and its public types. The per-family classes and
 // platform strategies stay internal; `Steps` reaches them through the factory.
 // (WebdriverIO is imported only by the session provider, on first use.)
-export { AppiumFactory, MissingAppIdError } from './appium';
+export { AppiumFactory, AppNotInForegroundError, MissingAppIdError } from './appium';
 export type { AppiumFactoryOptions, AppiumDriver } from './appium';
 
 // Timeouts of the polling device steps, catchable by type

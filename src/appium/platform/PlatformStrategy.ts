@@ -60,7 +60,7 @@ export interface PlatformStrategy {
     removeApp(driver: AppiumDriver, appId: string): Promise<void>;
     /**
      * Appium's `mobile: queryAppState` for the app: 0 not installed, 1 not
-     * running, 2 running in background (suspended), 3 running in background,
+     * running, 2 running in background or suspended, 3 running in background,
      * 4 running in foreground ({@link APP_STATE_NAMES}).
      */
     queryAppState(driver: AppiumDriver, appId: string): Promise<number>;
@@ -98,7 +98,7 @@ export interface PlatformStrategy {
 /**
  * The result of Appium's `mobile: queryAppState` meaning "running in
  * foreground" (0 not installed, 1 not running, 2 running in background
- * suspended, 3 running in background, 4 running in foreground).
+ * or suspended, 3 running in background, 4 running in foreground).
  */
 export const APP_STATE_FOREGROUND = 4;
 
@@ -106,7 +106,7 @@ export const APP_STATE_FOREGROUND = 4;
 export const APP_STATE_NAMES: Readonly<Record<number, string>> = Object.freeze({
     0: 'not installed',
     1: 'not running',
-    2: 'running in background (suspended)',
+    2: 'running in background or suspended',
     3: 'running in background',
     4: 'running in foreground',
 });

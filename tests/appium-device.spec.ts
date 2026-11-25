@@ -282,11 +282,13 @@ for (const platform of ['android', 'ios'] as const) {
             expect(appIdOf({ [otherBare]: 'com.example.other' })).toBeUndefined();
         });
 
-        test('MissingAppIdError is exported from the package entry points', async () => {
+        test('MissingAppIdError and AppNotInForegroundError are exported from the package entry points', async () => {
             const root = await import('../src/index');
             const appium = await import('../src/appium');
             expect(root.MissingAppIdError).toBe(MissingAppIdError);
             expect(appium.MissingAppIdError).toBe(MissingAppIdError);
+            expect(root.AppNotInForegroundError).toBe(AppNotInForegroundError);
+            expect(appium.AppNotInForegroundError).toBe(AppNotInForegroundError);
         });
 
         test('a missing app id is a MissingAppIdError naming the caller and the capability key', async () => {
@@ -348,7 +350,7 @@ for (const platform of ['android', 'ios'] as const) {
             expect(error).toBeInstanceOf(AppNotInForegroundError);
             expect((error as AppNotInForegroundError).message).toBe(
                 `App "${APP[platform]}" is not in the foreground on platform "${platform}" after 300 ms `
-                + '(last app state: 2, running in background (suspended)).',
+                + '(last app state: 2, running in background or suspended).',
             );
             expect((error as AppNotInForegroundError).lastState).toBe(2);
         });
@@ -361,6 +363,18 @@ for (const platform of ['android', 'ios'] as const) {
                 `App "${APP[platform]}" is not in the foreground on platform "${platform}" after 200 ms `
                 + '(no app state could be read; last error: An unknown server-side error occurred).',
             );
+        });
+
+        test('waitForAppInForeground names a last answer that is not a number as the driver returned it', async () => {
+            const { device, executeResults } = build();
+            executeResults['mobile: queryAppState'] = 'RUNNING';
+            const error = await device.waitForAppInForeground(200).catch((e: unknown) => e);
+            expect(error).toBeInstanceOf(AppNotInForegroundError);
+            expect((error as Error).message).toBe(
+                `App "${APP[platform]}" is not in the foreground on platform "${platform}" after 200 ms `
+                + '(last answer: "RUNNING", not an app state).',
+            );
+            expect((error as AppNotInForegroundError).lastState).toBe('RUNNING');
         });
 
         test('waitForAppInForeground rethrows a fatal driver error at once', async () => {

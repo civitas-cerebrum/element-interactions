@@ -5,7 +5,7 @@ export { AppiumVerifications } from './AppiumVerifications';
 export { AppiumExtractions } from './AppiumExtractions';
 export { AppiumNavigation } from './AppiumNavigation';
 export { AppiumGestures } from './AppiumGestures';
-export { AppiumDevice, MissingAppIdError, NATIVE_CONTEXT } from './AppiumDevice';
+export { AppiumDevice, AppNotInForegroundError, MissingAppIdError, NATIVE_CONTEXT } from './AppiumDevice';
 export {
     strategyFor,
     appIdFromCapabilities,

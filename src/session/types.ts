@@ -68,9 +68,9 @@ export interface SessionOptions {
     reset?: 'relaunch' | 'none';
     /**
      * With `reset: 'relaunch'`: how long, in ms, the app under test may take
-     * to reach the foreground after it was activated. Default
-     * 15000. When it expires the test fails in
-     * its setup, naming the app id, the platform and the last app state.
+     * to reach the foreground after it was activated. Default 15000. When it
+     * expires the test fails in its setup, naming the app id, the platform
+     * and the last app state.
      */
     relaunchTimeout?: number;
     /** Called once per worker, right after the session opened. */
