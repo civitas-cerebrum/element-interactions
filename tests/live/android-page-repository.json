@@ -1,0 +1,74 @@
+{
+  "pages": [
+    {
+      "name": "HomePage",
+      "platform": "android",
+      "elements": [
+        { "elementName": "grid", "selector": { "accessibility id": "home-grid" } },
+        { "elementName": "cards", "list": true, "selector": { "uiautomator": "new UiSelector().descriptionStartsWith(\"home-card-\")" } },
+        { "elementName": "elementsCard", "selector": { "accessibility id": "home-card-buttons" } },
+        { "elementName": "alertsCard", "selector": { "accessibility id": "home-card-alerts" } },
+        { "elementName": "interactionsCard", "selector": { "accessibility id": "home-card-sortable" } },
+        { "elementName": "edgeCasesCard", "selector": { "accessibility id": "home-card-longList" } }
+      ]
+    },
+    {
+      "name": "CategoryListPage",
+      "platform": "android",
+      "elements": [
+        { "elementName": "checkboxesItem", "selector": { "accessibility id": "category-item-checkboxes" } },
+        { "elementName": "alertsItem", "selector": { "accessibility id": "category-item-alerts" } },
+        { "elementName": "tallPageItem", "selector": { "accessibility id": "category-item-tall" } },
+        { "elementName": "longListItem", "selector": { "accessibility id": "category-item-longList" } }
+      ]
+    },
+    {
+      "name": "AlertsPage",
+      "platform": "android",
+      "elements": [
+        { "elementName": "infoButton", "selector": { "accessibility id": "alert-info" } },
+        { "elementName": "errorButton", "selector": { "accessibility id": "alert-error" } },
+        { "elementName": "status", "selector": { "accessibility id": "alert-status" } }
+      ]
+    },
+    {
+      "name": "AppDialog",
+      "platform": "android",
+      "elements": [
+        { "elementName": "okButton", "provisional": true, "note": "The positive button of the app's own dialog (a MaterialAlertDialog: android:id/button1), not a system alert. Unverified on a device yet.", "selector": { "id": "android:id/button1", "fallback": { "text": "OK" } } }
+      ]
+    },
+    {
+      "name": "CheckboxesPage",
+      "platform": "android",
+      "elements": [
+        { "elementName": "uncheckedCheckbox", "selector": { "accessibility id": "checkbox-unchecked" } },
+        { "elementName": "checkedCheckbox", "selector": { "accessibility id": "checkbox-checked" } },
+        { "elementName": "toggleOff", "selector": { "accessibility id": "toggle-off" } },
+        { "elementName": "toggleOn", "selector": { "accessibility id": "toggle-on" } },
+        { "elementName": "summary", "selector": { "accessibility id": "checkbox-state-summary" } }
+      ]
+    },
+    {
+      "name": "TallPage",
+      "platform": "android",
+      "elements": [
+        { "elementName": "section1", "selector": { "accessibility id": "tall-section-1" } },
+        { "elementName": "section3", "selector": { "accessibility id": "tall-section-3" } },
+        { "elementName": "section10", "selector": { "accessibility id": "tall-section-10" } }
+      ]
+    },
+    {
+      "name": "LongListPage",
+      "platform": "android",
+      "elements": [
+        { "elementName": "searchInput", "selector": { "accessibility id": "long-list-search" } },
+        { "elementName": "countLabel", "selector": { "accessibility id": "long-list-count" } },
+        { "elementName": "row", "list": true, "selector": { "uiautomator": "new UiSelector().descriptionStartsWith(\"long-list-item-\")" } },
+        { "elementName": "row1", "selector": { "accessibility id": "long-list-item-1" } },
+        { "elementName": "rowTitle", "selector": { "id": "android:id/text1" } },
+        { "elementName": "rowCategory", "selector": { "id": "android:id/text2" } }
+      ]
+    }
+  ]
+}

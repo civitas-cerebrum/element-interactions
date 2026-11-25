@@ -44,17 +44,16 @@
       "name": "StartScreen",
       "platform": "android",
       "elements": [
-        { "elementName": "landmark", "provisional": true, "note": "Unverified: no Android device yet. Android Settings home, the System row.", "selector": { "uiautomator": "new UiSelector().resourceId(\"android:id/title\").text(\"System\")" } },
-        { "elementName": "entries", "provisional": true, "note": "Unverified: no Android device yet. Row titles of Android Settings home.", "selector": { "id": "android:id/title" } },
-        { "elementName": "destinationEntry", "provisional": true, "note": "Unverified: no Android device yet. The System row; opening it changes nothing.", "selector": { "text": "System" } }
+        { "elementName": "landmark", "provisional": true, "note": "Unverified on a device yet. The test app's home grid (content-desc home-grid).", "selector": { "accessibility id": "home-grid" } },
+        { "elementName": "entries", "provisional": true, "note": "Unverified on a device yet. The category cards of the home grid (content-desc home-card-*).", "selector": { "uiautomator": "new UiSelector().descriptionStartsWith(\"home-card-\")" } },
+        { "elementName": "destinationEntry", "provisional": true, "note": "Unverified on a device yet. The Edge Cases card; it opens a category list and changes nothing.", "selector": { "accessibility id": "home-card-longList" } }
       ]
     },
     {
       "name": "DestinationScreen",
       "platform": "android",
       "elements": [
-        { "elementName": "landmark", "provisional": true, "note": "Unverified: no Android device yet. The System page title (uiautomator text first, then the collapsing toolbar title by xpath). English only.", "selector": { "uiautomator": "new UiSelector().text(\"System\")", "fallback": { "xpath": "//*[@resource-id='com.android.settings:id/collapsing_toolbar']//android.widget.TextView[@text='System']" } } },
-        { "elementName": "backButton", "provisional": true, "note": "Unverified: no Android device yet. The toolbar's up button.", "selector": { "accessibility id": "Navigate up" } }
+        { "elementName": "landmark", "provisional": true, "note": "Unverified on a device yet. The Long List row of the Edge Cases category list, present only on that list. No backButton entry: the test app has no on-screen back control, the fixture's goBack uses the system back on Android.", "selector": { "accessibility id": "category-item-longList" } }
       ]
     }
   ]

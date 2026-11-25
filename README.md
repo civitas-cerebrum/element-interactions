@@ -868,7 +868,7 @@ The library is unit-tested on both platforms with mock drivers, and the cross-pl
 
 **Not yet verified on a device:**
 
-* **Android: everything.** Android runs only against mock drivers so far; the Android page entries of the cross-platform spec are provisional.
+* **Android: everything.** Android runs only against mock drivers so far. The live Android spec (`tests/live/android-testapp.spec.ts`, against the test app `com.civitas.testapp`, which must already be installed) and the Android entries of the cross-platform spec (provisional) are written and wait for a device run. The device specs drive one app per platform: the built-in Settings app on iOS, the test app on Android (guard: `tests/cross-platform/appGuard.ts`).
 * iOS: app install / remove, deep links, `longPress`, `tapAt`, `pinch` / `zoom`, `hideKeyboard`, `setOrientation`, alerts, contexts on a hybrid app, `fill` on a text field, and `setPermission` (iOS `mobile: setPermission` may work on simulators only).
 * The CI workflow (emulator and simulator).
 * `macos` and `windows` are not implemented.

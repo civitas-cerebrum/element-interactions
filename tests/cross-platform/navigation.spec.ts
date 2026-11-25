@@ -1,5 +1,5 @@
 import { PlatformNotSupportedError } from '../../src';
-import { test, expect, requireSettingsApp } from './fixture';
+import { test, expect, requireDeviceApp } from './fixture';
 
 /**
  * One spec, unchanged on web, Android and iOS.
@@ -10,16 +10,18 @@ import { test, expect, requireSettingsApp } from './fixture';
  *   web:     the docker test site — home page -> Submission Form -> sidebar home link.
  *   ios:     Settings (read-only) — root -> General -> the navigation bar's back button.
  *            (English device language: the General title is matched by its localized name.)
- *   android: Settings (read-only) — home -> System -> "Navigate up" (entries provisional:
- *            not yet verified on a device).
+ *   android: the test app com.civitas.testapp — home grid -> the Edge Cases category list ->
+ *            system back (entries provisional: not yet verified on a device).
  *
  * Every step below is a shared step; nothing toggles, types or changes a setting.
- * The way back is an ON-SCREEN control, never `pressBack` (iOS has no back key).
+ * The way back (`goBack`, from the fixture) is the destination's ON-SCREEN back
+ * control on web and iOS (iOS has no back key); the Android test app has no
+ * on-screen back control, so there it is the system back.
  */
 test.describe('Cross-platform navigation', () => {
-    test.beforeAll(requireSettingsApp);
+    test.beforeAll(requireDeviceApp);
 
-    test('start screen -> destination -> back through the on-screen control', async ({ steps }) => {
+    test('start screen -> destination -> back to the start screen', async ({ steps, goBack }) => {
         await test.step('the start screen lists entries', async () => {
             await steps.verifyCount('entries', 'StartScreen', { greaterThan: 0 });
         });
@@ -34,8 +36,8 @@ test.describe('Cross-platform navigation', () => {
             await steps.verifyPresence('landmark', 'DestinationScreen');
         });
 
-        await test.step('the on-screen back control returns to the start screen', async () => {
-            await steps.click('backButton', 'DestinationScreen');
+        await test.step('going back returns to the start screen', async () => {
+            await goBack();
             await steps.verifyPresence('landmark', 'StartScreen');
             await steps.verifyAbsence('landmark', 'DestinationScreen');
         });

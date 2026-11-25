@@ -45,11 +45,13 @@ A mobile **browser** session (a file with `browserName`) must also set
 capabilities to the session, so the file would no longer be sent as written,
 and the fixture refuses it. Native-app files do not need it.
 
-## The Settings specs
+## The device specs
 
-`tests/cross-platform` and `tests/live` drive only the built-in Settings app,
-read-only. Before any session opens they check the capabilities file against an
-**allow-list** (`tests/cross-platform/settingsGuard.ts`) and refuse anything
+`tests/cross-platform` and `tests/live` drive exactly one app per platform: the
+built-in Settings app on iOS (read-only), and the test app
+`com.civitas.testapp` on Android (already installed: nothing is installed).
+Before any session opens they check the capabilities file against an
+**allow-list** (`tests/cross-platform/appGuard.ts`) and refuse anything
 else, naming the file and the key:
 
 - Keys are compared without a leading `appium:`. A file that sets the same key
@@ -64,19 +66,19 @@ else, naming the file and the key:
   `bundleId` on iOS, `appPackage` and (optional) `appActivity` on Android.
   Anything else (`app`, `otherApps`, `browserName`, `intentAction`,
   `optionalIntentArguments`, `processArguments`, ...) is refused whatever its
-  value.
-- The app is the Settings app: `appium:bundleId: com.apple.Preferences` on
-  iOS; `appium:appPackage: com.android.settings` on Android, with
-  `appium:appActivity`, when set, `.Settings` or `com.android.settings.Settings`.
+  value: no install, no second app, no browser.
+- The app: `appium:bundleId: com.apple.Preferences` on iOS;
+  `appium:appPackage: com.civitas.testapp` on Android, with
+  `appium:appActivity`, when set, `com.civitas.testapp.MainActivity` or
+  `.MainActivity`.
 - `appium:noReset` **must be present and `true`** (without it the driver's fast
   reset may clear app data); `appium:fullReset` is absent or `false`.
 - `autoAcceptAlerts`, `autoDismissAlerts` and `autoGrantPermissions` are absent
-  or exactly `false` (the spec never answers a dialog or grants a permission by
-  itself).
+  or exactly `false` (the specs never answer a dialog or grant a permission by
+  themselves).
 
 The example files keep a placeholder app (`com.example.app`), so they are
-refused as they stand; with the Settings app id set (as the CI jobs do) they
-pass.
+refused as they stand; with the platform's app id set they pass.
 
 ## No secrets
 

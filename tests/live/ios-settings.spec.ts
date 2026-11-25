@@ -1,7 +1,7 @@
 import { test as base, expect } from '@playwright/test';
 import * as path from 'path';
 import { baseFixture, resolvePlatform, PlatformNotSupportedError } from '../../src';
-import { requireSettingsCapabilities } from '../cross-platform/settingsGuard';
+import { requireAppCapabilities } from '../cross-platform/appGuard';
 
 /**
  * Live iOS check of the platform steps against the built-in Settings app on a
@@ -16,7 +16,7 @@ import { requireSettingsCapabilities } from '../cross-platform/settingsGuard';
  *
  * The capabilities file is a flat W3C object (see tests/capabilities/README.md)
  * checked against an ALLOW-LIST before a session is opened
- * (tests/cross-platform/settingsGuard.ts): only `platformName`,
+ * (tests/cross-platform/appGuard.ts): only `platformName`,
  * `automationName`, `deviceName`, `udid`, `platformVersion`, `bundleId`,
  * `newCommandTimeout`, `noReset`, `fullReset`, alert, permission and driver
  * timeout keys (each with or without `appium:`, never both, never
@@ -37,7 +37,7 @@ const platform = resolvePlatform(undefined);
 const ROOT = 'SettingsRoot';
 const GENERAL = 'GeneralScreen';
 
-// No `session.capabilities` here: the Settings guard checks the file named by
+// No `session.capabilities` here: the app guard checks the file named by
 // E2E_CAPABILITIES, so the session must open from that same file.
 const test = baseFixture(base, path.join(__dirname, 'page-repository.json'), {
     platform,
@@ -51,8 +51,8 @@ test.describe('live iOS Settings (read-only)', () => {
     test.describe.configure({ timeout: 300_000 });
 
     // Runs before the session opens: refuses any file that is not the Settings
-    // app read-only (no other app, no install, no reset). See settingsGuard.ts.
-    test.beforeAll(() => requireSettingsCapabilities(platform));
+    // app read-only (no other app, no install, no reset). See appGuard.ts.
+    test.beforeAll(() => requireAppCapabilities(platform));
 
     test('opens Settings in the foreground', async ({ steps }) => {
         await steps.verifyAppInForeground();
