@@ -14,7 +14,9 @@ import { DEVICE_POLL_ATTACH_MS } from './entry';
  * Value extraction for the Appium family. Element reads delegate to the
  * element's primitives (`getAttribute`, `inputValue`, `count`,
  * `boundingBox`, `screenshot`); text is the element's `textContent`
- * (trimmed; on iOS the label, falling back to the value). Web-only reads (CSS, HTML, page text,
+ * (trimmed; on iOS the label, falling back to the value; on Android a
+ * container with empty own text reads its descendants' text joined with
+ * spaces). Web-only reads (CSS, HTML, page text,
  * storage, window properties, scripts) throw `PlatformNotSupportedError`.
  * The device's page source is `IDevice.getPageSource()`.
  */

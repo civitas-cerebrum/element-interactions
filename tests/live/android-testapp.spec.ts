@@ -32,14 +32,7 @@ import { test, expect, platform, requireTestApp } from './android-fixture';
  * - `acceptAlert` / `dismissAlert`: the app raises no system alert; its
  *   Alerts screen opens the app's own dialog, closed here with its OK button.
  * - `installApp` / `removeApp`: nothing may be installed or removed.
- *
- * Steps that depend on element-repository fixes not in the installed version
- * are `test.fixme` with the reason: the checked state of a CheckBox / Switch
- * (read from `selected` instead of `checked`) and the text of a container row
- * (its own text is empty; the visible text is in its child TextViews).
  */
-const CHECKED_STATE_FIXME = 'element-repository reads the checked state from "selected"; a CheckBox / Switch reports it as "checked"';
-const CONTAINER_TEXT_FIXME = 'element-repository reads a container row\'s own (empty) text, not the text of its child TextViews';
 
 test.describe('live Android test app', () => {
     test.skip(platform !== 'android', 'Live Android check: runs only when E2E_PLATFORM=android (with E2E_CAPABILITIES and APPIUM_URL).');
@@ -218,39 +211,54 @@ test.describe('live Android test app', () => {
             await steps.verifyText('countLabel', 'LongListPage', 'Showing 200 of 200 items');
         });
 
-        test.fixme('getText and verifyText read a row container through its child text', { annotation: { type: 'fixme', description: CONTAINER_TEXT_FIXME } }, async ({ steps, openScreen }) => {
+        test('getText, verifyText, getAll and listed-element text read a row container as its child texts joined', async ({ steps, openScreen }) => {
+            // The row's own text is empty: its text is its TextViews' text,
+            // joined with single spaces in document order.
             await openScreen('longList');
             await steps.verifyText('row1', 'LongListPage');
-            await steps.verifyTextContains('row1', 'LongListPage', 'Item 1');
-            expect(await steps.getText('row1', 'LongListPage')).toContain('Alpha');
+            await steps.verifyText('row1', 'LongListPage', 'Item 1 Alpha');
+            await steps.verifyTextContains('row1', 'LongListPage', 'Alpha');
+            expect(await steps.getText('row1', 'LongListPage')).toBe('Item 1 Alpha');
             const rows = await steps.getAll('row', 'LongListPage');
-            expect(rows[0]).toContain('Item 1');
-            await steps.verifyListedElement('row', 'LongListPage', { text: 'Item 2', child: { pageName: 'LongListPage', elementName: 'rowCategory' }, expectedText: 'Beta' });
+            expect(rows.slice(0, 2)).toEqual(['Item 1 Alpha', 'Item 2 Beta']);
+            await steps.verifyListedElement('row', 'LongListPage', { text: { regex: '^Item 2 Beta$' }, child: { pageName: 'LongListPage', elementName: 'rowCategory' }, expectedText: 'Beta' });
         });
     });
 
     test.describe('checkboxes and switches', () => {
-        test.fixme('verifyState checked passes on the checkbox and switch that start checked', { annotation: { type: 'fixme', description: CHECKED_STATE_FIXME } }, async ({ steps, openScreen }) => {
+        test('verifyState checked passes on the checkbox and switch that start checked, and fails on an unchecked one', async ({ steps, openScreen }) => {
             await openScreen('checkboxes');
             await steps.verifyState('checkedCheckbox', 'CheckboxesPage', 'checked');
             await steps.verifyState('toggleOn', 'CheckboxesPage', 'checked');
             await steps.verifyText('summary', 'CheckboxesPage', 'Checked, Toggle on');
+            await expect(steps.verifyState('uncheckedCheckbox', 'CheckboxesPage', 'checked', 2000)).rejects.toThrow(/checked/);
+            await expect(steps.verifyState('toggleOff', 'CheckboxesPage', 'checked', 2000)).rejects.toThrow(/checked/);
         });
 
-        test.fixme('check checks an unchecked box and leaves a checked one checked', { annotation: { type: 'fixme', description: CHECKED_STATE_FIXME } }, async ({ steps, openScreen }) => {
+        test('check checks an unchecked box and leaves a checked one checked (no tap)', async ({ steps, openScreen }) => {
             await openScreen('checkboxes');
             await steps.check('uncheckedCheckbox', 'CheckboxesPage');
+            // Already checked: check is a no-op, so the box stays checked.
             await steps.check('checkedCheckbox', 'CheckboxesPage');
             await steps.verifyState('uncheckedCheckbox', 'CheckboxesPage', 'checked');
+            await steps.verifyState('checkedCheckbox', 'CheckboxesPage', 'checked');
             await steps.verifyText('summary', 'CheckboxesPage', 'Unchecked, Checked, Toggle on');
         });
 
-        test.fixme('uncheck unchecks a checked box and switch and leaves an unchecked one unchecked', { annotation: { type: 'fixme', description: CHECKED_STATE_FIXME } }, async ({ steps, openScreen }) => {
+        test('uncheck unchecks a checked box and switch and leaves an unchecked one unchecked (no tap)', async ({ steps, openScreen }) => {
             await openScreen('checkboxes');
             await steps.uncheck('checkedCheckbox', 'CheckboxesPage');
             await steps.uncheck('toggleOn', 'CheckboxesPage');
+            // Already unchecked: uncheck is a no-op, so the switch stays off.
             await steps.uncheck('toggleOff', 'CheckboxesPage');
             await steps.verifyText('summary', 'CheckboxesPage', 'None checked');
+            await expect(steps.verifyState('checkedCheckbox', 'CheckboxesPage', 'checked', 2000)).rejects.toThrow(/checked/);
+        });
+
+        test('check on a disabled checkbox fails without tapping it', async ({ steps, openScreen }) => {
+            await openScreen('checkboxes');
+            await expect(steps.on('disabledCheckbox', 'CheckboxesPage').timeout(3000).check()).rejects.toThrow(/is disabled/);
+            await steps.verifyText('summary', 'CheckboxesPage', 'Checked, Toggle on');
         });
     });
 

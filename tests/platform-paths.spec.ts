@@ -561,3 +561,103 @@ for (const platform of DEVICE_PLATFORMS) {
         });
     });
 }
+
+/**
+ * Android reads that element-repository answers differently from the raw
+ * UiAutomator2 wire values, as the steps see them: a container's text, a
+ * missing attribute, and the checked state with check / uncheck.
+ */
+test.describe('android element reads through the steps', () => {
+    /** Rows whose own text is empty: the visible text sits in two child TextViews (plus a hint, which is not text). */
+    function containerTree(): MockNode[] {
+        const rows: MockNode[] = [['Item 1', 'Alpha'], ['Item 2', 'Beta']].map(([title, category], i) => ({
+            match: '~row',
+            text: '',
+            attributes: { name: `r${i + 1}` },
+            children: [
+                { match: '~title', text: title },
+                { match: '~hint', text: 'Search', attributes: { 'showing-hint': 'true' } },
+                { match: '~category', text: category },
+            ],
+        }));
+        return [{ match: '~list', children: rows }, { match: '~title', text: 'Outside' }];
+    }
+
+    test('a container with empty own text reads its descendants\' text, joined with spaces in document order, hints left out', async () => {
+        const { steps } = deviceSteps('android', containerTree());
+        expect(await steps.getAll('rows', 'Screen')).toEqual(['Item 1 Alpha', 'Item 2 Beta']);
+        expect(await steps.getText('rows', 'Screen')).toBe('Item 1 Alpha');
+        await steps.verifyText('rows', 'Screen');
+        await steps.verifyText('rows', 'Screen', 'Item 1 Alpha');
+        await steps.verifyTextContains('rows', 'Screen', 'Alpha');
+        await steps.expect('rows', 'Screen').text.toBe('Item 1 Alpha');
+    });
+
+    test('listed-element text matching and the text strategy see a container\'s descendants\' text', async () => {
+        const { steps } = deviceSteps('android', containerTree());
+        expect(await steps.getListedElementData('rows', 'Screen', { text: 'beta', extractAttribute: 'name' })).toBe('r2');
+        expect(await steps.getListedElementData('rows', 'Screen', { text: { regex: '^Item 2 Beta$' }, extractAttribute: 'name' })).toBe('r2');
+        await steps.verifyListedElement('rows', 'Screen', { text: 'Item 2', child: '~category', expectedText: 'Beta' });
+        expect(await steps.getAll('rows', 'Screen', undefined, { strategy: 'text', text: 'Item 2 Beta' })).toEqual(['Item 2 Beta']);
+    });
+
+    test('a missing attribute reads as null, not the driver\'s "null" string', async () => {
+        const { steps } = deviceSteps('android', [{ match: '~status', text: 'Ready', attributes: { 'resource-id': 'app:id/status' } }]);
+        expect(await steps.getAttribute('status', 'Screen', 'resource-id')).toBe('app:id/status');
+        expect(await steps.getAttribute('status', 'Screen', 'hint')).toBeNull();
+        // An attribute filter never matches an element that lacks the attribute.
+        const rows = deviceSteps('android', listTree());
+        const error = await caught(() => rows.steps.getListedElementData('rows', 'Screen', { attribute: { name: 'missing', value: 'null' } }));
+        expect(error?.message).toMatch(/No listed element matched/);
+    });
+
+    /** A checkable control whose `checked` attribute flips on every tap (a radio button only ever checks). */
+    function control(className: string, initially: boolean, options: { checkable?: string; radio?: boolean } = {}) {
+        let checked = initially;
+        const node: MockNode = {
+            match: '~field',
+            text: 'Option',
+            attributes: { class: className, checkable: options.checkable ?? 'true', checked: () => String(checked) },
+            onClick: () => { checked = options.radio ? true : !checked; },
+        };
+        return { node, checked: () => checked };
+    }
+    const taps = (mock: ReturnType<typeof deviceSteps>['mock']) => mock.calls.filter(c => c[0] === 'click').length;
+
+    test('verifyState checked reads the checked attribute', async () => {
+        await deviceSteps('android', [control('android.widget.CheckBox', true).node]).steps.verifyState('field', 'Screen', 'checked');
+        const error = await caught(() => deviceSteps('android', [control('android.widget.Switch', false).node]).steps.verifyState('field', 'Screen', 'checked'));
+        expect(error?.message).toMatch(/checked/);
+    });
+
+    test('check and uncheck tap only when the state differs, and confirm the new state', async () => {
+        let c = control('android.widget.CheckBox', false);
+        let r = deviceSteps('android', [c.node]);
+        await r.steps.check('field', 'Screen');
+        await r.steps.check('field', 'Screen');
+        expect(taps(r.mock), 'one tap checks; checking a checked box taps nothing').toBe(1);
+        expect(c.checked()).toBe(true);
+
+        c = control('android.widget.Switch', true);
+        r = deviceSteps('android', [c.node]);
+        await r.steps.uncheck('field', 'Screen');
+        await r.steps.uncheck('field', 'Screen');
+        expect(taps(r.mock), 'one tap unchecks; unchecking an unchecked switch taps nothing').toBe(1);
+        expect(c.checked()).toBe(false);
+    });
+
+    test('uncheck refuses a checked radio button and check refuses a control that is not checkable, without a tap', async () => {
+        const radio = deviceSteps('android', [control('android.widget.RadioButton', true, { radio: true }).node]);
+        expect((await caught(() => radio.steps.uncheck('field', 'Screen')))?.message).toMatch(/is a radio button; select another option instead/);
+        const plain = deviceSteps('android', [control('android.widget.TextView', false, { checkable: 'false' }).node]);
+        expect((await caught(() => plain.steps.check('field', 'Screen')))?.message).toMatch(/is not checkable/);
+        expect(taps(radio.mock) + taps(plain.mock)).toBe(0);
+    });
+
+    test('a tap that does not change the state fails the step instead of passing', async () => {
+        const stuck: MockNode = { match: '~field', attributes: { class: 'android.widget.CheckBox', checkable: 'true', checked: 'false' } };
+        const { steps, mock } = deviceSteps('android', [stuck]);
+        expect((await caught(() => steps.check('field', 'Screen')))?.message).toMatch(/is still unchecked after clicking/);
+        expect(taps(mock)).toBe(1);
+    });
+});

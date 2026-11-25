@@ -207,7 +207,7 @@ export const DEVICE_PLATFORMS = ['android', 'ios'] as const;
 export interface MockNode {
     /** The selector strings this node answers to (exact string match, as the repository formats them). */
     match: string | string[];
-    /** Visible text: `getText()` and, unless `attributes.label` is given, the `label` attribute (as {@link MockElementSpec.text}). */
+    /** Visible text: `getText()` and, unless `attributes.label` is given, the `label` attribute (on android the `text` attribute) (as {@link MockElementSpec.text}). */
     text?: Reader<string | null>;
     /** Displayed (default `true`). */
     visible?: Reader<boolean>;
@@ -216,7 +216,17 @@ export interface MockNode {
     enabled?: Reader<boolean>;
     attributes?: Record<string, Reader<string | null>>;
     children?: MockNode[];
+    /** Run on every tap of this node (after it is recorded), e.g. to flip a `checked` attribute. */
+    onClick?: () => void;
 }
+
+/**
+ * The XPath element-repository sends (scoped to an android element) for the
+ * text of its descendants when the element's own text is empty. The mock
+ * answers it with every descendant whose text is non-empty and that is not
+ * showing a hint (`attributes['showing-hint'] === 'true'`).
+ */
+const ANDROID_DESCENDANT_TEXT_XPATH = ".//*[@text!='' and not(@showing-hint='true')]";
 
 export interface MockUiDriver extends MockDriver {
     /** Every `$` / `$$` the session received, as `[method, selector, scope]` (`scope` is `'driver'` or the parent node's first selector). */
@@ -241,17 +251,28 @@ export function driverError(name: string, message: string = name): Error {
  * child outside the parent is never found. `$` returns the first match bound
  * to its node, or (no match) a lazy handle that re-queries on every command,
  * like WebdriverIO's lazy element. Everything else is {@link mockDriver}.
+ *
+ * With `capabilities.platformName` `android` it answers as UiAutomator2
+ * does: a missing attribute reads as the string `"null"`, the tag name is
+ * the node's `content-desc` (or `null`), and the descendant-text XPath
+ * element-repository sends for an empty container is answered.
  */
 export function mockUiDriver(nodes: MockNode[], options: Parameters<typeof mockDriver>[0] = {}): MockUiDriver {
     const base = mockDriver(options);
+    const android = String(options.capabilities?.platformName ?? '').toLowerCase() === 'android';
     const lookups: Array<[string, string, string]> = [];
     let failure: Error | undefined;
     let ids = 0;
     const idOf = new Map<MockNode, string>();
     const read = async <T>(value: Reader<T> | undefined, fallback: T): Promise<T> =>
         value === undefined ? fallback : typeof value === 'function' ? await (value as () => T | Promise<T>)() : value;
-    const matches = (node: MockNode, selector: string) =>
-        (Array.isArray(node.match) ? node.match : [node.match]).includes(selector);
+    const matches = async (node: MockNode, selector: string) => {
+        if (android && selector === ANDROID_DESCENDANT_TEXT_XPATH) {
+            const text = await read(node.text, '');
+            return typeof text === 'string' && text !== '' && (await read(node.attributes?.['showing-hint'], null)) !== 'true';
+        }
+        return (Array.isArray(node.match) ? node.match : [node.match]).includes(selector);
+    };
     const live = async (node: MockNode) => read(node.exists, true);
     const check = () => { if (failure) throw failure; };
 
@@ -261,7 +282,7 @@ export function mockUiDriver(nodes: MockNode[], options: Parameters<typeof mockD
         const walk = async (list: MockNode[]) => {
             for (const node of list) {
                 if (!(await live(node))) continue;
-                if (matches(node, selector)) out.push(node);
+                if (await matches(node, selector)) out.push(node);
                 await walk(node.children ?? []);
             }
         };
@@ -309,14 +330,21 @@ export function mockUiDriver(nodes: MockNode[], options: Parameters<typeof mockD
             getText: async () => read((await need()).text, ''),
             getAttribute: async (name: string) => {
                 const node = await need();
+                if (android) {
+                    // UiAutomator2 sends a missing attribute as the string "null".
+                    if (name === 'text') return read(node.text, '');
+                    return (await read(node.attributes?.[name], null)) ?? 'null';
+                }
                 return name === 'label' && node.attributes?.label === undefined
                     ? read(node.text, '')
                     : read(node.attributes?.[name], null);
             },
             getValue: async () => read((await need()).attributes?.value, ''),
-            // XCUITest reports the element type as the tag name.
-            getTagName: async () => (await read((await need()).attributes?.type, null)) ?? 'XCUIElementTypeOther',
-            click: async () => { await need(); base.calls.push(['click', selector, scopeLabel]); },
+            // XCUITest reports the element type as the tag name; UiAutomator2 the content-desc.
+            getTagName: async () => android
+                ? read((await need()).attributes?.['content-desc'], null)
+                : (await read((await need()).attributes?.type, null)) ?? 'XCUIElementTypeOther',
+            click: async () => { const node = await need(); base.calls.push(['click', selector, scopeLabel]); node.onClick?.(); },
             waitForExist: async ({ timeout = 0, reverse = false }: { timeout?: number; reverse?: boolean } = {}) =>
                 waitUntil(async () => !!(await current()) !== reverse, timeout, reverse ? 'gone' : 'existing'),
             waitForDisplayed: async ({ timeout = 0, reverse = false }: { timeout?: number; reverse?: boolean } = {}) =>

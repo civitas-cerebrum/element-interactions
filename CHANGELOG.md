@@ -185,9 +185,21 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `value` (never `name`; on a text field, secure text field, text view or
   search field the `value` wins), not WebdriverIO's raw `getText()`, which
   answers `value` first. The rule is element-repository's
-  (`Element.textContent()`); every device text read goes through it, and
-  Android reads the element's text. On a device `getText` returns `''` (never `null`) when
-  an element has no text.
+  (`Element.textContent()`); every device text read goes through it. Android
+  reads the element's text; a container whose own text is empty (a list row)
+  reads its descendants' text, hints left out, joined with single spaces in
+  document order (`Item 1 Alpha`), in `getText`, `verifyText*`, `getAll`,
+  listed-element `text` and the text strategy alike. On a device `getText`
+  returns `''` (never `null`) when an element has no text.
+- **Checked state on a device** (`verifyState(..., 'checked')`, `check`,
+  `uncheck`) is element-repository's: Android reads the `checked` attribute,
+  iOS a switch's or toggle's `value` and other elements' `selected` state.
+  `check` / `uncheck` tap only when the state differs and confirm the new
+  state within the step timeout; they fail with `is still unchecked after
+  clicking` / `is still checked after clicking`, and refuse without a tap an
+  Android radio button being unchecked, a control that is not checkable, and
+  a control still disabled at the timeout. `getAttribute` on Android returns
+  `null` for a missing attribute (UiAutomator2 answers `"null"`).
 - Platform verifications, list presence, listed-element steps and probes fail
   at once on a fatal driver error (a dead session, an invalid selector, a lost
   connection) instead of at the timeout; such an error never reads as absent.

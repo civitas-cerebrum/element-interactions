@@ -44,6 +44,7 @@
       "elements": [
         { "elementName": "uncheckedCheckbox", "selector": { "accessibility id": "checkbox-unchecked" } },
         { "elementName": "checkedCheckbox", "selector": { "accessibility id": "checkbox-checked" } },
+        { "elementName": "disabledCheckbox", "selector": { "accessibility id": "checkbox-disabled" } },
         { "elementName": "toggleOff", "selector": { "accessibility id": "toggle-off" } },
         { "elementName": "toggleOn", "selector": { "accessibility id": "toggle-on" } },
         { "elementName": "summary", "selector": { "accessibility id": "checkbox-state-summary" } }

@@ -201,9 +201,10 @@ export class AppiumInteractions implements IInteractions {
      * polled (the list re-read on every poll) until the instance timeout, then
      * waited on until visible within what is left of it, as on web:
      *
-     * - `text`: the item's own text (element-repository's `rawText`, untrimmed
+     * - `text`: the item's text (element-repository's `rawText`, untrimmed
      *   as web's `hasText` sees it: on iOS the label, falling back to the
-     *   value) by the web `hasText` rule:
+     *   value; on Android its own text or, when that is empty, its
+     *   descendants' text joined with spaces) by the web `hasText` rule:
      *   a substring ignoring case, whitespace normalised; a regex is tested
      *   as is. The first item in list order wins.
      * - `attribute`: the exact value, or a regex.
