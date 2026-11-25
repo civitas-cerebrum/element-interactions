@@ -7,6 +7,8 @@ import { test, expect, platform, requireTestApp } from './android-fixture';
  * It drives only that app: lifecycle, the app's own dialogs, the keyboard,
  * orientation (always restored to portrait), contexts, screen swipes, scrolling,
  * lists and checkboxes. Nothing opens another app or system settings.
+ * UiAutomator2's `setOrientation` also locks the screen rotation, so the
+ * orientation tests restore portrait in their `afterEach`.
  *
  * Skipped unless the resolved platform is `android`. Run it:
  *
@@ -52,6 +54,14 @@ test.describe('live Android test app', () => {
             await steps.verifyPresence('grid', 'HomePage');
             await steps.verifyAppInForeground();
             await steps.verifyCount('cards', 'HomePage', { greaterThan: 0 });
+        });
+
+        test('the first step, a non-polling page source read, already sees the test app, not the launcher', async ({ steps }) => {
+            // No polling step before it: the relaunch itself must have waited
+            // until the app was in the foreground.
+            const source = await steps.getPageSource();
+            expect(source, 'the page source belongs to the test app').toContain('package="com.civitas.testapp"');
+            expect(source, 'the page source holds no launcher window').not.toMatch(/package="[^"]*launcher[^"]*"/i);
         });
 
         test('backgroundApp sends the app away and brings it back on the same screen', async ({ steps, openScreen }) => {
@@ -142,20 +152,22 @@ test.describe('live Android test app', () => {
     test.describe('screen swipes and scrolling', () => {
         test('swipeScreen up moves a section up, swipeScreen down moves it back', async ({ steps, openScreen }) => {
             await openScreen('tall');
-            const before = await steps.getBoundingBox('section3', 'TallPage');
-            expect(before).not.toBeNull();
+            const topOfSection3 = async (when: string): Promise<number> => {
+                const box = await steps.getBoundingBox('section3', 'TallPage');
+                expect(box, `section3 has a bounding box ${when}`).not.toBeNull();
+                return box?.y ?? Number.NaN;
+            };
+            const before = await topOfSection3('before the swipes');
 
             // Finger up by 600 px: the page content (and the section) moves up.
             await steps.swipeScreen('up', { distance: 600 });
-            const after = await steps.getBoundingBox('section3', 'TallPage');
-            expect(after).not.toBeNull();
-            expect(after!.y).toBeLessThan(before!.y);
+            const after = await topOfSection3('after swiping up');
+            expect(after, 'swiping up moves section3 up').toBeLessThan(before);
 
             // Finger down by the same distance: the section comes back down.
             await steps.swipeScreen('down', { distance: 600 });
-            const back = await steps.getBoundingBox('section3', 'TallPage');
-            expect(back).not.toBeNull();
-            expect(back!.y).toBeGreaterThan(after!.y);
+            const back = await topOfSection3('after swiping down');
+            expect(back, 'swiping down moves section3 back down').toBeGreaterThan(after);
         });
 
         test('scrollUntilFound reaches the last section, then the first one again', async ({ steps, openScreen }) => {
@@ -196,7 +208,9 @@ test.describe('live Android test app', () => {
                 child: rowTitle,
                 expectedText: 'Item 4',
             });
-            // A row has no click action: the list stays as it is.
+            // The row is not clickable (it has no click action): this checks
+            // that clickListedElement finds the row by its descendant and taps
+            // its child without error, and that the tap changes nothing.
             await steps.clickListedElement('row', 'LongListPage', {
                 withDescendant: { child: rowTitle, text: { regex: '^Item 2$' } },
                 child: rowTitle,
@@ -251,19 +265,9 @@ test.describe('live Android test app', () => {
         });
 
         test('a web-only step throws PlatformNotSupportedError naming android', async ({ steps }) => {
-            let refusal: unknown;
-            try {
-                steps.getUrl();
-            } catch (error) {
-                refusal = error;
-            }
-            expect(refusal).toBeInstanceOf(PlatformNotSupportedError);
-            expect((refusal as PlatformNotSupportedError).method).toBe('getUrl');
-            expect((refusal as PlatformNotSupportedError).platform).toBe('android');
-
-            const rejected = await steps.verifyUrlContains('/').then(() => undefined, (error: unknown) => error);
-            expect(rejected).toBeInstanceOf(PlatformNotSupportedError);
-            expect((rejected as PlatformNotSupportedError).platform).toBe('android');
+            expect(() => steps.getUrl()).toThrow(PlatformNotSupportedError);
+            await expect(steps.verifyUrlContains('/')).rejects.toBeInstanceOf(PlatformNotSupportedError);
+            await expect(steps.verifyUrlContains('/')).rejects.toMatchObject({ method: 'verifyUrlContains', platform: 'android' });
         });
     });
 });

@@ -99,6 +99,9 @@ export const PLATFORM_APP_KEYS: Readonly<Partial<Record<Platform, readonly strin
 
 const PREFIX = 'appium:';
 
+/** The platform with its article, for the refusal message. */
+const SESSION_NAMES: Partial<Record<Platform, string>> = { android: 'an Android', ios: 'an iOS' };
+
 /**
  * Throws unless the capabilities file of a device run targets only the
  * platform's allowed app ({@link DEVICE_APPS}) without installing, resetting
@@ -114,7 +117,7 @@ export function requireAppCapabilities(platform: Platform, env: NodeJS.ProcessEn
     const { file, capabilities } = loadCapabilities(undefined, platform, env);
     const refuse = (key: string, reason: string): never => {
         throw new Error(
-            `Refusing to open a ${platform} session: this spec ${expected.description}, `
+            `Refusing to open ${SESSION_NAMES[platform] ?? `a ${platform}`} session: this spec ${expected.description}, `
             + `and the capabilities file "${file}" ${reason} (key "${key}").`,
         );
     };

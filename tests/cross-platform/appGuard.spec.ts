@@ -135,6 +135,10 @@ test.describe('requireAppCapabilities', () => {
         // As committed they name a placeholder app, which only the app id check refuses.
         expect(refusal(() => requireAppCapabilities('ios', { E2E_CAPABILITIES: 'tests/capabilities/ios.example.json' })))
             .toContain('(key "appium:bundleId")');
+        expect(refusal(() => requireAppCapabilities('ios', { E2E_CAPABILITIES: 'tests/capabilities/ios.example.json' })))
+            .toMatch(/^Refusing to open an iOS session: /);
+        expect(refusal(() => requireAppCapabilities('android', { E2E_CAPABILITIES: 'tests/capabilities/android.example.json' })))
+            .toMatch(/^Refusing to open an Android session: /);
     });
 
     test('a missing E2E_CAPABILITIES is refused', () => {

@@ -103,9 +103,12 @@ test.describe('live iOS Settings (read-only)', () => {
         await steps.verifyAbsence('navigationBar', GENERAL);
     });
 
-    test('getPageSource returns the XCUITest tree', async ({ steps }) => {
+    test('the first step, a non-polling page source read, already sees the Settings tree', async ({ steps }) => {
+        // No polling step before it: the relaunch itself must have waited
+        // until Settings was in the foreground.
         const source = await steps.getPageSource();
         expect(source).toContain('XCUIElementType');
+        expect(source, 'the page source holds the General row of Settings').toContain('com.apple.settings.general');
     });
 
     test('a web-only step throws PlatformNotSupportedError', async ({ steps }) => {

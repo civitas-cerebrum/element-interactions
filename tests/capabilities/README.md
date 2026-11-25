@@ -13,7 +13,7 @@ E2E_PLATFORM=<platform> E2E_CAPABILITIES=tests/capabilities/<device>.local.json 
 
 | File | Targets |
 |---|---|
-| `android.example.json` | An Android device or emulator through UiAutomator2. Placeholders for the device name and serial; `com.example.app` as the app. Used by the unit tests and as the template of the `android-emulator` job in `.github/workflows/platform.yml`, which writes its own file (`ci-android-emulator.local.json`) with the emulator's values and `com.android.settings`. |
+| `android.example.json` | An Android device or emulator through UiAutomator2. Placeholders for the device name and serial; `com.example.app` as the app. Used by the unit tests and as the template of the `android-emulator` job in `.github/workflows/platform.yml`, which writes its own file (`ci-android-emulator.local.json`) with the emulator's values and the test app `com.civitas.testapp` (`.MainActivity`). The job builds that app from its public repository and installs it with `adb install` before the run; the capabilities file never installs it (`appium:app` is refused). |
 | `ios.example.json` | An iPhone (device or simulator) through XCUITest. Placeholders for the device name and UDID; `com.example.app` as the app. Used by the unit tests and as the template of the `ios-simulator` job, which writes its own file (`ci-ios-simulator.local.json`) with the booted simulator's values and `com.apple.Preferences`. |
 
 The example files are templates: copy one to a new file named

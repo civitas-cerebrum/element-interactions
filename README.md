@@ -800,6 +800,7 @@ Each is a terminal (`Promise<void>`). `pinch` / `zoom` throw `PlatformNotSupport
 * **`PollTimeoutError`** (fields `timeout`, `lastValue`, `lastError`) — thrown when a polling step on a device runs out of time: the device assertions (`verifyAppInForeground`, `verifyOrientation`, `verifyKeyboardShown`, `verifyContext`), the element `verify*` steps (`verifyText`, `verifyState`, `verifyCount`, ...) and the listed-element steps. Its message names what was awaited, the timeout, the last observed value and the last error. The exception is `verifyPresence` on a `"list": true` entry (list-entry presence): it throws a plain `Error` whose `cause` is the `PollTimeoutError`.
 * **`ProbeTimeoutError`** (field `budget`) — never thrown by a step itself: it is the `lastError` of a `PollTimeoutError` when a single device query did not answer within its share of the timeout.
 * **`MissingAppIdError`** (fields `caller`, `capability`, `platform`) — thrown when a step needs the app under test and neither an `appId` argument nor the capabilities file names one: `launchApp`, `activateApp`, `terminateApp`, `resetApp`, `setPermission` and `verifyAppInForeground`.
+* **`AppNotInForegroundError`** (fields `appId`, `platform`, `timeout`, `lastState`, `lastError`) — thrown when the app under test does not reach the foreground in time after it was relaunched: `lastState` is the last `mobile: queryAppState` answer (`undefined` when no query answered; `lastError` then holds the last query error). The fixture's `reset: 'relaunch'` setup throws a plain `Error` whose `cause` is the `AppNotInForegroundError`.
 
 ```ts
 import { PlatformNotSupportedError, PollTimeoutError, ProbeTimeoutError } from '@civitas-cerebrum/element-interactions';
@@ -842,11 +843,11 @@ Besides the classes above, the package exports these for platform code:
 * **Platforms:** `Platform`, `DriverFamily`, `PLATFORMS`, `isPlatformName`, `familyOf`, `resolvePlatform` (the first five are element-repository's vocabulary, re-exported; `resolvePlatform(option, env?)` is this package's, the fixture's platform rule).
 * **Gesture options:** `SwipeDirection`, `SwipeOptions`, `ScrollIntoViewOptions`, `LongPressOptions`, `TapOffset`, `TapAtOptions`, `PinchOptions`, `ZoomOptions` (element-repository's, re-exported), `ScreenSwipeOptions` (`swipeScreen`'s `{ distance? }`) and `Direction` (an alias of `SwipeDirection`).
 * **Session:** `ServerOptions`, `SessionOptions`, `SessionStartContext`, `SessionProvider`, `AppiumSessionProviderOptions`, `AppiumClientOptions`, `WebdriverioLogLevel`, `WebdriverioModule`, `AppiumFactoryOptions`, `AppiumDriver`, `PlaywrightFactoryOptions`.
-* **Errors:** `PlatformNotSupportedError`, `PollTimeoutError`, `ProbeTimeoutError`, `MissingAppIdError` (see [Errors](#platform-steps)).
+* **Errors:** `PlatformNotSupportedError`, `PollTimeoutError`, `ProbeTimeoutError`, `MissingAppIdError`, `AppNotInForegroundError` (see [Errors](#platform-steps)).
 
 ### CI
 
-`.github/workflows/platform.yml` runs the cross-platform spec (`tests/cross-platform`) on an Android emulator and an iOS simulator against the built-in Settings app, read-only. It is **manual only** (`workflow_dispatch`): it does not run on push or pull request until a maintainer changes the trigger. Its status is under [What is verified](#what-is-verified).
+`.github/workflows/platform.yml` runs the cross-platform spec (`tests/cross-platform`) on an Android emulator against the test app `com.civitas.testapp` and on an iOS simulator against the built-in Settings app, read-only. The Android job checks out the public [android-test-app](https://github.com/civitas-cerebrum/android-test-app) repository at a pinned commit, builds its debug APK with Gradle (JDK 17) and installs it on the emulator with `adb install` before the run; the capabilities file only names the app (`appium:appPackage`, `appium:appActivity`) and never installs it. It is **manual only** (`workflow_dispatch`): it does not run on push or pull request until a maintainer changes the trigger. Its status is under [What is verified](#what-is-verified).
 
 The iOS job prebuilds WebDriverAgent (`appium driver run xcuitest build-wda`) before the session opens, and both jobs run Playwright with `--timeout=600000` to leave room for emulator / simulator start-up and the first session.
 

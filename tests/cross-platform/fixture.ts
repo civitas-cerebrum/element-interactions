@@ -1,5 +1,6 @@
 import { test as base } from '@playwright/test';
 import * as path from 'path';
+import type { ElementRepository } from '@civitas-cerebrum/element-repository';
 import { baseFixture, resolvePlatform } from '../../src';
 import { requireAppCapabilities } from './appGuard';
 
@@ -43,20 +44,34 @@ export const test = stepsTest.extend<{ startScreen: void; goBack: () => Promise<
     }, { auto: true }],
 
     /**
-     * Leaves the destination screen the way the platform's user would: the
-     * destination's on-screen back control (`DestinationScreen.backButton`) on
-     * web and iOS. The Android test app has no toolbar and no on-screen back
-     * control at all, so on Android the platform's own way back is the system
-     * back (`pressBack`). Kept here so the spec body does not branch on the
-     * platform.
+     * Leaves the destination screen the way the platform's user would: when
+     * the active platform's `DestinationScreen` page defines a `backButton`
+     * entry (web and iOS), that on-screen control is clicked; when it does not
+     * (the Android test app has no on-screen back control), the platform's
+     * own way back, the system back (`pressBack`). The choice follows the
+     * repository, not the platform name, so the spec body does not branch.
      */
-    goBack: async ({ steps }, use) => {
+    goBack: async ({ steps, repo }, use) => {
         await use(async () => {
-            if (steps.platform === 'android') await steps.pressBack();
-            else await steps.click('backButton', 'DestinationScreen');
+            if (hasEntry(repo, 'backButton', 'DestinationScreen')) await steps.click('backButton', 'DestinationScreen');
+            else await steps.pressBack();
         });
     },
 });
+
+/**
+ * Whether the active platform's page `pageName` defines `elementName`. A
+ * lookup that answers instead of throwing: the repository's metadata read
+ * throws for a missing page or entry, and touches no driver.
+ */
+function hasEntry(repo: ElementRepository, elementName: string, pageName: string): boolean {
+    try {
+        repo.getElementMeta(elementName, pageName);
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 /**
  * A `beforeAll` guard: on a device platform the capabilities file must target

@@ -1,13 +1,18 @@
 name: 📱 Platform (Android emulator, iOS simulator)
 
 # Runs the cross-platform spec (tests/cross-platform) on an Android emulator
-# and an iOS simulator against the built-in Settings app, read-only.
+# against the test app com.civitas.testapp, and on an iOS simulator against the
+# built-in Settings app, read-only.
 #
 # - Manual only: triggered by `workflow_dispatch` and nothing else. It does not
 #   run on push or pull request until a maintainer changes the trigger.
-# - android-emulator (ubuntu): installs Appium and the UiAutomator2 driver,
-#   starts an emulator with KVM, runs the spec, uploads the report and the
-#   Appium log.
+# - android-emulator (ubuntu): checks out the public test app repository
+#   (civitas-cerebrum/android-test-app, pinned to a commit), builds its debug
+#   APK with Gradle (JDK 17), installs Appium and the UiAutomator2 driver,
+#   starts an emulator with KVM, installs the APK with `adb install` before the
+#   run, runs the spec, uploads the report and the Appium log. The APK is
+#   installed by the job, never through the capabilities file: the spec's app
+#   guard refuses `appium:app`.
 # - ios-simulator (macOS): installs Appium and the XCUITest driver, boots an
 #   iPhone simulator, prebuilds WebDriverAgent, runs the spec, uploads the
 #   report and the Appium log.
@@ -31,6 +36,9 @@ env:
   UIAUTOMATOR2_DRIVER_VERSION: '8.7.3'
   XCUITEST_DRIVER_VERSION: '12.22.8'
   APPIUM_URL: 'http://127.0.0.1:4723'
+  # The commit of civitas-cerebrum/android-test-app whose debug APK the
+  # android-emulator job builds and installs.
+  ANDROID_TEST_APP_REF: 'b10b5af2834c2ec717ec076298e364006965e27a'
 
 jobs:
   android-emulator:
@@ -50,6 +58,25 @@ jobs:
       - name: 🧩 Install dependencies
         run: npm ci
 
+      - name: 🗂️ Checkout the Android test app
+        uses: actions/checkout@v4
+        with:
+          repository: civitas-cerebrum/android-test-app
+          ref: ${{ env.ANDROID_TEST_APP_REF }}
+          path: android-test-app
+
+      - name: ☕ Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 🔨 Build the test app APK
+        working-directory: android-test-app
+        run: |
+          ./gradlew assembleDebug --no-daemon
+          test -f app/build/outputs/apk/debug/app-debug.apk || { echo "The test app APK was not built: app/build/outputs/apk/debug/app-debug.apk is missing"; exit 1; }
+
       - name: ⚡ Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -61,12 +88,12 @@ jobs:
           npm install -g "appium@${APPIUM_VERSION}"
           appium driver install "uiautomator2@${UIAUTOMATOR2_DRIVER_VERSION}"
 
-      - name: 🧾 Write the capabilities file (emulator, Settings)
+      - name: 🧾 Write the capabilities file (emulator, test app)
         run: |
           jq '.["appium:deviceName"] = "Android Emulator"
               | .["appium:udid"] = "emulator-5554"
-              | .["appium:appPackage"] = "com.android.settings"
-              | .["appium:appActivity"] = ".Settings"
+              | .["appium:appPackage"] = "com.civitas.testapp"
+              | .["appium:appActivity"] = ".MainActivity"
               | .["appium:uiautomator2ServerInstallTimeout"] = 120000
               | .["appium:adbExecTimeout"] = 120000' \
             tests/capabilities/android.example.json > tests/capabilities/ci-android-emulator.local.json
@@ -87,7 +114,11 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: E2E_PLATFORM=android E2E_CAPABILITIES=tests/capabilities/ci-android-emulator.local.json APPIUM_URL=http://127.0.0.1:4723 npx playwright test -c playwright.platform.config.ts --timeout=600000 tests/cross-platform
+          # Installs the test app first (`-r`: replace, `-g` is not used so no
+          # runtime permission is granted), then runs the spec.
+          script: |
+            adb install -r android-test-app/app/build/outputs/apk/debug/app-debug.apk
+            E2E_PLATFORM=android E2E_CAPABILITIES=tests/capabilities/ci-android-emulator.local.json APPIUM_URL=http://127.0.0.1:4723 npx playwright test -c playwright.platform.config.ts --timeout=600000 tests/cross-platform
 
       - name: 📦 Upload report and Appium log
         if: always()
