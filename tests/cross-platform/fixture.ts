@@ -1,8 +1,8 @@
 import { test as base } from '@playwright/test';
 import * as path from 'path';
-import type { ElementRepository } from '@civitas-cerebrum/element-repository';
 import { baseFixture, resolvePlatform } from '../../src';
 import { requireAppCapabilities } from './appGuard';
+import { hasEntry } from './hasEntry';
 
 /**
  * The fixture of the cross-platform spec: one `baseFixture` call that serves
@@ -58,20 +58,6 @@ export const test = stepsTest.extend<{ startScreen: void; goBack: () => Promise<
         });
     },
 });
-
-/**
- * Whether the active platform's page `pageName` defines `elementName`. A
- * lookup that answers instead of throwing: the repository's metadata read
- * throws for a missing page or entry, and touches no driver.
- */
-function hasEntry(repo: ElementRepository, elementName: string, pageName: string): boolean {
-    try {
-        repo.getElementMeta(elementName, pageName);
-        return true;
-    } catch {
-        return false;
-    }
-}
 
 /**
  * A `beforeAll` guard: on a device platform the capabilities file must target

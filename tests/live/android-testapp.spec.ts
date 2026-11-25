@@ -266,6 +266,7 @@ test.describe('live Android test app', () => {
 
         test('a web-only step throws PlatformNotSupportedError naming android', async ({ steps }) => {
             expect(() => steps.getUrl()).toThrow(PlatformNotSupportedError);
+            expect(() => steps.getUrl()).toThrow(expect.objectContaining({ method: 'getUrl', platform: 'android' }));
             await expect(steps.verifyUrlContains('/')).rejects.toBeInstanceOf(PlatformNotSupportedError);
             await expect(steps.verifyUrlContains('/')).rejects.toMatchObject({ method: 'verifyUrlContains', platform: 'android' });
         });
