@@ -832,9 +832,9 @@ export async function relaunchApp(
             `session.reset 'relaunch': app "${error.appId}" is not in the foreground on platform "${error.platform}" `
             + (retried
                 ? `within session.relaunchTimeout ${budget} ms (activation retried once after a launch timeout; `
-                    + 'the retried activation and the foreground wait share that budget) '
-                : `${error.timeout} ms after it was terminated and activated `)
-            + `(${describeAppState(error.lastState, error.lastError)}). `
+                    + 'the retried activation and the foreground wait share that budget; '
+                : `${error.timeout} ms after it was terminated and activated (`)
+            + `${describeAppState(error.lastState, error.lastError)}). `
             + `The test did not start. If the app needs longer to come up, raise session.relaunchTimeout `
             + `(default ${RELAUNCH_TIMEOUT_MS} ms).`,
             { cause: error },

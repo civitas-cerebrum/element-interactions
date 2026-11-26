@@ -47,9 +47,13 @@ test.describe('parseServerUrl', () => {
 
     test('refuses non-URLs, other protocols, queries and fragments', () => {
         expect(errorOf(() => parseServerUrl('localhost:4723', 'APPIUM_URL')).message).toMatch(/must use http or https|not a valid URL/);
-        expect(errorOf(() => parseServerUrl('not a url', 'APPIUM_URL')).message).toMatch(/^APPIUM_URL is not a valid URL/);
+        const notAUrl = errorOf(() => parseServerUrl('not a url', 'APPIUM_URL')).message;
+        expect(notAUrl).toMatch(/^APPIUM_URL is not a valid URL/);
+        expect(notAUrl).toContain("Expected the server's own URL");
         expect(errorOf(() => parseServerUrl('ws://localhost:4723')).message).toMatch(/must use http or https/);
-        expect(errorOf(() => parseServerUrl('http://localhost:4723/wd/hub?x=1')).message).toMatch(/query or fragment/);
+        const withQuery = errorOf(() => parseServerUrl('http://localhost:4723/wd/hub?x=1')).message;
+        expect(withQuery).toMatch(/query or fragment/);
+        expect(withQuery).toContain("give the server's own URL only");
     });
 });
 
