@@ -306,6 +306,19 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(elapsed).toBeGreaterThanOrEqual(390);
             expect(elapsed, 'bounded by the matcher timeout, not by a selection budget').toBeLessThan(400 + 600);
         });
+
+        test('a matcher-level .timeout(ms) caps the byText selection budget, not only the chain timeout', async () => {
+            // The chain keeps the 3 s step timeout; only the matcher says 400 ms.
+            const { steps } = deviceSteps(platform, itemTree(READ_MS), 3000);
+            const { error, elapsed } = await timed(async () => { await steps.on('items', 'Screen').byText('Purple').text.timeout(400).toBe('Purple'); });
+            expect(error, 'no item has the text').toBeInstanceOf(Error);
+            // The strategy's reason is there: its budget (200 ms) fits in the matcher's 400 ms. A budget fitted
+            // to the 3 s chain timeout (1.5 s) would outlast the matcher, and no probe would have answered.
+            expect(error?.message).toMatch(/timed out after 400 ms/);
+            expect(error?.message).toMatch(/Last error: Element 'items' on 'Screen' with text "Purple" not found/);
+            expect(elapsed).toBeGreaterThanOrEqual(390);
+            expect(elapsed, 'bounded by the matcher timeout').toBeLessThan(400 + 600);
+        });
     });
 
     test.describe(`verifyCount bounds on ${platform}`, () => {
