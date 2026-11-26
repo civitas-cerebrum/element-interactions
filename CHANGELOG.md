@@ -99,8 +99,17 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `verifyListOrder` / `verifyImages` used to wait for the default timeout (30 s
   unless configured), whatever was passed. A check that passed only because it
   waited longer than its stated timeout now fails at that timeout.
-  **Migration:** none for calls without a timeout. If a step now fails at its own
-  short timeout, raise that timeout (or drop it to use the default).
+  **Migration:** none for calls without a timeout (but see `verifyListOrder`
+  below). If a step now fails at its own short timeout, raise that timeout (or
+  drop it to use the default).
+- **`verifyListOrder` on web polls until its timeout.** It used to read the
+  list once and fail at once on an unsorted list. It now re-reads the list
+  every 100 ms until it is sorted or the timeout (the configured element
+  timeout, 30 s unless configured) runs out, so an unsorted list fails only
+  after that timeout, and a list that becomes sorted within it now passes.
+  **Migration:** an unsorted list now fails after the step timeout; pass a
+  short timeout where a fast failure is wanted:
+  `await steps.on(elementName, pageName).timeout(2000).verifyListOrder('asc')`.
 
 ### Added
 
@@ -246,8 +255,8 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `verifyOrder` (web and device), `verifyListOrder` (web and device) and
   `verifyImages` (web). On web, `verifyListOrder` now polls until its timeout
   instead of reading the list once; a sorted list passes on the first read as
-  before. Apart from that, calls without an explicit timeout behave as before:
-  the chain's default is the configured timeout. The
+  before (the default polling of web `verifyListOrder` is listed under
+  Breaking). The chain's default is the configured timeout. The
   `Verifications.order` / `listOrder` primitives take an optional
   `VerifyOptions`, and `Verifications.images` an optional `timeout`.
 

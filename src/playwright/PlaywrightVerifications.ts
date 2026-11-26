@@ -1004,8 +1004,8 @@ export class Verifications implements IVerifications {
      * using locale-aware string comparison.
      * @param target - A Playwright Locator or Element resolving to the list of elements.
      * The list is re-read every 100 ms until it is sorted or `options.timeout`
-     * (default: the configured element timeout) runs out; a list of fewer than
-     * two items passes at once.
+     * (default: the configured element timeout) runs out. A list of fewer than
+     * two items (an empty list included) passes at once, as on a device.
      * @param direction - `'asc'` for ascending (A-Z) or `'desc'` for descending (Z-A).
      * @param options - Optional `{ timeout? }` override.
      */
