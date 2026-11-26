@@ -143,10 +143,6 @@ export interface IVerifications {
     cssPropertyContains(target: Element, property: string, substring: string, options?: VerifyOptions): Promise<void>;
     /** Web only. */
     cssPropertyMatches(target: Element, property: string, regex: RegExp, options?: VerifyOptions): Promise<void>;
-    /**
-     * The device family polls up to `options.timeout`; the web family reads the
-     * list once (no wait), so the timeout has nothing to bound there.
-     */
     listOrder(target: Element, direction: 'asc' | 'desc', options?: VerifyOptions): Promise<void>;
     count(target: Element, options: CountVerifyOptions, verifyOptions?: VerifyOptions): Promise<void>;
     /** Web only (Playwright `Page` target and `Locator` masks). */

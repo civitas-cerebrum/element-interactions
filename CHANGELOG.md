@@ -93,6 +93,14 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
 - **`getAll` honours an empty-string `child`** (`child: ''`) instead of
   ignoring it.
   **Migration:** drop `child: ''` from calls that meant "no child".
+- **A per-call timeout on `verifyState`, `verifyOrder`, `verifyListOrder` and
+  `verifyImages` is honoured on web.** `steps.verifyState(el, page, state, timeout)`
+  and `steps.on(el, page).timeout(ms)` before `verifyState` / `verifyOrder` /
+  `verifyListOrder` / `verifyImages` used to wait for the default timeout (30 s
+  unless configured), whatever was passed. A check that passed only because it
+  waited longer than its stated timeout now fails at that timeout.
+  **Migration:** none for calls without a timeout. If a step now fails at its own
+  short timeout, raise that timeout (or drop it to use the default).
 
 ### Added
 
@@ -235,9 +243,11 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   state, timeout)` and `steps.on(el, page).timeout(ms).verifyState(state)`
   waited for the default timeout (30 s unless configured) on web and on a
   device, whatever `timeout` was passed. The same applies to `.timeout(ms)` on
-  `verifyOrder` (web and device), `verifyListOrder` (device; the web check
-  reads the list once) and `verifyImages` (web). Without an explicit timeout
-  nothing changes: the chain's default is the configured timeout. The
+  `verifyOrder` (web and device), `verifyListOrder` (web and device) and
+  `verifyImages` (web). On web, `verifyListOrder` now polls until its timeout
+  instead of reading the list once; a sorted list passes on the first read as
+  before. Apart from that, calls without an explicit timeout behave as before:
+  the chain's default is the configured timeout. The
   `Verifications.order` / `listOrder` primitives take an optional
   `VerifyOptions`, and `Verifications.images` an optional `timeout`.
 

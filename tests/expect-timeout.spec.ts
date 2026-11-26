@@ -294,6 +294,35 @@ test.describe('ElementAction.timeout() — state and order verifications', () =>
         expect(Date.now() - start, 'did not wait for the 30000ms default').toBeLessThan(5000);
     });
 
+    test('verifyListOrder honors the per-call timeout on a list that is never in the requested order', async ({ steps }) => {
+        await steps.navigateTo('/');
+        await steps.click('tableLink', 'SidebarNav');
+        await steps.verifyUrlContains('/table');
+        const start = Date.now();
+        await expect(
+            steps.on('nameCell', 'TablePage').timeout(500).verifyListOrder('desc'),
+        ).rejects.toThrow(/sorted descending/);
+        expect(Date.now() - start, 'did not wait for the 30000ms default').toBeLessThan(5000);
+    });
+
+    test('verifyListOrder polls until a list becomes sorted within the timeout', async ({ page, steps }) => {
+        await steps.navigateTo('/');
+        await steps.click('tableLink', 'SidebarNav');
+        await steps.verifyUrlContains('/table');
+        await steps.verifyListOrder('nameCell', 'TablePage', 'asc');
+        // Reverse the name cells' texts after a delay, so the list is descending
+        // only once the check has started.
+        await page.evaluate(() => {
+            setTimeout(() => {
+                const cells = Array.from(document.querySelectorAll('td:nth-child(2)'));
+                const texts = cells.map(c => c.textContent);
+                texts.reverse();
+                cells.forEach((c, i) => { c.textContent = texts[i]; });
+            }, 800);
+        });
+        await steps.on('nameCell', 'TablePage').timeout(5000).verifyListOrder('desc');
+    });
+
     test('verifyImages honors the per-call timeout on an element with no image source', async ({ steps }) => {
         await steps.navigateTo('/');
         await steps.click('formsCard', 'HomePage');
