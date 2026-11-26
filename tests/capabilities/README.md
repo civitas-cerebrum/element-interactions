@@ -15,6 +15,7 @@ E2E_PLATFORM=<platform> E2E_CAPABILITIES=tests/capabilities/<device>.local.json 
 |---|---|
 | `android.example.json` | An Android device or emulator through UiAutomator2. Placeholders for the device name and serial; `com.example.app` as the app. Used by the unit tests and as the template of the `android-emulator` job in `.github/workflows/platform.yml`, which writes its own file (`ci-android-emulator.local.json`) with the emulator's values and the test app `com.civitas.testapp` (`.MainActivity`). The job builds that app from its public repository and installs it with `adb install` before the run; the capabilities file never installs it (`appium:app` is refused). |
 | `ios.example.json` | An iPhone (device or simulator) through XCUITest. Placeholders for the device name and UDID; `com.example.app` as the app. Used by the unit tests and as the template of the `ios-simulator` job, which writes its own file (`ci-ios-simulator.local.json`) with the booted simulator's values and `com.apple.Preferences`. |
+| `ios-testapp-simulator.example.json` | An iOS simulator through XCUITest, for the iOS test-app spec: the test app `com.civitas-cerebrum.test-app`, installed from its local simulator build (`appium:app`, a placeholder path). Placeholders for the simulator name and iOS version; no `appium:udid` (a file with one names a device, where `appium:app` is refused). Passes the test-app rule as committed. |
 
 The example files are templates: copy one to a new file named
 `<name>.local.json` (for example `tests/capabilities/my-iphone.local.json`) and
@@ -47,9 +48,12 @@ and the fixture refuses it. Native-app files do not need it.
 
 ## The device specs
 
-`tests/cross-platform` and `tests/live` drive exactly one app per platform: the
-built-in Settings app on iOS (read-only), and the test app
-`com.civitas.testapp` on Android (already installed: nothing is installed).
+`tests/cross-platform` and `tests/live` drive exactly one app per spec: the
+built-in Settings app on iOS (read-only; `tests/cross-platform` and
+`tests/live/ios-settings.spec.ts`), the iOS test app
+`com.civitas-cerebrum.test-app` (`tests/live/ios-testapp.spec.ts`, see
+[below](#the-ios-test-app-spec)), and the test app `com.civitas.testapp` on
+Android (already installed: nothing is installed).
 Before any session opens they check the capabilities file against an
 **allow-list** (`tests/cross-platform/appGuard.ts`) and refuse anything
 else, naming the file and the key:
@@ -67,7 +71,8 @@ else, naming the file and the key:
   Anything else (`app`, `otherApps`, `browserName`, `intentAction`,
   `optionalIntentArguments`, `processArguments`, ...) is refused whatever its
   value: no install, no second app, no browser.
-- The app: `appium:bundleId: com.apple.Preferences` on iOS;
+- The app: `appium:bundleId: com.apple.Preferences` on iOS (the iOS test-app
+  spec: `com.civitas-cerebrum.test-app`);
   `appium:appPackage: com.civitas.testapp` on Android, with
   `appium:appActivity`, when set, `com.civitas.testapp.MainActivity` or
   `.MainActivity`.
@@ -79,6 +84,43 @@ else, naming the file and the key:
 
 The example files keep a placeholder app (`com.example.app`), so they are
 refused as they stand; with the platform's app id set they pass.
+
+## The iOS test-app spec
+
+`tests/live/ios-testapp.spec.ts` covers the state-changing iOS paths the
+read-only Settings spec cannot (text entry, the keyboard, switches and
+checkboxes, gestures, the app's own alerts, lists, contexts, orientation)
+against the iOS test app `com.civitas-cerebrum.test-app`. Each iOS spec
+selects itself by the capabilities file: with `E2E_PLATFORM=ios`, a file whose
+`appium:bundleId` is the test app runs this spec and skips the Settings spec;
+any other file runs the Settings spec and skips this one.
+
+Its guard (the test-app rule in `tests/cross-platform/appGuard.ts`) is the
+allow-list above with these differences:
+
+- `appium:bundleId` must be exactly `com.civitas-cerebrum.test-app`.
+- On a **simulator** (a file without `appium:udid`) the file may install the
+  app's build with `appium:app`, a local path ending in `.app` or `.app.zip`
+  (no URL), and may set `appium:reduceMotion`.
+- On a **real device** (a file with `appium:udid`, whatever its value) both
+  stay refused: the app must already be installed.
+- `appium:noReset: true` is required, `appium:fullReset` is absent or `false`,
+  and `autoAcceptAlerts` / `autoDismissAlerts` are absent or `false`: the
+  spec answers the app's alerts with `acceptAlert` / `dismissAlert` itself.
+
+Run it (copy `ios-testapp-simulator.example.json` to
+`tests/capabilities/<name>.local.json` and put the real build path, simulator
+name and iOS version in the copy):
+
+```
+E2E_PLATFORM=ios E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \
+  npx playwright test -c playwright.platform.config.ts tests/live/ios-testapp.spec.ts
+```
+
+**Simulator results are simulator results.** A run on an iOS simulator is
+reported as a simulator run and never counts as verification on a real device;
+only a run on a real iPhone (a file with `appium:udid`, the app already
+installed) is device verification.
 
 ## No secrets
 

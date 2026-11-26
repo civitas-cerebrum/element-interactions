@@ -1,7 +1,7 @@
 import { test as base, expect } from '@playwright/test';
 import * as path from 'path';
 import { baseFixture, resolvePlatform, PlatformNotSupportedError } from '../../src';
-import { requireAppCapabilities } from '../cross-platform/appGuard';
+import { requireAppCapabilities, capabilitiesBundleId, IOS_TEST_APP } from '../cross-platform/appGuard';
 
 /**
  * Live iOS check of the platform steps against the built-in Settings app on a
@@ -9,7 +9,9 @@ import { requireAppCapabilities } from '../cross-platform/appGuard';
  * navigates into General and back. It never toggles a switch, changes a
  * setting, types into a field, opens the Apple Account page or another app.
  *
- * Skipped unless the resolved platform is `ios`. Run it:
+ * Skipped unless the resolved platform is `ios`, and skipped when the
+ * capabilities file names the iOS test app (`ios-testapp.spec.ts` runs then).
+ * Run it:
  *
  *   E2E_PLATFORM=ios E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \
  *     npx playwright test -c playwright.platform.config.ts tests/live
@@ -48,6 +50,9 @@ const test = baseFixture(base, path.join(__dirname, 'page-repository.json'), {
 
 test.describe('live iOS Settings (read-only)', () => {
     test.skip(platform !== 'ios', 'Live iOS check: runs only when E2E_PLATFORM=ios (with E2E_CAPABILITIES and APPIUM_URL).');
+    // A file naming the iOS test app selects the test-app spec (ios-testapp.spec.ts) instead.
+    test.skip(platform === 'ios' && capabilitiesBundleId() === IOS_TEST_APP.id,
+        `The capabilities file names the test app ${IOS_TEST_APP.id}: tests/live/ios-testapp.spec.ts runs instead.`);
     test.describe.configure({ timeout: 300_000 });
 
     // Runs before the session opens: refuses any file that is not the Settings

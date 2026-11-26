@@ -2,7 +2,9 @@ import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { requireAppCapabilities } from './appGuard';
+import {
+    requireAppCapabilities, capabilitiesBundleId, DEVICE_APPS, IOS_SETTINGS_APP, IOS_TEST_APP, ANDROID_TEST_APP,
+} from './appGuard';
 
 /**
  * Pure unit tests of the device-app guard: temp capabilities files, no device,
@@ -251,5 +253,163 @@ test.describe('requireAppCapabilities', () => {
     test('a missing noReset is refused on both platforms', () => {
         expect(expectRefused('ios', without(IOS_OK, 'appium:noReset'), 'appium:noReset')).toContain('fast reset');
         expectRefused('android', without(ANDROID_OK, 'appium:noReset'), 'appium:noReset');
+    });
+
+    test('without an app the default is the platform\'s app: Settings on iOS, the test app on Android', () => {
+        expect(DEVICE_APPS.ios).toBe(IOS_SETTINGS_APP);
+        expect(DEVICE_APPS.android).toBe(ANDROID_TEST_APP);
+        // The iOS test app is not the default: the Settings rule refuses it.
+        expectRefused('ios', { ...IOS_OK, 'appium:bundleId': IOS_TEST_APP.id }, 'appium:bundleId');
+        expect(() => requireAppCapabilities('ios', env(IOS_OK), IOS_SETTINGS_APP)).not.toThrow();
+    });
+
+    test('an app of another platform is refused before the file is read', () => {
+        expect(() => requireAppCapabilities('android', {}, IOS_TEST_APP)).toThrow(/runs on ios, not on android/);
+        expect(() => requireAppCapabilities('ios', {}, ANDROID_TEST_APP)).toThrow(/runs on android, not on ios/);
+        // On web every app is a no-op.
+        expect(() => requireAppCapabilities('web', {}, IOS_TEST_APP)).not.toThrow();
+    });
+});
+
+/** A simulator file for the iOS test app: no udid, the local build to install. */
+const IOS_TEST_APP_SIMULATOR = {
+    platformName: 'iOS',
+    'appium:automationName': 'XCUITest',
+    'appium:deviceName': '<simulator-name>',
+    'appium:platformVersion': '<ios-version>',
+    'appium:app': '/path/to/TestApp.app.zip',
+    'appium:bundleId': 'com.civitas-cerebrum.test-app',
+    'appium:newCommandTimeout': 300,
+    'appium:noReset': true,
+    'appium:autoAcceptAlerts': false,
+    'appium:autoDismissAlerts': false,
+    'appium:reduceMotion': true,
+};
+/** A real-device file for the iOS test app: a udid, nothing installed. */
+const IOS_TEST_APP_DEVICE = {
+    platformName: 'iOS',
+    'appium:automationName': 'XCUITest',
+    'appium:deviceName': '<device-name>',
+    'appium:udid': '00000000-0000000000000000',
+    'appium:bundleId': 'com.civitas-cerebrum.test-app',
+    'appium:newCommandTimeout': 300,
+    'appium:noReset': true,
+};
+
+test.describe('requireAppCapabilities with the iOS test app', () => {
+    function check(caps: Record<string, unknown>): () => void {
+        const e = env(caps);
+        return () => requireAppCapabilities('ios', e, IOS_TEST_APP);
+    }
+    function refusedTestApp(caps: Record<string, unknown>, key: string): string {
+        const e = env(caps);
+        const message = refusal(() => requireAppCapabilities('ios', e, IOS_TEST_APP));
+        expect(message).toContain(e.E2E_CAPABILITIES!);
+        expect(message).toContain(`(key "${key}")`);
+        expect(message).toMatch(/^Refusing to open an iOS session: this spec drives only the test app com\.civitas-cerebrum\.test-app/);
+        return message;
+    }
+
+    test('a simulator file that installs the build is accepted, with either build form and either key form', () => {
+        expect(check(IOS_TEST_APP_SIMULATOR)).not.toThrow();
+        expect(check({ ...IOS_TEST_APP_SIMULATOR, 'appium:app': '/path/to/TestApp.app' })).not.toThrow();
+        expect(check({ ...without(IOS_TEST_APP_SIMULATOR, 'appium:app'), app: 'dist/TestApp.app.zip' })).not.toThrow();
+        expect(check(without(IOS_TEST_APP_SIMULATOR, 'appium:app', 'appium:reduceMotion'))).not.toThrow();
+        expect(check({ ...IOS_TEST_APP_SIMULATOR, 'appium:fullReset': false })).not.toThrow();
+    });
+
+    test('a device file (with a udid) and the app already installed is accepted', () => {
+        expect(check(IOS_TEST_APP_DEVICE)).not.toThrow();
+    });
+
+    test('the committed simulator example passes the test-app rule as committed and selects the test-app spec', () => {
+        const example = { E2E_CAPABILITIES: 'tests/capabilities/ios-testapp-simulator.example.json' };
+        expect(() => requireAppCapabilities('ios', example, IOS_TEST_APP)).not.toThrow();
+        expect(capabilitiesBundleId(example)).toBe(IOS_TEST_APP.id);
+        // The Settings rule refuses it (another app, and a build to install).
+        expect(refusal(() => requireAppCapabilities('ios', example))).toContain('(key "appium:app")');
+        // The same file with a device udid is refused: nothing is installed on a device.
+        const device = JSON.parse(fs.readFileSync(example.E2E_CAPABILITIES, 'utf-8'));
+        expect(refusedTestApp({ ...device, 'appium:udid': '00000000-0000000000000000' }, 'appium:app')).toContain('allowed only for a simulator');
+    });
+
+    test('on a device (a udid is set) installing the build is refused, with or without the prefix', () => {
+        for (const written of ['appium:app', 'app']) {
+            for (const value of ['/path/to/TestApp.app.zip', '/path/to/TestApp.app', '/path/to/TestApp.ipa', null]) {
+                expect(refusedTestApp({ ...IOS_TEST_APP_DEVICE, [written]: value }, written))
+                    .toContain('allowed only for a simulator');
+            }
+        }
+        // The unprefixed udid counts the same.
+        const bareUdid = { ...without(IOS_TEST_APP_DEVICE, 'appium:udid'), udid: '00000000-0000000000000000' };
+        expect(refusedTestApp({ ...bareUdid, 'appium:app': '/path/to/TestApp.app.zip' }, 'appium:app')).toContain('"udid"');
+        // So does a udid with an empty value: the file still names a device.
+        refusedTestApp({ ...IOS_TEST_APP_DEVICE, 'appium:udid': '', 'appium:app': '/path/to/TestApp.app.zip' }, 'appium:app');
+        refusedTestApp({ ...IOS_TEST_APP_DEVICE, 'appium:reduceMotion': true }, 'appium:reduceMotion');
+    });
+
+    test('on a simulator the build must be a local .app or .app.zip path', () => {
+        for (const value of ['/path/to/TestApp.ipa', '/path/to/TestApp.zip', '/path/to/TestApp.app.zip.bak', 'https://example.com/TestApp.app.zip',
+            'file:///path/to/TestApp.app', '', null, true, 1, ['/path/to/TestApp.app']]) {
+            expect(refusedTestApp({ ...IOS_TEST_APP_SIMULATOR, 'appium:app': value }, 'appium:app')).toContain('.app.zip');
+        }
+    });
+
+    test('another bundle id is refused, Settings included', () => {
+        for (const value of ['com.apple.Preferences', 'com.civitas-cerebrum.test-app.debug', 'COM.CIVITAS-CEREBRUM.TEST-APP', '', null]) {
+            refusedTestApp({ ...IOS_TEST_APP_SIMULATOR, 'appium:bundleId': value }, 'appium:bundleId');
+            refusedTestApp({ ...IOS_TEST_APP_DEVICE, 'appium:bundleId': value }, 'appium:bundleId');
+        }
+        refusedTestApp(without(IOS_TEST_APP_SIMULATOR, 'appium:bundleId'), 'appium:bundleId');
+    });
+
+    test('a second app, a browser and the nested form stay refused on a simulator', () => {
+        for (const written of ['appium:otherApps', 'otherApps', 'browserName', 'appium:processArguments', 'appium:appPackage']) {
+            refusedTestApp({ ...IOS_TEST_APP_SIMULATOR, [written]: '["/path/to/Other.app"]' }, written);
+        }
+        refusedTestApp({ ...IOS_TEST_APP_SIMULATOR, 'appium:options': { app: '/path/to/TestApp.app.zip' } }, 'appium:options');
+        refusedTestApp({ ...IOS_TEST_APP_SIMULATOR, app: '/path/to/TestApp.app.zip' }, 'app');
+    });
+
+    test('noReset is required and true; fullReset absent or false; alert keys absent or false', () => {
+        expect(refusedTestApp(without(IOS_TEST_APP_SIMULATOR, 'appium:noReset'), 'appium:noReset')).toContain('fast reset');
+        for (const value of [false, 'true', null]) {
+            refusedTestApp({ ...IOS_TEST_APP_SIMULATOR, 'appium:noReset': value }, 'appium:noReset');
+        }
+        for (const value of [true, 'false', null]) {
+            refusedTestApp({ ...IOS_TEST_APP_SIMULATOR, 'appium:fullReset': value }, 'appium:fullReset');
+        }
+        for (const key of ['appium:autoAcceptAlerts', 'appium:autoDismissAlerts', 'autoGrantPermissions']) {
+            for (const value of [true, 'false', 1]) {
+                expect(refusedTestApp({ ...IOS_TEST_APP_SIMULATOR, [key]: value }, key)).toContain('only false or absent');
+                refusedTestApp({ ...IOS_TEST_APP_DEVICE, [key]: value }, key);
+            }
+        }
+    });
+
+    test('the Settings rule still refuses a build to install, even on a simulator', () => {
+        const settingsSimulator = { ...IOS_TEST_APP_SIMULATOR, 'appium:bundleId': 'com.apple.Preferences' };
+        expectRefused('ios', settingsSimulator, 'appium:app');
+        expectRefused('ios', without(settingsSimulator, 'appium:app'), 'appium:reduceMotion');
+        expect(() => requireAppCapabilities('ios', env(without(settingsSimulator, 'appium:app', 'appium:reduceMotion')))).not.toThrow();
+    });
+});
+
+test.describe('capabilitiesBundleId', () => {
+    test('reads the bundle id with or without the prefix', () => {
+        expect(capabilitiesBundleId(env(IOS_TEST_APP_SIMULATOR))).toBe('com.civitas-cerebrum.test-app');
+        expect(capabilitiesBundleId(env(IOS_OK))).toBe('com.apple.Preferences');
+        expect(capabilitiesBundleId(env({ ...without(IOS_OK, 'appium:bundleId'), bundleId: 'com.example.app' }))).toBe('com.example.app');
+    });
+
+    test('never throws: no file, an unreadable or non-iOS file, or no string bundle id give undefined', () => {
+        expect(capabilitiesBundleId({})).toBeUndefined();
+        expect(capabilitiesBundleId({ E2E_CAPABILITIES: path.join(dir, 'missing.json') })).toBeUndefined();
+        const broken = path.join(dir, 'broken.json');
+        fs.writeFileSync(broken, '{ not json');
+        expect(capabilitiesBundleId({ E2E_CAPABILITIES: broken })).toBeUndefined();
+        expect(capabilitiesBundleId(env(ANDROID_OK))).toBeUndefined();
+        expect(capabilitiesBundleId(env(without(IOS_OK, 'appium:bundleId')))).toBeUndefined();
+        expect(capabilitiesBundleId(env({ ...IOS_OK, 'appium:bundleId': 42 }))).toBeUndefined();
     });
 });

@@ -4,14 +4,21 @@ import type { Platform } from '../../src';
 /**
  * Device-safety guard shared by the cross-platform spec and the live specs.
  *
- * Each device platform may drive exactly ONE app:
+ * Each spec names the ONE app it may drive ({@link DeviceApp}); without one,
+ * the platform's default app in {@link DEVICE_APPS}:
  *
- * - iOS: the built-in Settings app (`bundleId` exactly `com.apple.Preferences`),
- *   read-only.
- * - Android: the purpose-built test app (`appPackage` exactly
- *   `com.civitas.testapp`, `appActivity` optional and then exactly
- *   `com.civitas.testapp.MainActivity` or `.MainActivity`). The app must
- *   already be installed: nothing is installed.
+ * - iOS, Settings ({@link IOS_SETTINGS_APP}, the iOS default): the built-in
+ *   Settings app (`bundleId` exactly `com.apple.Preferences`), read-only.
+ * - iOS, test app ({@link IOS_TEST_APP}, the live test-app spec only): the
+ *   purpose-built test app (`bundleId` exactly `com.civitas-cerebrum.test-app`).
+ *   On a SIMULATOR (a file without `udid`) the file may also install the app's
+ *   build with `app` (a local `.app` or `.app.zip` path) and set
+ *   `reduceMotion`; on a real device (a file with `udid`) both stay refused:
+ *   nothing is installed on a device.
+ * - Android ({@link ANDROID_TEST_APP}): the purpose-built test app
+ *   (`appPackage` exactly `com.civitas.testapp`, `appActivity` optional and
+ *   then exactly `com.civitas.testapp.MainActivity` or `.MainActivity`). The
+ *   app must already be installed: nothing is installed.
  *
  * On a device platform the capabilities file is read the way the library reads
  * it (`loadCapabilities`: `E2E_CAPABILITIES`, flat object, `platformName`
@@ -21,11 +28,11 @@ import type { Platform } from '../../src';
  * - Keys are compared without a leading `appium:` (Appium accepts both forms).
  *   A file that sets the same key both with and without the prefix is refused,
  *   and so is `appium:options` (the nested form).
- * - Only the keys in {@link ALLOWED_KEYS} (plus the platform's app keys) may
- *   appear; anything else (`app`, `otherApps`, `browserName`, `intentAction`,
- *   `processArguments`, ...) is refused whatever its value: no install, no
- *   second app, no browser.
- * - The app id is the platform's app ({@link DEVICE_APPS}).
+ * - Only the keys in {@link ALLOWED_KEYS} (plus the platform's app keys, and on
+ *   a simulator the app's simulator-only keys) may appear; anything else
+ *   (`app`, `otherApps`, `browserName`, `intentAction`, `processArguments`,
+ *   ...) is refused whatever its value: no install, no second app, no browser.
+ * - The app id is the spec's app.
  * - `noReset` is present and exactly `true` (absent, the driver's fast reset may
  *   clear app data); `fullReset` is absent or exactly `false`.
  * - `autoAcceptAlerts`, `autoDismissAlerts` and `autoGrantPermissions` are
@@ -39,31 +46,55 @@ import type { Platform } from '../../src';
  * Every error names the file and the offending key as written. A no-op on web.
  */
 
-/** The one app a device platform may drive (bare key, without `appium:`). */
+/** The one app a spec may drive (keys bare, without `appium:`). */
 export interface DeviceApp {
+    /** The platform the app runs on. */
+    platform: Platform;
     /** The capability naming the app. */
     key: string;
     /** Its only allowed value. */
     id: string;
     /** The only allowed values of an (optional) `appActivity`; none allowed when unset. */
     activities?: readonly string[];
+    /**
+     * Keys allowed only when the file targets a simulator (it sets no `udid`).
+     * `app` among them must be a local `.app` or `.app.zip` path.
+     */
+    simulatorOnlyKeys?: readonly string[];
     /** What the specs do with the app, for the error message. */
     description: string;
 }
 
-/** The one app each device platform may drive. */
+/** iOS: the built-in Settings app, read-only (the Settings spec and the cross-platform spec). */
+export const IOS_SETTINGS_APP: DeviceApp = {
+    platform: 'ios',
+    key: 'bundleId',
+    id: 'com.apple.Preferences',
+    description: 'drives the built-in Settings app read-only',
+};
+
+/** iOS: the purpose-built test app (the live test-app spec). Its build may be installed on a simulator only. */
+export const IOS_TEST_APP: DeviceApp = {
+    platform: 'ios',
+    key: 'bundleId',
+    id: 'com.civitas-cerebrum.test-app',
+    simulatorOnlyKeys: ['app', 'reduceMotion'],
+    description: 'drives only the test app com.civitas-cerebrum.test-app (its build may be installed on a simulator, never on a device)',
+};
+
+/** Android: the purpose-built test app, already installed on the device. */
+export const ANDROID_TEST_APP: DeviceApp = {
+    platform: 'android',
+    key: 'appPackage',
+    id: 'com.civitas.testapp',
+    activities: ['com.civitas.testapp.MainActivity', '.MainActivity'],
+    description: 'drives only the installed test app com.civitas.testapp',
+};
+
+/** The default app of each device platform: what {@link requireAppCapabilities} checks when no app is named. */
 export const DEVICE_APPS: Readonly<Partial<Record<Platform, DeviceApp>>> = {
-    ios: {
-        key: 'bundleId',
-        id: 'com.apple.Preferences',
-        description: 'drives the built-in Settings app read-only',
-    },
-    android: {
-        key: 'appPackage',
-        id: 'com.civitas.testapp',
-        activities: ['com.civitas.testapp.MainActivity', '.MainActivity'],
-        description: 'drives only the installed test app com.civitas.testapp',
-    },
+    ios: IOS_SETTINGS_APP,
+    android: ANDROID_TEST_APP,
 };
 
 /** Bare keys allowed on every device platform (the app keys are added per platform). */
@@ -102,17 +133,50 @@ const PREFIX = 'appium:';
 /** The platform with its article, for the refusal message. */
 const SESSION_NAMES: Partial<Record<Platform, string>> = { android: 'an Android', ios: 'an iOS' };
 
+/** A local simulator build: a path (not a URL) ending in `.app` or `.app.zip`. */
+const SIMULATOR_BUILD = /\.app(\.zip)?$/;
+const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+/**
+ * The iOS app the capabilities file names (`bundleId`, with or without
+ * `appium:`), or `undefined` when there is no readable iOS file or no string
+ * bundle id. Never throws: the specs call it while they are collected (to
+ * decide which iOS spec runs), and the guard in their `beforeAll` is what
+ * refuses a bad file.
+ *
+ * @param env - Environment to read `E2E_CAPABILITIES` from (default `process.env`).
+ */
+export function capabilitiesBundleId(env: NodeJS.ProcessEnv = process.env): string | undefined {
+    let capabilities: Record<string, unknown>;
+    try {
+        ({ capabilities } = loadCapabilities(undefined, 'ios', env));
+    } catch {
+        return undefined;
+    }
+    const value = capabilities[`${PREFIX}bundleId`] ?? capabilities.bundleId;
+    return typeof value === 'string' ? value : undefined;
+}
+
 /**
  * Throws unless the capabilities file of a device run targets only the
- * platform's allowed app ({@link DEVICE_APPS}) without installing, resetting
- * or launching anything else.
+ * spec's app without installing (except a simulator build where the app
+ * allows it), resetting or launching anything else.
  *
  * @param platform - The resolved platform of the run.
  * @param env - Environment to read `E2E_CAPABILITIES` from (default `process.env`).
+ * @param app - The app the spec drives (default the platform's app in {@link DEVICE_APPS}).
+ *   It must be an app of `platform`.
  */
-export function requireAppCapabilities(platform: Platform, env: NodeJS.ProcessEnv = process.env): void {
-    const expected = DEVICE_APPS[platform];
-    if (!expected) return;
+export function requireAppCapabilities(
+    platform: Platform,
+    env: NodeJS.ProcessEnv = process.env,
+    app: DeviceApp | undefined = DEVICE_APPS[platform],
+): void {
+    if (!DEVICE_APPS[platform]) return;
+    if (!app || app.platform !== platform) {
+        throw new Error(`requireAppCapabilities: the app ${app ? `"${app.id}" runs on ${app.platform}, not on ${platform}` : 'is missing'}.`);
+    }
+    const expected = app;
 
     const { file, capabilities } = loadCapabilities(undefined, platform, env);
     const refuse = (key: string, reason: string): never => {
@@ -136,11 +200,26 @@ export function requireAppCapabilities(platform: Platform, env: NodeJS.ProcessEn
         bare.set(key, { written, value: capabilities[written] });
     }
 
-    const allowed = new Set([...ALLOWED_KEYS, ...(PLATFORM_APP_KEYS[platform] ?? [])]);
+    // A file without a udid targets a simulator (the driver picks it by name and version).
+    const udid = bare.get('udid');
+    const simulatorOnly = new Set(expected.simulatorOnlyKeys ?? []);
+    const allowed = new Set([...ALLOWED_KEYS, ...(PLATFORM_APP_KEYS[platform] ?? []), ...(udid ? [] : simulatorOnly)]);
     for (const [key, { written }] of bare) {
-        if (!allowed.has(key)) {
-            refuse(written, `sets "${written}", which is not on the allow-list `
-                + `(${[...allowed].join(', ')}; each with or without "${PREFIX}")`);
+        if (allowed.has(key)) continue;
+        if (simulatorOnly.has(key)) {
+            refuse(written, `sets "${written}", which is allowed only for a simulator (a file without "udid"), `
+                + `but it names a device with "${udid!.written}": nothing is installed on a device`);
+        }
+        refuse(written, `sets "${written}", which is not on the allow-list `
+            + `(${[...allowed].join(', ')}; each with or without "${PREFIX}")`);
+    }
+
+    const build = bare.get('app');
+    if (build) {
+        const value = build.value;
+        if (typeof value !== 'string' || !SIMULATOR_BUILD.test(value) || URL_SCHEME.test(value)) {
+            refuse(build.written, `must name a local simulator build: "${build.written}" is ${JSON.stringify(value)}, `
+                + 'allowed: a path ending in ".app" or ".app.zip" (no URL)');
         }
     }
 
