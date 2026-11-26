@@ -37,8 +37,7 @@ import { test, expect, platform, runsTestApp, requireTestApp } from './ios-testa
  * correct behaviour:
  * - `hideKeyboard` on a keyboard without a Done key (the login form);
  * - `doubleClick`, taken by XCUITest as one tap;
- * - a horizontal `scrollIntoView` / `scrollUntilFound` sweep on the carousel;
- * - `verifyCount` with inclusive bounds and a two-sided range.
+ * - a horizontal `scrollIntoView` / `scrollUntilFound` sweep on the carousel.
  *
  * A landscape rotation is skipped as not applicable: the app is portrait only.
  */
@@ -51,8 +50,6 @@ const FIXME = {
         + 'which XCUITest takes as one tap.',
     horizontalSweep: 'element-repository: a left / right scrollIntoView / scrollUntilFound sweep always swipes across the window\'s '
         + 'vertical centre, which misses a carousel near the top of the screen.',
-    countRanges: 'verifyCount refuses greaterThanOrEqual / lessThanOrEqual (and an inclusive range) at runtime, and does not '
-        + 'enforce both bounds of a two-sided greaterThan / lessThan range; the fix is in progress.',
 } as const;
 const fixme = (description: string) => ({ annotation: { type: 'fixme', description } });
 
@@ -334,7 +331,7 @@ test.describe('live iOS test app', () => {
             await steps.verifyAbsence('item1', 'LongListPage');
         });
 
-        test.fixme('verifyCount accepts inclusive bounds and an inclusive range, and enforces both bounds of a range', fixme(FIXME.countRanges), async ({ steps, openScreen }) => {
+        test('verifyCount accepts inclusive bounds and an inclusive range, and enforces both bounds of a range', async ({ steps, openScreen }) => {
             await openScreen('longList');
             await steps.verifyCount('item', 'LongListPage', { greaterThanOrEqual: 3 });
             await steps.verifyCount('item', 'LongListPage', { lessThanOrEqual: 200 });

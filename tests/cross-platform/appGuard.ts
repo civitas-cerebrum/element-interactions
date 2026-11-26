@@ -223,9 +223,10 @@ export function requireAppCapabilities(
     const build = bare.get('app');
     if (build) {
         const value = build.value;
-        if (typeof value !== 'string' || !SIMULATOR_BUILD.test(value) || NOT_LOCAL.test(value)) {
+        // Leading or trailing whitespace would hide a URL from the check below.
+        if (typeof value !== 'string' || value !== value.trim() || !SIMULATOR_BUILD.test(value) || NOT_LOCAL.test(value)) {
             refuse(build.written, `must name a local simulator build: "${build.written}" is ${JSON.stringify(value)}, `
-                + 'allowed: a local path ending in ".app" or ".app.zip" (no URL)');
+                + 'allowed: a local path ending in ".app" or ".app.zip" (no URL, no surrounding whitespace)');
         }
     }
 

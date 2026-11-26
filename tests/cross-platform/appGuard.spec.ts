@@ -351,7 +351,7 @@ test.describe('requireAppCapabilities with the iOS test app', () => {
     test('on a simulator the build must be a local .app or .app.zip path', () => {
         for (const value of ['/path/to/TestApp.ipa', '/path/to/TestApp.zip', '/path/to/TestApp.app.zip.bak', 'https://example.com/TestApp.app.zip',
             'file:///path/to/TestApp.app', 'http:/h/TestApp.app.zip', 'http:h/TestApp.app.zip', 'file:/p/TestApp.app', '//h/TestApp.app.zip',
-            '', null, true, 1, ['/path/to/TestApp.app']]) {
+            ' http://h/TestApp.app.zip', '/path/to/TestApp.app ', '\t/path/to/TestApp.app.zip', '', null, true, 1, ['/path/to/TestApp.app']]) {
             expect(refusedTestApp({ ...IOS_TEST_APP_SIMULATOR, 'appium:app': value }, 'appium:app')).toContain('.app.zip');
         }
     });
