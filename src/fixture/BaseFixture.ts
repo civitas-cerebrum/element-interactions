@@ -26,7 +26,7 @@ import { log } from '../logger/Logger';
 import { AppiumFactory } from '../appium/AppiumFactory';
 import { AppNotInForegroundError, describeAppState } from '../appium/AppiumDevice';
 import { AppiumSessionProvider } from '../session/AppiumSessionProvider';
-import { prepareSession, RELAUNCH_TIMEOUT_MS, resolveStartTimeout, type PreparedSession } from '../session/prepareSession';
+import { prepareSession, RELAUNCH_TIMEOUT_MS, resolveStartTimeout, START_TIMEOUT_MS, type PreparedSession } from '../session/prepareSession';
 import type { ServerOptions, SessionOptions, SessionProvider, SessionStartContext } from '../session/types';
 import { strategyFor } from '../appium/platform';
 import { PlatformInteractions } from './PlatformInteractions';
@@ -830,8 +830,10 @@ export async function relaunchApp(
         if (!(error instanceof AppNotInForegroundError)) throw failed('foreground wait', error);
         throw new Error(
             `session.reset 'relaunch': app "${error.appId}" is not in the foreground on platform "${error.platform}" `
-            + `${error.timeout} ms after it was terminated and activated`
-            + `${retried ? ' (activation retried once after a launch timeout)' : ''} `
+            + (retried
+                ? `within session.relaunchTimeout ${budget} ms (activation retried once after a launch timeout; `
+                    + 'the retried activation and the foreground wait share that budget) '
+                : `${error.timeout} ms after it was terminated and activated `)
             + `(${describeAppState(error.lastState, error.lastError)}). `
             + `The test did not start. If the app needs longer to come up, raise session.relaunchTimeout `
             + `(default ${RELAUNCH_TIMEOUT_MS} ms).`,
@@ -1011,7 +1013,7 @@ export async function startSession(
             `${where}: no session within ${budget} ms (session.startTimeout ${startTimeout} ms, minus `
             + `${startTimeout - budget} ms kept so this error comes before the fixture timeout). Check that the server is `
             + 'reachable and the device free; a cold real-device start can need several minutes: raise session.startTimeout '
-            + 'if it was still starting.',
+            + `(default ${START_TIMEOUT_MS} ms) if it was still starting.`,
         );
     }
     return outcome;

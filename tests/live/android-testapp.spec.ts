@@ -12,7 +12,7 @@ import { test, expect, platform, requireTestApp } from './android-fixture';
  *
  * Skipped unless the resolved platform is `android`. Run it:
  *
- *   E2E_PLATFORM=android E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \
+ *   E2E_PLATFORM=android E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url> \
  *     npx playwright test -c playwright.platform.config.ts tests/live
  *
  * The capabilities file is a flat W3C object (see tests/capabilities/README.md)

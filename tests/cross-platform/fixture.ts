@@ -11,7 +11,7 @@ import { hasEntry } from './hasEntry';
  * nothing about a device or a server is written here.
  *
  *   web (default suite): the docker test site at the config's baseURL.
- *   ios:     E2E_PLATFORM=ios E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \
+ *   ios:     E2E_PLATFORM=ios E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url> \
  *              npx playwright test -c playwright.platform.config.ts tests/cross-platform
  *   android: the same with E2E_PLATFORM=android.
  *

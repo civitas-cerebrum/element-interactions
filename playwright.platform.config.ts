@@ -5,7 +5,7 @@ import { resolvePlatform } from './src';
  * Platform runs: the cross-platform spec and the live device
  * checks against an Appium server. The only start form:
  *
- *   E2E_PLATFORM=<platform> E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \
+ *   E2E_PLATFORM=<platform> E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url> \
  *     npx playwright test -c playwright.platform.config.ts [tests/cross-platform | tests/live]
  *
  * One device session per worker, so one worker. Long timeouts: the first
@@ -13,9 +13,10 @@ import { resolvePlatform } from './src';
  * run opens no browser. (The cross-platform spec's web run belongs to the
  * default config, `npm run test:unit`, which has the test site's baseURL.)
  *
- * CI may need more headroom than 180 s (an iOS simulator builds
- * WebDriverAgent on first use): pass Playwright's `--timeout <ms>` on the
- * command line rather than editing this file.
+ * Opening the session (an iOS simulator builds WebDriverAgent on first use)
+ * is bounded by `session.startTimeout` (default 600000 ms), not the test
+ * timeout; pass Playwright's `--timeout <ms>` only if the tests themselves
+ * need more.
  */
 const platform = resolvePlatform(undefined);
 if (platform === 'web') {

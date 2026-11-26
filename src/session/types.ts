@@ -11,7 +11,7 @@ export interface ServerOptions {
     protocol?: 'http' | 'https';
     hostname?: string;
     port?: number;
-    /** Appium base path, e.g. `'/wd/hub'`. */
+    /** The server's base path, only if it has one (e.g. `'/wd/hub'` for a server started with `--base-path /wd/hub`); default `/`. */
     path?: string;
     user?: string;
     key?: string;
@@ -48,7 +48,7 @@ export interface SessionOptions {
      */
     capabilities?: string;
     /**
-     * URL (with base path) or object. Default: `process.env.APPIUM_URL ?? 'http://127.0.0.1:4723'`
+     * The server's own URL (with its base path only if it has one) or object. Default: `process.env.APPIUM_URL ?? 'http://127.0.0.1:4723'`
      * (an empty `APPIUM_URL` counts as unset).
      *
      * The object form is a complete choice of server: a field it leaves out is

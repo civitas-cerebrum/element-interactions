@@ -257,6 +257,7 @@ test('a session start that never answers fails with our error before the fixture
     const message = plain(r);
     expect(message).toContain('session start on https://appium.invalid:443/wd/hub for platform "ios": no session within 900 ms');
     expect(message).toContain('session.startTimeout 1000 ms');
+    expect(message).toContain('raise session.startTimeout (default 600000 ms)');
     expect(message).not.toContain('secret-key');
     expect(message).not.toContain('someone');
     expect(message).not.toContain('timeout of 1000ms exceeded');

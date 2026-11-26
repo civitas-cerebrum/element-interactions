@@ -13,7 +13,7 @@ import { requireAppCapabilities, capabilitiesBundleId, IOS_TEST_APP } from '../c
  * capabilities file names the iOS test app (`ios-testapp.spec.ts` runs then).
  * Run it:
  *
- *   E2E_PLATFORM=ios E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \
+ *   E2E_PLATFORM=ios E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url> \
  *     npx playwright test -c playwright.platform.config.ts tests/live
  *
  * The capabilities file is a flat W3C object (see tests/capabilities/README.md)

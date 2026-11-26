@@ -146,6 +146,9 @@ test.describe("the fixture's relaunch retries a launch timeout once", () => {
         elapsed = Date.now() - started;
         expect((waited.error as Error).message).toContain('is not in the foreground');
         expect((waited.error as Error).message).toContain('activation retried once after a launch timeout');
+        // The retried path reports the relaunch budget, not the remainder left for the wait.
+        expect((waited.error as Error).message).toContain('within session.relaunchTimeout 400 ms');
+        expect((waited.error as Error).message).not.toContain('ms after it was terminated and activated');
         expect(elapsed).toBeLessThan(400 + 600);
     });
 
@@ -259,6 +262,7 @@ test.describe('session start budget', () => {
         expect(error.message).toContain('"ios"');
         expect(error.message).toContain('session.startTimeout');
         expect(error.message).toContain('500 ms');
+        expect(error.message).toContain('raise session.startTimeout (default 600000 ms)');
         expect(error.message).not.toContain('someone');
         expect(error.message).not.toContain('secret-key');
     });

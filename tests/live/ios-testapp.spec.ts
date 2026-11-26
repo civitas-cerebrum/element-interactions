@@ -12,7 +12,7 @@ import { test, expect, platform, runsTestApp, requireTestApp } from './ios-testa
  * names the test app (`appium:bundleId` `com.civitas-cerebrum.test-app`); a
  * file naming Settings runs `ios-settings.spec.ts` instead. Run it:
  *
- *   E2E_PLATFORM=ios E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \
+ *   E2E_PLATFORM=ios E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url> \
  *     npx playwright test -c playwright.platform.config.ts tests/live/ios-testapp.spec.ts
  *
  * The capabilities file is a flat W3C object (see tests/capabilities/README.md)

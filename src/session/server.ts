@@ -9,7 +9,7 @@ export const DEFAULT_APPIUM_URL = 'http://127.0.0.1:4723';
  * - `undefined`: `env.APPIUM_URL ?? 'http://127.0.0.1:4723'` (an empty
  *   `APPIUM_URL` counts as unset).
  * - A URL string: parsed into protocol / hostname / port / path. The path is
- *   the Appium base path (`/wd/hub`), kept as given minus a trailing slash; a
+ *   the server's base path, if it has one (`/` otherwise), kept as given minus a trailing slash; a
  *   URL without a port gets its protocol's (80 / 443). Credentials in the URL
  *   (`https://user:key@host/...`) become `user` / `key`.
  * - An object: its fields, with any missing connection field taken from
@@ -42,20 +42,20 @@ export function resolveServer(server: string | ServerOptions | undefined, env: N
     return resolved;
 }
 
-/** Parses an Appium server URL (base path included). `source` names where it came from, for the error. */
+/** Parses an Appium server URL (its base path included, if it has one). `source` names where it came from, for the error. */
 export function parseServerUrl(url: string, source = 'session.server'): ServerOptions {
     let parsed: URL;
     try {
         parsed = new URL(url);
     } catch {
-        throw new Error(`${source} is not a valid URL: "${url}". Expected e.g. http://127.0.0.1:4723 or https://<appium-server>/wd/hub.`);
+        throw new Error(`${source} is not a valid URL: "${url}". Expected the server's own URL, e.g. http://127.0.0.1:4723, or https://<appium-server>/wd/hub for a server started with that base path.`);
     }
     const protocol = parsed.protocol.replace(/:$/, '');
     if (protocol !== 'http' && protocol !== 'https') {
         throw new Error(`${source} must use http or https, got "${parsed.protocol}".`);
     }
     if (parsed.search || parsed.hash) {
-        throw new Error(`${source} must not carry a query or fragment; give the server URL with its base path only.`);
+        throw new Error(`${source} must not carry a query or fragment; give the server's own URL only (with its base path if it has one).`);
     }
     const result: ServerOptions = {
         protocol,

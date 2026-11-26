@@ -166,7 +166,9 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   foreground wait, `onSessionStarted`) gets a `setup-error` (text/plain)
   attachment with the error and the last app state, plus `failure-screenshot`
   and `page-source` when the device still answers; each is time-boxed and
-  never replaces the setup error.
+  never replaces the setup error. A failing `onSessionStarted` fails the test
+  that needs the session, in its setup and with this evidence, rather than the
+  worker fixture; the session is still closed at worker teardown.
 - **Platform: `session.startTimeout`** (ms, default 600000): the worker
   fixture's own timeout for opening the session (the provider's start plus
   `onSessionStarted`), independent of the test timeout, so a cold real-device
@@ -187,8 +189,8 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `AppiumClientOptions`, `WebdriverioLogLevel`, `WebdriverioModule`.
   A capabilities file is one flat W3C object: `platformName` must match the
   platform, wrapped files are refused, and a `browserName` file must set
-  `"wdio:enforceWebDriverClassic": true`. The server is a URL with base path or
-  an object; credentials come from `APPIUM_USER` / `APPIUM_KEY`.
+  `"wdio:enforceWebDriverClassic": true`. The server is its own URL (base path only if it has
+  one) or an object; credentials come from `APPIUM_USER` / `APPIUM_KEY`.
 - **Types of the steps and option shapes**: `StepsOptions` (the options of
   `new Steps(...)`), `ElementActionFamily` (the family a `steps.on(...)` chain
   acts through), `VerifyOptions` (the `{ negated?, timeout?, errorMessage? }`
