@@ -22,6 +22,7 @@ export type {
     IGestures,
     Direction,
     ScreenSwipeOptions,
+    ScrollStepOptions,
     IDevice,
     Orientation,
     PermissionState,

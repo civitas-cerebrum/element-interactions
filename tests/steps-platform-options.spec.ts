@@ -42,6 +42,27 @@ function deviceSteps(platform: (typeof DEVICE_PLATFORMS)[number], timeout = 400,
     return { steps, mock, element, repoCalls };
 }
 
+/**
+ * Steps over a real AppiumFactory whose repository answers `carousel` with a
+ * container element, `card` with the target and throws, as the repository
+ * does, for any other name.
+ */
+function containerSteps(platform: (typeof DEVICE_PLATFORMS)[number]) {
+    const mock = mockDriver({ capabilities: { ...CAPS[platform] } });
+    const repoCalls: Call[] = [];
+    const target = mockElement({ selector: '~card' });
+    const carousel = mockElement({ selector: '~carousel' });
+    const repo = stubRepo(repoCalls, target);
+    (repo as unknown as Record<string, unknown>).get = async (name: string, page: string, options?: unknown) => {
+        repoCalls.push(['repo', 'get', name, page, options]);
+        if (name === 'card') return target;
+        if (name === 'carousel') return carousel;
+        throw new Error(`ElementRepository: Element '${name}' not found on page '${page}'.`);
+    };
+    const steps = new Steps(new AppiumFactory(mock.driver, platform, { timeout: 400 }), repo);
+    return { steps, target, carousel, repoCalls };
+}
+
 async function caught(call: () => unknown): Promise<unknown> {
     try {
         await call();
@@ -100,6 +121,57 @@ for (const platform of DEVICE_PLATFORMS) {
             await steps.scrollIntoView('cards', 'Home');
             expect(repoCalls).toEqual([['repo', 'get', 'cards', 'Home', INDEX_2], ['repo', 'get', 'cards', 'Home', undefined]]);
             expect(element.calls).toEqual([['scrollIntoView', { direction: 'up', maxSwipes: 5, timeout: 650 }], ['scrollIntoView', { timeout: 400 }]]);
+        });
+    });
+
+    test.describe(`the scroll container on ${platform}`, () => {
+        test('scrollIntoView and scrollUntilFound resolve the container on the same page and hand it to the primitive', async () => {
+            const { steps, target, carousel, repoCalls } = containerSteps(platform);
+            await steps.scrollIntoView('card', 'Shop', { direction: 'right', container: 'carousel', timeout: 700 });
+            await steps.scrollUntilFound('card', 'Shop', { strategy: 'index', index: 2, direction: 'left', maxSwipes: 4, container: 'carousel' });
+            // The container is resolved without the target's strategy, on the target's page.
+            expect(repoCalls).toEqual([
+                ['repo', 'get', 'card', 'Shop', undefined], ['repo', 'get', 'carousel', 'Shop', undefined],
+                ['repo', 'get', 'card', 'Shop', INDEX_2], ['repo', 'get', 'carousel', 'Shop', undefined],
+            ]);
+            expect(target.calls).toEqual([
+                ['scrollIntoView', { direction: 'right', container: carousel, timeout: 700 }],
+                ['scrollIntoView', { direction: 'left', maxSwipes: 4, container: carousel, timeout: 400 }],
+            ]);
+            expect(target.calls[0][1]).toHaveProperty('container', carousel);
+            expect(carousel.calls, 'the container itself is not acted on by the step').toEqual([]);
+        });
+
+        test('the fluent scrollIntoView and scrollUntilFound resolve the container on the chain\'s page', async () => {
+            const { steps, target, carousel, repoCalls } = containerSteps(platform);
+            await steps.on('card', 'Shop').nth(2).scrollIntoView({ direction: 'right', container: 'carousel' });
+            await steps.on('card', 'Shop').scrollUntilFound({ container: 'carousel', timeout: 90 });
+            await steps.on('card', 'Shop').isVisible({ timeout: 50 }).scrollIntoView({ direction: 'left', container: 'carousel' });
+            expect(repoCalls.filter(c => c[2] === 'carousel')).toEqual([
+                ['repo', 'get', 'carousel', 'Shop', undefined],
+                ['repo', 'get', 'carousel', 'Shop', undefined],
+                ['repo', 'get', 'carousel', 'Shop', undefined],
+            ]);
+            expect(target.calls).toEqual([
+                ['scrollIntoView', { direction: 'right', container: carousel, timeout: 400 }],
+                ['scrollIntoView', { container: carousel, timeout: 90 }],
+                ['scrollIntoView', { direction: 'left', container: carousel, timeout: 400 }],
+            ]);
+        });
+
+        test('a container the page does not define fails before any scroll, naming the container and the page', async () => {
+            const { steps, target } = containerSteps(platform);
+            for (const run of [
+                () => steps.scrollIntoView('card', 'Shop', { direction: 'right', container: 'carousell' }),
+                () => steps.scrollUntilFound('card', 'Shop', { direction: 'right', container: 'carousell' }),
+                () => steps.on('card', 'Shop').scrollIntoView({ container: 'carousell' }),
+                () => steps.on('card', 'Shop').scrollUntilFound({ container: 'carousell' }),
+            ]) {
+                const error = await caught(run) as Error | undefined;
+                expect(error).toBeInstanceOf(Error);
+                expect(error?.message).toMatch(/^scroll(IntoView|UntilFound): container "carousell" on page "Shop" could not be resolved: ElementRepository: Element 'carousell' not found on page 'Shop'\.$/);
+            }
+            expect(target.calls, 'nothing was scrolled').toEqual([]);
         });
     });
 

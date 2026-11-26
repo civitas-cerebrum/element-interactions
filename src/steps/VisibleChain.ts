@@ -2,7 +2,7 @@ import { ElementAction } from './ElementAction';
 import { IsVisibleOptions, ClickOptions, DropdownSelectOptions, DragAndDropOptions } from '../enum/Options';
 import { createLogger } from '../logger/Logger';
 import { requireWebPlatform } from './platformGuard';
-import type { ScrollIntoViewOptions } from '@civitas-cerebrum/element-repository';
+import type { ScrollStepOptions } from '../interfaces/IGestures';
 
 const log = createLogger('visible');
 
@@ -106,7 +106,7 @@ export class VisibleChain implements PromiseLike<boolean> {
     }
 
     /** Scroll into view — gated. Same options as {@link ElementAction.scrollIntoView}. */
-    async scrollIntoView(options?: ScrollIntoViewOptions): Promise<void> {
+    async scrollIntoView(options?: ScrollStepOptions): Promise<void> {
         await this.gate('scrollIntoView', () => this.action.scrollIntoView(options));
     }
 

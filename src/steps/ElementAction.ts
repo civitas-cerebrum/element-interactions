@@ -12,13 +12,14 @@ import {
     BooleanMatcher,
 } from './ExpectMatchers';
 import { VisibleChain } from './VisibleChain';
+import { toScrollIntoViewOptions } from './scrollContainer';
 import { isListEntry } from './listEntry';
 import type { EntryTarget } from '../interfaces/IEntryTarget';
 import type {
     IGestures,
     LongPressOptions,
     PinchOptions,
-    ScrollIntoViewOptions,
+    ScrollStepOptions,
     SwipeDirection,
     SwipeOptions,
     TapAtOptions,
@@ -524,12 +525,14 @@ export class ElementAction {
      * Scroll the resolved element into view. Skips silently if `ifVisible()` was set and element is hidden.
      * @param options - `direction`: where the element lies relative to the view on a device (default
      *   `'down'`; the browser scrolls whichever way is needed); `maxSwipes`: the most swipes a device sweep
-     *   makes (default 20); `timeout` in ms (default the chain timeout), which also bounds a device sweep.
+     *   makes (default 20); `container`: the element name, on the chain's page, of the scrollable ancestor
+     *   the device sweep swipes inside (see {@link ScrollStepOptions}; ignored on web); `timeout` in ms
+     *   (default the chain timeout), which also bounds a device sweep.
      */
-    async scrollIntoView(options?: ScrollIntoViewOptions): Promise<void> {
+    async scrollIntoView(options?: ScrollStepOptions): Promise<void> {
         if (!await this.shouldProceed()) return;
         const element = await this.resolve();
-        await element.scrollIntoView({ ...options, timeout: options?.timeout ?? this._timeout });
+        await element.scrollIntoView(await toScrollIntoViewOptions(this.repo, 'scrollIntoView', this.pageName, options, options?.timeout ?? this._timeout));
     }
 
     // -- Terminal actions: gestures --
@@ -566,13 +569,14 @@ export class ElementAction {
      * it into view. Not gated by `ifVisible()`: the element is expected to be
      * off screen.
      * @param options - `direction`: where the element lies relative to the view (default `'down'`);
-     *   `maxSwipes`: the most swipes a device sweep makes (default 20); `timeout` in ms (default the
-     *   chain timeout).
+     *   `maxSwipes`: the most swipes a device sweep makes (default 20); `container`: the element name,
+     *   on the chain's page, of the scrollable ancestor the device sweep swipes inside (see
+     *   {@link ScrollStepOptions}; ignored on web); `timeout` in ms (default the chain timeout).
      */
-    async scrollUntilFound(options?: ScrollIntoViewOptions): Promise<void> {
+    async scrollUntilFound(options?: ScrollStepOptions): Promise<void> {
         const gestures = this.requireGestures('scrollUntilFound');
         const element = await this.resolve();
-        await gestures.scrollUntilFound(element, { ...options, timeout: options?.timeout ?? this._timeout });
+        await gestures.scrollUntilFound(element, await toScrollIntoViewOptions(this.repo, 'scrollUntilFound', this.pageName, options, options?.timeout ?? this._timeout));
     }
 
     /**

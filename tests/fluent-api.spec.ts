@@ -122,6 +122,20 @@ test.describe('Fluent API — steps.on()', () => {
       await steps.on('loadingButton', 'ButtonsPage').verifyState('inViewport');
     });
 
+    test('scrollIntoView / scrollUntilFound accept a container on web and ignore it', async ({ steps }) => {
+      await steps.on('loadingButton', 'ButtonsPage').scrollIntoView({ direction: 'right', container: 'variantButtons' });
+      await steps.on('loadingButton', 'ButtonsPage').verifyState('inViewport');
+      await steps.on('primaryButton', 'ButtonsPage').scrollUntilFound({ container: 'variantButtons', timeout: 5000 });
+      await steps.scrollIntoView('loadingButton', 'ButtonsPage', { container: 'variantButtons' });
+      await steps.scrollUntilFound('primaryButton', 'ButtonsPage', { container: 'variantButtons' });
+      await steps.verifyState('primaryButton', 'ButtonsPage', 'inViewport');
+    });
+
+    test('a scroll container the page does not define fails on web too, naming it', async ({ steps }) => {
+      await expect(steps.on('loadingButton', 'ButtonsPage').scrollIntoView({ container: 'noSuchContainer' }))
+        .rejects.toThrow(/scrollIntoView: container "noSuchContainer" on page "ButtonsPage" could not be resolved/);
+    });
+
     test('tapAt(offset) clicks inside the element with the mouse', async ({ steps }) => {
       await steps.on('primaryButton', 'ButtonsPage').tapAt({ x: 5, y: 5 });
       await steps.verifyTextContains( 'resultText','ButtonsPage', 'Primary');

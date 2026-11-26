@@ -10,7 +10,8 @@ import type { IVerifications } from '../interfaces/IVerifications';
 import type { IExtractions } from '../interfaces/IExtractions';
 import type { INavigation } from '../interfaces/INavigation';
 import type { IUtils } from '../interfaces/IUtils';
-import type { IGestures, LongPressOptions, PinchOptions, ScreenSwipeOptions, ScrollIntoViewOptions, SwipeDirection, SwipeOptions, ZoomOptions } from '../interfaces/IGestures';
+import { toScrollIntoViewOptions } from './scrollContainer';
+import type { IGestures, LongPressOptions, PinchOptions, ScreenSwipeOptions, ScrollStepOptions, SwipeDirection, SwipeOptions, ZoomOptions } from '../interfaces/IGestures';
 import type { DeviceVerifyOptions, IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
 import { PlatformNotSupportedError, isFatalDriverError } from '@civitas-cerebrum/element-repository';
 import { actionFamilyOf, assertFactoryFamily, requireDevicePlatform, requireWebPlatform } from './platformGuard';
@@ -829,13 +830,16 @@ export class Steps {
      *   `direction`: where the element is relative to the current view on a
      *   device (`'down'` by default there). The browser scrolls whichever way
      *   is needed, so `direction` is ignored on web. `maxSwipes`: the most
-     *   swipes a device sweep makes (default 20). `timeout` in ms (default
-     *   the step timeout) bounds the scroll.
+     *   swipes a device sweep makes (default 20). `container`: the element
+     *   name, on `pageName`, of the scrollable ancestor (a carousel, a side
+     *   list) the device sweep swipes inside; see {@link ScrollStepOptions}.
+     *   Ignored on web. `timeout` in ms (default the step timeout) bounds the
+     *   scroll.
      */
-    async scrollIntoView(elementName: string, pageName: string, options?: StepOptions & ScrollIntoViewOptions): Promise<void> {
+    async scrollIntoView(elementName: string, pageName: string, options?: StepOptions & ScrollStepOptions): Promise<void> {
         log.interact('Scrolling "%s" in "%s" into view', elementName, pageName);
         const element = await this.getElement(elementName, pageName, options);
-        await this.gestures.scrollIntoView(element, definedOptions({ direction: options?.direction, maxSwipes: options?.maxSwipes, timeout: options?.timeout }));
+        await this.gestures.scrollIntoView(element, await toScrollIntoViewOptions(this.repo, 'scrollIntoView', pageName, options, options?.timeout));
     }
 
     // ==========================================
@@ -998,14 +1002,16 @@ export class Steps {
      * Scrolls the screen until the element is displayed; throws when `timeout` expires or the swipe limit is
      * reached first. On web the browser scrolls the element into view directly.
      * @param options - Optional step options for element resolution, plus `direction`: where the element
-     *   lies relative to the view (default `'down'`) and `maxSwipes`: the most swipes a device sweep makes
-     *   (default 20). `timeout` in ms (default the step timeout) bounds when a new swipe may start: an
-     *   in-flight swipe always finishes, so the step may run up to one swipe longer.
+     *   lies relative to the view (default `'down'`), `maxSwipes`: the most swipes a device sweep makes
+     *   (default 20) and `container`: the element name, on `pageName`, of the scrollable ancestor the
+     *   device sweep swipes inside (see {@link ScrollStepOptions}; ignored on web). `timeout` in ms
+     *   (default the step timeout) bounds when a new swipe may start: an in-flight swipe always finishes,
+     *   so the step may run up to one swipe longer.
      */
-    async scrollUntilFound(elementName: string, pageName: string, options?: StepOptions & ScrollIntoViewOptions): Promise<void> {
+    async scrollUntilFound(elementName: string, pageName: string, options?: StepOptions & ScrollStepOptions): Promise<void> {
         log.interact('Scrolling %s until "%s" in "%s" is found', options?.direction ?? 'down', elementName, pageName);
         const element = await this.getElement(elementName, pageName, options);
-        await this.gestures.scrollUntilFound(element, definedOptions({ direction: options?.direction, maxSwipes: options?.maxSwipes, timeout: options?.timeout }));
+        await this.gestures.scrollUntilFound(element, await toScrollIntoViewOptions(this.repo, 'scrollUntilFound', pageName, options, options?.timeout));
     }
 
     /**

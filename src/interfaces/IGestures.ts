@@ -38,6 +38,28 @@ export type Direction = SwipeDirection;
 export type ScreenSwipeOptions = Pick<SwipeOptions, 'distance'>;
 
 /**
+ * Options of the scroll steps (`steps.scrollIntoView`, `steps.scrollUntilFound`
+ * and the fluent `.scrollIntoView()` / `.scrollUntilFound()`):
+ * element-repository's `ScrollIntoViewOptions` with `container` given as an
+ * element NAME on the same page instead of an `Element`.
+ *
+ * `container` names the scrollable ancestor of the target (a carousel, a
+ * horizontal list). The step resolves it through the repository, so it
+ * follows the active platform's entry, and hands the element to
+ * `Element.scrollIntoView({ container })`: on a device the sweep then swipes
+ * inside the container's rect (a paging-safe drag) instead of across the
+ * window, which a carousel that does not cross the window centre needs. A
+ * name the page does not define fails before anything is sent, naming the
+ * container. On web the browser scrolls the target into view itself and
+ * Playwright ignores the container (it is still resolved, so a misspelt name
+ * fails there too).
+ */
+export type ScrollStepOptions = Omit<ScrollIntoViewOptions, 'container'> & {
+    /** The element name (on the target's page) of the scrollable ancestor to sweep inside. */
+    container?: string;
+};
+
+/**
  * Touch and scroll gestures: the full contract every driver family implements.
  *
  * Element-level gestures delegate to element-repository's `Element`

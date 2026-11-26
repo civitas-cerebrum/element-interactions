@@ -5,7 +5,7 @@ import { AppiumFactory, AppiumGestures } from '../src/appium';
 import { MissingAppIdError } from '../src/appium/AppiumDevice';
 import { PlaywrightFactory } from '../src/playwright/PlaywrightFactory';
 import { stepLog } from '../src/logger/Logger';
-import type { Direction, LongPressOptions, PinchOptions, ScrollIntoViewOptions, SwipeOptions } from '../src/interfaces/IGestures';
+import type { Direction, LongPressOptions, PinchOptions, ScrollStepOptions, SwipeOptions } from '../src/interfaces/IGestures';
 import type { DeviceVerifyOptions, Orientation, PermissionState } from '../src/interfaces/IDevice';
 import type { StepOptions } from '../src/enum/Options';
 import { PollTimeoutError } from '../src/utils/poll';
@@ -36,7 +36,7 @@ interface PlatformStepSurface {
     swipe(elementName: string, pageName: string, direction: Direction, options?: StepOptions & SwipeOptions): Promise<void>;
     swipeScreen(direction: Direction, options?: { distance?: number }): Promise<void>;
     scrollIntoView(elementName: string, pageName: string, options?: { direction?: Direction }): Promise<void>;
-    scrollUntilFound(elementName: string, pageName: string, options?: StepOptions & ScrollIntoViewOptions): Promise<void>;
+    scrollUntilFound(elementName: string, pageName: string, options?: StepOptions & ScrollStepOptions): Promise<void>;
     longPress(elementName: string, pageName: string, options?: StepOptions & LongPressOptions): Promise<void>;
     tapAt(x: number, y: number): Promise<void>;
     pinch(elementName: string, pageName: string, options?: StepOptions & PinchOptions): Promise<void>;
@@ -757,6 +757,21 @@ test.describe('platform steps on web (new Steps(repo))', () => {
         await steps.scrollUntilFound('x', 'Page', { timeout: 500 });
         await steps.longPress('x', 'Page', { duration: 1200 });
         expect(calls).toEqual(['scrollIntoView {"timeout":500}', 'longPress {"duration":1200,"timeout":900}']);
+    });
+
+    test('a scroll container on web is resolved and handed to the web element, which ignores it', async () => {
+        const received: unknown[] = [];
+        const web = new WebElement({} as never, 'css=.x');
+        (web as unknown as Record<string, unknown>).scrollIntoView = async (o: unknown) => { received.push(o); };
+        const repoCalls: Call[] = [];
+        const steps = new Steps(stubRepo(repoCalls, web, { url: () => 'about:blank' }), { timeout: 900 });
+        await steps.scrollUntilFound('x', 'Page', { direction: 'right', container: 'list', timeout: 500 });
+        await steps.on('x', 'Page').scrollUntilFound({ container: 'list' });
+        expect(repoCalls.filter(c => c[2] === 'list')).toEqual([['repo', 'get', 'list', 'Page', undefined], ['repo', 'get', 'list', 'Page', undefined]]);
+        expect(received).toEqual([
+            { direction: 'right', container: web, timeout: 500 },
+            { container: web, timeout: 900 },
+        ]);
     });
 });
 
