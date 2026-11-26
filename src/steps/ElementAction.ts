@@ -298,7 +298,7 @@ export class ElementAction {
      * family's entry-level methods (polling targets, visibility probes, list
      * presence, absence, snapshots) decide how often to resolve it.
      */
-    private entry(): EntryTarget {
+    private entry(pollTimeout: number = this._timeout): EntryTarget {
         return {
             elementName: this.elementName,
             pageName: this.pageName,
@@ -306,16 +306,18 @@ export class ElementAction {
             resolveDefault: (attachBudget?: number) => this.resolveDefault(attachBudget),
             resolveAll: (attachBudget?: number) => this.resolveAll(attachBudget),
             probe: (attachBudget: number) => this.probeTarget(attachBudget),
-            selecting: !this.scopedChild && this.resolutionOptions.strategy !== undefined,
+            selecting: !this.scopedChild && this.resolutionOptions.strategy === SelectionStrategy.TEXT,
+            pollTimeout,
         };
     }
 
     /**
      * The element a verification polls (`all`: the whole collection, for
      * count / order verifications), as the family's `pollTarget` builds it.
+     * `timeout` is the verification's own (the chain timeout by default).
      */
-    private async verifyTarget(all: boolean = false): Promise<Element> {
-        return this.interactions.verify.pollTarget(this.entry(), all);
+    private async verifyTarget(all: boolean = false, timeout: number = this._timeout): Promise<Element> {
+        return this.interactions.verify.pollTarget(this.entry(timeout), all);
     }
 
     /**
@@ -1055,9 +1057,12 @@ export class ElementAction {
      * etc.) and by the predicate form of `expect(...)`.
      *
      * Snapshot fields are all primitives — no async access needed in predicates.
+     *
+     * @param timeout - The timeout of the poll that takes the snapshot (the
+     *   chain timeout by default).
      */
-    async captureSnapshot(): Promise<ElementSnapshot> {
-        return this.interactions.extract.captureSnapshot(this.entry());
+    async captureSnapshot(timeout: number = this._timeout): Promise<ElementSnapshot> {
+        return this.interactions.extract.captureSnapshot(this.entry(timeout));
     }
 
     /** Build the context object consumed by the matcher tree classes. */
@@ -1068,9 +1073,9 @@ export class ElementAction {
             timeout: this._timeout,
             conditionalVisible: this.conditionalVisible,
             visibilityTimeout: this.visibilityTimeout,
-            resolveElement: () => this.verifyTarget(),
+            resolveElement: (timeout?: number) => this.verifyTarget(false, timeout),
             resolveAll: () => this.verifyTarget(true),
-            captureSnapshot: () => this.captureSnapshot(),
+            captureSnapshot: (timeout?: number) => this.captureSnapshot(timeout),
             probeVisible: (timeout: number) => this.interactions.verify.visibleWithin(this.entry(), timeout),
             verify: this.interactions.verify,
             platform: this.platform,

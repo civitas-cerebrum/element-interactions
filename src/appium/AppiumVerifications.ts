@@ -314,7 +314,8 @@ export class AppiumVerifications implements IVerifications {
     async count(target: Element, options: CountVerifyOptions, verifyOptions?: VerifyOptions): Promise<void> {
         validateCountOptions(options);
         const negated = verifyOptions?.negated === true;
-        const expectation = `${negated ? 'Expected NOT' : 'Expected'} count ${describeCountOptions(options)}`;
+        // Worded as on web: "Expected count not > 1".
+        const expectation = `Expected count ${negated ? 'not ' : ''}${describeCountOptions(options)}`;
         const lead = verifyOptions?.errorMessage ? `${verifyOptions.errorMessage} (${expectation})` : expectation;
         let last: number | undefined;
         await pollUntil(async () => (last = await target.count()), n => countMismatch(options, n, negated) === undefined, {

@@ -119,6 +119,9 @@ export async function pollUntil<T>(
     let hasValue = false;
     let lastValue: T | undefined;
     let lastError: unknown;
+    // A probe that did not answer after an earlier attempt failed for a real
+    // reason: that reason stays the last error, this notes the timeout.
+    let unansweredBudget: number | undefined;
 
     for (;;) {
         let probed = false;
@@ -129,10 +132,16 @@ export async function pollUntil<T>(
             hasValue = true;
             lastValue = value;
             lastError = undefined;
+            unansweredBudget = undefined;
             if (check(value) !== false) return value;
         } catch (error) {
             if (!probed && isFatalDriverError(error)) throw error;
-            lastError = error;
+            if (error instanceof ProbeTimeoutError && lastError !== undefined && !(lastError instanceof ProbeTimeoutError)) {
+                unansweredBudget = error.budget;
+            } else {
+                lastError = error;
+                unansweredBudget = undefined;
+            }
         }
         const remaining = deadline - Date.now();
         if (remaining <= 0) break;
@@ -142,7 +151,10 @@ export async function pollUntil<T>(
     const what = typeof options.message === 'function' ? options.message() : options.message;
     const parts = [`${what ?? 'Condition not met'}: timed out after ${timeout} ms.`];
     parts.push(`Last value: ${hasValue ? describeValue(lastValue) : '(no value; every probe failed)'}.`);
-    if (lastError !== undefined) parts.push(`Last error: ${errorText(lastError)}`);
+    if (lastError !== undefined) {
+        const note = unansweredBudget === undefined ? '' : `; the last probe did not answer within ${unansweredBudget} ms`;
+        parts.push(`Last error: ${errorText(lastError)}${note}`);
+    }
     throw new PollTimeoutError(parts.join(' '), timeout, lastValue, lastError);
 }
 

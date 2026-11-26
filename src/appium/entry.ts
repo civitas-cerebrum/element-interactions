@@ -24,22 +24,32 @@ export const DEVICE_POLL_ATTACH_MS = 1;
 
 /**
  * Attach budget of a POLL-DRIVEN re-resolution of a chain that picks one
- * match with a selection strategy (`.byText()`, `.byAttribute()`, `.nth()`,
- * `.random()`; {@link EntryTarget.selecting}), and the cap of a visibility
- * probe attempt on such a chain. element-repository reads the candidates of
- * an eager strategy within the budget it is given (its platform text lookup
- * stops reading at the deadline), so {@link DEVICE_POLL_ATTACH_MS} would let
- * every poll read only the first item and never find a later one. This
- * budget lets one resolution read a whole list on a real device. A chain
- * whose strategy finds nothing spends it on that poll (the strategy keeps
- * looking meanwhile); the poll itself still ends at its own timeout. Plain
- * entries keep the one-existence-check budget.
+ * match by its text (`.byText()`; {@link EntryTarget.selecting}), and the cap
+ * of a visibility probe attempt on such a chain. element-repository reads
+ * the candidates of its text strategy within the budget it is given (its
+ * platform text lookup stops reading at the deadline), so
+ * {@link DEVICE_POLL_ATTACH_MS} would let every poll read only the first item
+ * and never find a later one. This budget lets one resolution read a whole
+ * list on a real device. It is capped at half the verification's own timeout
+ * ({@link selectionBudget}), so a chain whose strategy finds nothing still
+ * fails with the strategy's "not found" before that timeout. Plain entries
+ * keep the one-existence-check budget.
  */
 export const DEVICE_POLL_SELECTION_MS = 2000;
 
+/**
+ * The attach budget of one selecting resolution within a `timeout` ms
+ * verification: {@link DEVICE_POLL_SELECTION_MS}, at most half of `timeout`
+ * (never below 1 ms). Without a timeout, the full budget.
+ */
+export function selectionBudget(timeout?: number): number {
+    if (timeout === undefined || !Number.isFinite(timeout)) return DEVICE_POLL_SELECTION_MS;
+    return Math.min(DEVICE_POLL_SELECTION_MS, Math.max(1, Math.floor(timeout / 2)));
+}
+
 /** The attach budget a poll-driven re-resolution gives `entry.resolve()`. */
 export function pollResolveBudget(entry: EntryTarget): number {
-    return entry.selecting ? DEVICE_POLL_SELECTION_MS : DEVICE_POLL_ATTACH_MS;
+    return entry.selecting ? selectionBudget(entry.pollTimeout) : DEVICE_POLL_ATTACH_MS;
 }
 
 /** Pause between two attempts of the visibility probe, in ms (the Appium family's poll interval). */
@@ -77,7 +87,7 @@ export async function probeVisibleOnDevice(
 ): Promise<boolean> {
     const deadline = Date.now() + Math.max(1, timeout);
     for (;;) {
-        const cap = entry.selecting ? DEVICE_POLL_SELECTION_MS : DEVICE_RESOLVE_SLICE_MS;
+        const cap = entry.selecting ? selectionBudget(timeout) : DEVICE_RESOLVE_SLICE_MS;
         const slice = Math.max(1, Math.min(cap, deadline - Date.now()));
         let visible = false;
         let element: Element | undefined;

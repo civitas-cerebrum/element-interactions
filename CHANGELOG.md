@@ -327,16 +327,24 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   (`{ greaterThan, lessThanOrEqual }`, `{ greaterThanOrEqual, lessThan }`).
   The failure names the bound the last count broke (`6 is not < 3`), and
   contradictory or empty options throw at once, before the element is resolved.
-- **A selection strategy under a polling terminal finds a later item on a device.**
+- **`byText` under a polling terminal finds a later item on a device.**
   `steps.on(el, page).byText('Green 2').verifyText('Green 2')` (and a matcher,
   a `satisfy()` snapshot or `verifyState` after `.byText()`) timed out on a
   device when the item was not the first: every poll gave the text strategy a
   1 ms budget, and element-repository's text lookup stops reading candidates at
-  its deadline, so each poll read only the first item. A chain with a
-  selection strategy (`.byText()`, `.byAttribute()`, `.nth()`, `.random()`)
-  now gets up to 2 s per poll, and per visibility-probe attempt, to read every
-  candidate; plain entries keep the one-existence-check poll. Web is not
-  affected.
+  its deadline, so each poll read only the first item. A `.byText()` chain now
+  gets up to 2 s per poll, and per visibility-probe attempt, to read every
+  candidate, capped at half the step's timeout so a text that matches nothing
+  still fails with `with text "..." not found`, not with an unanswered probe.
+  `.byAttribute()`, `.nth()`, `.random()` and plain entries keep the
+  one-existence-check poll. Web is not affected.
+- **A poll whose last probe does not answer keeps the earlier real error.**
+  When a probe failed for a reason (an element not found) and a later one did
+  not answer before the deadline, the timeout message named only the
+  unanswered probe; it now gives the reason, followed by
+  `; the last probe did not answer within N ms`.
+- **A negated count range on a device is worded as on web**: `Expected count
+  not > 5`, no longer `Expected NOT count > 5`.
 
 ## 0.3.12 — 2026-11-01
 

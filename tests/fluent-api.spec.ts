@@ -445,6 +445,17 @@ test.describe('Fluent API — steps.on()', () => {
       }
     });
 
+    test('a negated count range says "Expected count not ..."', async ({ steps }) => {
+      await steps.navigateTo('/');
+      const n = await steps.getCount('categories', 'HomePage');
+      const error = await steps.expect('categories', 'HomePage').not.count.toBeGreaterThan(n - 1).timeout(500)
+        .then(() => undefined, (e: unknown) => e as Error);
+      expect(error).toBeDefined();
+      const message = error!.message.replace(/\u001b\[[0-9;]*m/g, '');
+      expect(message).toContain(`Expected count not > ${n - 1}`);
+      expect(message).not.toContain('Expected NOT count');
+    });
+
     test('contradictory, empty or malformed options are refused at once', async ({ steps }) => {
       await steps.navigateTo('/');
       const invalid: Array<[unknown, RegExp]> = [

@@ -231,6 +231,14 @@ for (const platform of DEVICE_PLATFORMS) {
             await expect(v.count(el, {} as never)).rejects.toThrow(/You must provide/);
         });
 
+        test('a negated count range is worded as on web', async () => {
+            const v = factory().createVerifications();
+            const error = await v.count(mockElement({ count: 6 }), { greaterThan: 5 }, { negated: true, timeout: 150 }).catch(e => e);
+            expect(error).toBeInstanceOf(PollTimeoutError);
+            expect(error.message).toContain('Expected count not > 5');
+            expect(error.message).not.toContain('Expected NOT count');
+        });
+
         test('text without expectedText or notEmpty is a usage error', async () => {
             await expect(factory().createVerifications().text(mockElement(), undefined)).rejects.toThrow(/You must provide either/);
         });

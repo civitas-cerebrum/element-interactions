@@ -281,7 +281,7 @@ for (const platform of DEVICE_PLATFORMS) {
             await steps.expect('items', 'Screen').text.toBe('Red 1');
         });
 
-        test('byAttribute, nth and the visibility probe of a byText chain see a later item too', async () => {
+        test('byAttribute and nth find a later item with the one-check poll; the visibility probe of a byText chain does too', async () => {
             const { steps } = deviceSteps(platform, itemTree(READ_MS), 3000);
             await steps.on('items', 'Screen').byAttribute('name', 'item-6').text.toBe('Green 2');
             await steps.on('items', 'Screen').nth(5).verifyText('Green 2');
@@ -300,6 +300,9 @@ for (const platform of DEVICE_PLATFORMS) {
             const { steps } = deviceSteps(platform, itemTree(READ_MS), 3000);
             const { error, elapsed } = await timed(() => steps.on('items', 'Screen').timeout(400).byText('Purple').verifyText('Purple'));
             expect(error).toBeInstanceOf(PollTimeoutError);
+            // The strategy's own reason survives: its budget fits in the verification's timeout.
+            expect(() => { throw error; }).toThrow(/with text "Purple" not found/);
+            expect(error?.message).not.toMatch(/Last error: the probe did not answer/);
             expect(elapsed).toBeGreaterThanOrEqual(390);
             expect(elapsed, 'bounded by the matcher timeout, not by a selection budget').toBeLessThan(400 + 600);
         });

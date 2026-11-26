@@ -111,6 +111,18 @@ test.describe('pollUntil', () => {
         expect(elapsed).toBeLessThan(300 + 50 + 150);
     });
 
+    test('a probe that does not answer keeps the real error an earlier probe raised', async () => {
+        let calls = 0;
+        // The first probe fails fast for a real reason; every later one hangs past the deadline.
+        const probe = () => ++calls === 1
+            ? Promise.reject(new Error('Element not found'))
+            : new Promise<string>(resolve => setTimeout(() => resolve('late'), 2000).unref());
+        const error = await pollUntil(probe, () => true, { timeout: 200, interval: 50, message: 'Lookup' }).catch(e => e);
+        expect(error).toBeInstanceOf(PollTimeoutError);
+        expect((error.lastError as Error).message).toBe('Element not found');
+        expect(error.message).toMatch(/Last error: Element not found; the last probe did not answer within \d+ ms$/);
+    });
+
     test('a slow probe that answers within the deadline is still accepted', async () => {
         const value = await pollUntil(() => new Promise<string>(resolve => setTimeout(() => resolve('ok'), 150)), v => v === 'ok', { timeout: 1000 });
         expect(value).toBe('ok');

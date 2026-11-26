@@ -27,14 +27,20 @@ export interface EntryTarget {
     /** The element a visibility probe reads: the strategy selector applied, `.visible()` not. */
     probe(attachBudget: number): Promise<Element>;
     /**
-     * `true` when {@link resolve} and {@link probe} pick one match with a
-     * selection strategy (`.nth()`, `.byText()`, `.byAttribute()`,
-     * `.random()`). On a device such a strategy reads the candidates eagerly
-     * and stops at the attach budget it is given, so a family that
+     * `true` when {@link resolve} and {@link probe} pick one match by its
+     * text (`.byText()`). On a device the text strategy reads the candidates
+     * eagerly and stops at the attach budget it is given, so a family that
      * re-resolves per poll gives it a budget long enough to read them all
      * instead of its one-existence-check poll budget. Omitted: `false`.
      */
     readonly selecting?: boolean;
+    /**
+     * The timeout, in ms, of the verification that polls this entry. A family
+     * caps the budget of a {@link selecting} resolution by it, so a short
+     * verification still gets a complete resolution (and its "not found")
+     * before its deadline. Omitted: no cap beyond the family's own.
+     */
+    readonly pollTimeout?: number;
 }
 
 /**
