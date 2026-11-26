@@ -968,15 +968,23 @@ export class ElementAction {
         return element.action(this._timeout).getAttribute(name);
     }
 
-    /** Get the count of matching elements. */
+    /**
+     * Get the count of matching elements. Collection-level, like the `.count`
+     * matchers and `steps.getCount`: it counts the entry's whole collection
+     * (`SelectionStrategy.ALL`) whatever the strategy selector on the chain.
+     */
     async getCount(): Promise<number> {
-        const element = await this.resolve();
+        const element = await this.resolveAll();
         return element.action(this._timeout).getCount();
     }
 
-    /** Get all text contents from matching elements. */
+    /**
+     * Get the text contents of every matching element, in order.
+     * Collection-level, like `verifyOrder`: it reads the entry's whole
+     * collection (`SelectionStrategy.ALL`) whatever the strategy selector.
+     */
     async getAllTexts(): Promise<string[]> {
-        const element = await this.resolve();
+        const element = await this.resolveAll();
         return await this.interactions.extract.getAllTexts(element);
     }
 

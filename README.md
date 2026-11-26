@@ -201,6 +201,8 @@ test('Fluent checkout flow', async ({ steps }) => {
 ```
 
 > **`.visible()` vs `.visible` vs `.isVisible()`.** `steps.on(el, page).visible()` (a **call**) is the *visible-selection strategy*: among duplicate matches it resolves the visible one via `repo.getVisible(...)` and **throws if none is visible** — use it to disambiguate responsive desktop/mobile duplicate elements. `steps.on(el, page).visible` (no call) is the *matcher-tree boolean field* (`.visible.toBeTrue()`). Both coexist on the same chain. Distinct again from `.ifVisible()` / `.isVisible()`, which *conditionally skip* when the element is hidden rather than selecting and proceeding.
+> **Collection terminals.** `getCount()`, `getAllTexts()`, `verifyOrder(...)`, `verifyListOrder(...)`, `verifyImages()` and the `.count` matchers read the entry's whole collection, whatever strategy selector (`.first()`, `.nth(i)`, `.byText(...)`, ...) the chain carries: `await steps.on('rows', 'TablePage').getCount()` equals `await steps.getCount('rows', 'TablePage')`.
+
 #### Scoped child queries: `findByRole` / `findByText` / `findBySelector`
 
 Query "X within a named element" without ever exposing the parent `Locator` to your test. Each resolves the parent (`steps.on(name, page)`) and returns a **scoped `ElementAction`** querying inside it — composing with every existing terminal (`.count`, `.verifyState`, `.click`, `.getText`, `.first()` / `.nth()`, the matcher tree, …). They mirror Playwright's `getByRole` / `getByText` / `locator`, but as an explicit within-parent sub-query distinguished from top-level repository resolution.

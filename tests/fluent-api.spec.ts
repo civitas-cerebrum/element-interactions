@@ -391,11 +391,10 @@ test.describe('Fluent API — steps.on()', () => {
       await steps.click( 'tableLink','SidebarNav');
       // Click the Name header to sort, then verify order of name cells
       await steps.click( 'headerName','TablePage');
+      // getAllTexts reads every name cell; verifyOrder asserts that whole list in order.
       const texts = await steps.on('nameCell', 'TablePage').getAllTexts();
-      // Verify the first few names are in the order shown
-      if (texts.length >= 2) {
-        await steps.on('nameCell', 'TablePage').verifyOrder(texts.slice(0, 2));
-      }
+      expect(texts.length).toBeGreaterThanOrEqual(2);
+      await steps.on('nameCell', 'TablePage').verifyOrder(texts);
     });
 
     test('verifyListOrder()', async ({ steps }) => {
@@ -413,6 +412,18 @@ test.describe('Fluent API — steps.on()', () => {
       await steps.navigateTo('/');
       const texts = await steps.on('categories', 'HomePage').getAllTexts();
       expect(texts.length).toBeGreaterThan(0);
+    });
+
+    test('getCount() and getAllTexts() read every match, as steps.getCount / steps.getAll do', async ({ steps }) => {
+      await steps.navigateTo('/');
+      const all = await steps.getAll('categories', 'HomePage');
+      expect(all.length).toBeGreaterThan(1);
+      expect(await steps.on('categories', 'HomePage').getCount()).toBe(await steps.getCount('categories', 'HomePage'));
+      expect(await steps.on('categories', 'HomePage').getCount()).toBe(all.length);
+      expect(await steps.on('categories', 'HomePage').getAllTexts()).toEqual(all);
+      // Collection-level: a strategy selector does not narrow them.
+      expect(await steps.on('categories', 'HomePage').nth(1).getCount()).toBe(all.length);
+      expect(await steps.on('categories', 'HomePage').first().getAllTexts()).toEqual(all);
     });
 
     test('getInputValue()', async ({ steps }) => {

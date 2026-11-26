@@ -28,6 +28,7 @@ function pages(platform: string) {
             elements: [
                 { elementName: 'rows', list: true, selector: { 'accessibility id': 'row' } },
                 { elementName: 'emptyList', list: true, selector: { 'accessibility id': 'nothing' } },
+                { elementName: 'items', selector: { 'accessibility id': 'item' } },
                 { elementName: 'title', selector: { 'accessibility id': 'title' } },
                 { elementName: 'banner', selector: { 'accessibility id': 'banner' } },
                 { elementName: 'toast', selector: { 'accessibility id': 'toast' } },
@@ -68,6 +69,17 @@ function listTree(overrides: { rowVisible?: Array<MockNode['visible']>; rows?: b
         { match: '~title', text: 'Orphan title' },
         { match: '~badge', text: 'orphan badge' },
     ];
+}
+
+const ITEM_LABELS = ['Red 1', 'Red 2', 'Blue 1', 'Blue 2', 'Green 1', 'Green 2'];
+
+/** Six items under one entry (not a list entry), each text read taking `readMs` like a real driver round trip. */
+function itemTree(readMs = 0): MockNode[] {
+    const slow = (text: string) => async () => {
+        if (readMs > 0) await new Promise(resolve => setTimeout(resolve, readMs));
+        return text;
+    };
+    return [{ match: '~column', children: ITEM_LABELS.map((text, i) => ({ match: '~item', text: slow(text), attributes: { name: `item-${i + 1}` } })) }];
 }
 
 function deviceSteps(platform: 'android' | 'ios', tree: MockNode[], timeout = STEP_TIMEOUT) {
@@ -230,6 +242,28 @@ for (const platform of DEVICE_PLATFORMS) {
             const { steps } = deviceSteps(platform, listTree());
             // '' is a child selector nothing answers to: no texts, not the rows' own texts.
             expect(await steps.getAll('rows', 'Screen', { child: '' })).toEqual([]);
+        });
+    });
+
+    test.describe(`fluent collection reads on ${platform}`, () => {
+        test('getCount and getAllTexts read every match, as steps.getCount / steps.getAll do', async () => {
+            const { steps } = deviceSteps(platform, itemTree());
+            expect(await steps.getCount('items', 'Screen')).toBe(6);
+            expect(await steps.on('items', 'Screen').getCount()).toBe(6);
+            expect(await steps.on('items', 'Screen').getAllTexts()).toEqual(ITEM_LABELS);
+        });
+
+        test('getCount and getAllTexts are collection-level: a strategy selector does not narrow them', async () => {
+            const { steps } = deviceSteps(platform, itemTree());
+            expect(await steps.on('items', 'Screen').nth(4).getCount()).toBe(6);
+            expect(await steps.on('items', 'Screen').byText('Green 2').getAllTexts()).toEqual(ITEM_LABELS);
+            expect(await steps.on('items', 'Screen').first().getAllTexts()).toEqual(ITEM_LABELS);
+        });
+
+        test('an entry with no match counts 0 and reads no texts', async () => {
+            const { steps } = deviceSteps(platform, []);
+            expect(await steps.on('items', 'Screen').getCount()).toBe(0);
+            expect(await steps.on('items', 'Screen').getAllTexts()).toEqual([]);
         });
     });
 

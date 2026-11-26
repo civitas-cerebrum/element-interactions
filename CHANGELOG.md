@@ -116,6 +116,13 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   short timeout where a fast failure is wanted:
   `await steps.on(elementName, pageName).timeout(2000).verifyListOrder('asc')`
   or `await steps.verifyListOrder(elementName, pageName, 'asc', { timeout: 2000 })`.
+- **The fluent `getCount()` and `getAllTexts()` read the whole collection on web.**
+  `steps.on(el, page).getCount()` returned 1 and `getAllTexts()` a one-item
+  array for an entry with several matches; they now return the number and the
+  texts of every match, and a strategy selector on the chain (`.nth(i)`,
+  `.byText(...)`, ...) no longer narrows them.
+  **Migration:** none where the whole collection was meant. To read one match,
+  narrow and read it: `await steps.on(el, page).nth(i).getText()`.
 
 ### Added
 
@@ -297,6 +304,12 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   refusal came only after the probe. They now throw
   `PlatformNotSupportedError(step, platform)` before anything is sent to the
   device, like the ungated step. Web is unchanged.
+- **The fluent `getCount()` and `getAllTexts()` read every match.**
+  `steps.on(el, page).getCount()` answered 1 and `getAllTexts()` only the first
+  match's text, on web and on a device, because both resolved the first match.
+  They now read the entry's whole collection, like `steps.getCount` /
+  `steps.getAll` and the chain's `.count` matchers, whatever strategy selector
+  the chain carries.
 
 ## 0.3.12 — 2026-11-01
 
