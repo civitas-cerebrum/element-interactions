@@ -327,6 +327,16 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   (`{ greaterThan, lessThanOrEqual }`, `{ greaterThanOrEqual, lessThan }`).
   The failure names the bound the last count broke (`6 is not < 3`), and
   contradictory or empty options throw at once, before the element is resolved.
+- **A selection strategy under a polling terminal finds a later item on a device.**
+  `steps.on(el, page).byText('Green 2').verifyText('Green 2')` (and a matcher,
+  a `satisfy()` snapshot or `verifyState` after `.byText()`) timed out on a
+  device when the item was not the first: every poll gave the text strategy a
+  1 ms budget, and element-repository's text lookup stops reading candidates at
+  its deadline, so each poll read only the first item. A chain with a
+  selection strategy (`.byText()`, `.byAttribute()`, `.nth()`, `.random()`)
+  now gets up to 2 s per poll, and per visibility-probe attempt, to read every
+  candidate; plain entries keep the one-existence-check poll. Web is not
+  affected.
 
 ## 0.3.12 — 2026-11-01
 

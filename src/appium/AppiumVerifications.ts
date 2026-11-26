@@ -7,7 +7,7 @@ import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy
 import { describeValue, pollUntil, PollTimeoutError, softRead } from '../utils/poll';
 import { webOnly } from './unsupported';
 import { ReResolvingElement } from './ReResolvingElement';
-import { DEVICE_POLL_ATTACH_MS, entryLabel, probeVisibleOnDevice } from './entry';
+import { DEVICE_POLL_ATTACH_MS, entryLabel, pollResolveBudget, probeVisibleOnDevice } from './entry';
 import { countMismatch, describeCountOptions, validateCountOptions } from '../utils/countRange';
 
 type HtmlOptions = VerifyOptions & { outer?: boolean };
@@ -63,12 +63,14 @@ export class AppiumVerifications implements IVerifications {
      * A {@link ReResolvingElement} that resolves the entry afresh (one
      * existence check per `fallback` node) on every read, so a poll never
      * keeps reading a node the repository picked earlier; with `collection`,
-     * the whole collection.
+     * the whole collection. A chain with a selection strategy gets the
+     * budget its strategy needs to read every candidate
+     * ({@link pollResolveBudget}), so `.byText()` finds a later item.
      */
     async pollTarget(entry: EntryTarget, collection: boolean = false): Promise<Element> {
         return new ReResolvingElement(() => collection
             ? entry.resolveAll(DEVICE_POLL_ATTACH_MS)
-            : entry.resolve(DEVICE_POLL_ATTACH_MS), entryLabel(entry));
+            : entry.resolve(pollResolveBudget(entry)), entryLabel(entry));
     }
 
     /** The re-resolving visibility probe; a fatal driver error is thrown, never read as hidden. */

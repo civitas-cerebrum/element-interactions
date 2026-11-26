@@ -8,7 +8,7 @@ import { strategyFor } from './platform';
 import { Utils } from '../utils/ElementUtilities';
 import { webOnly } from './unsupported';
 import { softRead } from '../utils/poll';
-import { DEVICE_POLL_ATTACH_MS } from './entry';
+import { DEVICE_POLL_ATTACH_MS, pollResolveBudget } from './entry';
 
 /**
  * Value extraction for the Appium family. Element reads delegate to the
@@ -85,7 +85,7 @@ export class AppiumExtractions implements IExtractions {
      */
     async captureSnapshot(entry: EntryTarget): Promise<ElementSnapshot> {
         const [element, allElement] = await Promise.all([
-            entry.resolve(DEVICE_POLL_ATTACH_MS),
+            entry.resolve(pollResolveBudget(entry)),
             entry.resolveAll(DEVICE_POLL_ATTACH_MS),
         ]);
         const first = element.first();

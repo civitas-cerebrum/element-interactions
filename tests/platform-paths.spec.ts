@@ -267,6 +267,44 @@ for (const platform of DEVICE_PLATFORMS) {
         });
     });
 
+    test.describe(`strategy selection under polling on ${platform}`, () => {
+        // Every text read takes 15 ms, like a driver round trip: a whole sweep of the six items takes ~90 ms.
+        const READ_MS = 15;
+
+        test('byText under a verify terminal, a matcher and a snapshot reads every item, not only the first', async () => {
+            const { steps } = deviceSteps(platform, itemTree(READ_MS), 3000);
+            await steps.on('items', 'Screen').byText('Green 2').verifyText('Green 2');
+            await steps.on('items', 'Screen').byText('Green 2').text.toBe('Green 2');
+            await steps.on('items', 'Screen').byText('Green 2').verifyState('visible');
+            await steps.on('items', 'Screen').byText('Green 2').satisfy(el => el.text === 'Green 2');
+            await steps.verifyText('items', 'Screen', 'Green 2', undefined, { strategy: 'text', text: 'Green 2' });
+            await steps.expect('items', 'Screen').text.toBe('Red 1');
+        });
+
+        test('byAttribute, nth and the visibility probe of a byText chain see a later item too', async () => {
+            const { steps } = deviceSteps(platform, itemTree(READ_MS), 3000);
+            await steps.on('items', 'Screen').byAttribute('name', 'item-6').text.toBe('Green 2');
+            await steps.on('items', 'Screen').nth(5).verifyText('Green 2');
+            expect(await steps.on('items', 'Screen').byText('Green 2').isVisible({ timeout: 2000 })).toBe(true);
+        });
+
+        test('the visibility probe and gate of a byText chain read a list slower than one probe slice', async () => {
+            // 60 ms a read: a sweep of six items (~360 ms) outlasts the 250 ms slice of a plain probe attempt.
+            const { steps, mock } = deviceSteps(platform, itemTree(60), 3000);
+            expect(await steps.on('items', 'Screen').byText('Green 2').isVisible({ timeout: 1500 })).toBe(true);
+            await steps.on('items', 'Screen').byText('Green 2').isVisible({ timeout: 1500 }).click();
+            expect(mock.calls.filter(c => c[0] === 'click'), 'the gate opened and tapped').toHaveLength(1);
+        });
+
+        test('a byText chain with no matching item still fails at its own timeout', async () => {
+            const { steps } = deviceSteps(platform, itemTree(READ_MS), 3000);
+            const { error, elapsed } = await timed(() => steps.on('items', 'Screen').timeout(400).byText('Purple').verifyText('Purple'));
+            expect(error).toBeInstanceOf(PollTimeoutError);
+            expect(elapsed).toBeGreaterThanOrEqual(390);
+            expect(elapsed, 'bounded by the matcher timeout, not by a selection budget').toBeLessThan(400 + 600);
+        });
+    });
+
     test.describe(`verifyCount bounds on ${platform}`, () => {
         const passing: CountVerifyOptions[] = [
             { exactly: 6 }, { greaterThan: 5 }, { greaterThanOrEqual: 6 }, { lessThan: 7 }, { lessThanOrEqual: 6 },

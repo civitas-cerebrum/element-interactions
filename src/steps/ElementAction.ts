@@ -306,6 +306,7 @@ export class ElementAction {
             resolveDefault: (attachBudget?: number) => this.resolveDefault(attachBudget),
             resolveAll: (attachBudget?: number) => this.resolveAll(attachBudget),
             probe: (attachBudget: number) => this.probeTarget(attachBudget),
+            selecting: !this.scopedChild && this.resolutionOptions.strategy !== undefined,
         };
     }
 
