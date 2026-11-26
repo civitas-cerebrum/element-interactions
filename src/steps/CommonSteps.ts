@@ -445,12 +445,16 @@ export class Steps {
 
     /**
      * Returns a fluent `ElementAction` with the caller's `StepOptions` strategy
-     * applied via the fluent strategy selectors. Lets the legacy positional
+     * applied via the fluent strategy selectors, and the caller's per-call
+     * `timeout` applied via `.timeout(ms)`. Lets the legacy positional
      * `verify*` methods delegate into the matcher tree without losing the
-     * `{ strategy: 'random' | 'index' | 'text' | 'attribute' }` escape hatch.
+     * `{ strategy: 'random' | 'index' | 'text' | 'attribute' }` escape hatch
+     * or the `{ timeout }` override. Without a `timeout` the chain keeps the
+     * step timeout.
      */
     private actionWithStrategy(elementName: string, pageName: string, options?: StepOptions): ElementAction {
         const action = this.on(elementName, pageName);
+        if (options?.timeout !== undefined) action.timeout(options.timeout);
         if (!options?.strategy || options.strategy === 'first') return action;
         switch (options.strategy) {
             case 'random':
@@ -1877,12 +1881,10 @@ export class Steps {
      */
     async verifyAbsence(elementName: string, pageName: string, options?: StepOptions): Promise<void> {
         log.verify('Verifying absence of "%s" in "%s"', elementName, pageName);
-        const action = this.actionWithStrategy(elementName, pageName, options);
         // `verifyAbsence` derives its per-node attach slice and its `toBeHidden`
-        // budget from the chain's effective timeout, so a caller-supplied
-        // `timeout` has to be applied to the chain to reach either of them.
-        if (options?.timeout !== undefined) action.timeout(options.timeout);
-        await action.verifyAbsence();
+        // budget from the chain's effective timeout; `actionWithStrategy`
+        // applies a caller-supplied `timeout` to the chain, so it reaches both.
+        await this.actionWithStrategy(elementName, pageName, options).verifyAbsence();
     }
 
     /**

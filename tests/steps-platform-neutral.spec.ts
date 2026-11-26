@@ -614,6 +614,46 @@ test.describe('Shared features route to their device path', () => {
     });
 });
 
+test.describe('A StepOptions timeout reaches the family verification', () => {
+    const PER_CALL = 77;
+    const steps: Array<[string, (s: Steps, o?: { timeout: number }) => Promise<unknown>, string]> = [
+        ['verifyPresence', (s, o) => s.verifyPresence('el', 'Page', o), 'state'],
+        ['verifyAllPresent', (s, o) => s.verifyAllPresent([{ elementName: 'el', pageName: 'Page', options: o }]), 'state'],
+        ['verifyText', (s, o) => s.verifyText('el', 'Page', 'x', undefined, o), 'text'],
+        ['verifyTextContains', (s, o) => s.verifyTextContains('el', 'Page', 'x', o), 'textContains'],
+        ['verifyCount', (s, o) => s.verifyCount('el', 'Page', { exactly: 2 }, o), 'count'],
+        ['verifyAttribute', (s, o) => s.verifyAttribute('el', 'Page', 'name', 'v', o), 'attribute'],
+        ['verifyInputValue', (s, o) => s.verifyInputValue('el', 'Page', 'v', o), 'inputValue'],
+        ['verifyOrder', (s, o) => s.verifyOrder('el', 'Page', ['a'], o), 'order'],
+        ['verifyListOrder', (s, o) => s.verifyListOrder('el', 'Page', 'asc', o), 'listOrder'],
+    ];
+
+    /** The `timeout` the family call received in its options argument. */
+    function familyTimeout(calls: Call[], method: string): unknown {
+        const hit = memberCalls(calls, 'verify').find(c => c[1] === method);
+        expect(hit, `verify.${method} was called`).toBeTruthy();
+        const options = hit!.slice(2).find(
+            (arg): arg is { timeout: unknown } => typeof arg === 'object' && arg !== null && 'timeout' in arg,
+        );
+        expect(options, `verify.${method} received an options argument with a timeout`).toBeTruthy();
+        return options!.timeout;
+    }
+
+    for (const [name, call, method] of steps) {
+        test(`${name}(..., { timeout }) hands that timeout to verify.${method}`, async () => {
+            const { steps: s, calls } = iosSteps();
+            await call(s, { timeout: PER_CALL });
+            expect(familyTimeout(calls, method)).toBe(PER_CALL);
+        });
+
+        test(`${name} without a timeout hands verify.${method} the factory timeout`, async () => {
+            const { steps: s, calls } = iosSteps();
+            await call(s);
+            expect(familyTimeout(calls, method)).toBe(FACTORY_TIMEOUT);
+        });
+    }
+});
+
 // ─── The repository form keeps building the Playwright family ────────────────
 
 test.describe('new Steps(repo) is web as before', () => {

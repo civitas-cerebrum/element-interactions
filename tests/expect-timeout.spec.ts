@@ -305,6 +305,29 @@ test.describe('ElementAction.timeout() — state and order verifications', () =>
         expect(Date.now() - start, 'did not wait for the 30000ms default').toBeLessThan(5000);
     });
 
+    test('verifyListOrder honors a StepOptions timeout on a list that is never in the requested order', async ({ steps }) => {
+        await steps.navigateTo('/');
+        await steps.click('tableLink', 'SidebarNav');
+        await steps.verifyUrlContains('/table');
+        const start = Date.now();
+        await expect(
+            steps.verifyListOrder('nameCell', 'TablePage', 'desc', { timeout: 500 }),
+        ).rejects.toThrow(/sorted descending/);
+        expect(Date.now() - start, 'did not wait for the 30000ms default').toBeLessThan(5000);
+    });
+
+    test('verifyOrder and verifyText honor a StepOptions timeout on a mismatch', async ({ steps }) => {
+        await steps.navigateTo('/');
+        for (const run of [
+            () => steps.verifyOrder('categories', 'HomePage', ['WRONG'], { timeout: 500 }),
+            () => steps.verifyText('categories', 'HomePage', 'WRONG', undefined, { timeout: 500 }),
+        ]) {
+            const start = Date.now();
+            await expect(run()).rejects.toThrow();
+            expect(Date.now() - start, 'did not wait for the 30000ms default').toBeLessThan(5000);
+        }
+    });
+
     test('verifyListOrder polls until a list becomes sorted within the timeout', async ({ page, steps }) => {
         await steps.navigateTo('/');
         await steps.click('tableLink', 'SidebarNav');

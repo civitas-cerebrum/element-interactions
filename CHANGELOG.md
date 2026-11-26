@@ -97,8 +97,13 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `verifyImages` is honoured on web.** `steps.verifyState(el, page, state, timeout)`
   and `steps.on(el, page).timeout(ms)` before `verifyState` / `verifyOrder` /
   `verifyListOrder` / `verifyImages` used to wait for the default timeout (30 s
-  unless configured), whatever was passed. A check that passed only because it
-  waited longer than its stated timeout now fails at that timeout.
+  unless configured), whatever was passed. The same holds for a `{ timeout }`
+  in the `StepOptions` of `verifyPresence`, `verifyAllPresent`, `verifyText`,
+  `verifyTextContains`, `verifyCount`, `verifyAttribute`, `verifyInputValue`,
+  `verifyOrder`, `verifyListOrder`, `verifyImages`, `verifyCssProperty`,
+  `verifyHtml`, `verifyHtmlContains` and `verifyHtmlMatches`, which was
+  ignored (`verifyAbsence` already honoured it). A check that passed only
+  because it waited longer than its stated timeout now fails at that timeout.
   **Migration:** none for calls without a timeout (but see `verifyListOrder`
   below). If a step now fails at its own short timeout, raise that timeout (or
   drop it to use the default).
@@ -109,7 +114,8 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   after that timeout, and a list that becomes sorted within it now passes.
   **Migration:** an unsorted list now fails after the step timeout; pass a
   short timeout where a fast failure is wanted:
-  `await steps.on(elementName, pageName).timeout(2000).verifyListOrder('asc')`.
+  `await steps.on(elementName, pageName).timeout(2000).verifyListOrder('asc')`
+  or `await steps.verifyListOrder(elementName, pageName, 'asc', { timeout: 2000 })`.
 
 ### Added
 
@@ -259,6 +265,16 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   Breaking). The chain's default is the configured timeout. The
   `Verifications.order` / `listOrder` primitives take an optional
   `VerifyOptions`, and `Verifications.images` an optional `timeout`.
+- **A `StepOptions` timeout reaches every verification step that takes
+  `StepOptions`.** `verifyPresence`, `verifyAllPresent`, `verifyText`,
+  `verifyTextContains`, `verifyCount`, `verifyAttribute`, `verifyInputValue`,
+  `verifyOrder`, `verifyListOrder`, `verifyImages`, `verifyCssProperty`,
+  `verifyHtml`, `verifyHtmlContains` and `verifyHtmlMatches` applied the
+  `StepOptions` strategy but dropped its `timeout`, so
+  `steps.verifyListOrder(el, page, 'desc', { timeout: 500 })` waited for the
+  default timeout (30 s unless configured), on web and on a device. They now
+  use the given `timeout`, exactly as `steps.on(el, page).timeout(ms)` does;
+  without one they keep the configured timeout.
 
 ## 0.3.12 — 2026-11-01
 
