@@ -36,7 +36,11 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `isWeb(element)` where the override needs `element.locator`.
 - **`ExpectContext` (exported type) is family-neutral.** `resolveElement()` and
   `resolveAll()` return `Promise<Element>` (was `Promise<WebElement>`), and
-  `verify` is typed `IVerifications` (was `Verifications`). Likewise
+  `verify` is typed `IVerifications` (was `Verifications`).
+  `resolveElement(timeout?)` and `captureSnapshot(timeout?)` take an optional
+  `timeout`, the matcher's own (a `.timeout(ms)` on the matcher), so a device
+  family can fit one resolution inside it; calls without it are unchanged, and
+  an object implementing `ExpectContext` may ignore it. Likewise
   `steps.on(...).probeTarget()` on the exported `ElementAction` resolves to
   `Element` (was `WebElement`). Code that reads `.locator` from a resolved
   element, or calls a `Verifications`-only method through `ctx.verify`, no
@@ -175,7 +179,7 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `INavigation`, `IUtils`, `IGestures`, `IDevice`, `IInteractionFactory`, with
   the types `Direction` (an alias of element-repository's `SwipeDirection`),
   `Orientation`, `PermissionState`, `VerifiableState`, `DeviceVerifyOptions`,
-  `ScreenSwipeOptions` and `EntryTarget`. The element gestures of
+  `ScreenSwipeOptions`, `ScrollStepOptions` and `EntryTarget`. The element gestures of
   `IGestures` resolve to the element, as element-repository's primitives do.
 - **Gesture types re-exported from element-repository**: `SwipeDirection`,
   `SwipeOptions`, `ScrollIntoViewOptions`, `LongPressOptions`, `TapOffset`,
@@ -200,7 +204,7 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `zoom`, and `scrollIntoView` gains `{ direction, maxSwipes }`; every element
   gesture step takes `StepOptions` too. The fluent chain gains `swipe`,
   `scrollUntilFound`, `longPress`, `tapAt(offset, options?)`, `pinch` and
-  `zoom`, and its `scrollIntoView` takes `ScrollIntoViewOptions`.
+  `zoom`, and its `scrollIntoView` takes the scroll options too.
   `scrollUntilFound` is element-repository's `scrollIntoView` sweep with the
   timeout always given (stops at the timeout or after `maxSwipes` swipes).
   On a device an element already on screen returns at once; otherwise, only
@@ -209,6 +213,19 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   bounded by the step timeout (default 30 s; pass a larger `timeout` for long
   lists, and allow for the first gesture of a fresh iOS session taking tens of
   seconds).
+- **A scroll container for `scrollIntoView` / `scrollUntilFound`.** The steps
+  and the fluent terminals take `ScrollStepOptions`:
+  element-repository's `ScrollIntoViewOptions` with `container?: string`, the
+  element name (on the target's page) of the scrollable ancestor, e.g.
+  `steps.scrollUntilFound('productName2', 'ProductCarouselPage', { direction: 'right', container: 'carousel' })`.
+  The step resolves it through the repository (the active platform's entry)
+  and passes the element on as `ScrollIntoViewOptions.container`; on a device
+  element-repository then sweeps inside the container's rect with a
+  paging-safe drag (85% to 15% of its extent), which a carousel or side list
+  that does not cross the window centre needs. A name the page does not
+  define fails before any swipe:
+  `scrollIntoView: container "<name>" on page "<page>" could not be resolved: ...`.
+  On web the container is resolved the same way and Playwright ignores it.
   `pressBack` (android only), `hideKeyboard`, `setOrientation`, `acceptAlert`,
   `dismissAlert`, `setPermission`; `getContexts`, `switchContext`; polling
   `verifyAppInForeground`, `verifyOrientation`, `verifyKeyboardShown`,
@@ -227,8 +244,16 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   reads the element's text; a container whose own text is empty (a list row)
   reads its descendants' text, hints left out, joined with single spaces in
   document order (`Item 1 Alpha`), in `getText`, `verifyText*`, `getAll`,
-  listed-element `text` and the text strategy alike. On a device `getText`
+  listed-element `text` and the text strategy alike. iOS follows the same
+  rule: an element whose `label` and `value` are empty (not a text input, a
+  static text or an image) reads its descendants' static text joined with
+  single spaces. On a device `getText`
   returns `''` (never `null`) when an element has no text.
+- **`doubleClick` on a device is a native double tap** on the element's
+  centre (element-repository: `mobile: doubleTap` on iOS,
+  `mobile: doubleClickGesture` on Android), so a 2-tap gesture recogniser and
+  a button counting taps see two taps; an element that is not found fails
+  `doubleClick: "<selector>" not found within N ms` before anything is sent.
 - **Checked state on a device** (`verifyState(..., 'checked')`, `check`,
   `uncheck`) is element-repository's: Android reads the `checked` attribute,
   iOS a switch's or toggle's `value` and other elements' `selected` state.
@@ -236,8 +261,12 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   state within the step timeout; they fail with `is still unchecked after
   clicking` / `is still checked after clicking`, and refuse without a tap an
   Android radio button being unchecked, a control that is not checkable, and
-  a control still disabled at the timeout. `getAttribute` on Android returns
-  `null` for a missing attribute (UiAutomator2 answers `"null"`).
+  a control still disabled at the timeout. `getAttribute` on a device returns
+  `null` for a missing attribute (UiAutomator2 answers `"null"`) and for one
+  the driver does not know on either platform (XCUITest and UiAutomator2
+  answer with an "attribute is unknown" error), so a misspelt name reads as
+  missing and `attributes.not.toHaveKey(name)` passes on a device; other
+  driver errors still fail at once.
 - Platform verifications, list presence, listed-element steps and probes fail
   at once on a fatal driver error (a dead session, an invalid selector, a lost
   connection) instead of at the timeout; such an error never reads as absent.
