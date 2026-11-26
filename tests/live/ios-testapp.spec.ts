@@ -33,11 +33,13 @@ import { test, expect, platform, runsTestApp, requireTestApp } from './ios-testa
  * Every test starts from a relaunched app on the home grid and opens its
  * screen from there.
  *
- * Marked `fixme` (not run) until the fix is installed; each test asserts the
+ * Marked `fixme` (not run) until the fix is installed; the test asserts the
  * correct behaviour:
- * - `hideKeyboard` on a keyboard without a Done key (the login form);
- * - `doubleClick`, taken by XCUITest as one tap;
- * - a horizontal `scrollIntoView` / `scrollUntilFound` sweep on the carousel.
+ * - `hideKeyboard` on a keyboard without a Done key (the login form).
+ *
+ * The horizontal `scrollIntoView` / `scrollUntilFound` tests name the
+ * carousel as the scroll `container`: it sits near the top of the screen, so a
+ * sweep across the window would miss it.
  *
  * A landscape rotation is skipped as not applicable: the app is portrait only.
  */
@@ -46,10 +48,6 @@ import { test, expect, platform, runsTestApp, requireTestApp } from './ios-testa
 const FIXME = {
     hideKeyboardReturnKey: 'iOS hideKeyboard sends a bare "mobile: hideKeyboard", which WebDriverAgent cannot apply to a keyboard '
         + 'without a Done key (the login fields use the default Return key); no Return-key or tap-outside fallback is tried yet.',
-    doubleClick: 'element-repository: on iOS doubleClick sends the desktop double-click sequence (mouse pointer, no press duration), '
-        + 'which XCUITest takes as one tap.',
-    horizontalSweep: 'element-repository: a left / right scrollIntoView / scrollUntilFound sweep always swipes across the window\'s '
-        + 'vertical centre, which misses a carousel near the top of the screen.',
 } as const;
 const fixme = (description: string) => ({ annotation: { type: 'fixme', description } });
 
@@ -197,13 +195,13 @@ test.describe('live iOS test app', () => {
             await steps.verifyAbsence('alert', 'AlertsPage');
         });
 
-        test.fixme('doubleClick raises the double-tap alert', fixme(FIXME.doubleClick), async ({ steps, openScreen }) => {
+        test('doubleClick raises the double-tap alert', async ({ steps, openScreen }) => {
             await openScreen('alerts');
             await steps.doubleClick('doubleTapMeButton', 'AlertsPage');
             await steps.verifyText('alertMessage', 'AlertsPage', 'You double-tapped me!');
         });
 
-        test.fixme('doubleClick on the increment button raises the counter by two', fixme(FIXME.doubleClick), async ({ steps, openScreen }) => {
+        test('doubleClick on the increment button raises the counter by two', async ({ steps, openScreen }) => {
             await openScreen('counter');
             await steps.verifyText('counterValue', 'CounterPage', '0');
             await steps.doubleClick('incrementButton', 'CounterPage');
@@ -250,19 +248,19 @@ test.describe('live iOS test app', () => {
             await steps.verifyPresence('section1', 'TallPage');
         });
 
-        test.fixme('scrollIntoView right brings a later carousel slide into the viewport, left the first one', fixme(FIXME.horizontalSweep), async ({ steps, openScreen }) => {
+        test('scrollIntoView right inside the carousel brings a later slide into the viewport, left the first one', async ({ steps, openScreen }) => {
             await openScreen('productCarousel');
-            await steps.scrollIntoView('productName2', 'ProductCarouselPage', { direction: 'right' });
+            await steps.scrollIntoView('productName2', 'ProductCarouselPage', { direction: 'right', container: 'carousel' });
             await steps.verifyState('productName2', 'ProductCarouselPage', 'inViewport');
-            await steps.scrollIntoView('productName0', 'ProductCarouselPage', { direction: 'left' });
+            await steps.scrollIntoView('productName0', 'ProductCarouselPage', { direction: 'left', container: 'carousel' });
             await steps.verifyState('productName0', 'ProductCarouselPage', 'inViewport');
         });
 
-        test.fixme('scrollUntilFound right reaches a later carousel slide, left the first one', fixme(FIXME.horizontalSweep), async ({ steps, openScreen }) => {
+        test('scrollUntilFound right inside the carousel reaches a later slide, left the first one (fluent form)', async ({ steps, openScreen }) => {
             await openScreen('productCarousel');
-            await steps.scrollUntilFound('productName2', 'ProductCarouselPage', { direction: 'right' });
+            await steps.on('productName2', 'ProductCarouselPage').scrollUntilFound({ direction: 'right', container: 'carousel' });
             await steps.verifyState('productName2', 'ProductCarouselPage', 'visible');
-            await steps.scrollUntilFound('productName0', 'ProductCarouselPage', { direction: 'left' });
+            await steps.on('productName0', 'ProductCarouselPage').scrollUntilFound({ direction: 'left', container: 'carousel' });
             await steps.verifyState('productName0', 'ProductCarouselPage', 'visible');
         });
     });

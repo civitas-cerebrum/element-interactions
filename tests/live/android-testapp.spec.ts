@@ -6,7 +6,7 @@ import { test, expect, platform, requireTestApp } from './android-fixture';
  * `com.civitas.testapp` (already installed; nothing is installed or removed).
  * It drives only that app: lifecycle, the app's own dialogs, the keyboard,
  * orientation (always restored to portrait), contexts, screen swipes, scrolling,
- * lists and checkboxes. Nothing opens another app or system settings.
+ * lists, checkboxes and a double tap. Nothing opens another app or system settings.
  * UiAutomator2's `setOrientation` also locks the screen rotation, so the
  * orientation tests restore portrait in their `afterEach`.
  *
@@ -171,6 +171,15 @@ test.describe('live Android test app', () => {
             await steps.verifyAbsence('section1', 'TallPage');
             await steps.scrollUntilFound('section1', 'TallPage', { direction: 'up', timeout: 120_000 });
             await steps.verifyPresence('section1', 'TallPage');
+        });
+    });
+
+    test.describe('gestures', () => {
+        test('doubleClick on the counter\'s increment button raises the counter by two', async ({ steps, openScreen }) => {
+            await openScreen('counter');
+            await steps.verifyText('counterValue', 'CounterPage', '0');
+            await steps.doubleClick('incrementButton', 'CounterPage');
+            await steps.verifyText('counterValue', 'CounterPage', '2');
         });
     });
 

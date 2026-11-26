@@ -17,6 +17,7 @@ const SCREENS = {
     checkboxes: { card: 'elementsCard', item: 'checkboxesItem' },
     tall: { card: 'interactionsCard', item: 'tallPageItem' },
     longList: { card: 'edgeCasesCard', item: 'longListItem' },
+    counter: { card: 'formsCard', item: 'counterItem' },
 } as const;
 
 export type Screen = keyof typeof SCREENS;
