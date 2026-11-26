@@ -70,9 +70,21 @@ export interface SessionOptions {
      * With `reset: 'relaunch'`: how long, in ms, the app under test may take
      * to reach the foreground after it was activated. Default 15000. When it
      * expires the test fails in its setup, naming the app id, the platform
-     * and the last app state.
+     * and the last app state. On iOS, an activation that WebDriverAgent
+     * answers with its launch timeout ("Timed out attempting to launch app")
+     * is retried once; the retried activation and the foreground wait after
+     * it share this one budget.
      */
     relaunchTimeout?: number;
+    /**
+     * How long, in ms, opening the worker's session may take: the provider's
+     * start plus `onSessionStarted`. Default 600000 (a cold real-device start
+     * can build WebDriverAgent or install the UiAutomator2 server first). It
+     * is the worker fixture's own timeout, so it does not depend on the test
+     * timeout; the start fails with an error naming the server (without
+     * credentials), the platform and this budget shortly before it expires.
+     */
+    startTimeout?: number;
     /** Called once per worker, right after the session opened. */
     onSessionStarted?: (driver: WebdriverIO.Browser) => Promise<void>;
 }

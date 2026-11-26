@@ -153,6 +153,29 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `failure-screenshot` (image/png) and `page-source` (text/xml) attachments,
   each time-boxed. `macos` / `windows` are declared but not implemented: the
   session start throws `Platform "<p>" is declared but not implemented yet.`
+- **Platform: the relaunch retries an iOS launch timeout once.** When
+  WebDriverAgent answers the fixture's between-tests `mobile: activateApp`
+  with "Timed out attempting to launch app", the activation is retried once,
+  logged as a warning naming the app id, the platform and the error. The
+  retried activation and the foreground wait after it share
+  `session.relaunchTimeout`; a second failure fails the setup, and no other
+  error is retried. The user-facing `resetApp` / `activateApp` / `launchApp`
+  steps never retry. A relaunch failure names its phase (terminate, activate,
+  foreground wait), the app id, the platform and the budget.
+- **Platform: setup evidence.** A platform test whose setup fails (relaunch,
+  foreground wait, `onSessionStarted`) gets a `setup-error` (text/plain)
+  attachment with the error and the last app state, plus `failure-screenshot`
+  and `page-source` when the device still answers; each is time-boxed and
+  never replaces the setup error.
+- **Platform: `session.startTimeout`** (ms, default 600000): the worker
+  fixture's own timeout for opening the session (the provider's start plus
+  `onSessionStarted`), independent of the test timeout, so a cold real-device
+  start (WebDriverAgent build, UiAutomator2 server install) has room. A start
+  that does not answer fails shortly before it expires (a tenth of the
+  budget, at most 5 s, is kept back) with an error naming the server URL
+  without credentials, the platform and the budget, instead of Playwright's
+  generic fixture timeout; a session that still arrives is closed. A failed
+  start names the same, keeping the provider's error.
 - **Environment variables**, the complete list: `E2E_PLATFORM`,
   `E2E_CAPABILITIES`, `APPIUM_URL`, `APPIUM_USER`, `APPIUM_KEY`, documented in
   `.env.example`. Empty values count as unset. `resolvePlatform(option?, env?)`

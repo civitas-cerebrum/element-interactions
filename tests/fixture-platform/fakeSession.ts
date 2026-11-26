@@ -51,7 +51,18 @@ export interface FakeAppOptions {
     backgroundQueries?: number;
     /** Every `mobile: queryAppState` fails with a dead-session driver error. */
     deadSession?: boolean;
+    /**
+     * How many `mobile: activateApp` calls (from the first) fail with
+     * WebDriverAgent's launch timeout before activations succeed. Default 0.
+     */
+    launchTimeouts?: number;
+    /** Every screenshot and page-source request fails from the start. */
+    failEvidence?: boolean;
 }
+
+/** WebDriverAgent's launch-timeout answer to `mobile: activateApp`, as WebdriverIO surfaces it. */
+export const WDA_LAUNCH_TIMEOUT = 'An unknown server-side error occurred while processing the command. Original error: '
+    + 'Error Domain=XCTDaemonErrorDomain Code=5 "Timed out attempting to launch app."';
 
 export interface FakeSession {
     provider: SessionProvider;
@@ -85,8 +96,9 @@ export function fakeSession(logFile?: string, label?: string, app: FakeAppOption
         starts: [],
         stops: 0,
         driver: mock.driver,
-        failEvidence: false,
+        failEvidence: app.failEvidence ?? false,
     };
+    let launchTimeouts = app.launchTimeouts ?? 0;
     driver.$ = async (selector: string) => rawElement(selector, mock.calls);
     driver.$$ = async (selector: string) => [rawElement(selector, mock.calls)];
     // The app under test: in the foreground (4) when the session opens, not
@@ -99,6 +111,11 @@ export function fakeSession(logFile?: string, label?: string, app: FakeAppOption
         const result = await originalExecute(script, args);
         if (script === 'mobile: terminateApp') appState = 1;
         if (script === 'mobile: activateApp') {
+            if (launchTimeouts > 0) {
+                launchTimeouts--;
+                event('activate launch timeout');
+                throw new Error(WDA_LAUNCH_TIMEOUT);
+            }
             pendingBackground = app.backgroundQueries ?? 0;
             appState = pendingBackground > 0 ? 3 : 4;
         }

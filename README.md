@@ -563,9 +563,10 @@ export const test = baseFixture(base, 'tests/e2e/page-repository.json', {
   // platform: 'ios',            // default: process.env.E2E_PLATFORM, else 'web'
   session: {                     // used only when the platform is android / ios
     // capabilities: 'tests/capabilities/iphone.json',  // PATH to a JSON file; default: E2E_CAPABILITIES
-    // server: 'http://<appium-server>:4723/wd/hub',    // URL with base path, or an object; default: APPIUM_URL
+    // server: 'http://<appium-server>:4723',  // the server's own URL (its base path, if it has one), or an object; default: APPIUM_URL
     reset: 'relaunch',           // 'relaunch' (default) | 'none'
     // relaunchTimeout: 15000,   // ms the relaunched app may take to reach the foreground
+    // startTimeout: 600000,     // ms opening the worker's session may take (start + onSessionStarted)
     onSessionStarted: async (driver) => { /* once per worker, after the session opened */ },
   },
 });
@@ -574,11 +575,12 @@ export { expect } from '@playwright/test';
 
 * **`platform`** — `'web' | 'android' | 'ios' | 'macos' | 'windows'`. Read once, when `baseFixture()` is called: the option, else `E2E_PLATFORM`, else `'web'`. Any other value throws, naming where it came from.
 * **`session.capabilities`** — always the **path** of a JSON capabilities file (default `E2E_CAPABILITIES`). An inline object is refused. A relative path resolves against the directory Playwright was started in (usually the project root).
-* **`session.server`** — a URL string including the Appium base path (`http://127.0.0.1:4723`, `https://<appium-server>/wd/hub`), or an object `{ protocol, hostname, port, path, user, key }`. Default: `APPIUM_URL`, else `http://127.0.0.1:4723`. A field the object form leaves out comes from `http://127.0.0.1:4723`, never from `APPIUM_URL`. `user` / `key` left out are filled from `APPIUM_USER` / `APPIUM_KEY` in every form, and are never read from the capabilities file.
+* **`session.server`** — the server's own URL as a string, with its base path only if the server has one (a local Appium server usually has none: `http://127.0.0.1:4723`; a server started with `--base-path /wd/hub` needs `https://<appium-server>/wd/hub`), or an object `{ protocol, hostname, port, path, user, key }`. Default: `APPIUM_URL`, else `http://127.0.0.1:4723`. A field the object form leaves out comes from `http://127.0.0.1:4723`, never from `APPIUM_URL`. `user` / `key` left out are filled from `APPIUM_USER` / `APPIUM_KEY` in every form, and are never read from the capabilities file.
 * **`session.provider`** — a `SessionProvider` (`start(context)` / `stop(driver)`) that opens and closes the WebdriverIO session. Default: the built-in `AppiumSessionProvider` (WebdriverIO `remote()`). Bring your own for a vendor that needs more than connection options (tunnels, app upload).
 * **`session.reset`** — what happens between tests (see [Reset policy](#reset-policy)).
-* **`session.relaunchTimeout`** — with `reset: 'relaunch'`, how long (ms) the app under test may take to reach the foreground after it was activated. Default `15000`.
-* **`session.onSessionStarted(driver)`** — called once per worker, right after the session opened. If it throws, the session is still closed and the error fails the test.
+* **`session.relaunchTimeout`** — with `reset: 'relaunch'`, how long (ms) the app under test may take to reach the foreground after it was activated. Default `15000`. A retried iOS activation (see [Reset policy](#reset-policy)) shares this budget with the foreground wait.
+* **`session.startTimeout`** — how long (ms) opening the worker's session may take: the provider's start plus `onSessionStarted`. Default `600000` (ten minutes: a cold start on a real device can build and sign WebDriverAgent or install the UiAutomator2 server first). It is the worker fixture's own timeout, so it does not depend on the test timeout. A start that has not answered shortly before it expires (a tenth of it, at most 5 s, is kept back) fails with `session start on <server URL, no credentials> for platform "<platform>": no session within <ms> ms (session.startTimeout <ms> ms, ...)` instead of Playwright's generic fixture timeout; a session that still arrives later is closed. A failing start names the server and platform the same way and keeps the provider's error. Must be a positive, finite number.
+* **`session.onSessionStarted(driver)`** — called once per worker, right after the session opened, within what is left of `session.startTimeout`. If it throws, the session is still closed and the error fails the test, with the [setup evidence](#failure-evidence) attached.
 
 The web-only options `blockedOrigins`, `mutationInjection` (unless `false`), `interceptionRetry` and the object form of `screenshotOnFailure` throw when `baseFixture()` is called for a platform, instead of being ignored. `timeout`, `repoTimeout`, `emailCredentials`, `apiBaseUrl` / `apiProviders` and `dbUrl` / `dbProviders` work on every platform.
 
@@ -587,7 +589,7 @@ The web-only options `blockedOrigins`, `mutationInjection` (unless `false`), `in
 The one documented form:
 
 ```bash
-E2E_PLATFORM=<platform> E2E_CAPABILITIES=tests/capabilities/<device>.json APPIUM_URL=<server-with-base-path> \
+E2E_PLATFORM=<platform> E2E_CAPABILITIES=tests/capabilities/<device>.json APPIUM_URL=<appium-server-url> \
   npx playwright test -c playwright.platform.config.ts
 ```
 
@@ -618,7 +620,7 @@ These five are the complete list; no other variable selects a platform, device o
 |---|---|
 | `E2E_PLATFORM` | `web` (default) \| `android` \| `ios` \| `macos` \| `windows` |
 | `E2E_CAPABILITIES` | Path to the capabilities JSON file |
-| `APPIUM_URL` | Full Appium server URL, including the base path (e.g. `/wd/hub`) |
+| `APPIUM_URL` | The Appium server's own URL, with its base path only if it has one (`http://127.0.0.1:4723` for a local server without one; `.../wd/hub` only for a server started with that base path) |
 | `APPIUM_USER`, `APPIUM_KEY` | Optional credentials for a remote or cloud server |
 
 ### Capabilities files
@@ -662,7 +664,8 @@ Capabilities live **only** in JSON files, one per device or device class, conven
 
 One WebdriverIO session per Playwright worker, opened by the first test that needs it and closed at worker teardown (closing is time-boxed and best-effort: a dead device cannot stall the teardown or hide a test's own error).
 
-* `reset: 'relaunch'` (default) — before **every** test, the first one included, the app under test is terminated and activated again. It needs the app id from the capabilities file; without one the run fails before a session opens, naming the key to add. The test body starts only once the app is in the foreground (`mobile: queryAppState` reports 4), so even a first step that does not poll (`getPageSource`) sees the app, not the home screen. If the app is not in the foreground within `session.relaunchTimeout` (default 15000 ms) the test fails in its setup: `session.reset 'relaunch': app "<app id>" is not in the foreground on platform "<platform>" <timeout> ms after it was terminated and activated (last app state: 3, running in background). ...`. A dead session fails at once with the driver's error.
+* `reset: 'relaunch'` (default) — before **every** test, the first one included, the app under test is terminated and activated again. It needs the app id from the capabilities file; without one the run fails before a session opens, naming the key to add. The test body starts only once the app is in the foreground (`mobile: queryAppState` reports 4), so even a first step that does not poll (`getPageSource`) sees the app, not the home screen. If the app is not in the foreground within `session.relaunchTimeout` (default 15000 ms) the test fails in its setup: `session.reset 'relaunch': app "<app id>" is not in the foreground on platform "<platform>" <timeout> ms after it was terminated and activated (last app state: 3, running in background). ...`. Any other failure names its phase, the app, the platform and the budget: `session.reset 'relaunch' failed in phase "<terminate | activate | foreground wait>" for app "<app id>" on platform "<platform>": <driver error>. ...`. A dead session fails at once with the driver's error.
+  * **One retry of an iOS launch timeout.** When WebDriverAgent answers the relaunch's `mobile: activateApp` with `Timed out attempting to launch app` (XCTest's own launch timeout, seen on simulators under load), the fixture activates the app once more and logs a warning naming the app id, the platform and the error. The retried activation and the foreground wait after it share one `session.relaunchTimeout`; a second failure fails the setup with its error (phase `activate (retried once after a launch timeout)`). Only that text is matched, only on iOS, and no other error is retried. Terminate and the first activation run under the driver's own command timeout. The `resetApp`, `activateApp` and `launchApp` steps never retry.
 * `reset: 'none'` — the app is left as the previous test left it.
 
 Data reset (`appium:noReset`, `appium:fullReset`) is a capability and stays in the file.
@@ -677,6 +680,8 @@ A test that does not end as expected (the same trigger as the web failure screen
 | `page-source` | `text/xml` | The UI hierarchy of the screen at the failure |
 
 Each is collected with a 10 s limit and is best-effort: when the device cannot answer, the attachment is skipped and the test's own failure is reported unchanged.
+
+A test whose **setup** fails after the session exists (the relaunch, the foreground wait, `onSessionStarted`) also gets `setup-error` (`text/plain`): the error with its stack, and the last app state (from the foreground wait when it read one, else one time-boxed `mobile: queryAppState`). The screenshot and page source follow as above, whatever `test.fail()` says, since the test body never ran. None of them replaces the setup error.
 
 ### Page repository per platform
 

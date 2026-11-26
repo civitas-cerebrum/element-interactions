@@ -55,14 +55,14 @@ const names = (r: JsonResult | undefined) => (r?.attachments ?? [])
 const UNEXPECTED = ['evidence errors never mask the failure', 'fails and gets evidence', 'unexpected pass under test.fail() gets evidence'];
 
 test('the nested run ends unexpectedly exactly where it is built to', () => {
-    expect(bySpec.size).toBe(17);
+    expect(bySpec.size).toBe(21);
     expect([...outcome].filter(([, status]) => status !== 'expected').map(([title]) => title).sort()).toEqual(UNEXPECTED);
     expect([...outcome].filter(([, status]) => status === 'unexpected').map(([title]) => title).sort()).toEqual(UNEXPECTED);
     expect(exitCode).toBe(1);
 });
 
 /** Lifecycle events of the main ios session (the labelled sessions of other files left out). */
-const mainEvents = () => events.filter(e => !/^(hook-throws|stop-throws|macos|foreground|foreground-never|foreground-dead|reset-none) /.test(e));
+const mainEvents = () => events.filter(e => !/^(hook-throws|stop-throws|macos|foreground|foreground-never|foreground-dead|reset-none|relaunch-retry|setup-evidence|setup-evidence-dead|start-timeout) /.test(e));
 
 test('one session per worker: started once, stopped once at worker teardown, relaunch before every test', () => {
     const main = mainEvents();
@@ -123,8 +123,11 @@ test('relaunch: a dead session during the foreground wait fails the setup at onc
     // relaunchTimeout is 20000 ms: failing at once is well below it.
     expect(r.duration).toBeLessThan(5000);
     const seen = labelled('foreground-dead');
-    expect(seen.filter(e => e === 'execute mobile: queryAppState')).toHaveLength(1);
+    // One query in the foreground wait, one more for the setup evidence's app state.
+    expect(seen.filter(e => e === 'execute mobile: queryAppState')).toHaveLength(2);
     expect(seen).not.toContain('body');
+    expect(plain(r)).toContain('phase "foreground wait"');
+    expect(setupError(r)!.text).toContain('app state could not be read: A session is either terminated or not started');
 });
 
 test("reset 'none': no relaunch and no foreground query before the test", () => {
@@ -133,14 +136,19 @@ test("reset 'none': no relaunch and no foreground query before the test", () => 
 });
 
 test('onSessionStarted throwing still stops the session, and its error fails the test', () => {
-    expect(events.filter(e => e.startsWith('hook-throws '))).toEqual(['hook-throws start', 'hook-throws stop']);
+    // Between start and stop: the setup evidence's app-state query.
+    expect(events.filter(e => e.startsWith('hook-throws '))).toEqual([
+        'hook-throws start', 'hook-throws execute mobile: queryAppState', 'hook-throws appState 4', 'hook-throws stop',
+    ]);
     const r = bySpec.get('onSessionStarted throws')!;
     expect(r.status).toBe('failed');
     expect(r.error?.message).toContain('onSessionStarted failed on purpose');
 });
 
 test('a throwing provider.stop() at worker teardown is logged and never masks the onSessionStarted error', () => {
-    expect(events.filter(e => e.startsWith('stop-throws '))).toEqual(['stop-throws start', 'stop-throws stop']);
+    expect(events.filter(e => e.startsWith('stop-throws '))).toEqual([
+        'stop-throws start', 'stop-throws execute mobile: queryAppState', 'stop-throws appState 4', 'stop-throws stop',
+    ]);
     const r = bySpec.get('onSessionStarted error survives a throwing stop')!;
     expect(r.status).toBe('failed');
     expect(r.error?.message).toContain('onSessionStarted failed before a failing stop');
@@ -197,4 +205,60 @@ test('page and context throw PlatformNotSupportedError on a platform run (no bro
 
 test('driver throws PlatformNotSupportedError on web', () => {
     expect(bySpec.get('driver is refused on web')!.error?.message).toContain('"driver" is not supported on platform "web".');
+});
+
+/** The decoded body of the `setup-error` attachment, or undefined. */
+const setupError = (r: JsonResult | undefined) => {
+    const a = (r?.attachments ?? []).find(x => x.name === 'setup-error');
+    return a ? { contentType: a.contentType, text: Buffer.from(a.body ?? '', 'base64').toString() } : undefined;
+};
+
+test('relaunch: a launch timeout on ios is retried once, and the test then runs', () => {
+    expect(bySpec.get('a launch timeout on the relaunch is retried once and the test runs')!.status).toBe('passed');
+    expect(labelled('relaunch-retry').filter(e => e !== 'start' && e !== 'stop')).toEqual([
+        'execute mobile: terminateApp', 'execute mobile: activateApp', 'activate launch timeout',
+        'execute mobile: activateApp',
+        'execute mobile: queryAppState', 'appState 4',
+        'body',
+    ]);
+});
+
+test('a failed relaunch attaches setup-error (error text and last app state), failure-screenshot and page-source', () => {
+    const r = bySpec.get('a failed relaunch attaches the setup error, the screenshot and the page source')!;
+    expect(r.status).toBe('failed');
+    expect(outcome.get('a failed relaunch attaches the setup error, the screenshot and the page source')).toBe('expected');
+    expect(names(r)).toEqual(['failure-screenshot image/png', 'page-source text/xml']);
+    const attached = setupError(r)!;
+    expect(attached.contentType).toBe('text/plain');
+    expect(attached.text).toContain(`session.reset 'relaunch': app "com.example.app" is not in the foreground on platform "ios"`);
+    expect(attached.text).toContain('last app state: 3, running in background');
+});
+
+test('setup evidence that cannot be collected is skipped and the setup error still fails the test', () => {
+    const r = bySpec.get('setup evidence that cannot be collected never masks the setup error')!;
+    expect(r.status).toBe('failed');
+    expect(plain(r)).toContain('is not in the foreground on platform "ios"');
+    expect(plain(r)).not.toContain('unavailable');
+    expect(names(r)).toEqual([]);
+    expect(setupError(r)!.text).toContain('is not in the foreground');
+});
+
+test('onSessionStarted failing attaches setup-error and the device evidence', () => {
+    const r = bySpec.get('onSessionStarted throws')!;
+    expect(setupError(r)!.text).toContain('onSessionStarted failed on purpose');
+    expect(setupError(r)!.text).toContain('last app state: 4, running in foreground');
+    expect(names(r)).toEqual(['failure-screenshot image/png', 'page-source text/xml']);
+});
+
+test('a session start that never answers fails with our error before the fixture timeout, credentials left out', () => {
+    const r = bySpec.get('a session start that never answers fails with the start budget')!;
+    expect(r.status).toBe('failed');
+    expect(outcome.get('a session start that never answers fails with the start budget')).toBe('expected');
+    const message = plain(r);
+    expect(message).toContain('session start on https://appium.invalid:443/wd/hub for platform "ios": no session within 900 ms');
+    expect(message).toContain('session.startTimeout 1000 ms');
+    expect(message).not.toContain('secret-key');
+    expect(message).not.toContain('someone');
+    expect(message).not.toContain('timeout of 1000ms exceeded');
+    expect(labelled('start-timeout')).toEqual(['start']);
 });

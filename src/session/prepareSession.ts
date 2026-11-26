@@ -15,10 +15,32 @@ export interface PreparedSession {
     reset: 'relaunch' | 'none';
     /** With `reset: 'relaunch'`: how long the app may take to reach the foreground, in ms. */
     relaunchTimeout: number;
+    /** How long the worker's session start (provider start plus `onSessionStarted`) may take, in ms. */
+    startTimeout: number;
 }
 
 /** Default of `session.relaunchTimeout`, in ms. */
 export const RELAUNCH_TIMEOUT_MS = 15_000;
+
+/**
+ * Default of `session.startTimeout`, in ms: ten minutes. A cold start on a
+ * real device can build and sign WebDriverAgent (iOS) or install the
+ * UiAutomator2 server (Android) before the session exists, which takes
+ * several minutes and more than a usual test timeout.
+ */
+export const START_TIMEOUT_MS = 600_000;
+
+/**
+ * `session.startTimeout` as given, else {@link START_TIMEOUT_MS}. Throws
+ * unless it is a positive, finite number of ms.
+ */
+export function resolveStartTimeout(startTimeout: number | undefined): number {
+    const value = startTimeout ?? START_TIMEOUT_MS;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+        throw new Error(`session.startTimeout must be a positive, finite number of ms, got ${String(value)}.`);
+    }
+    return value;
+}
 
 /**
  * Resolves `session` options for `platform` without opening anything: checks
@@ -44,6 +66,7 @@ export function prepareSession(platform: Platform, options: SessionOptions = {},
     if (typeof relaunchTimeout !== 'number' || !Number.isFinite(relaunchTimeout) || relaunchTimeout < 0) {
         throw new Error(`session.relaunchTimeout must be a non-negative, finite number of ms, got ${String(relaunchTimeout)}.`);
     }
+    const startTimeout = resolveStartTimeout(options.startTimeout);
     const { file, capabilities } = loadCapabilities(options.capabilities, platform, env);
     if (capabilities.browserName !== undefined && capabilities['wdio:enforceWebDriverClassic'] !== true) {
         throw new Error(
@@ -63,5 +86,5 @@ export function prepareSession(platform: Platform, options: SessionOptions = {},
         );
     }
     const server = resolveServer(options.server, env);
-    return { context: { platform, capabilities, server }, capabilitiesFile: file, appId, reset, relaunchTimeout };
+    return { context: { platform, capabilities, server }, capabilitiesFile: file, appId, reset, relaunchTimeout, startTimeout };
 }

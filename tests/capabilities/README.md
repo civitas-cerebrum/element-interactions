@@ -5,7 +5,7 @@ run picks one with `E2E_CAPABILITIES` and the library sends its content exactly 
 written: it adds, defaults and rewrites nothing.
 
 ```
-E2E_PLATFORM=<platform> E2E_CAPABILITIES=tests/capabilities/<device>.local.json APPIUM_URL=<appium-server-url-with-base-path> \
+E2E_PLATFORM=<platform> E2E_CAPABILITIES=tests/capabilities/<device>.local.json APPIUM_URL=<appium-server-url> \
   npx playwright test -c playwright.platform.config.ts
 ```
 
@@ -115,7 +115,7 @@ Run it (copy `ios-testapp-simulator.example.json` to
 name and iOS version in the copy):
 
 ```
-E2E_PLATFORM=ios E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url-with-base-path> \
+E2E_PLATFORM=ios E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url> \
   npx playwright test -c playwright.platform.config.ts tests/live/ios-testapp.spec.ts
 ```
 
@@ -128,6 +128,6 @@ installed) is device verification.
 
 Nothing secret goes into these files, and no server address either:
 
-- The server comes from `APPIUM_URL` (full URL including the base path, for example `http://127.0.0.1:4723` or `http://<appium-server>:4723/wd/hub`).
+- The server comes from `APPIUM_URL`: the server's own URL, with its base path only if the server has one. A local Appium server (for an iOS simulator, say) usually has none, so the URL is just `http://127.0.0.1:<port>`; add `/wd/hub` (or another path) only when the server was started with that `--base-path`.
 - Credentials for a remote or cloud server come from `APPIUM_USER` and `APPIUM_KEY`. They are never read from a capabilities file.
 - Do not commit real device names, UDIDs, serials or signing team ids.
