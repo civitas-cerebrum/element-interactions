@@ -1,4 +1,4 @@
-import { PlatformNotSupportedError } from '../../src';
+import { PlatformNotSupportedError, PollTimeoutError } from '../../src';
 import { test, expect, platform, requireTestApp } from './android-fixture';
 
 /**
@@ -226,13 +226,20 @@ test.describe('live Android test app', () => {
     });
 
     test.describe('checkboxes and switches', () => {
+        /** A `checked` verification that timed out having read the control as unchecked (not one whose read threw). */
+        async function expectUnchecked(verification: Promise<void>): Promise<void> {
+            const error = await verification.then(() => undefined, (e: unknown) => e);
+            expect(error).toBeInstanceOf(PollTimeoutError);
+            expect(error).toMatchObject({ lastValue: false });
+        }
+
         test('verifyState checked passes on the checkbox and switch that start checked, and fails on an unchecked one', async ({ steps, openScreen }) => {
             await openScreen('checkboxes');
             await steps.verifyState('checkedCheckbox', 'CheckboxesPage', 'checked');
             await steps.verifyState('toggleOn', 'CheckboxesPage', 'checked');
             await steps.verifyText('summary', 'CheckboxesPage', 'Checked, Toggle on');
-            await expect(steps.verifyState('uncheckedCheckbox', 'CheckboxesPage', 'checked', 2000)).rejects.toThrow(/checked/);
-            await expect(steps.verifyState('toggleOff', 'CheckboxesPage', 'checked', 2000)).rejects.toThrow(/checked/);
+            await expectUnchecked(steps.verifyState('uncheckedCheckbox', 'CheckboxesPage', 'checked', 2000));
+            await expectUnchecked(steps.verifyState('toggleOff', 'CheckboxesPage', 'checked', 2000));
         });
 
         test('check checks an unchecked box and leaves a checked one checked (no tap)', async ({ steps, openScreen }) => {
@@ -252,13 +259,14 @@ test.describe('live Android test app', () => {
             // Already unchecked: uncheck is a no-op, so the switch stays off.
             await steps.uncheck('toggleOff', 'CheckboxesPage');
             await steps.verifyText('summary', 'CheckboxesPage', 'None checked');
-            await expect(steps.verifyState('checkedCheckbox', 'CheckboxesPage', 'checked', 2000)).rejects.toThrow(/checked/);
+            await expectUnchecked(steps.verifyState('checkedCheckbox', 'CheckboxesPage', 'checked', 2000));
         });
 
-        test('check on a disabled checkbox fails without tapping it', async ({ steps, openScreen }) => {
+        test('check on a disabled checkbox fails and leaves it unchecked and disabled', async ({ steps, openScreen }) => {
             await openScreen('checkboxes');
             await expect(steps.on('disabledCheckbox', 'CheckboxesPage').timeout(3000).check()).rejects.toThrow(/is disabled/);
-            await steps.verifyText('summary', 'CheckboxesPage', 'Checked, Toggle on');
+            expect(await steps.getAttribute('disabledCheckbox', 'CheckboxesPage', 'checked')).toBe('false');
+            await steps.verifyState('disabledCheckbox', 'CheckboxesPage', 'disabled');
         });
     });
 

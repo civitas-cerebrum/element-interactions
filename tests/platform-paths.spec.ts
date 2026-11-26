@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { ElementRepository } from '@civitas-cerebrum/element-repository';
-import { Steps } from '../src/index';
+import { PollTimeoutError, Steps } from '../src/index';
 import { AppiumFactory } from '../src/appium';
 import { ReResolvingElement } from '../src/appium/ReResolvingElement';
 import { DEVICE_PLATFORMS, driverError, mockElement, mockUiDriver, screenSwipes, type MockNode } from './appium/mocks';
@@ -627,7 +627,9 @@ test.describe('android element reads through the steps', () => {
     test('verifyState checked reads the checked attribute', async () => {
         await deviceSteps('android', [control('android.widget.CheckBox', true).node]).steps.verifyState('field', 'Screen', 'checked');
         const error = await caught(() => deviceSteps('android', [control('android.widget.Switch', false).node]).steps.verifyState('field', 'Screen', 'checked'));
-        expect(error?.message).toMatch(/checked/);
+        // Timed out having read the switch as unchecked, not on a read that threw.
+        expect(error).toBeInstanceOf(PollTimeoutError);
+        expect(error).toMatchObject({ lastValue: false });
     });
 
     test('check and uncheck tap only when the state differs, and confirm the new state', async () => {
@@ -654,10 +656,67 @@ test.describe('android element reads through the steps', () => {
         expect(taps(radio.mock) + taps(plain.mock)).toBe(0);
     });
 
+    test('check on a disabled control fails once the step timeout runs out, without a tap', async () => {
+        const disabled: MockNode = { ...control('android.widget.CheckBox', false).node, enabled: false };
+        const { steps, mock } = deviceSteps('android', [disabled], 300);
+        expect((await caught(() => steps.check('field', 'Screen')))?.message).toMatch(/is disabled/);
+        expect(taps(mock)).toBe(0);
+    });
+
     test('a tap that does not change the state fails the step instead of passing', async () => {
         const stuck: MockNode = { match: '~field', attributes: { class: 'android.widget.CheckBox', checkable: 'true', checked: 'false' } };
         const { steps, mock } = deviceSteps('android', [stuck]);
         expect((await caught(() => steps.check('field', 'Screen')))?.message).toMatch(/is still unchecked after clicking/);
         expect(taps(mock)).toBe(1);
+    });
+});
+
+/**
+ * On iOS a switch reports its state in `value` ("1" on, "0" off), not in
+ * `selected`; element-repository reads `value` only for switch and toggle
+ * types.
+ */
+test.describe('ios switch state through the steps', () => {
+    /** An `XCUIElementTypeSwitch` whose `value` flips between "1" and "0" on every tap. */
+    function iosSwitch(initially: boolean) {
+        let on = initially;
+        const node: MockNode = {
+            match: '~field',
+            text: 'Sound',
+            attributes: { type: 'XCUIElementTypeSwitch', label: 'Sound', value: () => (on ? '1' : '0') },
+            onClick: () => { on = !on; },
+        };
+        return { node, on: () => on };
+    }
+    const taps = (mock: ReturnType<typeof deviceSteps>['mock']) => mock.calls.filter(c => c[0] === 'click').length;
+
+    test('verifyState checked reads the switch value', async () => {
+        await deviceSteps('ios', [iosSwitch(true).node]).steps.verifyState('field', 'Screen', 'checked');
+        const error = await caught(() => deviceSteps('ios', [iosSwitch(false).node]).steps.verifyState('field', 'Screen', 'checked'));
+        expect(error).toBeInstanceOf(PollTimeoutError);
+        expect(error).toMatchObject({ lastValue: false });
+    });
+
+    test('a value of "1" on a type that is not a switch is not read as checked', async () => {
+        const badge: MockNode = { match: '~field', text: 'General', attributes: { type: 'XCUIElementTypeButton', label: 'General', value: '1' } };
+        const error = await caught(() => deviceSteps('ios', [badge]).steps.verifyState('field', 'Screen', 'checked'));
+        expect(error).toBeInstanceOf(PollTimeoutError);
+        expect(error).toMatchObject({ lastValue: false });
+    });
+
+    test('check and uncheck tap only when the value differs, and confirm the new value', async () => {
+        let sw = iosSwitch(false);
+        let r = deviceSteps('ios', [sw.node]);
+        await r.steps.check('field', 'Screen');
+        await r.steps.check('field', 'Screen');
+        expect(taps(r.mock), 'one tap turns it on; checking an on switch taps nothing').toBe(1);
+        expect(sw.on()).toBe(true);
+
+        sw = iosSwitch(true);
+        r = deviceSteps('ios', [sw.node]);
+        await r.steps.uncheck('field', 'Screen');
+        await r.steps.uncheck('field', 'Screen');
+        expect(taps(r.mock), 'one tap turns it off; unchecking an off switch taps nothing').toBe(1);
+        expect(sw.on()).toBe(false);
     });
 });
