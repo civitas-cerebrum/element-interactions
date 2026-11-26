@@ -3,6 +3,7 @@ import { ElementRepository, Element, WebElement, ElementResolutionOptions, Selec
 import type { Platform } from '@civitas-cerebrum/element-repository';
 import { requireWebElement } from '../playwright/requireWebElement';
 import { ElementActionFamily, requireDevicePlatform, requireWebPlatform } from './platformGuard';
+import { describeCountOptions, validateCountOptions } from '../utils/countRange';
 import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ScreenshotOptions, IsVisibleOptions } from '../enum/Options';
 import {
     ElementSnapshot,
@@ -843,13 +844,23 @@ export class ElementAction {
         await this.expectBuilder().text.toContain(expected);
     }
 
-    /** Assert the element count. Delegates to the matcher tree's count matchers. */
+    /**
+     * Assert the element count: `exactly`, or a range of one lower bound
+     * (`greaterThan` / `greaterThanOrEqual`) and / or one upper bound
+     * (`lessThan` / `lessThanOrEqual`); every given bound must hold at the
+     * same time. Collection-level (the whole collection, whatever the
+     * strategy selector), polled until the chain timeout; the failure names
+     * the bound the last count broke. Contradictory or empty options are
+     * refused before anything is resolved. Honours the `ifVisible()` gate.
+     */
     async verifyCount(options: CountVerifyOptions): Promise<void> {
-        const builder = this.expectBuilder();
-        if (options.exactly !== undefined) await builder.count.toBe(options.exactly);
-        else if (options.greaterThan !== undefined) await builder.count.toBeGreaterThan(options.greaterThan);
-        else if (options.lessThan !== undefined) await builder.count.toBeLessThan(options.lessThan);
-        else throw new Error("verifyCount requires 'exactly', 'greaterThan', or 'lessThan' in CountVerifyOptions.");
+        validateCountOptions(options);
+        if (!await this.shouldProceed()) return;
+        const element = await this.verifyTarget(true);
+        await this.interactions.verify.count(element, options, {
+            timeout: this._timeout,
+            errorMessage: `expected ${this.pageName}.${this.elementName} count to be ${describeCountOptions(options)}`,
+        });
     }
 
     /** Check if element is visible (boolean, no assertion). */

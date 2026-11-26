@@ -8,6 +8,7 @@ import { describeValue, pollUntil, PollTimeoutError, softRead } from '../utils/p
 import { webOnly } from './unsupported';
 import { ReResolvingElement } from './ReResolvingElement';
 import { DEVICE_POLL_ATTACH_MS, entryLabel, probeVisibleOnDevice } from './entry';
+import { countMismatch, describeCountOptions, validateCountOptions } from '../utils/countRange';
 
 type HtmlOptions = VerifyOptions & { outer?: boolean };
 
@@ -309,33 +310,19 @@ export class AppiumVerifications implements IVerifications {
     }
 
     async count(target: Element, options: CountVerifyOptions, verifyOptions?: VerifyOptions): Promise<void> {
-        if (options.exactly !== undefined && options.exactly < 0) throw new Error(`'exact' count cannot be negative.`);
-        if (options.greaterThan !== undefined && options.greaterThan < 0) throw new Error(`'greaterThan' count cannot be negative.`);
-        if (options.lessThan !== undefined && options.lessThan <= 0) {
-            throw new Error(`'lessThan' must be greater than 0. Element counts cannot be negative.`);
-        }
-        if (options.greaterThanOrEqual !== undefined && options.greaterThanOrEqual < 0) throw new Error(`'greaterThanOrEqual' count cannot be negative.`);
-        if (options.lessThanOrEqual !== undefined && options.lessThanOrEqual < 0) throw new Error(`'lessThanOrEqual' count cannot be negative.`);
-        if (
-            options.exactly === undefined && options.greaterThan === undefined && options.lessThan === undefined
-            && options.greaterThanOrEqual === undefined && options.lessThanOrEqual === undefined
-        ) {
-            throw new Error(`You must provide 'exact', 'greaterThan', 'lessThan', 'greaterThanOrEqual', or 'lessThanOrEqual' in CountVerifyOptions.`);
-        }
-        const describe = [
-            options.exactly !== undefined ? `exactly ${options.exactly}` : null,
-            options.greaterThan !== undefined ? `> ${options.greaterThan}` : null,
-            options.lessThan !== undefined ? `< ${options.lessThan}` : null,
-            options.greaterThanOrEqual !== undefined ? `>= ${options.greaterThanOrEqual}` : null,
-            options.lessThanOrEqual !== undefined ? `<= ${options.lessThanOrEqual}` : null,
-        ].filter(Boolean).join(' and ');
-        await this.expectEventually(() => target.count(), n =>
-            (options.exactly === undefined || n === options.exactly) &&
-            (options.greaterThan === undefined || n > options.greaterThan) &&
-            (options.lessThan === undefined || n < options.lessThan) &&
-            (options.greaterThanOrEqual === undefined || n >= options.greaterThanOrEqual) &&
-            (options.lessThanOrEqual === undefined || n <= options.lessThanOrEqual),
-        `count ${describe}`, verifyOptions);
+        validateCountOptions(options);
+        const negated = verifyOptions?.negated === true;
+        const expectation = `${negated ? 'Expected NOT' : 'Expected'} count ${describeCountOptions(options)}`;
+        const lead = verifyOptions?.errorMessage ? `${verifyOptions.errorMessage} (${expectation})` : expectation;
+        let last: number | undefined;
+        await pollUntil(async () => (last = await target.count()), n => countMismatch(options, n, negated) === undefined, {
+            timeout: verifyOptions?.timeout ?? this.timeout,
+            // Names the bound the last count broke: "... (Expected count > 1 and < 3); 6 is not < 3".
+            message: () => {
+                const why = last === undefined ? undefined : countMismatch(options, last, negated);
+                return why === undefined ? lead : `${lead}; ${why}`;
+            },
+        });
     }
 
     // ── Captured values (no polling: both values are already in hand) ──

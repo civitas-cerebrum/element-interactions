@@ -7,6 +7,7 @@ export type { VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options
 import { Element, WebElement } from '@civitas-cerebrum/element-repository';
 import type { EntryTarget } from '../interfaces/IEntryTarget';
 import { requireWebElement } from './requireWebElement';
+import { countMismatch, describeCountOptions, validateCountOptions } from '../utils/countRange';
 
 /**
  * Attach slice the visibility probe gives the repository per ATTEMPT (see
@@ -1033,65 +1034,36 @@ export class Verifications implements IVerifications {
 
 
     /**
-     * Asserts the number of elements matching the locator based on the provided conditions.
-     * Exactly one of `exactly`, `greaterThan`, `lessThan`, `greaterThanOrEqual`, or
-     * `lessThanOrEqual` must be set on `options`.
+     * Asserts the number of elements matching the locator based on the provided conditions:
+     * `exactly`, or a range of at most one lower bound (`greaterThan` / `greaterThanOrEqual`)
+     * and at most one upper bound (`lessThan` / `lessThanOrEqual`), every given bound holding.
      * @param target - A Playwright Locator or Element pointing to the target elements.
      * @param options - Configuration specifying which comparator to apply and the expected count.
      * @param verifyOptions - Optional `{ negated?, timeout?, errorMessage? }` override.
-     * @throws Error if any count in `options` is negative, or if the count does not match.
+     * @throws Error at once when `options` is empty, negative or contradictory (no count can
+     *   satisfy it); an assertion error naming the failed bound when the count does not match.
      */
     async count(target: Element, options: CountVerifyOptions, verifyOptions?: VerifyOptions): Promise<void> {
         requireWebElement('Verifications.count', target);
+        validateCountOptions(options);
         const locator = resolveLocator(target);
         const timeout = verifyOptions?.timeout ?? this.ELEMENT_TIMEOUT;
         const { matcher } = this.prepare(locator, verifyOptions);
-
-        if (options.exactly !== undefined && options.exactly < 0) {
-            throw new Error(`'exact' count cannot be negative.`);
-        }
-        if (options.greaterThan !== undefined && options.greaterThan < 0) {
-            throw new Error(`'greaterThan' count cannot be negative.`);
-        }
-        if (options.lessThan !== undefined && options.lessThan <= 0) {
-            throw new Error(`'lessThan' must be greater than 0. Element counts cannot be negative.`);
-        }
-        if (options.greaterThanOrEqual !== undefined && options.greaterThanOrEqual < 0) {
-            throw new Error(`'greaterThanOrEqual' count cannot be negative.`);
-        }
-        if (options.lessThanOrEqual !== undefined && options.lessThanOrEqual < 0) {
-            throw new Error(`'lessThanOrEqual' count cannot be negative.`);
-        }
 
         if (options.exactly !== undefined) {
             await matcher.toHaveCount(options.exactly, { timeout });
             return;
         }
 
-        if (
-            options.greaterThan === undefined && options.lessThan === undefined
-            && options.greaterThanOrEqual === undefined && options.lessThanOrEqual === undefined
-        ) {
-            throw new Error(`You must provide 'exact', 'greaterThan', 'lessThan', 'greaterThanOrEqual', or 'lessThanOrEqual' in CountVerifyOptions.`);
-        }
-
-        const describe = [
-            options.greaterThan !== undefined ? `> ${options.greaterThan}` : null,
-            options.lessThan !== undefined ? `< ${options.lessThan}` : null,
-            options.greaterThanOrEqual !== undefined ? `>= ${options.greaterThanOrEqual}` : null,
-            options.lessThanOrEqual !== undefined ? `<= ${options.lessThanOrEqual}` : null,
-        ].filter(Boolean).join(' and ');
-        const negatedSuffix = verifyOptions?.negated ? ' (negated)' : '';
-
-        await expect.poll(async () => {
-            const actualCount = await target.count();
-            const passes =
-                (options.greaterThan === undefined || actualCount > options.greaterThan) &&
-                (options.lessThan === undefined || actualCount < options.lessThan) &&
-                (options.greaterThanOrEqual === undefined || actualCount >= options.greaterThanOrEqual) &&
-                (options.lessThanOrEqual === undefined || actualCount <= options.lessThanOrEqual);
-            return verifyOptions?.negated ? !passes : passes;
-        }, { timeout, message: `Expected count ${describe}${negatedSuffix}` }).toBe(true);
+        // Polls a verdict instead of a boolean, so the failure names the bound
+        // the last count broke: Expected "count > 1 and < 3", Received "6 is not < 3".
+        const negated = verifyOptions?.negated === true;
+        const expected = `count ${negated ? 'not ' : ''}${describeCountOptions(options)}`;
+        const lead = `Expected ${expected}`;
+        await expect.poll(async () => countMismatch(options, await target.count(), negated) ?? expected, {
+            timeout,
+            message: verifyOptions?.errorMessage ? `${verifyOptions.errorMessage} (${lead})` : lead,
+        }).toBe(expected);
     }
 
     // ==========================================

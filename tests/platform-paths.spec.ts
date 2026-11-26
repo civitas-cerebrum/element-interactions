@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { ElementRepository } from '@civitas-cerebrum/element-repository';
-import { PollTimeoutError, Steps } from '../src/index';
+import { PollTimeoutError, Steps, type CountVerifyOptions } from '../src/index';
 import { AppiumFactory } from '../src/appium';
 import { ReResolvingElement } from '../src/appium/ReResolvingElement';
 import { DEVICE_PLATFORMS, driverError, expectNotSupported, mockElement, mockUiDriver, screenSwipes, type MockNode } from './appium/mocks';
@@ -264,6 +264,70 @@ for (const platform of DEVICE_PLATFORMS) {
             const { steps } = deviceSteps(platform, []);
             expect(await steps.on('items', 'Screen').getCount()).toBe(0);
             expect(await steps.on('items', 'Screen').getAllTexts()).toEqual([]);
+        });
+    });
+
+    test.describe(`verifyCount bounds on ${platform}`, () => {
+        const passing: CountVerifyOptions[] = [
+            { exactly: 6 }, { greaterThan: 5 }, { greaterThanOrEqual: 6 }, { lessThan: 7 }, { lessThanOrEqual: 6 },
+            { greaterThan: 5, lessThan: 7 }, { greaterThanOrEqual: 6, lessThanOrEqual: 6 },
+            { greaterThan: 5, lessThanOrEqual: 6 }, { greaterThanOrEqual: 6, lessThan: 7 },
+        ];
+        test('every bound and every lower + upper range holds on a count of 6, both forms', async () => {
+            const { steps } = deviceSteps(platform, itemTree());
+            for (const options of passing) {
+                await steps.verifyCount('items', 'Screen', options);
+                await steps.on('items', 'Screen').verifyCount(options);
+            }
+        });
+
+        const failing: Array<[CountVerifyOptions, RegExp]> = [
+            [{ greaterThanOrEqual: 7 }, /6 is not >= 7/],
+            [{ lessThanOrEqual: 5 }, /6 is not <= 5/],
+            [{ greaterThan: 1, lessThan: 3 }, /6 is not < 3/],
+            [{ greaterThanOrEqual: 7, lessThanOrEqual: 9 }, /6 is not >= 7/],
+            [{ greaterThan: 6 }, /6 is not > 6/],
+        ];
+        for (const [options, failedBound] of failing) {
+            test(`${JSON.stringify(options)} fails on a count of 6 after the timeout, naming the failed bound`, async () => {
+                const { steps } = deviceSteps(platform, itemTree());
+                for (const run of [
+                    () => steps.verifyCount('items', 'Screen', options, { timeout: 300 }),
+                    () => steps.on('items', 'Screen').timeout(300).verifyCount(options),
+                ]) {
+                    const { error, elapsed } = await timed(run);
+                    expect(error, 'the count is outside the bounds').toBeInstanceOf(PollTimeoutError);
+                    expect(error?.message).toMatch(failedBound);
+                    expect(error?.message).toContain('timed out after 300 ms');
+                    expect(elapsed).toBeGreaterThanOrEqual(290);
+                }
+            });
+        }
+
+        const invalid: Array<[unknown, RegExp]> = [
+            [{}, /You must provide 'exactly'/],
+            [{ exactly: 6, greaterThan: 1 }, /'exactly' cannot be combined with 'greaterThan'/],
+            [{ greaterThan: 1, greaterThanOrEqual: 2 }, /one lower bound/],
+            [{ lessThan: 9, lessThanOrEqual: 8 }, /one upper bound/],
+            [{ greaterThan: 3, lessThan: 4 }, /No element count is > 3 and < 4/],
+            [{ greaterThanOrEqual: 5, lessThanOrEqual: 4 }, /No element count is >= 5 and <= 4/],
+            [{ exactly: 2.5 }, /No element count is exactly 2.5/],
+            [{ greaterThanOrEqual: Number.NaN }, /'greaterThanOrEqual' must be a finite number/],
+            [{ lessThanOrEqual: -1 }, /'lessThanOrEqual' count cannot be negative/],
+        ];
+        test('contradictory, empty or malformed options are refused at once, before anything is resolved', async () => {
+            for (const [options, message] of invalid) {
+                const { steps, mock } = deviceSteps(platform, itemTree(), 5000);
+                for (const run of [
+                    () => steps.verifyCount('items', 'Screen', options as CountVerifyOptions),
+                    () => steps.on('items', 'Screen').verifyCount(options as CountVerifyOptions),
+                ]) {
+                    const { error, elapsed } = await timed(run);
+                    expect(error?.message, JSON.stringify(options)).toMatch(message);
+                    expect(elapsed).toBeLessThan(500);
+                }
+                expect(mock.lookups, `${JSON.stringify(options)} resolves nothing`).toEqual([]);
+            }
         });
     });
 

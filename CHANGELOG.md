@@ -123,6 +123,14 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `.byText(...)`, ...) no longer narrows them.
   **Migration:** none where the whole collection was meant. To read one match,
   narrow and read it: `await steps.on(el, page).nth(i).getText()`.
+- **`verifyCount` checks the upper bound of a range and refuses contradictory options.**
+  On web, `verifyCount(el, page, { greaterThan: 1, lessThan: 3 })` passed for
+  any count above 1; it now fails unless the count is also below 3. Options
+  that combine `exactly` with a bound (`{ exactly: 3, greaterThan: 1 }`, which
+  used to assert `exactly` alone), give two lower or two upper bounds, or
+  describe a range no count satisfies now throw at once.
+  **Migration:** none for calls whose bounds were all meant. Fix a range whose
+  upper bound the count exceeds, and drop the extra bound next to `exactly`.
 
 ### Added
 
@@ -310,6 +318,15 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   They now read the entry's whole collection, like `steps.getCount` /
   `steps.getAll` and the chain's `.count` matchers, whatever strategy selector
   the chain carries.
+- **`verifyCount` accepts every documented bound and checks both ends of a range.**
+  `steps.verifyCount(...)` and `steps.on(el, page).verifyCount(...)` refused
+  `{ greaterThanOrEqual }` / `{ lessThanOrEqual }` at runtime although the
+  typings and the README accept them, and `{ greaterThan, lessThan }` checked
+  only `greaterThan`, on web and on a device. Every given bound is now checked
+  at the same time; `CountVerifyOptions` also types a mixed range
+  (`{ greaterThan, lessThanOrEqual }`, `{ greaterThanOrEqual, lessThan }`).
+  The failure names the bound the last count broke (`6 is not < 3`), and
+  contradictory or empty options throw at once, before the element is resolved.
 
 ## 0.3.12 — 2026-11-01
 

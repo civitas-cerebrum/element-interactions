@@ -1,6 +1,7 @@
 import { test, expect } from './fixture/StepFixture';
 import path from 'path';
 import { WebElement } from '@civitas-cerebrum/element-repository';
+import type { CountVerifyOptions } from '../src/enum/Options';
 
 test.describe('Fluent API — steps.on()', () => {
 
@@ -403,6 +404,62 @@ test.describe('Fluent API — steps.on()', () => {
       // Click Name header to sort ascending
       await steps.click( 'headerName','TablePage');
       await steps.on('nameCell', 'TablePage').verifyListOrder('asc');
+    });
+  });
+
+  test.describe('verifyCount bounds', () => {
+
+    test('every bound and every lower + upper range holds, both forms', async ({ steps }) => {
+      await steps.navigateTo('/');
+      const n = await steps.getCount('categories', 'HomePage');
+      expect(n).toBeGreaterThan(2);
+      const passing: CountVerifyOptions[] = [
+        { exactly: n }, { greaterThan: n - 1 }, { greaterThanOrEqual: n }, { lessThan: n + 1 }, { lessThanOrEqual: n },
+        { greaterThan: n - 1, lessThan: n + 1 }, { greaterThanOrEqual: n, lessThanOrEqual: n },
+        { greaterThan: n - 1, lessThanOrEqual: n }, { greaterThanOrEqual: n, lessThan: n + 1 },
+      ];
+      for (const options of passing) {
+        await steps.verifyCount('categories', 'HomePage', options);
+        await steps.on('categories', 'HomePage').verifyCount(options);
+      }
+    });
+
+    test('a range checks its upper bound too, and the failure names the failed bound', async ({ steps }) => {
+      await steps.navigateTo('/');
+      const n = await steps.getCount('categories', 'HomePage');
+      const cases: Array<[CountVerifyOptions, string]> = [
+        [{ greaterThan: 1, lessThan: 3 }, `${n} is not < 3`],
+        [{ greaterThanOrEqual: n + 1 }, `${n} is not >= ${n + 1}`],
+        [{ greaterThanOrEqual: 1, lessThanOrEqual: n - 1 }, `${n} is not <= ${n - 1}`],
+      ];
+      for (const [options, failed] of cases) {
+        for (const run of [
+          () => steps.verifyCount('categories', 'HomePage', options, { timeout: 500 }),
+          () => steps.on('categories', 'HomePage').timeout(500).verifyCount(options),
+        ]) {
+          const error = await run().then(() => undefined, (e: Error) => e);
+          expect(error, JSON.stringify(options)).toBeDefined();
+          // Playwright colours the received value: compare the plain text.
+          expect(error!.message.replace(/\u001b\[[0-9;]*m/g, '')).toContain(failed);
+        }
+      }
+    });
+
+    test('contradictory, empty or malformed options are refused at once', async ({ steps }) => {
+      await steps.navigateTo('/');
+      const invalid: Array<[unknown, RegExp]> = [
+        [{}, /You must provide 'exactly'/],
+        [{ exactly: 8, lessThan: 9 }, /'exactly' cannot be combined with 'lessThan'/],
+        [{ greaterThan: 1, greaterThanOrEqual: 2 }, /one lower bound/],
+        [{ lessThan: 9, lessThanOrEqual: 8 }, /one upper bound/],
+        [{ greaterThan: 3, lessThan: 4 }, /No element count is > 3 and < 4/],
+      ];
+      for (const [options, message] of invalid) {
+        const started = Date.now();
+        await expect(steps.verifyCount('categories', 'HomePage', options as CountVerifyOptions)).rejects.toThrow(message);
+        await expect(steps.on('categories', 'HomePage').verifyCount(options as CountVerifyOptions)).rejects.toThrow(message);
+        expect(Date.now() - started).toBeLessThan(1000);
+      }
     });
   });
 

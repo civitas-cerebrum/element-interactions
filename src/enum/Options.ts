@@ -142,15 +142,21 @@ export type WindowVerifyOptions =
     | (WindowVerifyModifiers & { equals?: never; contains?: never; matches?: never; present?: never; truthy?: never; greaterThan?: never; lessThan: number });
 
 /**
- * Configuration options for the `count` verification method.
- * At least one constraint is required: exactly, greaterThan, or lessThan.
+ * Configuration options for the `count` verification method: `exactly`
+ * alone, or a range of at most one lower bound (`greaterThan` or
+ * `greaterThanOrEqual`) and at most one upper bound (`lessThan` or
+ * `lessThanOrEqual`). Every given bound must hold. Contradictory options
+ * (`exactly` with a bound, two lower or two upper bounds, a range no count
+ * satisfies) are refused with an error before anything is resolved.
  */
 export type CountVerifyOptions =
-    | { exactly: number; greaterThan?: never; lessThan?: never; greaterThanOrEqual?: never; lessThanOrEqual?: never }
-    | { exactly?: never; greaterThan: number; lessThan?: number; greaterThanOrEqual?: never; lessThanOrEqual?: never }
-    | { exactly?: never; greaterThan?: number; lessThan: number; greaterThanOrEqual?: never; lessThanOrEqual?: never }
-    | { exactly?: never; greaterThan?: never; lessThan?: never; greaterThanOrEqual: number; lessThanOrEqual?: number }
-    | { exactly?: never; greaterThan?: never; lessThan?: never; greaterThanOrEqual?: number; lessThanOrEqual: number };
+    | { exactly: number; greaterThan?: never; greaterThanOrEqual?: never; lessThan?: never; lessThanOrEqual?: never }
+    | { exactly?: never; greaterThan: number; greaterThanOrEqual?: never; lessThan?: number; lessThanOrEqual?: never }
+    | { exactly?: never; greaterThan: number; greaterThanOrEqual?: never; lessThan?: never; lessThanOrEqual: number }
+    | { exactly?: never; greaterThan?: never; greaterThanOrEqual: number; lessThan?: number; lessThanOrEqual?: never }
+    | { exactly?: never; greaterThan?: never; greaterThanOrEqual: number; lessThan?: never; lessThanOrEqual: number }
+    | { exactly?: never; greaterThan?: never; greaterThanOrEqual?: never; lessThan: number; lessThanOrEqual?: never }
+    | { exactly?: never; greaterThan?: never; greaterThanOrEqual?: never; lessThan?: never; lessThanOrEqual: number };
 
 /**
  * Configuration options for the `dragAndDrop` method.
