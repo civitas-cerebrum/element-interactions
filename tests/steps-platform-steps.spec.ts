@@ -767,7 +767,7 @@ test.describe('platform steps on web (new Steps(repo))', () => {
         const steps = new Steps(stubRepo(repoCalls, web, { url: () => 'about:blank' }), { timeout: 900 });
         await steps.scrollUntilFound('x', 'Page', { direction: 'right', container: 'list', timeout: 500 });
         await steps.on('x', 'Page').scrollUntilFound({ container: 'list' });
-        expect(repoCalls.filter(c => c[2] === 'list')).toEqual([['repo', 'get', 'list', 'Page', undefined], ['repo', 'get', 'list', 'Page', undefined]]);
+        expect(repoCalls.filter(c => c[2] === 'list')).toEqual([['repo', 'get', 'list', 'Page', { timeout: 500 }], ['repo', 'get', 'list', 'Page', { timeout: 900 }]]);
         expect(received).toEqual([
             { direction: 'right', container: web, timeout: 500 },
             { container: web, timeout: 900 },

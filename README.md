@@ -232,7 +232,7 @@ The element gestures are chain terminals too. Each acts on the element the chain
 
 * **`.swipe(direction: SwipeDirection, options?: SwipeOptions)`** — Swipes on the element: the finger moves in `direction` (`'up'` reveals content below), `distance` in px. On web a mouse drag.
 * **`.scrollIntoView(options?: ScrollStepOptions)`** — Scrolls the element into view; the no-argument form is unchanged. On a device `direction` says where the element lies (default `'down'`), `maxSwipes` caps the sweep (default 20) and `container` names the scrollable ancestor to sweep inside (see [Scroll container](#scroll-container)).
-* **`.scrollUntilFound(options?: ScrollStepOptions)`** — Scrolls until the element is displayed; throws when the timeout or the swipe limit is reached first. Not gated by `ifVisible()`. On web the browser scrolls it into view.
+* **`.scrollUntilFound(options?: ScrollStepOptions)`** — Scrolls until the element is displayed; throws when the timeout or the swipe limit is reached first; `container` names the scrollable ancestor (see [Scroll container](#scroll-container)). Not gated by `ifVisible()`. On web the browser scrolls it into view.
 * **`.longPress(options?: LongPressOptions)`** — Presses and holds the element, `duration` in ms (default 1000). On web the mouse button is held.
 * **`.tapAt(offset: TapOffset, options?: TapAtOptions)`** — Taps the point `offset` px from the element's top-left corner. On web a mouse click at that point.
 * **`.pinch(options?: PinchOptions)`** — Two-finger pinch, `scale` in (0, 1), default 0.5. Platform only; throws `PlatformNotSupportedError` on web before the element is resolved.

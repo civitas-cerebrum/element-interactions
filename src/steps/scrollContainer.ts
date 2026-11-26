@@ -9,6 +9,10 @@ import type { ScrollStepOptions } from '../interfaces/IGestures';
  * `undefined` values left out (`undefined` when none is left), so a step
  * without a container sends exactly what it sent before.
  *
+ * The container is resolved with `timeout` (the step or chain timeout) when
+ * one is given, so a container that renders late gets the same budget as the
+ * target.
+ *
  * A container the page does not define fails here, before the scroll starts:
  * `<step>: container "<name>" on page "<page>" could not be resolved: <cause>`.
  */
@@ -25,7 +29,7 @@ export async function toScrollIntoViewOptions(
     if (options?.container !== undefined) {
         const name = options.container;
         try {
-            out.container = await repo.get(name, pageName);
+            out.container = await repo.get(name, pageName, timeout !== undefined ? { timeout } : undefined);
         } catch (err) {
             const cause = err instanceof Error ? err.message : String(err);
             throw new Error(`${step}: container "${name}" on page "${pageName}" could not be resolved: ${cause}`, { cause: err });

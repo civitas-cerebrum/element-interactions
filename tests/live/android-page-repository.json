@@ -10,7 +10,7 @@
         { "elementName": "alertsCard", "selector": { "accessibility id": "home-card-alerts" } },
         { "elementName": "interactionsCard", "selector": { "accessibility id": "home-card-sortable" } },
         { "elementName": "edgeCasesCard", "selector": { "accessibility id": "home-card-longList" } },
-        { "elementName": "formsCard", "selector": { "accessibility id": "home-card-loginForm" } }
+        { "elementName": "loginFormCard", "selector": { "accessibility id": "home-card-loginForm" } }
       ]
     },
     {

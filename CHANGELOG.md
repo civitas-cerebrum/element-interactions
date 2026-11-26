@@ -213,6 +213,10 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   bounded by the step timeout (default 30 s; pass a larger `timeout` for long
   lists, and allow for the first gesture of a fresh iOS session taking tens of
   seconds).
+  `pressBack` (android only), `hideKeyboard`, `setOrientation`, `acceptAlert`,
+  `dismissAlert`, `setPermission`; `getContexts`, `switchContext`; polling
+  `verifyAppInForeground`, `verifyOrientation`, `verifyKeyboardShown`,
+  `verifyContext`; `getPageSource`. `steps.platform` names the active platform.
 - **A scroll container for `scrollIntoView` / `scrollUntilFound`.** The steps
   and the fluent terminals take `ScrollStepOptions`:
   element-repository's `ScrollIntoViewOptions` with `container?: string`, the
@@ -226,10 +230,6 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   define fails before any swipe:
   `scrollIntoView: container "<name>" on page "<page>" could not be resolved: ...`.
   On web the container is resolved the same way and Playwright ignores it.
-  `pressBack` (android only), `hideKeyboard`, `setOrientation`, `acceptAlert`,
-  `dismissAlert`, `setPermission`; `getContexts`, `switchContext`; polling
-  `verifyAppInForeground`, `verifyOrientation`, `verifyKeyboardShown`,
-  `verifyContext`; `getPageSource`. `steps.platform` names the active platform.
 - **Platform paths** for `"list": true` entries, `child` / `withDescendant` on
   listed elements, `verifyAbsence`, `isVisible` / `ifVisible` probes and the
   matcher tree on device platforms. Listed-element `text` and

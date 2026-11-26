@@ -129,9 +129,10 @@ for (const platform of DEVICE_PLATFORMS) {
             const { steps, target, carousel, repoCalls } = containerSteps(platform);
             await steps.scrollIntoView('card', 'Shop', { direction: 'right', container: 'carousel', timeout: 700 });
             await steps.scrollUntilFound('card', 'Shop', { strategy: 'index', index: 2, direction: 'left', maxSwipes: 4, container: 'carousel' });
-            // The container is resolved without the target's strategy, on the target's page.
+            // The container is resolved without the target's strategy, on the target's page,
+            // with the per-call timeout when one is given.
             expect(repoCalls).toEqual([
-                ['repo', 'get', 'card', 'Shop', undefined], ['repo', 'get', 'carousel', 'Shop', undefined],
+                ['repo', 'get', 'card', 'Shop', undefined], ['repo', 'get', 'carousel', 'Shop', { timeout: 700 }],
                 ['repo', 'get', 'card', 'Shop', INDEX_2], ['repo', 'get', 'carousel', 'Shop', undefined],
             ]);
             expect(target.calls).toEqual([
@@ -142,15 +143,15 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(carousel.calls, 'the container itself is not acted on by the step').toEqual([]);
         });
 
-        test('the fluent scrollIntoView and scrollUntilFound resolve the container on the chain\'s page', async () => {
+        test('the fluent scrollIntoView and scrollUntilFound resolve the container on the chain\'s page with the chain timeout', async () => {
             const { steps, target, carousel, repoCalls } = containerSteps(platform);
             await steps.on('card', 'Shop').nth(2).scrollIntoView({ direction: 'right', container: 'carousel' });
             await steps.on('card', 'Shop').scrollUntilFound({ container: 'carousel', timeout: 90 });
             await steps.on('card', 'Shop').isVisible({ timeout: 50 }).scrollIntoView({ direction: 'left', container: 'carousel' });
             expect(repoCalls.filter(c => c[2] === 'carousel')).toEqual([
-                ['repo', 'get', 'carousel', 'Shop', undefined],
-                ['repo', 'get', 'carousel', 'Shop', undefined],
-                ['repo', 'get', 'carousel', 'Shop', undefined],
+                ['repo', 'get', 'carousel', 'Shop', { timeout: 400 }],
+                ['repo', 'get', 'carousel', 'Shop', { timeout: 90 }],
+                ['repo', 'get', 'carousel', 'Shop', { timeout: 400 }],
             ]);
             expect(target.calls).toEqual([
                 ['scrollIntoView', { direction: 'right', container: carousel, timeout: 400 }],
