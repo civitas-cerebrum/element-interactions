@@ -289,6 +289,14 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   default timeout (30 s unless configured), on web and on a device. They now
   use the given `timeout`, exactly as `steps.on(el, page).timeout(ms)` does;
   without one they keep the configured timeout.
+- **A web-only terminal behind a visibility gate is refused on a device.**
+  `steps.on(el, page).isVisible().hover()`, `steps.isVisible(el, page).hover()`
+  and the same gate before `rightClick`, `uploadFile`, `selectDropdown`,
+  `setSliderValue` or `selectMultiple` used to probe the element first and, when
+  it was not shown, return without doing anything; behind a shown element the
+  refusal came only after the probe. They now throw
+  `PlatformNotSupportedError(step, platform)` before anything is sent to the
+  device, like the ungated step. Web is unchanged.
 
 ## 0.3.12 — 2026-11-01
 

@@ -1,6 +1,7 @@
 import { ElementAction } from './ElementAction';
 import { IsVisibleOptions, ClickOptions, DropdownSelectOptions, DragAndDropOptions } from '../enum/Options';
 import { createLogger } from '../logger/Logger';
+import { requireWebPlatform } from './platformGuard';
 import type { ScrollIntoViewOptions } from '@civitas-cerebrum/element-repository';
 
 const log = createLogger('visible');
@@ -22,7 +23,11 @@ const log = createLogger('visible');
  *
  * **2. Gate (`chain.click()` / `.fill(...)` / matcher tree)** — runs the same
  *    probe, then either executes the action or silently skips it. Replaces
- *    the deprecated `ifVisible(...)` modifier.
+ *    the deprecated `ifVisible(...)` modifier. A web-only terminal (`hover`,
+ *    `rightClick`, `uploadFile`, `selectDropdown`, `setSliderValue`,
+ *    `selectMultiple`) or matcher (`css`) on a device throws
+ *    `PlatformNotSupportedError(step, platform)` first, before the probe, as
+ *    the ungated step does: it is never skipped as "not visible".
  *
  *    ```ts
  *    await steps.on('cookieBanner', 'Page').visible().click();
@@ -90,9 +95,9 @@ export class VisibleChain implements PromiseLike<boolean> {
         return this.gateReturning('clickIfPresent', false, () => this.action.clickIfPresent(options));
     }
 
-    /** Hover — gated. */
+    /** Hover — gated. Web only: on a device it throws `PlatformNotSupportedError('hover', platform)` before the probe. */
     async hover(): Promise<void> {
-        await this.gate('hover', () => this.action.hover());
+        await this.webOnlyGate('hover', () => this.action.hover());
     }
 
     /** Fill — gated. */
@@ -120,9 +125,9 @@ export class VisibleChain implements PromiseLike<boolean> {
         await this.gate('doubleClick', () => this.action.doubleClick());
     }
 
-    /** Right-click — gated. */
+    /** Right-click — gated. Web only (refused on a device before the probe). */
     async rightClick(): Promise<void> {
-        await this.gate('rightClick', () => this.action.rightClick());
+        await this.webOnlyGate('rightClick', () => this.action.rightClick());
     }
 
     /** Type sequentially — gated. */
@@ -130,9 +135,9 @@ export class VisibleChain implements PromiseLike<boolean> {
         await this.gate('typeSequentially', () => this.action.typeSequentially(text, delay));
     }
 
-    /** Upload file — gated. */
+    /** Upload file — gated. Web only (refused on a device before the probe). */
     async uploadFile(filePath: string): Promise<void> {
-        await this.gate('uploadFile', () => this.action.uploadFile(filePath));
+        await this.webOnlyGate('uploadFile', () => this.action.uploadFile(filePath));
     }
 
     /** Clear input — gated. */
@@ -140,18 +145,20 @@ export class VisibleChain implements PromiseLike<boolean> {
         await this.gate('clearInput', () => this.action.clearInput());
     }
 
-    /** Select dropdown — gated. Returns the selected value, or empty string when skipped. */
+    /** Select dropdown — gated. Returns the selected value, or empty string when skipped. Web only (refused on a device before the probe). */
     async selectDropdown(options?: DropdownSelectOptions): Promise<string> {
+        this.requireWeb('selectDropdown');
         return this.gateReturning('selectDropdown', '', () => this.action.selectDropdown(options));
     }
 
-    /** Set slider value — gated. */
+    /** Set slider value — gated. Web only (refused on a device before the probe). */
     async setSliderValue(value: number): Promise<void> {
-        await this.gate('setSliderValue', () => this.action.setSliderValue(value));
+        await this.webOnlyGate('setSliderValue', () => this.action.setSliderValue(value));
     }
 
-    /** Select multiple — gated. Returns the selected values, or empty array when skipped. */
+    /** Select multiple — gated. Returns the selected values, or empty array when skipped. Web only (refused on a device before the probe). */
     async selectMultiple(values: string[]): Promise<string[]> {
+        this.requireWeb('selectMultiple');
         return this.gateReturning('selectMultiple', [] as string[], () => this.action.selectMultiple(values));
     }
 
@@ -184,6 +191,23 @@ export class VisibleChain implements PromiseLike<boolean> {
     // ──────────────────────────────────────────────────────────────────────
     // Internal helpers
     // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * The web-only guard of a gated terminal: throws
+     * `PlatformNotSupportedError(name, platform)` off the Playwright family.
+     * Called before the probe, so a device never sends a visibility check for
+     * a step it cannot perform, and a hidden element never turns the refusal
+     * into a silent skip.
+     */
+    private requireWeb(name: string): void {
+        requireWebPlatform(name, this.action.platform);
+    }
+
+    /** {@link gate} for a web-only terminal: refused off the Playwright family before the probe. */
+    private async webOnlyGate(name: string, exec: () => Promise<unknown>): Promise<void> {
+        this.requireWeb(name);
+        await this.gate(name, exec);
+    }
 
     private async gate(name: string, exec: () => Promise<unknown>): Promise<void> {
         const { elementName: el, pageName: pg } = this.action;

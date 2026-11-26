@@ -3,7 +3,7 @@ import { ElementRepository } from '@civitas-cerebrum/element-repository';
 import { PollTimeoutError, Steps } from '../src/index';
 import { AppiumFactory } from '../src/appium';
 import { ReResolvingElement } from '../src/appium/ReResolvingElement';
-import { DEVICE_PLATFORMS, driverError, mockElement, mockUiDriver, screenSwipes, type MockNode } from './appium/mocks';
+import { DEVICE_PLATFORMS, driverError, expectNotSupported, mockElement, mockUiDriver, screenSwipes, type MockNode } from './appium/mocks';
 
 /**
  * Platform paths of the shared features (verifyAbsence, "list": true
@@ -361,6 +361,46 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(await caught(async () => { await steps.isVisible('banner', 'Screen', { timeout: 300 }); })).toBeDefined();
             expect(await caught(() => steps.isVisible('banner', 'Screen', { timeout: 300 }).click())).toBeDefined();
             expect(await caught(() => steps.on('banner', 'Screen').ifVisible(300).click())).toBeDefined();
+        });
+
+        test('a web-only terminal behind a visibility gate is refused before anything is sent, shown or not', async () => {
+            type Gated = { [K in 'hover' | 'rightClick' | 'uploadFile' | 'selectDropdown' | 'setSliderValue' | 'selectMultiple']: (...a: never[]) => Promise<unknown> };
+            const terminals: Array<[string, (chain: Gated) => Promise<unknown>]> = [
+                ['hover', c => c.hover()],
+                ['rightClick', c => c.rightClick()],
+                ['uploadFile', c => (c.uploadFile as (p: string) => Promise<void>)('/tmp/upload.txt')],
+                ['selectDropdown', c => c.selectDropdown()],
+                ['setSliderValue', c => (c.setSliderValue as (v: number) => Promise<void>)(5)],
+                ['selectMultiple', c => (c.selectMultiple as (v: string[]) => Promise<string[]>)(['a'])],
+            ];
+            const gates: Array<[string, (steps: Steps) => unknown]> = [
+                ['steps.isVisible(...)', s => s.isVisible('banner', 'Screen', { timeout: 100 })],
+                ['steps.on(...).isVisible()', s => s.on('banner', 'Screen').isVisible({ timeout: 100 })],
+                ['steps.on(...).ifVisible()', s => s.on('banner', 'Screen').ifVisible(100)],
+            ];
+            const trees: Array<[string, MockNode[]]> = [
+                ['missing', []],
+                ['hidden', [{ match: '~banner', visible: false }]],
+                ['shown', [{ match: '~banner' }]],
+            ];
+            for (const [state, tree] of trees) {
+                for (const [gateName, gate] of gates) {
+                    for (const [name, run] of terminals) {
+                        const { steps, mock } = deviceSteps(platform, tree);
+                        await expectNotSupported(() => run(gate(steps) as Gated), name, platform);
+                        expect(mock.lookups, `${gateName}.${name}() on a ${state} element sends nothing`).toEqual([]);
+                    }
+                }
+            }
+        });
+
+        test('a web-only matcher behind a visibility gate is refused before anything is sent', async () => {
+            const { steps, mock } = deviceSteps(platform, []);
+            await expectNotSupported(() => steps.isVisible('banner', 'Screen', { timeout: 100 }).css('color').toBe('red'), 'css', platform);
+            await expectNotSupported(() => steps.on('banner', 'Screen').ifVisible(100).css('color').toBe('red'), 'css', platform);
+            await expectNotSupported(() => steps.on('banner', 'Screen').ifVisible(100).html.toBe('<b/>'), 'html', platform);
+            await expectNotSupported(() => steps.on('banner', 'Screen').ifVisible(100).outerHtml.toContain('b'), 'outerHtml', platform);
+            expect(mock.lookups).toEqual([]);
         });
 
         test('clickIfPresent skips a missing element and taps a shown one', async () => {
