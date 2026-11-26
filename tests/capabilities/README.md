@@ -101,9 +101,11 @@ allow-list above with these differences:
 - `appium:bundleId` must be exactly `com.civitas-cerebrum.test-app`.
 - On a **simulator** (a file without `appium:udid`) the file may install the
   app's build with `appium:app`, a local path ending in `.app` or `.app.zip`
-  (no URL), and may set `appium:reduceMotion`.
+  (no URL scheme such as `http:` or `file:`, no leading `//`), and may set `appium:reduceMotion`.
 - On a **real device** (a file with `appium:udid`, whatever its value) both
   stay refused: the app must already be installed.
+- A file without `udid` is treated as a simulator; this assumes the Appium
+  server does not pick a real device for a request without a udid.
 - `appium:noReset: true` is required, `appium:fullReset` is absent or `false`,
   and `autoAcceptAlerts` / `autoDismissAlerts` are absent or `false`: the
   spec answers the app's alerts with `acceptAlert` / `dismissAlert` itself.

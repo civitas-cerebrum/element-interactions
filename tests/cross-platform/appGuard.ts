@@ -14,7 +14,9 @@ import type { Platform } from '../../src';
  *   On a SIMULATOR (a file without `udid`) the file may also install the app's
  *   build with `app` (a local `.app` or `.app.zip` path) and set
  *   `reduceMotion`; on a real device (a file with `udid`) both stay refused:
- *   nothing is installed on a device.
+ *   nothing is installed on a device. A file without `udid` is treated as a
+ *   simulator; this assumes the Appium server does not pick a real device for
+ *   a request without a udid.
  * - Android ({@link ANDROID_TEST_APP}): the purpose-built test app
  *   (`appPackage` exactly `com.civitas.testapp`, `appActivity` optional and
  *   then exactly `com.civitas.testapp.MainActivity` or `.MainActivity`). The
@@ -135,7 +137,11 @@ const SESSION_NAMES: Partial<Record<Platform, string>> = { android: 'an Android'
 
 /** A local simulator build: a path (not a URL) ending in `.app` or `.app.zip`. */
 const SIMULATOR_BUILD = /\.app(\.zip)?$/;
-const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+/**
+ * Anything that is not a local path: a URL scheme (`http:`, `file:`, with or
+ * without `//` after it) or a network-path reference starting with `//`.
+ */
+const NOT_LOCAL = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
 
 /**
  * The iOS app the capabilities file names (`bundleId`, with or without
@@ -217,9 +223,9 @@ export function requireAppCapabilities(
     const build = bare.get('app');
     if (build) {
         const value = build.value;
-        if (typeof value !== 'string' || !SIMULATOR_BUILD.test(value) || URL_SCHEME.test(value)) {
+        if (typeof value !== 'string' || !SIMULATOR_BUILD.test(value) || NOT_LOCAL.test(value)) {
             refuse(build.written, `must name a local simulator build: "${build.written}" is ${JSON.stringify(value)}, `
-                + 'allowed: a path ending in ".app" or ".app.zip" (no URL)');
+                + 'allowed: a local path ending in ".app" or ".app.zip" (no URL)');
         }
     }
 

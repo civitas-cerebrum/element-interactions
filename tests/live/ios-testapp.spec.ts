@@ -38,8 +38,9 @@ import { test, expect, platform, runsTestApp, requireTestApp } from './ios-testa
  * - `hideKeyboard` on a keyboard without a Done key (the login form);
  * - `doubleClick`, taken by XCUITest as one tap;
  * - a horizontal `scrollIntoView` / `scrollUntilFound` sweep on the carousel;
- * - `verifyCount` with inclusive bounds;
- * - a landscape rotation: the app declares portrait only, so it cannot rotate.
+ * - `verifyCount` with inclusive bounds and a two-sided range.
+ *
+ * A landscape rotation is skipped as not applicable: the app is portrait only.
  */
 
 /** Why each `fixme` test does not run yet (the annotation each one carries). */
@@ -50,8 +51,8 @@ const FIXME = {
         + 'which XCUITest takes as one tap.',
     horizontalSweep: 'element-repository: a left / right scrollIntoView / scrollUntilFound sweep always swipes across the window\'s '
         + 'vertical centre, which misses a carousel near the top of the screen.',
-    countRanges: 'verifyCount refuses greaterThanOrEqual / lessThanOrEqual (and an inclusive range) at runtime; the fix is in progress.',
-    landscape: 'The test app declares portrait only (UISupportedInterfaceOrientations), so a landscape rotation is not exercisable on it.',
+    countRanges: 'verifyCount refuses greaterThanOrEqual / lessThanOrEqual (and an inclusive range) at runtime, and does not '
+        + 'enforce both bounds of a two-sided greaterThan / lessThan range; the fix is in progress.',
 } as const;
 const fixme = (description: string) => ({ annotation: { type: 'fixme', description } });
 
@@ -283,7 +284,7 @@ test.describe('live iOS test app', () => {
             await steps.verifyPresence('grid', 'HomePage');
         });
 
-        test.fixme('setOrientation landscape is reported by verifyOrientation', fixme(FIXME.landscape), async ({ steps }) => {
+        test.skip('setOrientation landscape is reported by verifyOrientation', { annotation: { type: 'skip', description: 'not applicable: the app is portrait only' } }, async ({ steps }) => {
             await steps.setOrientation('landscape');
             await steps.verifyOrientation('landscape');
         });
@@ -333,11 +334,14 @@ test.describe('live iOS test app', () => {
             await steps.verifyAbsence('item1', 'LongListPage');
         });
 
-        test.fixme('verifyCount accepts inclusive bounds and an inclusive range', fixme(FIXME.countRanges), async ({ steps, openScreen }) => {
+        test.fixme('verifyCount accepts inclusive bounds and an inclusive range, and enforces both bounds of a range', fixme(FIXME.countRanges), async ({ steps, openScreen }) => {
             await openScreen('longList');
             await steps.verifyCount('item', 'LongListPage', { greaterThanOrEqual: 3 });
             await steps.verifyCount('item', 'LongListPage', { lessThanOrEqual: 200 });
             await steps.verifyCount('item', 'LongListPage', { greaterThanOrEqual: 3, lessThanOrEqual: 199 });
+            // A two-sided range holds only when both bounds do: the unfiltered list holds more than 3 rows.
+            await expect(steps.verifyCount('item', 'LongListPage', { greaterThan: 1, lessThan: 3 }, { timeout: 2_000 }))
+                .rejects.toBeInstanceOf(PollTimeoutError);
             // After filtering to one row both bounds are exact.
             await steps.fill('searchInput', 'LongListPage', 'item 150');
             await steps.verifyCount('item', 'LongListPage', { greaterThanOrEqual: 1, lessThanOrEqual: 1 });
