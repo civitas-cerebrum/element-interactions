@@ -1939,7 +1939,7 @@ export class Steps {
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param scroll - Whether to scroll each image into view before checking. Defaults to `true`.
-     * @param options - Step options for element resolution, plus `verifyDecoded` to run `Image.decode()` per image.
+     * @param options - Step options for element resolution and the per-call `timeout` of the check, plus `verifyDecoded` to run `Image.decode()` per image.
      */
     async verifyImages(elementName: string, pageName: string, scroll: boolean = true, options?: StepOptions & { verifyDecoded?: boolean }): Promise<void> {
         this.requireWeb('verifyImages');

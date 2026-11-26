@@ -532,7 +532,7 @@ The same `Steps` API drives native apps on Android and iOS through [Appium](http
 | Platform | Driver family | Status |
 |---|---|---|
 | `web` | Playwright | Supported (default, unchanged) |
-| `android` | Appium (UiAutomator2) | Supported; not yet verified on a real device (see [What is verified](#what-is-verified)) |
+| `android` | Appium (UiAutomator2) | Supported (see [What is verified](#what-is-verified)) |
 | `ios` | Appium (XCUITest) | Supported (see [What is verified](#what-is-verified)) |
 | `macos`, `windows` | Appium | Declared, **not implemented**: the session start throws `Platform "<p>" is declared but not implemented yet.` |
 
@@ -855,9 +855,31 @@ The iOS job prebuilds WebDriverAgent (`appium driver run xcuitest build-wda`) be
 
 ### What is verified
 
-The library is unit-tested on both platforms with mock drivers, and the cross-platform spec runs on web in the default suite.
+The library is unit-tested on both platforms with mock drivers, and the cross-platform spec runs on web in the default suite. `tests/cross-platform/appGuard.spec.ts` (the device-app guard) and `tests/cross-platform/hasEntry.spec.ts` are unit tests: they run in the default suite, not on a device, and the platform config leaves them out.
 
-**Verified on a real iPhone (iOS Settings app, read-only):** iOS 26, Appium 3 with the XCUITest driver, WebdriverIO 10, on 2026-11-23.
+**Verified on a real Android phone (Android 17, the project's Android test app `com.civitas.testapp`):** Appium 3 with the UiAutomator2 driver, WebdriverIO 10, on 2026-11-26, at commit 8f6af8b. Source: `tests/live/android-testapp.spec.ts` and `tests/cross-platform/navigation.spec.ts`.
+
+| Area | Status |
+|---|---|
+| Worker-scoped session opened from a capabilities file checked by the device-app guard; the relaunch lands with the app in the foreground, and a first, non-polling `getPageSource` already sees the test app, not the launcher | ✅ verified |
+| `backgroundApp`, then back on the same screen | ✅ verified |
+| `terminateApp` then `activateApp`, and `terminateApp` then `launchApp`, back on the home grid | ✅ verified |
+| `resetApp` back on the home grid | ✅ verified |
+| `verifyAppInForeground`, `verifyPresence`, `verifyAbsence`, `verifyCount` | ✅ verified |
+| The app's own dialogs: `click` to open and close them, `verifyText` / `verifyTextContains` on the status label | ✅ verified |
+| `fill`, `verifyInputValue`, `verifyKeyboardShown`, `hideKeyboard`, `verifyKeyboardShown({ negated: true })` | ✅ verified |
+| `setOrientation` landscape and portrait, `verifyOrientation` | ✅ verified |
+| `getContexts` (lists `NATIVE_APP`), `verifyContext` | ✅ verified |
+| `swipeScreen` up and down, checked with `getBoundingBox` | ✅ verified |
+| `scrollUntilFound` down to the last section and back up to the first | ✅ verified |
+| `getCount`, and `getAll` through a `child` text view; `verifyListedElement` / `clickListedElement` picking a row by `withDescendant` and acting on its `child` | ✅ verified |
+| A row container's text is its child texts joined (`Item 1 Alpha`) in `getText`, `verifyText`, `verifyTextContains`, `getAll` and listed-element `text` | ✅ verified |
+| `verifyState(..., 'checked')` on checkboxes and switches (an unchecked control fails with `PollTimeoutError`, `lastValue: false`); `check` / `uncheck`, idempotent; `check` on a disabled checkbox refused, leaving it unchecked and disabled | ✅ verified |
+| `pressBack`, twice, back to the home grid | ✅ verified |
+| A web-only step (`getUrl`, `verifyUrlContains`) throws `PlatformNotSupportedError` naming `android` | ✅ verified |
+| The cross-platform navigation spec (`tests/cross-platform/navigation.spec.ts`, the same file as the web run) on Android, including its web-only step refused | ✅ verified |
+
+**Verified on a real iOS device (iOS 26, iOS Settings app, read-only):** Appium 3 with the XCUITest driver, WebdriverIO 10, on 2026-11-23; re-verified at commit 8f6af8b (11 of 11 tests passed, with ambient `PLATFORM` / `CAPABILITIES` variables set and ignored).
 
 | Area | Status |
 |---|---|
@@ -873,11 +895,12 @@ The library is unit-tested on both platforms with mock drivers, and the cross-pl
 
 **Not yet verified on a device:**
 
-* **Android: everything.** Android runs only against mock drivers so far. The live Android spec (`tests/live/android-testapp.spec.ts`, against the test app `com.civitas.testapp`, which must already be installed) and the Android entries of the cross-platform spec (provisional) are written and wait for a device run. The device specs drive one app per platform: the built-in Settings app on iOS, the test app on Android (guard: `tests/cross-platform/appGuard.ts`).
+* Android: `installApp` / `removeApp`, `openDeepLink`, `setPermission`, system alerts (`acceptAlert` / `dismissAlert`), `longPress`, `tapAt`, `pinch` / `zoom`, and `switchContext`. The live Android spec says why the test app cannot exercise the first four. The device specs drive one app per platform: the built-in Settings app on iOS, the test app on Android, which must already be installed (guard: `tests/cross-platform/appGuard.ts`).
+* Failure-evidence attachments (`failure-screenshot`, `page-source`) on a device, on either platform.
 * iOS: app install / remove, deep links, `longPress`, `tapAt`, `pinch` / `zoom`, `hideKeyboard`, `setOrientation`, alerts, contexts on a hybrid app, `fill` on a text field, and `setPermission` (iOS `mobile: setPermission` may work on simulators only).
-* The CI workflow (emulator and simulator).
+* The CI workflow (emulator and simulator): not yet run.
 * `macos` and `windows` are not implemented.
-* Any other step not listed in the verified table above.
+* Any other step not listed in the verified tables above.
 
 ---
 

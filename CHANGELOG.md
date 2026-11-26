@@ -93,8 +93,8 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
 - **`getAll` honours an empty-string `child`** (`child: ''`) instead of
   ignoring it.
   **Migration:** drop `child: ''` from calls that meant "no child".
-- **A per-call timeout on `verifyState`, `verifyOrder`, `verifyListOrder` and
-  `verifyImages` is honoured on web.** `steps.verifyState(el, page, state, timeout)`
+- **A per-call timeout is honoured on web: `verifyState`, the `.timeout(ms)`
+  chain and the `StepOptions` `timeout` of the verification steps.** `steps.verifyState(el, page, state, timeout)`
   and `steps.on(el, page).timeout(ms)` before `verifyState` / `verifyOrder` /
   `verifyListOrder` / `verifyImages` used to wait for the default timeout (30 s
   unless configured), whatever was passed. The same holds for a `{ timeout }`
@@ -238,6 +238,20 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   unchanged on web (in the default suite) and on Android / iOS
   (`playwright.platform.config.ts`), plus example capabilities files in
   `tests/capabilities/`.
+- **Live device specs** (`tests/live`, run with `playwright.platform.config.ts`):
+  `ios-settings.spec.ts` against the built-in Settings app, read-only, and
+  `android-testapp.spec.ts` against the project's Android test app
+  `com.civitas.testapp` (already installed; nothing is installed or removed):
+  app lifecycle, the app's own dialogs, the keyboard, orientation (restored to
+  portrait), contexts, screen swipes, scrolling, lists, checkboxes and
+  switches, `pressBack` and web-only refusals. Both were run on a real device;
+  the README section "What is verified" lists what each covers.
+- **Device-app guard** (`tests/cross-platform/appGuard.ts`): before a device
+  session opens, the capabilities file is checked against an allow-list, so
+  each device platform drives only its one app (the Settings app on iOS, the
+  test app on Android): no install, no second app, no browser, no full reset,
+  `noReset: true`, no auto-granted permissions or auto-handled alerts.
+  Unit-tested in the default suite.
 - **CI workflow** `.github/workflows/platform.yml`: the cross-platform spec on
   an Android emulator and an iOS simulator, started manually
   (`workflow_dispatch`).

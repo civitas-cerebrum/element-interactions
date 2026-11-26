@@ -318,14 +318,23 @@ test.describe('ElementAction.timeout() — state and order verifications', () =>
 
     test('verifyOrder and verifyText honor a StepOptions timeout on a mismatch', async ({ steps }) => {
         await steps.navigateTo('/');
-        for (const run of [
-            () => steps.verifyOrder('categories', 'HomePage', ['WRONG'], { timeout: 500 }),
-            () => steps.verifyText('categories', 'HomePage', 'WRONG', undefined, { timeout: 500 }),
-        ]) {
+        for (const [run, mismatch] of [
+            [() => steps.verifyOrder('categories', 'HomePage', ['WRONG'], { timeout: 500 }), /toHaveText/],
+            [() => steps.verifyText('categories', 'HomePage', 'WRONG', undefined, { timeout: 500 }), /toHaveText/],
+        ] as const) {
             const start = Date.now();
-            await expect(run()).rejects.toThrow();
+            await expect(run()).rejects.toThrow(mismatch);
             expect(Date.now() - start, 'did not wait for the 30000ms default').toBeLessThan(5000);
         }
+    });
+
+    test('verifyCssProperty, a web-only verification, honors a StepOptions timeout on a mismatch', async ({ steps }) => {
+        await gotoButtons(steps);
+        const start = Date.now();
+        await expect(
+            steps.verifyCssProperty('primaryButton', 'ButtonsPage', 'display', 'not-a-display-value', { timeout: 500 }),
+        ).rejects.toThrow(/toHaveCSS/);
+        expect(Date.now() - start, 'did not wait for the 30000ms default').toBeLessThan(5000);
     });
 
     test('verifyListOrder polls until a list becomes sorted within the timeout', async ({ page, steps }) => {

@@ -11,7 +11,7 @@ import { test, expect, requireDeviceApp } from './fixture';
  *   ios:     Settings (read-only) — root -> General -> the navigation bar's back button.
  *            (English device language: the General title is matched by its localized name.)
  *   android: the test app com.civitas.testapp — home grid -> the Edge Cases category list ->
- *            system back (entries provisional: not yet verified on a device).
+ *            system back.
  *
  * Every step below is a shared step; nothing toggles, types or changes a setting.
  * The way back (`goBack`, from the fixture) is the destination's ON-SCREEN back
