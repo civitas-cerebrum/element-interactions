@@ -8,6 +8,7 @@ import {
     Verifications,
     Extractions,
     Steps,
+    PollTimeoutError,
 } from '../src/index';
 import type { IInteractionFactory } from '../src/index';
 import { ElementAction } from '../src/steps/ElementAction';
@@ -807,6 +808,26 @@ test.describe('Steps on a real AppiumFactory (mock driver)', () => {
             expect((error as Error).message).toMatch(/expected/);
             expect(elapsed, 'polled for the factory timeout').toBeGreaterThanOrEqual(350);
             expect(elapsed, 'did not fall back to the 30000ms default').toBeLessThan(5000);
+        }
+    });
+
+    test('verifyState, verifyOrder and verifyListOrder honour the per-call timeout, not the factory timeout', async () => {
+        const rows = [mockElement({ text: 'b' }), mockElement({ text: 'a' })];
+        const element = mockElement({ checked: false, children: rows });
+        const factory = new AppiumFactory(mockDriver().driver, 'android', { timeout: 2000 });
+        const steps = new Steps(factory, stubRepo([], element));
+        for (const [what, run] of [
+            ['verifyState(el, page, state, timeout)', () => steps.verifyState('el', 'Page', 'checked', 100)],
+            ['on().timeout().verifyState', () => steps.on('el', 'Page').timeout(100).verifyState('checked')],
+            ['on().timeout().verifyOrder', () => steps.on('el', 'Page').timeout(100).verifyOrder(['a', 'b'])],
+            ['on().timeout().verifyListOrder', () => steps.on('el', 'Page').timeout(100).verifyListOrder('asc')],
+        ] as Array<[string, () => Promise<unknown>]>) {
+            const started = Date.now();
+            const error = await caught(run);
+            const elapsed = Date.now() - started;
+            expect(error, what).toBeInstanceOf(PollTimeoutError);
+            expect((error as PollTimeoutError).timeout, `${what} polled for the per-call timeout`).toBe(100);
+            expect(elapsed, `${what} did not poll for the 2000ms factory timeout`).toBeLessThan(600);
         }
     });
 

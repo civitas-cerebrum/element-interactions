@@ -126,7 +126,7 @@ export interface IVerifications {
     attributeMatches(target: Element, attributeName: string, regex: RegExp, options?: VerifyOptions): Promise<void>;
     hasAttribute(target: Element, attributeName: string, options?: VerifyOptions): Promise<void>;
     /** Web only. */
-    images(imagesTarget: Element, scroll?: boolean, options?: { verifyDecoded?: boolean }): Promise<void>;
+    images(imagesTarget: Element, scroll?: boolean, options?: { verifyDecoded?: boolean; timeout?: number }): Promise<void>;
     inputValue(target: Element, expectedValue: string, options?: VerifyOptions): Promise<void>;
     inputValueContains(target: Element, substring: string, options?: VerifyOptions): Promise<void>;
     inputValueMatches(target: Element, regex: RegExp, options?: VerifyOptions): Promise<void>;
@@ -136,14 +136,18 @@ export interface IVerifications {
     tabCount(expectedCount: number): Promise<void>;
     expectEqual(actual: string | null, expected: string | null): void;
     expectNotEqual(actual: string | null, notExpected: string | null): void;
-    order(target: Element, expectedTexts: string[]): Promise<void>;
+    order(target: Element, expectedTexts: string[], options?: VerifyOptions): Promise<void>;
     /** Web only. */
     cssProperty(target: Element, property: string, expectedValue: string, options?: VerifyOptions): Promise<void>;
     /** Web only. */
     cssPropertyContains(target: Element, property: string, substring: string, options?: VerifyOptions): Promise<void>;
     /** Web only. */
     cssPropertyMatches(target: Element, property: string, regex: RegExp, options?: VerifyOptions): Promise<void>;
-    listOrder(target: Element, direction: 'asc' | 'desc'): Promise<void>;
+    /**
+     * The device family polls up to `options.timeout`; the web family reads the
+     * list once (no wait), so the timeout has nothing to bound there.
+     */
+    listOrder(target: Element, direction: 'asc' | 'desc', options?: VerifyOptions): Promise<void>;
     count(target: Element, options: CountVerifyOptions, verifyOptions?: VerifyOptions): Promise<void>;
     /** Web only (Playwright `Page` target and `Locator` masks). */
     visuallyMatches(target: Element | Page, snapshotName?: string, options?: VisualMatchPrimitiveOptions): Promise<void>;

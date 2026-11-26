@@ -295,17 +295,17 @@ export class AppiumVerifications implements IVerifications {
         };
     }
 
-    async order(target: Element, expectedTexts: string[]): Promise<void> {
+    async order(target: Element, expectedTexts: string[], options?: VerifyOptions): Promise<void> {
         await this.expectEventually(this.allTexts(target),
             texts => texts.length === expectedTexts.length && texts.every((t, i) => t === expectedTexts[i]),
-            `texts in order ${describeValue(expectedTexts)}`);
+            `texts in order ${describeValue(expectedTexts)}`, options);
     }
 
-    async listOrder(target: Element, direction: 'asc' | 'desc'): Promise<void> {
+    async listOrder(target: Element, direction: 'asc' | 'desc', options?: VerifyOptions): Promise<void> {
         await this.expectEventually(this.allTexts(target), texts => {
             const sorted = [...texts].sort((a, b) => direction === 'asc' ? a.localeCompare(b) : b.localeCompare(a));
             return texts.every((t, i) => t === sorted[i]);
-        }, `list to be sorted ${direction}ending`);
+        }, `list to be sorted ${direction}ending`, options);
     }
 
     async count(target: Element, options: CountVerifyOptions, verifyOptions?: VerifyOptions): Promise<void> {
@@ -379,7 +379,7 @@ export class AppiumVerifications implements IVerifications {
     async windowProperty(_path: string, _predicate: (value: unknown) => boolean, _describe: string, _options?: VerifyOptions): Promise<void> {
         webOnly('windowProperty', this.platform);
     }
-    async images(_imagesTarget: Element, _scroll?: boolean, _options?: { verifyDecoded?: boolean }): Promise<void> { webOnly('images', this.platform); }
+    async images(_imagesTarget: Element, _scroll?: boolean, _options?: { verifyDecoded?: boolean; timeout?: number }): Promise<void> { webOnly('images', this.platform); }
     async tabCount(_expectedCount: number): Promise<void> { webOnly('tabCount', this.platform); }
     async cssProperty(_target: Element, _property: string, _expectedValue: string, _options?: VerifyOptions): Promise<void> { webOnly('cssProperty', this.platform); }
     async cssPropertyContains(_target: Element, _property: string, _substring: string, _options?: VerifyOptions): Promise<void> {

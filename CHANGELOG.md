@@ -4,7 +4,7 @@
 
 Platform testing: the same `Steps` API on native Android and iOS apps through
 Appium and WebdriverIO. Web behaviour is unchanged except for the items under
-**Breaking**. See the README section "Platform testing (Android, iOS)".
+**Breaking** and **Fixed**. See the README section "Platform testing (Android, iOS)".
 
 ### Breaking
 
@@ -228,6 +228,18 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `interceptionRetry`, `screenshotOnFailure: { fullPage }`) throw on a platform
   run instead of being ignored.
 - The package description and keywords cover native Android and iOS testing.
+
+### Fixed
+
+- **`verifyState` honours its per-call timeout.** `steps.verifyState(el, page,
+  state, timeout)` and `steps.on(el, page).timeout(ms).verifyState(state)`
+  waited for the default timeout (30 s unless configured) on web and on a
+  device, whatever `timeout` was passed. The same applies to `.timeout(ms)` on
+  `verifyOrder` (web and device), `verifyListOrder` (device; the web check
+  reads the list once) and `verifyImages` (web). Without an explicit timeout
+  nothing changes: the chain's default is the configured timeout. The
+  `Verifications.order` / `listOrder` primitives take an optional
+  `VerifyOptions`, and `Verifications.images` an optional `timeout`.
 
 ## 0.3.12 — 2026-11-01
 

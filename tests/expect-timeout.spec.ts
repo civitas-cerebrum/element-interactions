@@ -269,3 +269,39 @@ test.describe('ElementAction.timeout() — Interactions-routed actions', () => {
         expect(Date.now() - start).toBeLessThan(UPPER_BOUND);
     });
 });
+
+test.describe('ElementAction.timeout() — state and order verifications', () => {
+    test('verifyState honors the per-call timeout on a state that never arrives', async ({ steps }) => {
+        await steps.navigateTo('/');
+        await steps.click('elementsCard', 'HomePage');
+        await steps.verifyUrlContains('/radiobuttons');
+        for (const run of [
+            () => steps.verifyState('disabledRadio', 'RadioButtonsPage', 'checked', 500),
+            () => steps.on('disabledRadio', 'RadioButtonsPage').timeout(500).verifyState('checked'),
+        ]) {
+            const start = Date.now();
+            await expect(run()).rejects.toThrow(/toBeChecked/);
+            expect(Date.now() - start, 'did not wait for the 30000ms default').toBeLessThan(5000);
+        }
+    });
+
+    test('verifyOrder honors the per-call timeout on an order that never matches', async ({ steps }) => {
+        await steps.navigateTo('/');
+        const start = Date.now();
+        await expect(
+            steps.on('categories', 'HomePage').timeout(500).verifyOrder(['WRONG']),
+        ).rejects.toThrow(/toHaveText/);
+        expect(Date.now() - start, 'did not wait for the 30000ms default').toBeLessThan(5000);
+    });
+
+    test('verifyImages honors the per-call timeout on an element with no image source', async ({ steps }) => {
+        await steps.navigateTo('/');
+        await steps.click('formsCard', 'HomePage');
+        await steps.verifyUrlContains('/forms');
+        const start = Date.now();
+        await expect(
+            steps.on('title', 'FormsPage').timeout(500).verifyImages(false),
+        ).rejects.toThrow(/toHaveAttribute/);
+        expect(Date.now() - start, 'did not wait for the 30000ms default').toBeLessThan(5000);
+    });
+});

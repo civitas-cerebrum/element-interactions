@@ -843,11 +843,12 @@ export class Verifications implements IVerifications {
      *
      * @param imagesTarget - A Playwright Locator or Element pointing to the image element(s).
      * @param scroll - Whether to scroll the image(s) into the viewport before verifying (default: true).
-     * @param options - `verifyDecoded`: run `Image.decode()` per image (default: false).
+     * @param options - `verifyDecoded`: run `Image.decode()` per image (default: false); `timeout`: each check's wait (default: the family timeout).
      * @throws Will throw an error if no images are found or any image fails verification.
      */
-    async images(imagesTarget: Element, scroll: boolean = true, options?: { verifyDecoded?: boolean }): Promise<void> {
+    async images(imagesTarget: Element, scroll: boolean = true, options?: { verifyDecoded?: boolean; timeout?: number }): Promise<void> {
         requireWebElement('Verifications.images', imagesTarget);
+        const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
         const imagesLocator = resolveLocator(imagesTarget);
         const productImages = await imagesLocator.all();
 
@@ -862,9 +863,9 @@ export class Verifications implements IVerifications {
                 await productImage.scrollIntoViewIfNeeded().catch(() => { });
             }
 
-            await expect(productImage).toBeVisible({ timeout: this.ELEMENT_TIMEOUT });
-            await expect(productImage).toHaveAttribute('src', /.+/, { timeout: this.ELEMENT_TIMEOUT });
-            await expect(productImage).not.toHaveJSProperty('naturalWidth', 0, { timeout: this.ELEMENT_TIMEOUT });
+            await expect(productImage).toBeVisible({ timeout });
+            await expect(productImage).toHaveAttribute('src', /.+/, { timeout });
+            await expect(productImage).not.toHaveJSProperty('naturalWidth', 0, { timeout });
 
             if (options?.verifyDecoded) {
                 const isDecoded = await productImage.evaluate(async (img: HTMLImageElement) => {
@@ -963,10 +964,10 @@ export class Verifications implements IVerifications {
      * @param target - A Playwright Locator or Element resolving to the list of elements.
      * @param expectedTexts - The expected text values in order.
      */
-    async order(target: Element, expectedTexts: string[]): Promise<void> {
+    async order(target: Element, expectedTexts: string[], options?: VerifyOptions): Promise<void> {
         requireWebElement('Verifications.order', target);
-        const locator = resolveLocator(target);
-        await expect(locator).toHaveText(expectedTexts, { timeout: this.ELEMENT_TIMEOUT });
+        const { matcher, timeout } = this.prepare(resolveLocator(target), options);
+        await matcher.toHaveText(expectedTexts, { timeout });
     }
 
     /**

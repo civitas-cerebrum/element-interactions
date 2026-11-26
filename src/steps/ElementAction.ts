@@ -913,13 +913,13 @@ export class ElementAction {
     async verifyImages(scroll: boolean = true, options?: { verifyDecoded?: boolean }): Promise<void> {
         this.requireWeb('verifyImages');
         const element = await this.resolveAll();
-        await this.interactions.verify.images(element, scroll, options);
+        await this.interactions.verify.images(element, scroll, { ...options, timeout: this._timeout });
     }
 
     /** Assert element state. */
     async verifyState(state: 'enabled' | 'disabled' | 'editable' | 'checked' | 'focused' | 'visible' | 'hidden' | 'attached' | 'inViewport'): Promise<void> {
         const element = await this.verifyTarget();
-        await this.interactions.verify.state(element, state);
+        await this.interactions.verify.state(element, state, { timeout: this._timeout });
     }
 
     /** Assert CSS property value. Delegates to the matcher tree's `.css(property).toBe(value)`. */
@@ -937,7 +937,7 @@ export class ElementAction {
      */
     async verifyOrder(expectedTexts: string[]): Promise<void> {
         const element = await this.verifyTarget(true);
-        await this.interactions.verify.order(element, expectedTexts);
+        await this.interactions.verify.order(element, expectedTexts, { timeout: this._timeout });
     }
 
     /**
@@ -948,7 +948,7 @@ export class ElementAction {
      */
     async verifyListOrder(direction: 'asc' | 'desc'): Promise<void> {
         const element = await this.verifyTarget(true);
-        await this.interactions.verify.listOrder(element, direction);
+        await this.interactions.verify.listOrder(element, direction, { timeout: this._timeout });
     }
 
     // -- Terminal actions: extractions --
