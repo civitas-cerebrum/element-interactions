@@ -116,6 +116,28 @@ test.describe('live Android test app', () => {
             await steps.verifyKeyboardShown({ negated: true });
             await steps.verifyText('countLabel', 'LongListPage', 'Showing 50 of 200 items');
         });
+
+        test('hideKeyboard hides the login keyboard and the fields keep their text', async ({ steps, openScreen }) => {
+            await openScreen('loginForm');
+            await steps.click('usernameInput', 'LoginFormPage');
+            await steps.fill('usernameInput', 'LoginFormPage', 'admin');
+            await steps.fill('passwordInput', 'LoginFormPage', 'password123');
+            await steps.verifyKeyboardShown();
+            expect(await steps.hideKeyboard()).toBe(true);
+            await steps.verifyKeyboardShown({ negated: true });
+            await steps.verifyInputValue('usernameInput', 'LoginFormPage', 'admin');
+            expect(await steps.hideKeyboard(), 'no keyboard shown: nothing to hide').toBe(false);
+        });
+
+        test('hideKeyboard with a tapElement hides the login keyboard; Android ignores the tap', async ({ steps, openScreen }) => {
+            await openScreen('loginForm');
+            await steps.click('usernameInput', 'LoginFormPage');
+            await steps.fill('usernameInput', 'LoginFormPage', 'admin');
+            await steps.verifyKeyboardShown();
+            expect(await steps.hideKeyboard({ tapElement: { pageName: 'LoginFormPage', elementName: 'title' } })).toBe(true);
+            await steps.verifyKeyboardShown({ negated: true });
+            await steps.verifyInputValue('usernameInput', 'LoginFormPage', 'admin');
+        });
     });
 
     test.describe('orientation', () => {

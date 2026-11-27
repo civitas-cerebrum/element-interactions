@@ -79,6 +79,7 @@
       "name": "LoginFormPage",
       "platform": "ios",
       "elements": [
+        { "elementName": "title", "selector": { "predicate": "type == \"XCUIElementTypeStaticText\" AND label == \"Login\"" } },
         { "elementName": "usernameInput", "selector": { "accessibility id": "login-username" } },
         { "elementName": "passwordInput", "selector": { "accessibility id": "login-password" } },
         { "elementName": "submitButton", "selector": { "accessibility id": "login-submit" } },

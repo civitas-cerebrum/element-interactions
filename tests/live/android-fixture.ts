@@ -18,6 +18,7 @@ const SCREENS = {
     tall: { card: 'interactionsCard', item: 'tallPageItem' },
     longList: { card: 'edgeCasesCard', item: 'longListItem' },
     counter: { card: 'loginFormCard', item: 'counterItem' },
+    loginForm: { card: 'loginFormCard', item: 'loginFormItem' },
 } as const;
 
 export type Screen = keyof typeof SCREENS;

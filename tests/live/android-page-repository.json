@@ -21,7 +21,8 @@
         { "elementName": "alertsItem", "selector": { "accessibility id": "category-item-alerts" } },
         { "elementName": "tallPageItem", "selector": { "accessibility id": "category-item-tall" } },
         { "elementName": "longListItem", "selector": { "accessibility id": "category-item-longList" } },
-        { "elementName": "counterItem", "selector": { "accessibility id": "category-item-piniaCounter" } }
+        { "elementName": "counterItem", "selector": { "accessibility id": "category-item-piniaCounter" } },
+        { "elementName": "loginFormItem", "selector": { "accessibility id": "category-item-loginForm" } }
       ]
     },
     {
@@ -59,6 +60,16 @@
         { "elementName": "section1", "selector": { "accessibility id": "tall-section-1" } },
         { "elementName": "section3", "selector": { "accessibility id": "tall-section-3" } },
         { "elementName": "section10", "selector": { "accessibility id": "tall-section-10" } }
+      ]
+    },
+    {
+      "name": "LoginFormPage",
+      "platform": "android",
+      "elements": [
+        { "elementName": "title", "selector": { "uiautomator": "new UiSelector().text(\"Login Form\")" } },
+        { "elementName": "usernameInput", "selector": { "accessibility id": "login-username" } },
+        { "elementName": "passwordInput", "selector": { "accessibility id": "login-password" } },
+        { "elementName": "submitButton", "selector": { "accessibility id": "login-submit" } }
       ]
     },
     {

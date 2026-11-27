@@ -33,9 +33,9 @@ import { test, expect, platform, runsTestApp, requireTestApp } from './ios-testa
  * Every test starts from a relaunched app on the home grid and opens its
  * screen from there.
  *
- * Marked `fixme` (not run) until the fix is installed; the test asserts the
- * correct behaviour:
- * - `hideKeyboard` on a keyboard without a Done key (the login form).
+ * `hideKeyboard` on the login form (a keyboard without a Done key) runs in
+ * both forms: without options (the dismissal may press the keyboard's Return
+ * key) and with the screen title as the neutral `tapElement`.
  *
  * The horizontal `scrollIntoView` / `scrollUntilFound` tests name the
  * carousel as the scroll `container`: it sits near the top of the screen, so a
@@ -43,13 +43,6 @@ import { test, expect, platform, runsTestApp, requireTestApp } from './ios-testa
  *
  * A landscape rotation is skipped as not applicable: the app is portrait only.
  */
-
-/** Why each `fixme` test does not run yet (the annotation each one carries). */
-const FIXME = {
-    hideKeyboardReturnKey: 'iOS hideKeyboard sends a bare "mobile: hideKeyboard", which WebDriverAgent cannot apply to a keyboard '
-        + 'without a Done key (the login fields use the default Return key); no Return-key or tap-outside fallback is tried yet.',
-} as const;
-const fixme = (description: string) => ({ annotation: { type: 'fixme', description } });
 
 test.describe('live iOS test app', () => {
     test.skip(!runsTestApp, platform === 'ios'
@@ -110,13 +103,29 @@ test.describe('live iOS test app', () => {
             await steps.verifyTextContains('valuesDisplay', 'TextInputsPage', 'text: abc');
         });
 
-        test.fixme('hideKeyboard hides the login keyboard (Return key, no Done key) and the app signs in', fixme(FIXME.hideKeyboardReturnKey), async ({ steps, openScreen }) => {
+        test('hideKeyboard hides the login keyboard (Return key, no Done key) and the app signs in', async ({ steps, openScreen }) => {
             await openScreen('loginForm');
             await steps.fill('usernameInput', 'LoginFormPage', 'admin');
             await steps.fill('passwordInput', 'LoginFormPage', 'password123');
             await steps.verifyKeyboardShown();
-            await steps.hideKeyboard();
+            // Without a neutral element the dismissal may press the keyboard's Return key.
+            expect(await steps.hideKeyboard()).toBe(true);
             await steps.verifyKeyboardShown({ negated: true });
+            await steps.verifyInputValue('usernameInput', 'LoginFormPage', 'admin');
+            expect(await steps.hideKeyboard(), 'no keyboard shown: nothing to hide').toBe(false);
+            await steps.click('submitButton', 'LoginFormPage');
+            await steps.verifyText('successMessage', 'LoginFormPage', 'Login successful!');
+        });
+
+        test('hideKeyboard with the screen title as tapElement hides the login keyboard and the app signs in', async ({ steps, openScreen }) => {
+            await openScreen('loginForm');
+            await steps.fill('usernameInput', 'LoginFormPage', 'admin');
+            await steps.fill('passwordInput', 'LoginFormPage', 'password123');
+            await steps.verifyKeyboardShown();
+            // The title is tapped first: the screen ends editing on a tap outside the field, no key is pressed.
+            expect(await steps.hideKeyboard({ tapElement: { pageName: 'LoginFormPage', elementName: 'title' } })).toBe(true);
+            await steps.verifyKeyboardShown({ negated: true });
+            await steps.verifyInputValue('usernameInput', 'LoginFormPage', 'admin');
             await steps.click('submitButton', 'LoginFormPage');
             await steps.verifyText('successMessage', 'LoginFormPage', 'Login successful!');
         });
