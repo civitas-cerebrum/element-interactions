@@ -163,7 +163,7 @@ const ACTION_CHAIN = [
     'byAttribute', 'ifVisible', 'probeTarget', 'captureSnapshot', 'buildExpectContext',
     'requireWeb', 'selectVisible', 'shouldProceed', 'resolve', 'resolveAll', 'narrowScoped', 'spawnScoped',
     'isWholeListEntry', 'verifyListPresence', 'absenceAttachSlice', 'expectBuilder',
-    'resolveDefault', 'entry', 'verifyTarget', 'probeVisible', 'requireGestures',
+    'resolveDefault', 'lookup', 'entry', 'verifyTarget', 'probeVisible', 'requireGestures',
 ];
 
 /** Matcher-tree (`ExpectBuilder`) fields that are web-only, and the shared ones. */
