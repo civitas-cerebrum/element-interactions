@@ -25,6 +25,8 @@ const PAGES = {
         elements: [
             { elementName: 'title', selector: { 'accessibility id': 'login-title' } },
             { elementName: 'username', selector: { 'accessibility id': 'login-username' } },
+            // Defined, but not on the screen: resolving it uses the repository's attach wait.
+            { elementName: 'banner', selector: { 'accessibility id': 'login-banner' } },
         ],
     })),
 };
@@ -156,6 +158,29 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(error).toBeInstanceOf(KeyboardStillShownError);
             expect((error as Error).message).toMatch(/timeout 0 ms/);
             expect(keyboardCalls(mock.calls)).toEqual([['isKeyboardShown']]);
+        });
+
+        test('options.timeout bounds the whole step: the dismissal gets what the tapElement resolution left', async () => {
+            const TIMEOUT = 1500;
+            const { steps } = keyboardSteps(platform, () => false);
+            const started = Date.now();
+            // The banner is defined but not shown: its resolution spends the repository's attach wait.
+            const error = await caught(() => steps.hideKeyboard({ tapElement: { pageName: 'LoginPage', elementName: 'banner' }, timeout: TIMEOUT }));
+            const elapsed = Date.now() - started;
+            expect(error).toBeInstanceOf(KeyboardStillShownError);
+            // The dismissal ran on the time left, not on a fresh TIMEOUT: it stopped on that budget.
+            const left = /\(timeout (\d+) ms\)$/.exec((error as Error).message);
+            expect(left, `the dismissal stopped on its time budget: ${(error as Error).message}`).not.toBeNull();
+            expect(Number(left![1])).toBeLessThan(TIMEOUT);
+            // A started dismissal step runs to its end (at most one step and its 300 ms pause past the bound).
+            expect(elapsed).toBeLessThan(TIMEOUT + 1000);
+        });
+
+        test('an options.timeout that is not a budget is refused by the dismissal, unchanged', async () => {
+            const { steps, mock } = keyboardSteps(platform, () => true);
+            const error = await caught(() => steps.hideKeyboard({ timeout: -1 }));
+            expect((error as Error).message).toBe('dismissKeyboard: options.timeout must be a non-negative number of ms, got -1');
+            expect(keyboardCalls(mock.calls)).toEqual([]);
         });
 
         test('a driver without isKeyboardShown(): a keyboard shown per mobile: isKeyboardShown throws, nothing sent', async () => {

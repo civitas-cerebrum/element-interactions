@@ -27,8 +27,11 @@ export interface HideKeyboardOptions {
      */
     tapElement?: { pageName: string; elementName: string };
     /**
-     * Upper bound in ms for resolving `tapElement` and for the whole
-     * dismissal. Omitted: the dismissal steps bound the call.
+     * One budget in ms for the whole step: resolving `tapElement` spends from
+     * it, and the dismissal gets only what is left. The dismissal checks the
+     * budget before each of its steps; a step it has started runs to its end
+     * (with its 300 ms pause and keyboard check), so the call can end up to
+     * one dismissal step after it. Omitted: the dismissal steps bound the call.
      */
     timeout?: number;
 }

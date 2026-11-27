@@ -262,20 +262,22 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `verifyAppInForeground`, `verifyOrientation`, `verifyKeyboardShown`,
   `verifyContext`; `getPageSource`. `steps.platform` names the active platform.
 - **`hideKeyboard(options?)` hides any soft keyboard through element-repository's `dismissKeyboard`.**
-  On iOS a bare `mobile: hideKeyboard` was all it sent, which WebDriverAgent
-  refuses on a keyboard without a Done key (a login form's Return key). The
-  step now runs element-repository's dismissal on iOS and Android, checks the
-  keyboard after every step and returns `true` when a shown keyboard is gone,
-  `false` (nothing else sent) only when no keyboard was shown. A "no keyboard"
-  answer is checked again with `mobile: isKeyboardShown`; when that check
-  reports a keyboard or fails, the step throws `hideKeyboard: the keyboard
-  state could not be confirmed and nothing was sent: ...`. `options.tapElement`
-  (`{ pageName, elementName }`, a repository entry) names a neutral element
-  that iOS taps first; without it **iOS may press the keyboard's action key,
-  which can submit a form or run a search**. `options.timeout` bounds the
-  call. A keyboard still shown after every step throws element-repository's
-  `KeyboardStillShownError`, now re-exported from the package root; the new
-  `HideKeyboardOptions` type is exported too.
+  It runs element-repository's dismissal steps on iOS and Android (on iOS
+  including the keyboards without a Done key, such as a login form's Return
+  key), checks the keyboard after every step and returns `true` when a shown
+  keyboard is gone, `false` (nothing else sent) only when no keyboard was
+  shown. A "no keyboard" answer is checked again with `mobile:
+  isKeyboardShown`; when that check reports a keyboard or fails, the step
+  throws `hideKeyboard: the keyboard state could not be confirmed and nothing
+  was sent: ...`. `options.tapElement` (`{ pageName, elementName }`, a
+  repository entry) names a neutral element that iOS taps first; without it
+  **iOS may press the keyboard's action key, which can submit a form or run a
+  search**. `options.timeout` is one budget for the whole step: the
+  `tapElement` resolution spends from it and the dismissal gets what is left;
+  a dismissal step already started runs to its end, so the call can end up to
+  one step after the budget. A keyboard still shown after every step throws
+  element-repository's `KeyboardStillShownError`, re-exported from the
+  package root, as is the `HideKeyboardOptions` type.
 - **A scroll container for `scrollIntoView` / `scrollUntilFound`.** The steps
   and the fluent terminals take `ScrollStepOptions`:
   element-repository's `ScrollIntoViewOptions` with `container?: string`, the

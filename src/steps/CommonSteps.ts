@@ -1092,13 +1092,20 @@ export class Steps {
      *
      * @param options - `tapElement` as `{ pageName, elementName }`, resolved
      *   through the repository (an entry the page does not define fails
-     *   before anything is sent; Android ignores the tap); `timeout` bounds
-     *   that resolution and the dismissal.
+     *   before anything is sent; Android ignores the tap). `timeout` (ms)
+     *   is one budget for the whole step: the `tapElement` resolution spends
+     *   from it and the dismissal gets only what is left. The dismissal checks
+     *   the budget before each of its steps; a step it has started runs to
+     *   its end (with its 300 ms pause and keyboard check), so the call can
+     *   end up to one dismissal step after `timeout`. A dismissal stopped by
+     *   the budget throws `KeyboardStillShownError`, whose `(timeout <ms> ms)`
+     *   names the time that was left for it.
      */
     async hideKeyboard(options?: HideKeyboardOptions): Promise<boolean> {
         this.requirePlatform('hideKeyboard');
         log.interact('Hiding the keyboard');
         const timeout = options?.timeout;
+        const started = Date.now();
         let tapElement: Element | undefined;
         if (options?.tapElement !== undefined) {
             const { pageName, elementName } = options.tapElement;
@@ -1109,7 +1116,11 @@ export class Steps {
                 throw new Error(`hideKeyboard: tapElement "${elementName}" on page "${pageName}" could not be resolved: ${cause}`, { cause: err });
             }
         }
-        return this.device.hideKeyboard(definedOptions({ tapElement, timeout }));
+        // The time left of the budget; a value that is not a valid budget goes on as it is, for the dismissal to refuse.
+        const left = typeof timeout === 'number' && Number.isFinite(timeout) && timeout >= 0
+            ? Math.max(0, timeout - (Date.now() - started))
+            : timeout;
+        return this.device.hideKeyboard(definedOptions({ tapElement, timeout: left }));
     }
 
     /** Rotates the device to `orientation`. Device platforms only. */
