@@ -218,7 +218,27 @@ export interface MockNode {
     children?: MockNode[];
     /** Run on every tap of this node (after it is recorded), e.g. to flip a `checked` attribute. */
     onClick?: () => void;
+    /**
+     * The text the driver's native query engine sees, for the `'oracle'`
+     * narrowing mode (default: `text`). Lets a test make a node's element
+     * read fail while the native query still finds it.
+     */
+    queryText?: string;
+    /**
+     * The native query engine does not see this node (`'oracle'` mode), as
+     * UiAutomator2 does not see a node deeper than `appium:snapshotMaxDepth`.
+     * The full list lookup still finds it.
+     */
+    beyondQueryDepth?: boolean;
 }
+
+/**
+ * How the mock answers element-repository's text-narrowing queries:
+ * `'reject'` (default) fails them as an unsupporting driver would, so the
+ * lookup reads the full list; `'oracle'` answers them with the nodes the
+ * native query would return (see {@link narrowedHits}).
+ */
+export type MockNarrowing = 'reject' | 'oracle';
 
 /**
  * The XPath element-repository sends (scoped to an android element) for the
@@ -230,6 +250,41 @@ const ANDROID_DESCENDANT_TEXT_XPATH = ".//*[@text!='' and not(@showing-hint='tru
 
 /** A text-narrowing query of element-repository (see `lookupAll`). */
 const NARROWED_TEXT_QUERY = /contains\((?:translate\()?@text|CONTAINS\[cd\]/;
+
+/** A narrowed query, parsed: the entry's selector, the words it looks for, and which query it is. */
+interface NarrowedQuery {
+    base: string;
+    tokens: string[];
+    /** android: own or descendants' text; ios-own: label or value; ios-descendant: a static text descendant. */
+    kind: 'android' | 'ios-own' | 'ios-descendant';
+}
+
+/**
+ * Parses element-repository's narrowed text query for an accessibility-id
+ * entry (`~id`), the shape these tests use; `undefined` for any other
+ * shape (the mock then rejects it).
+ *
+ * - Android: `(//*[@content-desc='<id>'])[<own> or <descendants>]`, each
+ *   word as `contains(@text, '<word>')` (or `contains(translate(@text, ...), '<word>')`).
+ * - iOS: a class chain on any element named `<id>` with a predicate on
+ *   label / value (`CONTAINS[cd] "<word>"`), and its descendant form, which
+ *   excludes an own match and asks for a static text descendant holding the
+ *   longest word.
+ */
+function parseNarrowed(selector: string): NarrowedQuery | undefined {
+    const unique = (words: string[]) => [...new Set(words)];
+    const android = /^\(\/\/\*\[@content-desc='([^']*)'\]\)\[/.exec(selector);
+    if (android) {
+        const tokens = unique([...selector.matchAll(/contains\((?:translate\(@text, '[^']*', '[^']*'\)|@text), '([^']*)'\)/g)].map(m => m[1]));
+        return tokens.length ? { base: `~${android[1]}`, tokens, kind: 'android' } : undefined;
+    }
+    const ios = /^-ios class chain:\*\*\/\*\[`name == "((?:[^"\\]|\\.)*)"`\]\[`(NOT \()?/.exec(selector);
+    if (ios) {
+        const tokens = unique([...selector.matchAll(/CONTAINS\[cd\] "((?:[^"\\]|\\.)*)"/g)].map(m => m[1]));
+        return tokens.length ? { base: `~${ios[1]}`, tokens, kind: ios[2] ? 'ios-descendant' : 'ios-own' } : undefined;
+    }
+    return undefined;
+}
 
 export interface MockUiDriver extends MockDriver {
     /** Every `$` / `$$` the session received, as `[method, selector, scope]` (`scope` is `'driver'` or the parent node's first selector). */
@@ -260,8 +315,12 @@ export function driverError(name: string, message: string = name): Error {
  * the node's `content-desc` (or `null`), and the descendant-text XPath
  * element-repository sends for an empty container is answered.
  */
-export function mockUiDriver(nodes: MockNode[], options: Parameters<typeof mockDriver>[0] = {}): MockUiDriver {
+export function mockUiDriver(
+    nodes: MockNode[],
+    options: Parameters<typeof mockDriver>[0] & { narrowing?: MockNarrowing } = {},
+): MockUiDriver {
     const base = mockDriver(options);
+    const narrowing = options.narrowing ?? 'reject';
     const android = String(options.capabilities?.platformName ?? '').toLowerCase() === 'android';
     const lookups: Array<[string, string, string]> = [];
     let failure: Error | undefined;
@@ -290,6 +349,67 @@ export function mockUiDriver(nodes: MockNode[], options: Parameters<typeof mockD
             }
         };
         await walk(roots);
+        return out;
+    }
+
+    /** What the native query engine reads of a node: its query text (else its text), lower-cased. */
+    async function queryText(node: MockNode, attribute: 'text' | 'label' | 'value' = 'text'): Promise<string> {
+        if (attribute === 'value') return String((await read(node.attributes?.value, '')) ?? '').toLowerCase();
+        if (attribute === 'label' && node.attributes?.label !== undefined) return String((await read(node.attributes.label, '')) ?? '').toLowerCase();
+        return String(node.queryText ?? (await read(node.text, '')) ?? '').toLowerCase();
+    }
+    async function descendants(node: MockNode): Promise<MockNode[]> {
+        const out: MockNode[] = [];
+        const walk = async (list: MockNode[]) => {
+            for (const child of list) {
+                if (!(await live(child)) || child.beyondQueryDepth) continue;
+                out.push(child);
+                await walk(child.children ?? []);
+            }
+        };
+        await walk(node.children ?? []);
+        return out;
+    }
+
+    /**
+     * The nodes a native narrowed query returns (case-insensitive, as the
+     * query is): the entry's matches, in document order, that
+     * - android: hold every word in their own text, or each word in some
+     *   descendant's text (a descendant showing a hint not counted);
+     * - ios own query: hold every word in their label, or every word in their value;
+     * - ios descendant query: do not hold the longest word in label or value,
+     *   and have a static-text descendant holding it.
+     * A node marked `beyondQueryDepth` is never returned.
+     */
+    async function narrowedHits(scope: MockNode[], query: NarrowedQuery): Promise<MockNode[]> {
+        const all = (await search(scope, query.base)).filter(node => !node.beyondQueryDepth);
+        const holdsAll = (text: string) => query.tokens.every(t => text.includes(t));
+        const longest = query.tokens[0];
+        const out: MockNode[] = [];
+        for (const node of all) {
+            let hit = false;
+            if (query.kind === 'android') {
+                if (holdsAll(await queryText(node))) hit = true;
+                else {
+                    const shown: string[] = [];
+                    for (const d of await descendants(node)) {
+                        if ((await read(d.attributes?.['showing-hint'], null)) !== 'true') shown.push(await queryText(d));
+                    }
+                    hit = query.tokens.every(t => shown.some(text => text.includes(t)));
+                }
+            } else if (query.kind === 'ios-own') {
+                hit = holdsAll(await queryText(node, 'label')) || holdsAll(await queryText(node, 'value'));
+            } else {
+                const own = (await queryText(node, 'label')).includes(longest) || (await queryText(node, 'value')).includes(longest);
+                if (!own) {
+                    for (const d of await descendants(node)) {
+                        if ((await read(d.attributes?.type, null)) !== 'XCUIElementTypeStaticText') continue;
+                        if ((await queryText(d, 'label')).includes(longest) || (await queryText(d, 'value')).includes(longest)) { hit = true; break; }
+                    }
+                }
+            }
+            if (hit) out.push(node);
+        }
         return out;
     }
 
@@ -380,7 +500,15 @@ export function mockUiDriver(nodes: MockNode[], options: Parameters<typeof mockD
         // not support the query would, and element-repository then reads the
         // full list, the path these tests model. Narrowing itself is
         // element-repository's, tested there and on devices.
-        if (NARROWED_TEXT_QUERY.test(selector)) throw driverError('invalid selector', `invalid selector: the mock cannot run ${selector}`);
+        if (NARROWED_TEXT_QUERY.test(selector)) {
+            const parsed = narrowing === 'oracle' ? parseNarrowed(selector) : undefined;
+            if (!parsed) throw driverError('invalid selector', `invalid selector: the mock cannot run ${selector}`);
+            const hits = await narrowedHits(scope, parsed);
+            return hits.map(node => {
+                if (!idOf.has(node)) idOf.set(node, `el-${++ids}`);
+                return raw(parsed.base, scope, label, node);
+            });
+        }
         const found = await search(scope, selector);
         return found.map(node => {
             if (!idOf.has(node)) idOf.set(node, `el-${++ids}`);
