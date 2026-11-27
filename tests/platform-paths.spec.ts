@@ -14,6 +14,13 @@ import { DEVICE_PLATFORMS, driverError, expectNotSupported, mockElement, mockUiD
 
 const STEP_TIMEOUT = 600;
 
+/**
+ * The sentence after the lead of a poll in which no probe answered at all
+ * (each one ran out of its share of the timeout): no check finished, not
+ * "every probe failed", and never a normal absence or visibility failure.
+ */
+const NO_ANSWER = /: timed out after \d+ ms\. No answer was obtained: no check finished within the timeout\. The probe was still running when its \d+ ms ran out, so one lookup pass takes longer than the \d+ ms timeout\. Allow more time with a longer timeout \(`\.timeout\(ms\)`\), or use a selector that matches fewer elements \(a `byText` selection reads the text of every candidate\)\.$/;
+
 /** A reader flipping from `before` to `after` on its `n`-th read (1-based), counting reads. */
 function flipOnRead<T>(n: number, before: T, after: T): { read: () => T; reads: () => number } {
     let reads = 0;
@@ -330,6 +337,7 @@ for (const platform of DEVICE_PLATFORMS) {
             // The strategy's own reason survives: its budget fits in the verification's timeout.
             expect(() => { throw error; }).toThrow(/with text "Purple" not found/);
             expect(error?.message).not.toMatch(/Last error: the probe did not answer/);
+            expect(error?.message).not.toMatch(/No answer was obtained/);
             expect(elapsed).toBeGreaterThanOrEqual(390);
             expect(elapsed, 'bounded by the matcher timeout, not by a selection budget').toBeLessThan(400 + 600);
         });
@@ -373,7 +381,8 @@ for (const platform of DEVICE_PLATFORMS) {
             const { steps } = deviceSteps(platform, hangingItemTree(), 600);
             const hidden = await caught(async () => { await steps.on('items', 'Screen').byText('Purple').not.visible.toBeTrue(); });
             expect(hidden?.message).toMatch(/not to be true/);
-            expect(hidden?.message).toMatch(/no value; every probe failed/);
+            expect(hidden?.message).toMatch(NO_ANSWER);
+            expect(hidden?.message).not.toMatch(/every probe failed|still displayed|Last value/);
         });
 
         test('verifyAbsence passes; a selection whose match is shown still fails; a hidden match passes', async () => {
@@ -442,9 +451,10 @@ for (const platform of DEVICE_PLATFORMS) {
         test('a selection that never answers is never read as absent', async () => {
             const { steps } = deviceSteps(platform, hangingItemTree(), 600);
             const absence = await caught(() => steps.on('items', 'Screen').byText('Purple').verifyAbsence());
-            expect(absence?.message).toMatch(/absent/);
-            expect(absence?.message).toMatch(/no value; every probe failed/);
-            expect(absence?.message).toMatch(/did not answer/);
+            // The matcher's lead stays; the sentence after it says no answer was obtained.
+            expect(absence?.message).toMatch(/^Expected element to be absent \(not displayed\): timed out after 600 ms\. No answer was obtained: /);
+            expect(absence?.message).toMatch(NO_ANSWER);
+            expect(absence?.message).not.toMatch(/every probe failed|still displayed|Last value/);
         });
 
         test('a dead session fails verifyAbsence at once', async () => {
@@ -473,14 +483,14 @@ for (const platform of DEVICE_PLATFORMS) {
             const { steps } = deviceSteps(platform, itemTree(SLOW_READ_MS), 3000);
             const absence = await caught(() => steps.on('items', 'Screen').timeout(600).byText('Green 2').verifyAbsence());
             expect(absence?.message, 'a shown match is never absent').toMatch(/absent/);
-            expect(absence?.message).toMatch(/no value; every probe failed/);
-            expect(absence?.message).toMatch(/did not answer/);
+            expect(absence?.message).toMatch(/^Expected element to be absent \(not displayed\): timed out after 600 ms\. No answer was obtained: /);
+            expect(absence?.message).toMatch(NO_ANSWER);
             const hidden = await caught(async () => { await steps.on('items', 'Screen').timeout(600).byText('Green 2').not.visible.toBeTrue(); });
             expect(hidden?.message, 'a shown match is never not visible').toMatch(/not to be true/);
-            expect(hidden?.message).toMatch(/did not answer/);
+            expect(hidden?.message).toMatch(NO_ANSWER);
             const falsy = await caught(async () => { await steps.on('items', 'Screen').timeout(600).byText('Green 2').visible.toBeFalse(); });
             expect(falsy?.message, 'a shown match is never read as hidden').toMatch(/to be false/);
-            expect(falsy?.message).toMatch(/did not answer/);
+            expect(falsy?.message).toMatch(NO_ANSWER);
         });
 
         test('six items at 120 ms a read: a hidden last item is not read as hidden until a pass answers', async () => {
@@ -489,7 +499,7 @@ for (const platform of DEVICE_PLATFORMS) {
             const { steps } = deviceSteps(platform, tree, 3000);
             // Within 600 ms no pass answers: unknown, so the hidden assertions fail rather than guess.
             const cut = await caught(async () => { await steps.on('items', 'Screen').timeout(600).byText('Green 2').visible.toBeFalse(); });
-            expect(cut?.message).toMatch(/did not answer/);
+            expect(cut?.message).toMatch(NO_ANSWER);
             // With room for one pass (~720 ms) the hidden match is read as hidden.
             await steps.on('items', 'Screen').byText('Green 2').visible.toBeFalse();
             await steps.on('items', 'Screen').byText('Green 2').not.visible.toBeTrue();
@@ -500,12 +510,12 @@ for (const platform of DEVICE_PLATFORMS) {
             const { steps } = deviceSteps(platform, rowTree(100, 25));
             const absence = await caught(() => steps.on('items', 'Screen').byText('Row 100').verifyAbsence());
             expect(absence?.message, 'a shown match is never absent').toMatch(/absent/);
-            expect(absence?.message).toMatch(/did not answer/);
+            expect(absence?.message).toMatch(NO_ANSWER);
             const hidden = await caught(async () => { await steps.on('items', 'Screen').byText('Row 100').not.visible.toBeTrue(); });
             expect(hidden?.message).toMatch(/not to be true/);
-            expect(hidden?.message).toMatch(/did not answer/);
+            expect(hidden?.message).toMatch(NO_ANSWER);
             const falsy = await caught(async () => { await steps.on('items', 'Screen').byText('Row 100').visible.toBeFalse(); });
-            expect(falsy?.message).toMatch(/did not answer/);
+            expect(falsy?.message).toMatch(NO_ANSWER);
         });
     });
 

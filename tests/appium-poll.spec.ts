@@ -106,7 +106,15 @@ test.describe('pollUntil', () => {
         const elapsed = Date.now() - started;
         expect(error).toBeInstanceOf(PollTimeoutError);
         expect(error.lastError).toBeInstanceOf(ProbeTimeoutError);
-        expect(error.message).toMatch(/^Slow probe: timed out after 300 ms\. Last value: \(no value; every probe failed\)\. Last error: the probe did not answer within \d+ ms$/);
+        // No probe answered at all: the message says no check finished, not that every probe failed.
+        expect(error.lastValue).toBeUndefined();
+        expect(error.message).toMatch(new RegExp(
+            '^Slow probe: timed out after 300 ms\\. No answer was obtained: no check finished within the timeout\\. '
+            + 'The probe was still running when its \\d+ ms ran out, so one lookup pass takes longer than the 300 ms timeout\\. '
+            + 'Allow more time with a longer timeout \\(`\\.timeout\\(ms\\)`\\), or use a selector that matches fewer elements '
+            + '\\(a `byText` selection reads the text of every candidate\\)\\.$',
+        ));
+        expect(error.message).not.toMatch(/every probe failed|Last value|Last error/);
         expect(elapsed).toBeGreaterThanOrEqual(295);
         expect(elapsed).toBeLessThan(300 + 50 + 150);
     });
@@ -121,6 +129,22 @@ test.describe('pollUntil', () => {
         expect(error).toBeInstanceOf(PollTimeoutError);
         expect((error.lastError as Error).message).toBe('Element not found');
         expect(error.message).toMatch(/Last error: Element not found; the last probe did not answer within \d+ ms$/);
+        // A probe answered with an error: that is a failed probe, not a missing answer.
+        expect(error.message).toMatch(/^Lookup: timed out after 200 ms\. Last value: \(no value; every probe failed\)\. /);
+        expect(error.message).not.toMatch(/No answer was obtained/);
+    });
+
+    test('no probe answers within a short timeout: the message names the probe\'s share, never the meaning', async () => {
+        const meaning = () => 'The element was still displayed on the last answered poll';
+        const hanging = () => new Promise<boolean>(resolve => setTimeout(() => resolve(true), 2000).unref());
+        const error = await pollUntil(hanging, v => !v, { timeout: 120, interval: 50, message: 'Expected absent', lastValueMeaning: meaning }).catch(e => e);
+        expect(error).toBeInstanceOf(PollTimeoutError);
+        expect(error.lastError).toBeInstanceOf(ProbeTimeoutError);
+        expect(error.message).toMatch(/^Expected absent: timed out after 120 ms\. No answer was obtained: no check finished within the timeout\. The probe was still running when its \d+ ms ran out, so one lookup pass takes longer than the 120 ms timeout\. /);
+        expect(error.message).not.toMatch(/still displayed|every probe failed/);
+        // A timeout shorter than the interval: the probe gets one interval, which the message states.
+        const zero = await pollUntil(hanging, v => !v, { timeout: 0, interval: 40, message: 'Expected absent' }).catch(e => e);
+        expect(zero.message).toMatch(/^Expected absent: timed out after 0 ms\. No answer was obtained: no check finished within the timeout\. The probe was still running when its 40 ms ran out, so one lookup pass takes longer than the 0 ms timeout\. /);
     });
 
     test('a probe that does not answer after one that did: the last value leads, the timeout is only a note', async () => {

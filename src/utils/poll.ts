@@ -110,7 +110,10 @@ async function boundedProbe<T>(probe: () => Promise<T> | T, budget: number): Pro
  *   When a probe answered and the probes after it only ran out of time, the
  *   last value leads and the unanswered probe is a note after it, not the
  *   last error (the error's `lastError` still holds the
- *   {@link ProbeTimeoutError}).
+ *   {@link ProbeTimeoutError}). When no probe answered at all (each one ran
+ *   out of its share, none answered even with an error), the message says no
+ *   check finished within the timeout, how long the probe was given, and how
+ *   to give a lookup pass room; it never reads as a failed check.
  *
  * @returns the accepted value.
  */
@@ -135,6 +138,8 @@ export async function pollUntil<T>(
     // A probe that did not answer after an earlier attempt failed for a real
     // reason: that reason stays the last error, this notes the timeout.
     let unansweredBudget: number | undefined;
+    // The longest share of the timeout a probe was given and ran out of.
+    let longestUnanswered = 0;
 
     for (;;) {
         let probed = false;
@@ -149,6 +154,7 @@ export async function pollUntil<T>(
             if (check(value) !== false) return value;
         } catch (error) {
             if (!probed && isFatalDriverError(error)) throw error;
+            if (error instanceof ProbeTimeoutError) longestUnanswered = Math.max(longestUnanswered, error.budget);
             if (error instanceof ProbeTimeoutError && lastError !== undefined && !(lastError instanceof ProbeTimeoutError)) {
                 unansweredBudget = error.budget;
             } else {
@@ -163,6 +169,18 @@ export async function pollUntil<T>(
 
     const what = typeof options.message === 'function' ? options.message() : options.message;
     const parts = [`${what ?? 'Condition not met'}: timed out after ${timeout} ms.`];
+    if (!hasValue && lastError instanceof ProbeTimeoutError) {
+        // No probe answered at all, not even with an error: every one ran out
+        // of its share. That is no answer, never a failed check.
+        parts.push(
+            'No answer was obtained: no check finished within the timeout. '
+            + `The probe was still running when its ${longestUnanswered} ms ran out, `
+            + `so one lookup pass takes longer than the ${timeout} ms timeout. `
+            + 'Allow more time with a longer timeout (`.timeout(ms)`), or use a selector that matches fewer elements '
+            + '(a `byText` selection reads the text of every candidate).',
+        );
+        throw new PollTimeoutError(parts.join(' '), timeout, lastValue, lastError);
+    }
     if (!hasValue) {
         parts.push('Last value: (no value; every probe failed).');
     } else {

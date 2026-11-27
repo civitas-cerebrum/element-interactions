@@ -430,7 +430,7 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   visibility-probe attempt keeps its one-check budget and still reads the whole
   list. A text that matches nothing still fails with `with text "..." not
   found`. A list whose single read pass takes longer than the step's timeout
-  does not answer within it: the step fails (`did not answer`) and the cut-off
+  does not answer within it: the step fails (`No answer was obtained`) and the cut-off
   pass is never read as "not found", "absent" or "not visible". Web is not
   affected.
 - **`not.visible` passes on a device for an element no lookup finds.**
@@ -451,11 +451,26 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   error (`Last value: true. Last error: the probe did not answer within N ms`);
   it now gives the value, with the unanswered probe as a note after it:
   `Last value: true; the last probe did not answer within N ms.` A failing
-  device absence, `hidden` or negated `visible` check also says what the value
-  means: `Expected element to be absent (not displayed): timed out after
-  8000 ms. The element was still displayed on the last answered poll (Last
-  value: true).` `lastError` is unchanged. A poll in which no probe answered
-  keeps `(no value; every probe failed)`. Web messages are not affected.
+  device absence, `hidden`, negated `visible`, negated presence or negated
+  `inViewport` check also says what the value means: `Expected element to be
+  absent (not displayed): timed out after 8000 ms. The element was still
+  displayed on the last answered poll (Last value: true).` `lastError` is
+  unchanged. A poll in which every probe answered with an error keeps
+  `(no value; every probe failed)`. Web messages are not affected.
+- **A device poll in which no probe answered says so.** When every probe ran
+  out of its share of the timeout (one lookup pass longer than the timeout,
+  for example a `.byText()` pass over a long iOS list), the message read like
+  a failed check: `Last value: (no value; every probe failed). Last error:
+  the probe did not answer within N ms`. It now says no check finished, how
+  long the probe was given, and what to change: `Expected element to be
+  absent (not displayed): timed out after 3000 ms. No answer was obtained: no
+  check finished within the timeout. The probe was still running when its
+  3000 ms ran out, so one lookup pass takes longer than the 3000 ms timeout.
+  Allow more time with a longer timeout (`.timeout(ms)`), or use a selector
+  that matches fewer elements (a `byText` selection reads the text of every
+  candidate).` The verdict is unchanged (the step still fails); `lastValue` is
+  `undefined` and `lastError` is still the `ProbeTimeoutError`. Web messages
+  are not affected.
 - **A negated count range on a device is worded as on web**: `Expected count
   not > 5`, no longer `Expected NOT count > 5`.
 
