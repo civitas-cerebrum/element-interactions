@@ -421,6 +421,51 @@ for (const platform of DEVICE_PLATFORMS) {
         });
     });
 
+    test.describe(`a byText read pass longer than the time left on ${platform}`, () => {
+        // One read pass of the text strategy outlasts the step's timeout. A cut-off pass must never read as
+        // "not found", so neither verifyAbsence nor a negated visible matcher may pass while the match is shown.
+        const SLOW_READ_MS = 120;
+
+        test('six items at 120 ms a read, timeout 600: a shown last item fails verifyAbsence and not.visible', async () => {
+            const { steps } = deviceSteps(platform, itemTree(SLOW_READ_MS), 3000);
+            const absence = await caught(() => steps.on('items', 'Screen').timeout(600).byText('Green 2').verifyAbsence());
+            expect(absence?.message, 'a shown match is never absent').toMatch(/absent/);
+            expect(absence?.message).toMatch(/no value; every probe failed/);
+            expect(absence?.message).toMatch(/did not answer/);
+            const hidden = await caught(async () => { await steps.on('items', 'Screen').timeout(600).byText('Green 2').not.visible.toBeTrue(); });
+            expect(hidden?.message, 'a shown match is never not visible').toMatch(/not to be true/);
+            expect(hidden?.message).toMatch(/did not answer/);
+            const falsy = await caught(async () => { await steps.on('items', 'Screen').timeout(600).byText('Green 2').visible.toBeFalse(); });
+            expect(falsy?.message, 'a shown match is never read as hidden').toMatch(/to be false/);
+            expect(falsy?.message).toMatch(/did not answer/);
+        });
+
+        test('six items at 120 ms a read: a hidden last item is not read as hidden until a pass answers', async () => {
+            const tree = itemTree(SLOW_READ_MS);
+            (tree[0]!.children![5] as MockNode).visible = false;
+            const { steps } = deviceSteps(platform, tree, 3000);
+            // Within 600 ms no pass answers: unknown, so the hidden assertions fail rather than guess.
+            const cut = await caught(async () => { await steps.on('items', 'Screen').timeout(600).byText('Green 2').visible.toBeFalse(); });
+            expect(cut?.message).toMatch(/did not answer/);
+            // With room for one pass (~720 ms) the hidden match is read as hidden.
+            await steps.on('items', 'Screen').byText('Green 2').visible.toBeFalse();
+            await steps.on('items', 'Screen').byText('Green 2').not.visible.toBeTrue();
+            await steps.on('items', 'Screen').byText('Green 2').verifyAbsence();
+        });
+
+        test('100 rows at 25 ms a read, the step timeout: a shown Row 100 fails verifyAbsence and not.visible', async () => {
+            const { steps } = deviceSteps(platform, rowTree(100, 25));
+            const absence = await caught(() => steps.on('items', 'Screen').byText('Row 100').verifyAbsence());
+            expect(absence?.message, 'a shown match is never absent').toMatch(/absent/);
+            expect(absence?.message).toMatch(/did not answer/);
+            const hidden = await caught(async () => { await steps.on('items', 'Screen').byText('Row 100').not.visible.toBeTrue(); });
+            expect(hidden?.message).toMatch(/not to be true/);
+            expect(hidden?.message).toMatch(/did not answer/);
+            const falsy = await caught(async () => { await steps.on('items', 'Screen').byText('Row 100').visible.toBeFalse(); });
+            expect(falsy?.message).toMatch(/did not answer/);
+        });
+    });
+
     test.describe(`verifyCount bounds on ${platform}`, () => {
         const passing: CountVerifyOptions[] = [
             { exactly: 6 }, { greaterThan: 5 }, { greaterThanOrEqual: 6 }, { lessThan: 7 }, { lessThanOrEqual: 6 },
