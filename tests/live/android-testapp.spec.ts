@@ -279,6 +279,9 @@ test.describe('live Android test app', () => {
 
         test('verifyAbsence fails for a byText chain whose row is shown', async ({ steps, openScreen }) => {
             await openScreen('longList');
+            // A text pass reads every candidate. Its cost was measured on the iOS simulator only (about 3.8 s
+            // for 16 cells, so the iOS test allows 12 s); on the real Android device this test passed within
+            // 3 s, so it keeps 3 s and a short run. Raise it if an Android pass is measured slower.
             await expectStillShown(steps.on('row', 'LongListPage').byText('Item 1').timeout(3000).verifyAbsence());
         });
 
