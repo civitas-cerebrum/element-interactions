@@ -12,19 +12,22 @@ import { mockDriver } from './appium/mocks';
  * Probes a device poll gives up on.
  *
  * A verification polls a probe until its timeout. The probe still running at
- * the deadline is abandoned: it cannot be cancelled (element-repository has
- * no way to stop a started lookup), so a `byText` pass keeps reading every
- * remaining candidate. If the app is relaunched meanwhile, every one of
- * those reads hits a stale element that WebdriverIO finds again with a full
- * lookup of the list, and the next test waits behind that traffic.
+ * the deadline is abandoned, and its abort signal is aborted: the repository
+ * lookup it is in (a `byText` pass reading every candidate) starts no
+ * further driver command, and the probe starts no read after it. Only the
+ * command in flight finishes. If the app were relaunched before it did, that
+ * command would hit a stale element that WebdriverIO finds again with a
+ * lookup of the list.
  *
- * What element-interactions guarantees on its own:
+ * What is guaranteed:
  * - a poll never runs two of its probes at once, and starts none once a
  *   probe ran out of time;
+ * - no driver command starts after the poll rejected (the commands in flight
+ *   at the rejection finish);
  * - every abandoned probe is recorded under its driver, and draining that
- *   driver waits (with a cap) until they are all done, so the fixture can let
- *   the pass finish on the same app launch, before the evidence and the
- *   next relaunch.
+ *   driver aborts them and waits (with a cap) until they are all done, so
+ *   the fixture lets the last command finish on the same app launch, before
+ *   the evidence and the next relaunch.
  *
  * Driver: 16 cells, the wanted one last, a 120 ms lookup and 15 ms per
  * element command (a tenth of a measured iOS simulator run).
@@ -212,10 +215,10 @@ for (const platform of ['ios', 'android'] as const) {
         }
     });
 
-    test.describe(`pending element-repository's cancellable lookup: a rejected poll on ${platform} stops at the next driver call`, () => {
-        test.fixme(true, 'needs a lookup that can be stopped (an abort signal in element-repository); element-interactions cannot stop a started pass on its own');
+    test.describe(`a rejected poll on ${platform} stops its lookup at the next driver call`, () => {
         for (const [name, run] of PATHS) {
             test(`${name}: no driver command starts after the rejection`, async () => {
+                test.setTimeout(30000);
                 const { error, slow, rejectedAt } = await reject(platform, run);
                 expect(error, 'the check must fail').toBeDefined();
                 await slow.settle(800, 10000);
@@ -224,6 +227,7 @@ for (const platform of ['ios', 'android'] as const) {
             });
 
             test(`${name}: after a relaunch only the in-flight commands finish (each with its own refetch)`, async () => {
+                test.setTimeout(30000);
                 const { error, slow, rejectedAt } = await reject(platform, run);
                 expect(error, 'the check must fail').toBeDefined();
                 const inFlightAtReject = slow.inFlight();
