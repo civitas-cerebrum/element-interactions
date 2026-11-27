@@ -278,3 +278,68 @@ test.describe('pollUntil', () => {
         await expect(pollUntil(async () => 1, () => true, { timeout: 10, interval: -5 })).rejects.toThrow(/interval must be/);
     });
 });
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+test.describe('pollUntil runs one probe at a time', () => {
+    test('a probe still running when its share ran out is never joined by another one', async () => {
+        test.setTimeout(30000);
+        // The probe's timer may fire a moment before the clock reads the
+        // deadline (timer and clock are not the same source). Modelled by a
+        // clock that reads 3 ms behind once the probe runs.
+        const realNow = Date.now;
+        let behind = 0;
+        Date.now = () => realNow() - behind;
+        let running = 0;
+        let maxRunning = 0;
+        let started = 0;
+        let error: unknown;
+        try {
+            const probe = async () => {
+                started++;
+                running++;
+                maxRunning = Math.max(maxRunning, running);
+                behind = 3;
+                try {
+                    await sleep(400);
+                    return true;
+                } finally {
+                    running--;
+                }
+            };
+            await pollUntil(probe, v => !v, { timeout: 200, interval: 100 }).catch(e => { error = e; });
+            await sleep(600);
+        } finally {
+            Date.now = realNow;
+        }
+        expect(error, 'the poll still times out').toBeDefined();
+        expect(maxRunning, 'probes of one poll in flight at once').toBe(1);
+        expect(started, 'probes started').toBe(1);
+    });
+
+    test('a poll whose probes answer until one hangs starts nothing while that one runs', async () => {
+        test.setTimeout(30000);
+        let running = 0;
+        let maxRunning = 0;
+        const startedAt: number[] = [];
+        const probe = async () => {
+            startedAt.push(Date.now());
+            running++;
+            maxRunning = Math.max(maxRunning, running);
+            try {
+                // Fast answers first, then one that outlives the poll.
+                await sleep(startedAt.length < 3 ? 20 : 1000);
+                return true;
+            } finally {
+                running--;
+            }
+        };
+        let rejectedAt = 0;
+        await pollUntil(probe, v => !v, { timeout: 300, interval: 50 }).catch(() => { rejectedAt = Date.now(); });
+        await sleep(1200);
+        expect(rejectedAt).toBeGreaterThan(0);
+        expect(maxRunning).toBe(1);
+        expect(startedAt.filter(t => t > rejectedAt), 'probes started after the rejection').toEqual([]);
+    });
+});
+

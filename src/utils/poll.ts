@@ -111,6 +111,10 @@ async function boundedProbe<T>(probe: () => Promise<T> | T, budget: number): Pro
  *   answered by then is abandoned and recorded as the last error, so a call
  *   ends at most about `timeout + interval` ms after it started, however slow
  *   the driver is.
+ * - One probe at a time: the next probe starts only once the previous one
+ *   answered. A probe that ran out of time ends the poll there and then
+ *   (it was given all the time left), so a poll never runs two probes at
+ *   once and starts none after an abandoned one.
  * - Probes must be read-only (a state getter, a text read): an abandoned
  *   probe is NOT cancelled. Its driver command keeps running in the
  *   background and may still complete after `pollUntil` moved on or returned,
@@ -173,6 +177,11 @@ export async function pollUntil<T>(
                 lastError = error;
                 unansweredBudget = undefined;
             }
+            // A probe that ran out of time is still running: it was given all
+            // the time left, so the poll ends now rather than starting another
+            // probe beside it (a timer may fire a moment before the clock
+            // reads the deadline, which would otherwise leave a sliver).
+            if (error instanceof ProbeTimeoutError) break;
         }
         const remaining = deadline - Date.now();
         if (remaining <= 0) break;
