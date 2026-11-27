@@ -476,7 +476,11 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   timeout: use a longer `.timeout(ms)` or a selector that matches fewer
   elements (a `byText` selection reads the text of every candidate).` A device
   check (`verifyOrientation`, `verifyKeyboardShown`, `verifyContext`,
-  `verifyAppInForeground`) does not. The verdict is unchanged (the step still
+  `verifyAppInForeground`) does not. A `"list": true` entry's
+  `verifyPresence` keeps its lead (`verifyPresence: '<page>.<name>' is a list
+  entry ("list": true) — expected at least one visible match within Nms.`)
+  and follows it with the no-answer text instead of `found 0 match(es) and
+  none visible`, since no poll counted any match. The verdict is unchanged (the step still
   fails); `lastValue` is `undefined` and `lastError` is still the
   `ProbeTimeoutError`. Web messages are not affected.
 - **A negated count range on a device is worded as on web**: `Expected count
