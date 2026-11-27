@@ -286,6 +286,21 @@ test.describe('live Android test app', () => {
             await expectStillShown(steps.on('row', 'LongListPage').byText('Item 1').timeout(8000).verifyAbsence());
         });
 
+        // The row titles' full resource id is a selector element-repository can narrow: a text lookup on
+        // it is answered by one native query (an XPath on the title's text) and a narrowed miss is a
+        // clean miss, with no full pass over the list. These hold the verdicts on that path.
+        test('on a narrowable selector (full resource id): byText presence and absence are answered by the narrowed query', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            await steps.on('rowTitle', 'LongListPage').byText('Item 2').verifyPresence();
+            await steps.on('rowTitle', 'LongListPage').byText('No such row').verifyAbsence();
+        });
+
+        test('on a narrowable selector (full resource id): verifyAbsence fails for a byText chain whose title is shown', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            // One narrowed lookup measured about 0.6 s on the real phone; 8 s keeps the margin of the full-pass case above.
+            await expectStillShown(steps.on('rowTitle', 'LongListPage').byText('Item 2').timeout(8000).verifyAbsence());
+        });
+
         test('verifyAbsence on the plain list entry fails while its rows are shown', async ({ steps, openScreen }) => {
             await openScreen('longList');
             await expectStillShown(steps.on('row', 'LongListPage').timeout(3000).verifyAbsence());
