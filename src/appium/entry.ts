@@ -1,6 +1,6 @@
-import { isFatalDriverError, LookupAbortedError, type Element } from '@civitas-cerebrum/element-repository';
+import { isFatalDriverError, LookupAbortedError } from '@civitas-cerebrum/element-repository';
 import type { EntryTarget } from '../interfaces/IEntryTarget';
-import { softRead } from '../utils/poll';
+import { isNoMatchAnswer, readVisible } from '../utils/visibility';
 
 /**
  * Attach budget, per `fallback` chain node, of one attempt of the visibility
@@ -53,9 +53,16 @@ export function entryLabel(entry: EntryTarget): string {
  * Unlike web, it never answers `false` for a fatal driver error (dead
  * session, invalid selector): that error is thrown, so a gate on a dead
  * device fails loudly instead of skipping its action. A cancelled lookup
- * (`LookupAbortedError`) is thrown too, never read as "not visible". A transient miss (no
- * match yet, a stale element, an eager strategy that found nothing) is "not
- * visible yet" and the probe keeps trying.
+ * (`LookupAbortedError`) is thrown too, never read as "not visible". A
+ * no-match answer (no match yet, an eager strategy that found nothing, a
+ * clean text miss: see `isNoMatchAnswer`) is "not visible yet" and the probe
+ * keeps trying. Any other non-fatal error (an `unknown error`, a stale
+ * reference twice in a row, a failed text read with `containsText`) is no
+ * answer: the probe keeps trying within its budget, and when the budget
+ * ends on such an error it throws `isVisible: could not tell whether
+ * '<page>.<element>' is displayed within <timeout> ms: <error>` (the error
+ * as its `cause`) instead of answering `false`, so a gate never skips its
+ * action on a read it could not make.
  *
  * One attempt is not bounded, as on web: the probe stops STARTING attempts at
  * `timeout`, but an attempt in flight (a fallback walk of
@@ -69,25 +76,28 @@ export async function probeVisibleOnDevice(
     containsText?: string,
 ): Promise<boolean> {
     const deadline = Date.now() + Math.max(1, timeout);
+    // The error of the last attempt when it gave no answer (not a no-match).
+    let unanswered: unknown;
     for (;;) {
         const slice = Math.max(1, Math.min(DEVICE_RESOLVE_SLICE_MS, deadline - Date.now()));
-        let visible = false;
-        let element: Element | undefined;
+        unanswered = undefined;
         try {
-            element = await entry.probe(slice);
-            visible = await element.isVisible();
+            const element = await entry.probe(slice);
+            if (await readVisible(() => element.isVisible())) {
+                if (containsText === undefined) return true;
+                const text = await element.textContent();
+                return text !== null && text.includes(containsText);
+            }
         } catch (err) {
             // A cancelled lookup is no answer: never "not visible yet".
             if (isFatalDriverError(err) || err instanceof LookupAbortedError) throw err;
-        }
-        if (visible && element) {
-            if (containsText === undefined) return true;
-            const target = element;
-            const text = await softRead(() => target.textContent(), null);
-            return text !== null && text.includes(containsText);
+            if (!isNoMatchAnswer(err)) unanswered = err;
         }
         const left = deadline - Date.now();
-        if (left <= 0) return false;
+        if (left <= 0) break;
         await new Promise<void>(resolve => setTimeout(resolve, Math.min(DEVICE_PROBE_INTERVAL_MS, left)));
     }
+    if (unanswered === undefined) return false;
+    const reason = unanswered instanceof Error ? unanswered.message : String(unanswered);
+    throw new Error(`isVisible: could not tell whether ${entryLabel(entry)} is displayed within ${timeout} ms: ${reason}`, { cause: unanswered });
 }

@@ -4,8 +4,9 @@ import type { IVerifications, VerifiableState } from '../interfaces/IVerificatio
 import type { EntryTarget } from '../interfaces/IEntryTarget';
 import type { CountVerifyOptions, TextVerifyOptions, VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
 import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
-import { describeValue, NO_ANSWER_LEAD, PollTimeoutError, softRead, stopIfAborted, type PollProbe } from '../utils/poll';
+import { describeValue, NO_ANSWER_LEAD, PollTimeoutError, ProbeTimeoutError, stopIfAborted, type PollProbe } from '../utils/poll';
 import { devicePoll } from './devicePoll';
+import { readVisible } from '../utils/visibility';
 import { webOnly } from './unsupported';
 import { ReResolvingElement, withProbeSignal } from './ReResolvingElement';
 import { DEVICE_POLL_ATTACH_MS, ELEMENT_NO_ANSWER_HINT, entryLabel, probeVisibleOnDevice } from './entry';
@@ -55,10 +56,15 @@ async function selectionVisible(read: () => Promise<boolean>): Promise<boolean> 
     }
 }
 
-/** The "not visible" read of a polled target: {@link selectionVisible} for a selecting chain, else a soft read. */
+/**
+ * The "not visible" read of a polled target: {@link selectionVisible} for a
+ * selecting chain, else {@link readVisible}: `false` only for a no-match
+ * answer (the lookup found no element), every other error thrown, so the
+ * poll retries it and never reads it as hidden.
+ */
 function notVisibleRead(target: Element): PollProbe<boolean> {
     if (target instanceof ReResolvingElement && target.selecting) return signal => selectionVisible(() => target.withSignal(signal).isVisible());
-    return signal => softRead(() => withProbeSignal(target, signal).isVisible(), false);
+    return signal => readVisible(() => withProbeSignal(target, signal).isVisible());
 }
 
 /** A probe that reads `target` with `read`, the probe's signal bound to it ({@link withProbeSignal}). */
@@ -155,7 +161,10 @@ export class AppiumVerifications implements IVerifications {
     /**
      * At least one match of the collection is displayed within `timeout`,
      * polled with the whole collection re-resolved on every poll. A fatal
-     * driver error is never read as "not displayed".
+     * driver error is never read as "not displayed", nor is a visibility
+     * read that fails with any other error than a no-match: the poll retries
+     * it, and when the last poll failed the error names it instead of
+     * "none visible".
      */
     async listPresence(entry: EntryTarget, timeout: number): Promise<void> {
         let lastCount = 0;
@@ -167,7 +176,7 @@ export class AppiumVerifications implements IVerifications {
                 lastCount = matches.length;
                 for (const match of matches) {
                     stopIfAborted(signal, `a visibility read of ${entryLabel(entry)}`);
-                    if (await softRead(() => match.isVisible(), false)) return true;
+                    if (await readVisible(() => match.isVisible())) return true;
                 }
                 return false;
             }, visible => visible, { timeout, noAnswerHint: ELEMENT_NO_ANSWER_HINT });
@@ -177,8 +186,13 @@ export class AppiumVerifications implements IVerifications {
             // No poll answered: no match count was observed, so none is reported.
             const noAnswer = err.message.indexOf(NO_ANSWER_LEAD);
             if (noAnswer >= 0) throw new Error(`${lead}. ${err.message.slice(noAnswer)}`, { cause: err });
-            const cause = err.lastError instanceof Error ? ` Last error: ${err.lastError.message}` : '';
-            throw new Error(`${lead}, found ${lastCount} match(es) and none visible.${cause}`, { cause: err });
+            // The last poll failed (a lookup or a visibility read): its error is the
+            // answer's absence, never "none visible".
+            if (err.lastError !== undefined && !(err.lastError instanceof ProbeTimeoutError)) {
+                const reason = err.lastError instanceof Error ? err.lastError.message : String(err.lastError);
+                throw new Error(`${lead}; the last poll could not read the matches. Last error: ${reason}`, { cause: err });
+            }
+            throw new Error(`${lead}, found ${lastCount} match(es) and none visible.`, { cause: err });
         }
     }
 

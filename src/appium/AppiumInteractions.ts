@@ -11,10 +11,11 @@ import type {
 import type { AppiumDriver } from './platform/PlatformStrategy';
 import { Utils } from '../utils/ElementUtilities';
 import { touchDrag } from './touch';
-import { softRead, stopIfAborted } from '../utils/poll';
+import { stopIfAborted } from '../utils/poll';
 import { devicePoll } from './devicePoll';
 import { webOnly } from './unsupported';
 import { ELEMENT_NO_ANSWER_HINT } from './entry';
+import { readVisible } from '../utils/visibility';
 import { withProbeSignal } from './ReResolvingElement';
 
 /** Finger travel time of an offset drag, in ms. */
@@ -77,9 +78,9 @@ export class AppiumInteractions implements IInteractions {
     /**
      * Taps the element once it is visible.
      * - `ifPresent`: taps only when the element is displayed now; resolves `false` otherwise.
-     *   A transient miss (no such element, stale element) is "not displayed";
-     *   a fatal driver error (dead session, invalid selector) is thrown, never
-     *   read as a skip.
+     *   Only a no-match answer (no element matches) is "not displayed"; any
+     *   other driver error (an `unknown error`, a stale reference twice in a
+     *   row, a dead session) is thrown, never read as a skip.
      * - `force`: taps the element's centre with a positional tap (`Element.tapAt`)
      *   instead of the element click command.
      * - `withoutScrolling`: passed to the element's `click` primitive, where a
@@ -88,7 +89,7 @@ export class AppiumInteractions implements IInteractions {
     async click(element: Element, options?: ClickOptions): Promise<boolean | void> {
         const timeout = options?.timeout ?? this.timeout;
         if (options?.ifPresent) {
-            if (!(await softRead(() => element.isVisible(), false))) return false;
+            if (!(await readVisible(() => element.isVisible()))) return false;
             await this.tap(element, timeout, options);
             return true;
         }

@@ -1,3 +1,4 @@
+import { isNoMatchAnswer } from '../utils/visibility';
 import { Page, Response, Locator } from '@playwright/test';
 import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
 import type { Platform } from '@civitas-cerebrum/element-repository';
@@ -1876,6 +1877,11 @@ export class Steps {
     /**
      * Checks whether an element is currently present and visible in the DOM.
      * Returns a boolean instead of throwing.
+     *
+     * On web any error answers `false`. On a device only a no-match answer
+     * (no element matches) is `false`; any other error (an `unknown error`,
+     * a stale reference twice in a row, a dead session) is thrown: the check
+     * could not tell, and `false` would read it as "not there".
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param options - Optional step options for element resolution.
@@ -1886,8 +1892,9 @@ export class Steps {
         try {
             const element = await this.getElement(elementName, pageName, options);
             return await element.isVisible();
-        } catch {
-            return false;
+        } catch (err) {
+            if (this.platform === 'web' || isNoMatchAnswer(err)) return false;
+            throw err;
         }
     }
 

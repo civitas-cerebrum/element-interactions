@@ -1,3 +1,4 @@
+import { isNoMatchAnswer, readVisible } from '../utils/visibility';
 import { Locator } from '@playwright/test';
 import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
 import type { Platform } from '@civitas-cerebrum/element-repository';
@@ -497,10 +498,14 @@ export class ElementAction {
         });
     }
 
-    /** Click the resolved element if present. Returns `true` if clicked, `false` if skipped. */
+    /**
+     * Click the resolved element if present. Returns `true` if clicked,
+     * `false` if skipped. Only a no-match answer skips; any other error of
+     * the visibility read is thrown, never read as "not present".
+     */
     async clickIfPresent(options?: { withoutScrolling?: boolean; force?: boolean }): Promise<boolean> {
         const element = await this.resolve();
-        if (await element.isVisible()) {
+        if (await readVisible(() => element.isVisible())) {
             await this.interactions.interact.click(element, {
                 withoutScrolling: options?.withoutScrolling,
                 ifPresent: true,
@@ -878,13 +883,18 @@ export class ElementAction {
         });
     }
 
-    /** Check if element is visible (boolean, no assertion). */
+    /**
+     * Check if element is visible (boolean, no assertion). On web any error
+     * answers `false`; on a device only a no-match answer does, and any
+     * other error is thrown (see `Steps.isPresent`).
+     */
     async isPresent(): Promise<boolean> {
         try {
             const element = await this.resolve();
             return await element.action(this._timeout).isPresent();
-        } catch {
-            return false;
+        } catch (err) {
+            if (this.platform === 'web' || isNoMatchAnswer(err)) return false;
+            throw err;
         }
     }
 

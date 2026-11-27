@@ -528,6 +528,27 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   answer: it never reads as absent or not visible and is never a poll's last
   error. `EntryTarget`'s resolvers take an optional `signal` after the
   attach budget.
+- **A device visibility read that fails is never "not visible".**
+  element-repository's polled `isVisible()` now answers `false` only for a
+  real no-match and throws any other non-fatal driver error (an `unknown
+  error`, a stale reference twice in a row). Every device step that reads
+  visibility treats only a no-match answer (no element matches, an index
+  past the end, a clean text miss, ...) as "not visible", and never turns
+  another error into `false`:
+  - the `isVisible()` probe and the `isVisible()` / `ifVisible()` gates retry
+    within their timeout; when the timeout ends on such an error they throw
+    `isVisible: could not tell whether '<page>.<element>' is displayed within
+    <timeout> ms: <error>` instead of answering `false` or skipping the
+    action. With `containsText`, a failed text read is retried the same way.
+  - `isPresent` and `clickIfPresent` (the step and the fluent form) throw
+    the error instead of answering `false` or skipping the tap.
+  - `not.visible`, `visible.toBeFalse()` and `verifyState('hidden')` retry
+    it and fail with it as the last error; a `satisfy()` snapshot whose
+    visibility read fails is retried, never `visible: false`; `verifyPresence`
+    of a list entry names the error instead of `none visible`.
+  - `waitForState('hidden' | 'detached')` keeps waiting through it
+    (element-repository's own wait), and fails at its timeout.
+  Web is not affected: web `isPresent` still answers `false` on any error.
 - **A negated count range on a device is worded as on web**: `Expected count
   not > 5`, no longer `Expected NOT count > 5`.
 

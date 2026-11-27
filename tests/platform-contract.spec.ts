@@ -24,6 +24,7 @@ import { PlaywrightGestures } from '../src/playwright/PlaywrightGestures';
 import { PlaywrightDevice } from '../src/playwright/PlaywrightDevice';
 import { ElementRepository, SelectionStrategy, TextNotFoundError } from '@civitas-cerebrum/element-repository';
 import { isCleanTextNotFound } from '../src/appium/AppiumVerifications';
+import { isNoMatchAnswer } from '../src/utils/visibility';
 import { DEVICE_PLATFORMS, driverError, mockUiDriver } from './appium/mocks';
 
 /**
@@ -402,4 +403,46 @@ test('only a TextNotFoundError is a text not-found: the same message on a plain 
     expect(isCleanTextNotFound(new TextNotFoundError({ elementName: 'items', pageName: 'Screen', text: 'Nope' }))).toBe(true);
     expect(isCleanTextNotFound(new TextNotFoundError({ elementName: 'items', pageName: 'Screen', text: 'Nope', cleanMiss: false }))).toBe(false);
     expect(isCleanTextNotFound(undefined)).toBe(false);
+});
+
+/**
+ * A device visibility read is "not visible" only for a no-match answer
+ * (`isNoMatchAnswer`). element-repository throws several of those as a
+ * plain `Error` (no class), so they are matched by message: these pin each
+ * against the installed package, from real lookups that find nothing.
+ */
+for (const platform of DEVICE_PLATFORMS) {
+    test.describe(`element-repository's no-match answers on ${platform}`, () => {
+        const PAGES = { pages: [{ name: 'Screen', platform, elements: [{ elementName: 'items', selector: { 'accessibility id': 'item' } }] }] };
+        const TREE = [{ match: '~item', text: 'Red 1', visible: false, attributes: { name: 'red' } }];
+
+        async function failure(lookup: (repo: ElementRepository) => Promise<unknown>): Promise<unknown> {
+            const repo = new ElementRepository(mockUiDriver(TREE, { capabilities: { platformName: platform } }).driver, PAGES, { platform, timeout: 1 });
+            return lookup(repo).then(() => undefined, (e: unknown) => e);
+        }
+
+        test('each no-match answer of a lookup is recognised, by its message where it has no class', async () => {
+            const answers = {
+                index: await failure(repo => repo.get('items', 'Screen', { strategy: SelectionStrategy.INDEX, index: 4 })),
+                attribute: await failure(repo => repo.get('items', 'Screen', { strategy: SelectionStrategy.ATTRIBUTE, attribute: 'name', value: 'blue' })),
+                random: await failure(repo => repo.get('items', 'Screen', { strategy: SelectionStrategy.RANDOM })),
+                visible: await failure(repo => repo.getVisible('items', 'Screen', true)),
+                text: await failure(repo => repo.get('items', 'Screen', { strategy: SelectionStrategy.TEXT, value: 'Nope' })),
+            };
+            for (const [name, error] of Object.entries(answers)) {
+                expect(error, `${name}: the lookup must fail`).toBeInstanceOf(Error);
+                expect(isNoMatchAnswer(error), `${name}: element-repository's no-match wording changed: ${(error as Error).message}`).toBe(true);
+            }
+        });
+    });
+}
+
+test('no-match answers of the driver are recognised; every other error is no answer', () => {
+    expect(isNoMatchAnswer(driverError('no such element', 'An element could not be located on the page using the given search parameters.'))).toBe(true);
+    expect(isNoMatchAnswer(new Error('no such element: Unable to locate element'))).toBe(true);
+    expect(isNoMatchAnswer(new Error(`Can't call isDisplayed on element with selector "~x" because element wasn't found`))).toBe(true);
+    expect(isNoMatchAnswer(new TextNotFoundError({ elementName: 'a', pageName: 'b', text: 'c', cleanMiss: false }))).toBe(false);
+    expect(isNoMatchAnswer(driverError('unknown error', 'An unknown server-side error occurred: no such element was mentioned deeper'))).toBe(false);
+    expect(isNoMatchAnswer(driverError('stale element reference', 'stale element reference: the row was redrawn'))).toBe(false);
+    expect(isNoMatchAnswer('no such element')).toBe(false);
 });

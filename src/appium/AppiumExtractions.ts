@@ -9,6 +9,7 @@ import { Utils } from '../utils/ElementUtilities';
 import { webOnly } from './unsupported';
 import { softRead } from '../utils/poll';
 import { DEVICE_POLL_ATTACH_MS } from './entry';
+import { readVisible } from '../utils/visibility';
 
 /**
  * Value extraction for the Appium family. Element reads delegate to the
@@ -81,7 +82,10 @@ export class AppiumExtractions implements IExtractions {
      * holds the platform strategy's `snapshotAttributes`. A missing element
      * reads as the web defaults (no text, hidden, count 0), but a fatal
      * driver error is thrown, never folded into a snapshot that a predicate
-     * such as `el => !el.visible` could pass on.
+     * such as `el => !el.visible` could pass on. The visibility read is not
+     * soft: only a no-match answer reads as hidden; any other error fails the
+     * snapshot, and the `satisfy()` loop retries it (its last error is
+     * reported at the timeout).
      */
     async captureSnapshot(entry: EntryTarget): Promise<ElementSnapshot> {
         const [element, allElement] = await Promise.all([
@@ -104,7 +108,7 @@ export class AppiumExtractions implements IExtractions {
             softRead(() => first.textContent(), null),
             softRead(() => first.inputValue(), ''),
             readAttributes(),
-            softRead(() => first.isVisible(), false),
+            readVisible(() => first.isVisible()),
             softRead(() => first.isEnabled(), false),
         ]);
         return { text: (rawText ?? '').trim(), value, attributes, visible, enabled, count };
