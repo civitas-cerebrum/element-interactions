@@ -501,7 +501,8 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   fixture now waits for such lookups after the test body, before the failure
   evidence and the next relaunch, and again before each relaunch and at
   worker teardown, so each one ends on the app launch it started on. **A
-  failing device test may take up to one lookup pass longer.** The wait is
+  failing device test may take a little longer** (about one driver command,
+  since the check stops its lookup: see the next item). The wait is
   capped at 10000 ms, and when there is something to wait for the fixture
   first extends the test's timeout by that cap, so the wait never makes a
   test run out of time (a timeout of `0` stays as it is). Lookups still
@@ -509,8 +510,21 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   annotation on the test, and the run carries on. The wait never fails a test
   nor replaces its error. Device checks (`verifyOrientation`,
   `verifyKeyboardShown`, `verifyContext`, `verifyAppInForeground`) are waited
-  for too. A later element-repository
-  version that can stop a started lookup lets the check end it at once.
+  for too.
+- **A device check that times out stops its lookup.** Every poll probe gets
+  an abort signal of its own, aborted when the poll gives up on it and once
+  the poll is done with it. The device checks pass it to every repository
+  lookup they make (element-repository's lookup `signal`) and check it
+  between their own reads, so a check that timed out starts no driver
+  command afterwards. The fixture aborts the lookups again before it waits
+  for them, so **the wait after a failing device test is normally about one
+  driver command**, no longer the rest of a lookup pass (the cap stays
+  10000 ms). What still finishes after the timeout: the driver command in
+  flight, and a read already running on an element a lookup returned (a
+  returned element does not carry the signal). An aborted lookup is never an
+  answer: it never reads as absent or not visible and is never a poll's last
+  error. `EntryTarget`'s resolvers take an optional `signal` after the
+  attach budget.
 - **A negated count range on a device is worded as on web**: `Expected count
   not > 5`, no longer `Expected NOT count > 5`.
 

@@ -101,10 +101,17 @@ export interface DrainResult {
     longestRunningMs: number;
 }
 
+/** The abort reason the drain gives a probe it stops. */
+export const DRAIN_ABORT_REASON = 'the session is being drained of abandoned probes';
+
 /**
- * Waits until every probe abandoned under `scope` has settled, or `capMs`
- * passes. Never throws, and never cancels anything: a probe still running
- * at the cap keeps running and stays recorded.
+ * First aborts the signal of every probe abandoned under `scope` (the poll
+ * already aborted it when it gave up on the probe; this makes sure), then
+ * waits until each has settled, or `capMs` passes. A probe that passes its
+ * signal to its lookups and checks it between its driver calls settles once
+ * the driver call it is in finishes, so the wait is normally about one
+ * driver call. A call already running is not stopped. Never throws. A probe
+ * still running at the cap keeps running and stays recorded.
  */
 export async function drainAbandonedProbes(scope: object, capMs: number): Promise<DrainResult> {
     const set = abandoned.get(scope);
@@ -112,11 +119,12 @@ export async function drainAbandonedProbes(scope: object, capMs: number): Promis
     const started = Date.now();
     const stop = started + Math.max(0, capMs);
     const seen = new Set<AbandonedProbe>();
-    // A probe abandoned while the drain waits is waited for too.
+    // A probe abandoned while the drain waits is stopped and waited for too.
     while (set.size > 0) {
         const left = stop - Date.now();
         if (left <= 0) break;
         const batch = [...set];
+        batch.forEach(p => p.controller.abort(new Error(DRAIN_ABORT_REASON)));
         batch.forEach(p => seen.add(p));
         let timer: ReturnType<typeof setTimeout> | undefined;
         const capped = new Promise<'cap'>(resolve => { timer = setTimeout(() => resolve('cap'), left); });
@@ -249,7 +257,7 @@ async function boundedProbe<T>(probe: PollProbe<T>, budget: number, scope: objec
  *   getter, a text read): a probe that changes the app (a click, a swipe)
  *   could act late. With `options.scope` (the device polls pass their
  *   driver) the abandoned probe is recorded under it, and
- *   {@link drainAbandonedProbes} waits for it: the platform fixture drains
+ *   {@link drainAbandonedProbes} stops and waits for it: the platform fixture drains
  *   the session's driver after each test, before the failure evidence and
  *   the next relaunch, so that last call ends on the app launch it started on.
  * - The poll's own aborts never reach its verdict: it aborts a probe only

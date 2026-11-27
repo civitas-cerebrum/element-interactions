@@ -3,6 +3,7 @@ import { format } from 'util';
 import { ABANDONED_LOOKUP_DRAIN_MS, drainAbandonedLookups } from '../src/fixture/BaseFixture';
 import { abandonedProbeCount, pollUntil } from '../src/utils/poll';
 import { log } from '../src/logger/Logger';
+import { cellTree, slowDeviceSteps } from './appium/slow-driver';
 
 /**
  * The platform fixture's wait for device lookups a timed-out check left
@@ -134,4 +135,28 @@ test.describe('the drain extends the timeout it runs in by its cap, only when it
             expect(info.setTimeouts, `test ${testTimeout}, project ${projectTimeout}, ${phase}`).toEqual([]);
         }
     });
+});
+
+test.describe('abort, then drain: the wait is about one driver call, not the rest of a pass', () => {
+    // 16 cells, 100 ms a read: one text pass reads for 1.6 s (android) to
+    // 3.2 s (ios). The check gives up after 1200 ms, in the middle of a pass.
+    const READ_MS = 100;
+    const LOOKUP_MS = 50;
+    for (const platform of ['ios', 'android'] as const) {
+        test(`${platform}: a timed-out byText check is drained within one driver call, quietly`, async () => {
+            const { steps, slow } = slowDeviceSteps(platform, cellTree(16), { lookupMs: LOOKUP_MS, readMs: READ_MS, repoTimeout: 1500, stepTimeout: 1200 });
+            const driver = slow.mock.driver;
+            await expect(steps.on('cells', 'Screen').byText('Item 1').timeout(1200).verifyAbsence()).rejects.toThrow(/timed out after 1200 ms/);
+            const info = fakeInfo();
+            const started = Date.now();
+            const warnings = await captureWarnings(() => drainAbandonedLookups(driver, 'after the test', info));
+            const waited = Date.now() - started;
+            expect(abandonedProbeCount(driver)).toBe(0);
+            expect(slow.inFlight(), 'nothing in flight once the drain returns').toBe(0);
+            // The call in flight at the rejection, with room for a loaded host; a pass is several times longer.
+            expect(waited, 'the drain waits for the call in flight only').toBeLessThanOrEqual(READ_MS + LOOKUP_MS + 150);
+            expect(warnings.console).toEqual([]);
+            expect(info.annotations).toEqual([]);
+        });
+    }
 });

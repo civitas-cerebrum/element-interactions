@@ -538,10 +538,11 @@ function webOnlyOptionsGiven(options: BaseFixtureOptions | undefined): string[] 
  * throw `PlatformNotSupportedError`. A failed test gets the device screenshot
  * (`failure-screenshot`, image/png) and the page source (`page-source`,
  * text/xml) attached.
- * A lookup a timed-out check left running (a `.byText()` pass cannot be
- * stopped) is waited for after the body, before that evidence and before the
- * next relaunch, so a failing device test may take up to one lookup pass
- * longer; the wait is capped ({@link ABANDONED_LOOKUP_DRAIN_MS}), first
+ * A lookup a timed-out check left running is stopped and waited for after
+ * the body, before that evidence and before the next relaunch: the check
+ * aborted it when it gave up, so it ends with the driver call it was in, and
+ * a failing device test normally takes about one driver call longer; the
+ * wait is capped ({@link ABANDONED_LOOKUP_DRAIN_MS}), first
  * extends the test's timeout by that cap when it has something to wait for, warns and
  * annotates the test when lookups are still running at the cap, and never
  * fails a test nor replaces its error (see {@link drainAbandonedLookups}).
@@ -691,7 +692,7 @@ function platformFixture(
                 }
                 await use({ driver, prepared, startError });
             } finally {
-                // Let a lookup a check abandoned end before the session closes. Never throws.
+                // Stop a lookup a check abandoned and let it end before the session closes. Never throws.
                 await drainAbandonedLookups(driver, 'at worker teardown');
                 // Never throws: a failing or hanging stop must not hide an
                 // onSessionStarted / test error, nor stall the worker teardown.
@@ -700,9 +701,9 @@ function platformFixture(
         }, { scope: 'worker', timeout: startTimeout }],
 
         // Per test: relaunch the app before it, attach the evidence after a failure.
-        // A lookup a timed-out check abandoned is waited for (capped, never
-        // throwing) after the body, before the evidence and the next relaunch,
-        // so it ends on the launch it started on.
+        // A lookup a timed-out check abandoned is stopped and waited for
+        // (capped, never throwing) after the body, before the evidence and the
+        // next relaunch, so its last driver call ends on the launch it started on.
         _eiPlatformTest: [async ({ _eiPlatformSession }, use, testInfo) => {
             const { driver, prepared, startError } = _eiPlatformSession;
             try {
@@ -964,11 +965,13 @@ export const STOP_TIMEOUT_MS = EVIDENCE_TIMEOUT_MS;
  * How long the platform fixture waits for the device lookups a timed-out
  * check left running, in ms (see {@link drainAbandonedLookups}).
  *
- * One `.byText()` pass, the longest lookup a check abandons, measured about
- * 3.7 s for 16 cells on the iOS simulator and 3.05 to 3.57 s cold for 11
- * cells on a real Android phone. 10 s holds one such pass with a margin of
- * more than 2.5x for a longer list or a slower device, and stays below the
- * 15 s default relaunch budget that follows it.
+ * The lookups are aborted first, so the wait is normally one driver call
+ * (the one in flight). The cap is kept at one whole `.byText()` pass, the
+ * longest a probe could run if it did not stop (measured about 3.7 s for
+ * 16 cells on the iOS simulator, 3.05 to 3.57 s cold for 11 cells on a real
+ * Android phone), with a margin of more than 2.5x: it bounds a driver call
+ * that hangs, and stays below the 15 s default relaunch budget that
+ * follows it.
  */
 export const ABANDONED_LOOKUP_DRAIN_MS = 10_000;
 
@@ -976,15 +979,19 @@ export const ABANDONED_LOOKUP_DRAIN_MS = 10_000;
 export type DrainTestInfo = Pick<TestInfo, 'annotations' | 'timeout' | 'setTimeout'> & { project?: { timeout: number } };
 
 /**
- * Waits, up to `capMs`, for the device lookups a check gave up on to finish
- * (`drainAbandonedProbes` on the session's driver).
+ * Stops the device lookups a check gave up on, then waits, up to `capMs`,
+ * for them to finish (`drainAbandonedProbes` on the session's driver).
  *
  * A check that times out while one of its lookups is still running (a
- * `.byText()` pass reading a long list) cannot cancel it: the lookup keeps
- * sending driver commands. Waiting here lets it end on the app launch it
- * started on, before the failure evidence and the next relaunch; after a
- * relaunch every element it holds would be stale, and WebdriverIO would find
- * each one again with a whole new lookup, delaying the next test.
+ * `.byText()` pass reading a long list) aborts that lookup's signal: it
+ * starts no further driver call. The call already in flight cannot be
+ * stopped, and neither can a read on an element a lookup already returned
+ * (it does not carry the signal); the probe only starts no new one after
+ * it. Waiting here lets that last call end on the app launch it started
+ * on, before the failure evidence and the next relaunch; after a relaunch
+ * an element it holds would be stale, and WebdriverIO would find it again
+ * with a whole new lookup, delaying the next test. The wait is therefore
+ * normally about one driver call, not the rest of a pass.
  *
  * Never throws, so it cannot replace the test's own error or fail a passing
  * test. When lookups are still running at the cap, it prints a warning and
