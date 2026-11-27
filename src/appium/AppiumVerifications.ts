@@ -267,6 +267,15 @@ export class AppiumVerifications implements IVerifications {
      * UI tree). A string is an Appium selector, resolved as a platform
      * element. A failed lookup or a failed read of a match is retried, never
      * read as absent; a fatal driver error fails the assertion.
+     *
+     * An element that leaves the tree is gone from the next poll's lookup, so
+     * absence still passes. Matches re-created faster than they can be read
+     * on every poll (a list redrawn or animating for the whole timeout) never
+     * give an answer, and the assertion fails with `Last error: stale element
+     * reference ...`. Then wait until the screen settles, or assert on a
+     * stable signal first (`verifyText` on a status label, `verifyPresence`
+     * of the next screen's element), before asserting absence; a longer
+     * timeout helps when the redraw is temporary.
      */
     async absence(selectorOrTarget: Element | string, options?: VerifyOptions): Promise<void> {
         const target = typeof selectorOrTarget === 'string'

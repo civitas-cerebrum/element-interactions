@@ -595,6 +595,30 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(absence?.message, 'shown items are never absent').toMatch(/absent/);
         });
 
+        test('a plain entry whose shown item goes stale once and leaves the tree: verifyAbsence passes on the next poll', async () => {
+            let removed = false;
+            const tree: MockNode[] = [{
+                match: '~column',
+                children: [{
+                    match: '~item',
+                    text: 'Red 1',
+                    exists: () => !removed,
+                    visible: () => {
+                        if (!removed) {
+                            removed = true;
+                            throw driverError('stale element reference', 'stale element reference: the item was removed');
+                        }
+                        return true;
+                    },
+                }],
+            }];
+            const { steps } = deviceSteps(platform, tree);
+            const run = await timed(() => steps.on('items', 'Screen').verifyAbsence());
+            expect(run.error, 'a match that left the tree is absent').toBeUndefined();
+            expect(removed).toBe(true);
+            expect(run.elapsed, 'the next poll answers: well within the step timeout').toBeLessThan(STEP_TIMEOUT / 2);
+        });
+
         test('a failed $$ on every pass never reads as absent: the driver error is the last error', async () => {
             const { steps, mock } = deviceSteps(platform, itemTree());
             const driver = mock.driver as unknown as Record<string, unknown>;
