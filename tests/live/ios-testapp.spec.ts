@@ -393,11 +393,12 @@ test.describe('live iOS test app', () => {
         test('verifyAbsence fails for a byText chain whose row is shown', async ({ steps, openScreen }) => {
             await openScreen('longList');
             // One text pass reads every candidate (no row's text is exactly 'Item 1'), and its cost decides the
-            // timeout. Measured on the iOS simulator (iPhone 15, iOS 17.2): the class-chain lookup takes about
-            // 1.3 s, then each cell's name and label are read serially at about 155 ms a cell; with 16 cells in
-            // the tree a full pass takes about 3.8 s or more. A pass that has not finished at the deadline gives
-            // no value, so the timeout must hold whole passes: 12 s holds three passes at the measured cost and
-            // still two if a pass costs 50% more (5.7 s). The step fails only at its timeout: 12 s per run.
+            // timeout. Measured on the iOS simulator, iOS 17.2: the class-chain lookup takes about 1.3 s, then
+            // each cell's name and label are read serially at about 155 ms a cell; with 16 cells in the tree a
+            // full pass takes about 3.8 s or more. One whole pass that finishes before the deadline gives the
+            // answer (the row is shown); a pass still running at the deadline gives none. 12 s is about three
+            // times the measured pass: margin for devices and loads not measured. The step fails only at its
+            // timeout, so it costs 12 s per run.
             await expectStillShown(steps.on('item', 'LongListPage').byText('Item 1').timeout(12_000).verifyAbsence());
         });
 
