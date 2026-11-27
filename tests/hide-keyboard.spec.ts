@@ -49,6 +49,7 @@ function keyboardSteps(platform: DevicePlatform, dismisses: Dismisser, shown = t
     driver.execute = async (script: string, args: unknown) => {
         const result = await execute(script, args);
         const call: Call = ['execute', script, args];
+        if (script === 'mobile: isKeyboardShown') return keyboard.shown;
         if (script === 'mobile: hideKeyboard') {
             const wasShown = keyboard.shown;
             hide(call);
@@ -66,13 +67,16 @@ function keyboardSteps(platform: DevicePlatform, dismisses: Dismisser, shown = t
 /** The keyboard commands the session received, in order (lookups and element reads left out). */
 function keyboardCalls(calls: Call[]): Call[] {
     return calls.filter(c => c[0] === 'isKeyboardShown' || c[0] === 'hideKeyboard' || c[0] === 'click'
-        || (c[0] === 'execute' && c[1] === 'mobile: hideKeyboard'));
+        || (c[0] === 'execute' && (c[1] === 'mobile: hideKeyboard' || c[1] === 'mobile: isKeyboardShown')));
 }
 
 const TAP: HideKeyboardOptions = { tapElement: { pageName: 'LoginPage', elementName: 'title' } };
 const isTap: Dismisser = call => call[0] === 'tap';
 const isKeysStep: Dismisser = call => call[0] === 'execute' && Array.isArray((call[2] as { keys?: unknown })?.keys);
 const isAndroidHide: Dismisser = call => call[0] === 'hideKeyboard';
+/** The second keyboard check after element-repository's answered "no keyboard". */
+const RECHECK: Call = ['execute', 'mobile: isKeyboardShown', {}];
+const UNCONFIRMED = /^hideKeyboard: the keyboard state could not be confirmed and nothing was sent/;
 
 async function caught(call: () => unknown): Promise<unknown> {
     try {
@@ -88,10 +92,11 @@ for (const platform of DEVICE_PLATFORMS) {
         test('no keyboard shown: answers false and sends nothing else', async () => {
             const { steps, mock } = keyboardSteps(platform, () => true, false);
             expect(await steps.hideKeyboard()).toBe(false);
-            expect(keyboardCalls(mock.calls)).toEqual([['isKeyboardShown']]);
+            // The answer "no keyboard" is confirmed with `mobile: isKeyboardShown`.
+            expect(keyboardCalls(mock.calls)).toEqual([['isKeyboardShown'], RECHECK]);
             // With a tap element it is resolved, but nothing is tapped.
             expect(await steps.hideKeyboard(TAP)).toBe(false);
-            expect(keyboardCalls(mock.calls)).toEqual([['isKeyboardShown'], ['isKeyboardShown']]);
+            expect(keyboardCalls(mock.calls)).toEqual([['isKeyboardShown'], RECHECK, ['isKeyboardShown'], RECHECK]);
         });
 
         test('without options: the platform\'s dismissal steps hide the keyboard and it answers true', async () => {
@@ -151,6 +156,54 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(error).toBeInstanceOf(KeyboardStillShownError);
             expect((error as Error).message).toMatch(/timeout 0 ms/);
             expect(keyboardCalls(mock.calls)).toEqual([['isKeyboardShown']]);
+        });
+
+        test('a driver without isKeyboardShown(): a keyboard shown per mobile: isKeyboardShown throws, nothing sent', async () => {
+            const { steps, mock, keyboard } = keyboardSteps(platform, () => true);
+            delete (mock.driver as unknown as Record<string, unknown>).isKeyboardShown;
+            const error = await caught(() => steps.hideKeyboard(TAP));
+            expect((error as Error).message).toMatch(UNCONFIRMED);
+            expect((error as Error).message).toMatch(/mobile: isKeyboardShown reports one shown/);
+            expect(keyboard.shown, 'the keyboard is left as it was').toBe(true);
+            expect(keyboardCalls(mock.calls)).toEqual([RECHECK]);
+        });
+
+        test('a driver without isKeyboardShown(): no keyboard per mobile: isKeyboardShown answers false, nothing sent', async () => {
+            const { steps, mock } = keyboardSteps(platform, () => true, false);
+            delete (mock.driver as unknown as Record<string, unknown>).isKeyboardShown;
+            expect(await steps.hideKeyboard()).toBe(false);
+            expect(keyboardCalls(mock.calls)).toEqual([RECHECK]);
+        });
+
+        test('isKeyboardShown() answers no keyboard while mobile: isKeyboardShown reports one: throws, nothing sent', async () => {
+            const { steps, mock, keyboard } = keyboardSteps(platform, () => true);
+            (mock.driver as unknown as Record<string, unknown>).isKeyboardShown = async () => { mock.calls.push(['isKeyboardShown']); return false; };
+            const error = await caught(() => steps.hideKeyboard());
+            expect((error as Error).message).toMatch(UNCONFIRMED);
+            expect(keyboard.shown).toBe(true);
+            expect(keyboardCalls(mock.calls)).toEqual([['isKeyboardShown'], RECHECK]);
+        });
+
+        test('a second check that fails with an error that is not fatal throws, the error kept as the cause', async () => {
+            const { steps, mock } = keyboardSteps(platform, () => true);
+            const driver = mock.driver as unknown as Record<string, unknown>;
+            delete driver.isKeyboardShown;
+            const flaky = driverError('unknown error', 'An unknown server-side error occurred while processing the command.');
+            driver.execute = async (script: string) => { mock.calls.push(['execute', script, {}]); throw flaky; };
+            const error = await caught(() => steps.hideKeyboard());
+            expect((error as Error).message).toMatch(UNCONFIRMED);
+            expect((error as Error).message).toMatch(/mobile: isKeyboardShown failed: An unknown server-side error occurred/);
+            expect((error as Error).cause).toBe(flaky);
+            expect(keyboardCalls(mock.calls)).toEqual([RECHECK]);
+        });
+
+        test('a fatal driver error of the second check passes unchanged', async () => {
+            const { steps, mock } = keyboardSteps(platform, () => true);
+            const driver = mock.driver as unknown as Record<string, unknown>;
+            delete driver.isKeyboardShown;
+            const dead = driverError('invalid session id', 'invalid session id: the session is gone');
+            driver.execute = async () => { throw dead; };
+            expect(await caught(() => steps.hideKeyboard())).toBe(dead);
         });
 
         test('a fatal driver error passes unchanged', async () => {

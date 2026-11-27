@@ -262,7 +262,10 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   refuses on a keyboard without a Done key (a login form's Return key). The
   step now runs element-repository's dismissal on iOS and Android, checks the
   keyboard after every step and returns `true` when a shown keyboard is gone,
-  `false` (nothing else sent) when none was shown. `options.tapElement`
+  `false` (nothing else sent) only when no keyboard was shown. A "no keyboard"
+  answer is checked again with `mobile: isKeyboardShown`; when that check
+  reports a keyboard or fails, the step throws `hideKeyboard: the keyboard
+  state could not be confirmed and nothing was sent: ...`. `options.tapElement`
   (`{ pageName, elementName }`, a repository entry) names a neutral element
   that iOS taps first; without it **iOS may press the keyboard's action key,
   which can submit a form or run a search**. `options.timeout` bounds the

@@ -1075,7 +1075,13 @@ export class Steps {
      * `dismissKeyboard`. Device platforms only.
      *
      * Returns `true` when a keyboard was shown and is now gone, and `false`
-     * when none was shown (or the driver cannot tell): then nothing is sent.
+     * only when no keyboard was shown: then nothing is sent. element-repository
+     * answers "no keyboard" also when WebdriverIO's `isKeyboardShown()` is
+     * missing or fails, so that answer is checked again with `mobile:
+     * isKeyboardShown`; when that check reports a keyboard, or fails, the
+     * step throws `hideKeyboard: the keyboard state could not be confirmed
+     * and nothing was sent: ...` (a fatal driver error of that check passes
+     * unchanged).
      * On iOS without `options.tapElement` the dismissal may press the
      * keyboard's action key (Done, Return, Go, Search, Send, Join), which can
      * submit a form or run a search; name a neutral element (a screen title)

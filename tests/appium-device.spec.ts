@@ -93,10 +93,11 @@ const EXPECTED: Record<string, Expectation> = {
         ios: 'unsupported',
     },
     hideKeyboard: {
-        // The mock session has no isKeyboardShown: dismissKeyboard cannot tell, so nothing is sent.
+        // The mock session has no isKeyboardShown(): its answer is confirmed with `mobile: isKeyboardShown`
+        // (no keyboard on the mock), so nothing is sent.
         call: d => d.hideKeyboard(),
-        android: [],
-        ios: [],
+        android: [['execute', 'mobile: isKeyboardShown', {}]],
+        ios: [['execute', 'mobile: isKeyboardShown', {}]],
     },
     isKeyboardShown: {
         call: d => d.isKeyboardShown(),

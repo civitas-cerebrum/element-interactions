@@ -196,8 +196,9 @@ export class AppiumDevice implements IDevice {
     }
 
     /**
-     * element-repository's `dismissKeyboard` (through the strategy): `false`
-     * with nothing sent when no keyboard is shown; its
+     * element-repository's `dismissKeyboard` (through the strategy), its
+     * "no keyboard" answer confirmed with `mobile: isKeyboardShown`: `false`
+     * with nothing sent only when no keyboard is shown; its
      * `KeyboardStillShownError` and fatal driver errors pass unchanged.
      */
     async hideKeyboard(options?: DismissKeyboardOptions): Promise<boolean> {

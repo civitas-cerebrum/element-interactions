@@ -1,8 +1,8 @@
-import { PlatformNotSupportedError, dismissKeyboard, type DismissKeyboardOptions } from '@civitas-cerebrum/element-repository';
+import { PlatformNotSupportedError, type DismissKeyboardOptions } from '@civitas-cerebrum/element-repository';
 import type { PermissionState } from '../../interfaces/IDevice';
 import type { SwipeDirection } from '@civitas-cerebrum/element-repository';
 import { swipeScreenW3C, type SwipeInset } from '../touch';
-import { APP_STATE_FOREGROUND, mobile, type AppiumDriver, type PlatformStrategy } from './PlatformStrategy';
+import { APP_STATE_FOREGROUND, hideKeyboardConfirmed, mobile, type AppiumDriver, type PlatformStrategy } from './PlatformStrategy';
 
 /**
  * The share of the window a screen swipe keeps clear on each side (x: left
@@ -67,7 +67,7 @@ export const iosStrategy: PlatformStrategy = Object.freeze({
         throw new PlatformNotSupportedError('pressBack', 'ios');
     },
     async hideKeyboard(driver: AppiumDriver, options?: DismissKeyboardOptions) {
-        return dismissKeyboard(driver, 'ios', options);
+        return hideKeyboardConfirmed(driver, 'ios', options);
     },
     async isKeyboardShown(driver: AppiumDriver) {
         return Boolean(await mobile<boolean>(driver, 'isKeyboardShown'));

@@ -1,7 +1,7 @@
 import type {} from 'webdriverio';
 // Keeps `WebdriverIO.Browser` resolvable in the published types without webdriverio installed.
 import '../../types/webdriverio-global';
-import type { DismissKeyboardOptions, Platform } from '@civitas-cerebrum/element-repository';
+import { dismissKeyboard, isFatalDriverError, type DismissKeyboardOptions, type Platform } from '@civitas-cerebrum/element-repository';
 import type { PermissionState } from '../../interfaces/IDevice';
 import type { SwipeDirection } from '@civitas-cerebrum/element-repository';
 
@@ -71,7 +71,11 @@ export interface PlatformStrategy {
 
     // System navigation and keyboard
     pressBack(driver: AppiumDriver): Promise<void>;
-    /** element-repository's `dismissKeyboard` with this platform's name: `true` when a shown keyboard is now gone. */
+    /**
+     * {@link hideKeyboardConfirmed} with this platform's name: `true` when a
+     * shown keyboard is now gone, `false` only when no keyboard was shown
+     * (nothing sent).
+     */
     hideKeyboard(driver: AppiumDriver, options?: DismissKeyboardOptions): Promise<boolean>;
     isKeyboardShown(driver: AppiumDriver): Promise<boolean>;
 
@@ -115,4 +119,41 @@ export const APP_STATE_NAMES: Readonly<Record<number, string>> = Object.freeze({
 /** Calls an Appium `mobile:` extension command with one argument object. */
 export async function mobile<T = unknown>(driver: AppiumDriver, command: string, args: Record<string, unknown> = {}): Promise<T> {
     return await driver.execute(`mobile: ${command}`, args) as T;
+}
+
+/** The head of the error `hideKeyboard` throws when it cannot confirm whether a keyboard is shown. */
+export const KEYBOARD_STATE_UNCONFIRMED = 'hideKeyboard: the keyboard state could not be confirmed and nothing was sent';
+
+/**
+ * element-repository's `dismissKeyboard` for `platform`, with its "no
+ * keyboard" answer confirmed. `dismissKeyboard` asks WebdriverIO's
+ * `driver.isKeyboardShown()` and answers `false`, sending nothing, also when
+ * the driver has no such method or that check fails; the device's own
+ * keyboard check is `mobile: isKeyboardShown`. So a `false` is checked again
+ * with `mobile: isKeyboardShown`:
+ *
+ * - no keyboard: `false` (no keyboard was shown, nothing was sent);
+ * - a keyboard shown: an `Error` headed {@link KEYBOARD_STATE_UNCONFIRMED};
+ * - the check fails with an error that is not fatal: the same error, the
+ *   driver error kept as its `cause`;
+ * - a fatal driver error (element-repository's `isFatalDriverError`) is
+ *   thrown unchanged.
+ *
+ * `true` and every error of `dismissKeyboard` itself pass unchanged.
+ */
+export async function hideKeyboardConfirmed(driver: AppiumDriver, platform: Platform, options?: DismissKeyboardOptions): Promise<boolean> {
+    if (await dismissKeyboard(driver, platform, options)) return true;
+    let shown: boolean;
+    try {
+        shown = Boolean(await mobile<boolean>(driver, 'isKeyboardShown'));
+    } catch (err) {
+        if (isFatalDriverError(err)) throw err;
+        const reason = (err instanceof Error ? err.message : String(err)).split('\n')[0].trim();
+        throw new Error(`${KEYBOARD_STATE_UNCONFIRMED}: mobile: isKeyboardShown failed: ${reason}`, { cause: err });
+    }
+    if (shown) {
+        throw new Error(`${KEYBOARD_STATE_UNCONFIRMED}: the driver's isKeyboardShown() answered no keyboard or could not answer, `
+            + 'but mobile: isKeyboardShown reports one shown');
+    }
+    return false;
 }

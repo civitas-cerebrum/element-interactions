@@ -79,8 +79,11 @@ export interface IDevice {
     pressBack(): Promise<void>;
     /**
      * Hides the soft keyboard with element-repository's `dismissKeyboard`:
-     * `true` when a keyboard was shown and is now gone, `false` when none was
-     * shown (or the driver cannot tell), with nothing sent. `options.tapElement`
+     * `true` when a keyboard was shown and is now gone, `false` only when no
+     * keyboard was shown, with nothing sent. A "no keyboard" answer is checked
+     * again with `mobile: isKeyboardShown`; when that check reports a
+     * keyboard or fails, it throws `hideKeyboard: the keyboard state could
+     * not be confirmed and nothing was sent: ...`. `options.tapElement`
      * (iOS only) is a neutral element tapped first; `options.timeout` bounds
      * the call. Throws element-repository's `KeyboardStillShownError` when the
      * keyboard is still shown after every dismissal step.
