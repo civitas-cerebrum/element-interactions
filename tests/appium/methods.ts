@@ -13,6 +13,6 @@ export const DEVICE_METHODS = {
     verifications: ['text', 'textContains', 'textMatches', 'textStartsWith', 'textEndsWith', 'presence', 'absence', 'state',
         'attribute', 'attributeContains', 'attributeMatches', 'hasAttribute', 'inputValue', 'inputValueContains',
         'inputValueMatches', 'inputValueStartsWith', 'inputValueEndsWith', 'order', 'listOrder', 'count',
-        'expectEqual', 'expectNotEqual', 'expectEventually', 'readText', 'allTexts', 'anyDisplayed',
+        'expectEqual', 'expectNotEqual', 'expectEventually', 'readText', 'allTexts', 'anyDisplayed', 'selectionDisplayed',
         'pollTarget', 'visibleWithin', 'probeVisible', 'listPresence', 'entryAbsence'],
 };

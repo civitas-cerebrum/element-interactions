@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { PlatformElement, PlatformNotSupportedError, type Element, type Platform } from '@civitas-cerebrum/element-repository';
+import { PlatformElement, PlatformNotSupportedError, isFatalDriverError, type Element, type Platform } from '@civitas-cerebrum/element-repository';
 import type { IVerifications, VerifiableState } from '../interfaces/IVerifications';
 import type { EntryTarget } from '../interfaces/IEntryTarget';
 import type { CountVerifyOptions, TextVerifyOptions, VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
@@ -117,7 +117,14 @@ export class AppiumVerifications implements IVerifications {
      * first chain node that exists, exactly as an action would target; the
      * terminal node when none does),
      * and absence means every match of that node is hidden or gone, polled
-     * until `timeout`. A strategy selector does not narrow it (as on web).
+     * until `timeout`.
+     *
+     * A chain that picks one match by its text (`.byText()`;
+     * {@link EntryTarget.selecting}) is asserted on its selection instead,
+     * re-resolved on every poll: absent when the match the selection picks is
+     * hidden or when the selection matches nothing (the strategy's "not
+     * found"), as on web. A fatal driver error still fails at once, and a
+     * resolution that does not answer is never read as an answer.
      *
      * The web cross-check (default vs `ALL` resolution landing on different
      * nodes) has no device counterpart: there is no element handle to
@@ -125,8 +132,33 @@ export class AppiumVerifications implements IVerifications {
      * attach wait, so they walk the chain identically.
      */
     async entryAbsence(entry: EntryTarget, options: { timeout: number; attachSlice: number }): Promise<void> {
+        if (entry.selecting) {
+            await this.expectEventually(
+                () => this.selectionDisplayed(entry),
+                visible => !visible,
+                'element to be absent (not displayed)',
+                { timeout: options.timeout },
+            );
+            return;
+        }
         const all = await entry.resolveAll(options.attachSlice);
         await this.absence(all, { timeout: options.timeout });
+    }
+
+    /**
+     * Whether the match a selecting chain picks is displayed now. A selection
+     * that matches nothing (or any transient lookup failure) is not
+     * displayed; a fatal driver error is rethrown.
+     */
+    private async selectionDisplayed(entry: EntryTarget): Promise<boolean> {
+        let element: Element;
+        try {
+            element = await entry.resolve(pollResolveBudget(entry));
+        } catch (err) {
+            if (isFatalDriverError(err)) throw err;
+            return false;
+        }
+        return softRead(() => element.isVisible(), false);
     }
 
     // ── Text ──

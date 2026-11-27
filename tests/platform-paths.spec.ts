@@ -355,6 +355,43 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(hidden?.message).toMatch(/no value; every probe failed/);
         });
 
+        test('verifyAbsence passes; a selection whose match is shown still fails; a hidden match passes', async () => {
+            const { steps } = deviceSteps(platform, itemTree(READ_MS), 3000);
+            const { error: absent, elapsed } = await timed(() => steps.on('items', 'Screen').byText('Purple').verifyAbsence());
+            expect(absent, 'no item has the text, so nothing the chain names is shown').toBeUndefined();
+            expect(elapsed).toBeLessThan(3000);
+            await steps.verifyAbsence('items', 'Screen', { strategy: 'text', text: 'Purple' });
+            // 'Green 2' is the last item: the selection reads every candidate, so a later shown match is found.
+            const { error: shown } = await timed(() => steps.on('items', 'Screen').timeout(600).byText('Green 2').verifyAbsence());
+            expect(shown?.message).toMatch(/absent/);
+            expect(shown?.message).toMatch(/Last value: true/);
+            const tree = itemTree();
+            (tree[0]!.children![5] as MockNode).visible = false;
+            await deviceSteps(platform, tree, 3000).steps.on('items', 'Screen').byText('Green 2').verifyAbsence();
+        });
+
+        test('a plain entry is still asserted on every match: a byText chain does not widen it', async () => {
+            // Without a selection, absence still fails while any item is shown.
+            const { steps } = deviceSteps(platform, itemTree(), 600);
+            expect((await caught(() => steps.on('items', 'Screen').verifyAbsence()))?.message).toMatch(/absent/);
+        });
+
+        test('a selection that never answers is never read as absent', async () => {
+            const { steps } = deviceSteps(platform, hangingItemTree(), 600);
+            const absence = await caught(() => steps.on('items', 'Screen').byText('Purple').verifyAbsence());
+            expect(absence?.message).toMatch(/absent/);
+            expect(absence?.message).toMatch(/no value; every probe failed/);
+            expect(absence?.message).toMatch(/did not answer/);
+        });
+
+        test('a dead session fails verifyAbsence at once', async () => {
+            const { steps, mock } = deviceSteps(platform, itemTree(), 5000);
+            mock.failWith(driverError('invalid session id', 'invalid session id: the session is gone'));
+            const { error, elapsed } = await timed(() => steps.on('items', 'Screen').byText('Purple').verifyAbsence());
+            expect(error?.message).toMatch(/invalid session id/);
+            expect(elapsed, 'a dead session fails at once, not at the step timeout').toBeLessThan(2000);
+        });
+
         test('a dead session fails not.visible at once', async () => {
             const { steps, mock } = deviceSteps(platform, itemTree(), 5000);
             mock.failWith(driverError('invalid session id', 'invalid session id: the session is gone'));

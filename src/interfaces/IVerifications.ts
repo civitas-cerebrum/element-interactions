@@ -63,6 +63,8 @@ export interface IVerifications {
      * Absence of a repository entry: every match of the `fallback` node the
      * repository resolves is hidden or gone within `options.timeout` ms.
      * `options.attachSlice` is the per-node attach wait of that resolution.
+     * A {@link EntryTarget.selecting} chain (`.byText()`) is asserted on its
+     * selection: absent when the match it picks is hidden or none has the text.
      */
     entryAbsence(entry: EntryTarget, options: { timeout: number; attachSlice: number }): Promise<void>;
     text(target: Element, expectedText?: string, options?: TextVerifyOptions & VerifyOptions): Promise<void>;

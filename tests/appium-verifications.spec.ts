@@ -73,6 +73,7 @@ const EXEMPT: Record<string, string> = {
     readText: 'private probe helper',
     allTexts: 'private probe helper',
     anyDisplayed: 'private probe helper behind absence (covered by its CASES row and the fatal-error case)',
+    selectionDisplayed: 'private probe helper behind the absence of a byText chain; covered in platform-paths.spec.ts',
     pollTarget: 'builds the re-resolving handle the other verifications poll; covered in appium-entry.spec.ts',
     visibleWithin: 'the visibility probe; covered in appium-entry.spec.ts',
     probeVisible: 'the visibility probe; covered in appium-entry.spec.ts',

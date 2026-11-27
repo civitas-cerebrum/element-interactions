@@ -135,6 +135,16 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   describe a range no count satisfies now throw at once.
   **Migration:** none for calls whose bounds were all meant. Fix a range whose
   upper bound the count exceeds, and drop the extra bound next to `exactly`.
+- **`verifyAbsence` on a `.byText()` chain asserts on the selection, on web and on a device.**
+  `steps.on(el, page).byText('No such row').verifyAbsence()` (and
+  `steps.verifyAbsence(el, page, { strategy: 'text', text })`) ignored the
+  text and asserted that no match of the whole entry was shown, so it failed
+  while any other item was on screen. It now passes when the match the
+  selection picks is hidden or when no match has the text, and fails while that
+  match is shown. A fatal driver error still fails at once on a device. Other
+  strategy selectors and plain entries keep asserting on every match.
+  **Migration:** to assert that no match of the entry is shown, drop the
+  `.byText()` from the chain: `await steps.on(el, page).verifyAbsence()`.
 
 ### Added
 

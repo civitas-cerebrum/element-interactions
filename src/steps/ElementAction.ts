@@ -783,7 +783,8 @@ export class ElementAction {
      * timeout buy a slow-hydrating primary more room instead of being ignored
      * in favour of a hard-coded constant. A resolved node that matches several
      * elements is asserted on its whole match set: absent only when every
-     * match is hidden.
+     * match is hidden. A `.byText()` chain is asserted on its selection:
+     * absent when the match it picks is hidden or no match has the text.
      *
      * Scoped `findBy*` chains assert on the child locator itself (the stamped
      * scoped name has no repository entry). Resolving the PARENT still waits

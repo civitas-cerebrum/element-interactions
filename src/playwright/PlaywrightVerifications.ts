@@ -180,9 +180,20 @@ export class Verifications implements IVerifications {
      * over two different moments in the page's life, so a perfectly ordinary
      * single-match primary that attached between them made the walks land on
      * different nodes.
+     *
+     * A chain that picks one match by its text (`.byText()`;
+     * {@link EntryTarget.selecting}) is asserted on its selection instead: a
+     * text-filtered locator, hidden when the match it picks is hidden and
+     * when no match has the text.
      */
     async entryAbsence(entry: EntryTarget, options: { timeout: number; attachSlice: number }): Promise<void> {
         const slice = options.attachSlice;
+        if (entry.selecting) {
+            const selected = await entry.resolve(slice);
+            requireWebElement('ElementAction.verifyAbsence', selected);
+            await this.absence(selected, { timeout: options.timeout });
+            return;
+        }
         let element!: WebElement;
         let divergence: Error | undefined;
         for (let attempt = 1; attempt <= ABSENCE_RESOLVE_ATTEMPTS; attempt++) {
