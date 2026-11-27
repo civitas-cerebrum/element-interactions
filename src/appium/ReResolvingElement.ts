@@ -45,10 +45,13 @@ export class ReResolvingElement implements Element {
     /**
      * @param resolve - A fresh resolution of the entry; called on every primitive.
      * @param description - Names the entry in error messages (e.g. `'LoginPage.submit'`).
+     * @param selecting - The resolution picks one match by its text (a `.byText()` chain): a
+     *   failed resolution means "no match" only when it is the text strategy's clean "not found".
      */
     constructor(
         private readonly resolve: () => Promise<Element>,
         readonly description: string = 'a re-resolving element',
+        readonly selecting: boolean = false,
     ) {}
 
     get selector(): string | undefined { return undefined; }
@@ -58,7 +61,7 @@ export class ReResolvingElement implements Element {
     }
 
     private derived(step: (el: Element) => Element): ReResolvingElement {
-        return new ReResolvingElement(async () => step(await this.target()), this.description);
+        return new ReResolvingElement(async () => step(await this.target()), this.description, this.selecting);
     }
 
     action(timeout?: number): ElementChain { return new ElementChain(this, timeout); }

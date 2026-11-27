@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { PlatformElement, PlatformNotSupportedError, isFatalDriverError, type Element, type Platform } from '@civitas-cerebrum/element-repository';
+import { PlatformElement, PlatformNotSupportedError, type Element, type Platform } from '@civitas-cerebrum/element-repository';
 import type { IVerifications, VerifiableState } from '../interfaces/IVerifications';
 import type { EntryTarget } from '../interfaces/IEntryTarget';
 import type { CountVerifyOptions, TextVerifyOptions, VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
@@ -14,6 +14,46 @@ type HtmlOptions = VerifyOptions & { outer?: boolean };
 
 function escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * element-repository's text strategy (`.byText()`) "not found" from a clean
+ * lookup: every pass read every match and none had the text. A lookup that
+ * met a transient driver error (a failed `$$`, a stale text read) ends its
+ * message with `(last driver error: <name>: <message>)` instead, so it does
+ * not end with `not found.`.
+ *
+ * Matched by message: element-repository 0.4.0 throws a plain `Error` here,
+ * with no error class or code to tell a clean miss from a pass cut short.
+ * The wording is element-repository's own, the same as `getByText`'s:
+ * `Element '<name>' on '<page>' with text "<text>" not found.`
+ */
+const CLEAN_TEXT_NOT_FOUND = /^Element '[\s\S]*' on '[\s\S]*' with text "[\s\S]*" not found\.$/;
+
+function isCleanTextNotFound(err: unknown): boolean {
+    return err instanceof Error && CLEAN_TEXT_NOT_FOUND.test(err.message);
+}
+
+/**
+ * The visibility of the match a selecting (`.byText()`) chain picks:
+ * `false` when it is hidden or when a clean pass matches nothing
+ * ({@link isCleanTextNotFound}). Every other error is thrown, a transient
+ * one too, so a partial read never answers "not displayed": a poll tries
+ * again and keeps it as its last error, and a fatal one fails the poll.
+ */
+async function selectionVisible(read: () => Promise<boolean>): Promise<boolean> {
+    try {
+        return await read();
+    } catch (err) {
+        if (isCleanTextNotFound(err)) return false;
+        throw err;
+    }
+}
+
+/** The "not visible" read of a polled target: {@link selectionVisible} for a selecting chain, else a soft read. */
+function notVisibleRead(target: Element): () => Promise<boolean> {
+    if (target instanceof ReResolvingElement && target.selecting) return () => selectionVisible(() => target.isVisible());
+    return () => softRead(() => target.isVisible(), false);
 }
 
 /**
@@ -70,7 +110,7 @@ export class AppiumVerifications implements IVerifications {
     async pollTarget(entry: EntryTarget, collection: boolean = false): Promise<Element> {
         return new ReResolvingElement(() => collection
             ? entry.resolveAll(DEVICE_POLL_ATTACH_MS)
-            : entry.resolve(DEVICE_POLL_ATTACH_MS), entryLabel(entry));
+            : entry.resolve(DEVICE_POLL_ATTACH_MS), entryLabel(entry), !collection && entry.selecting === true);
     }
 
     /** The re-resolving visibility probe; a fatal driver error is thrown, never read as hidden. */
@@ -122,9 +162,11 @@ export class AppiumVerifications implements IVerifications {
      * A chain that picks one match by its text (`.byText()`;
      * {@link EntryTarget.selecting}) is asserted on its selection instead,
      * re-resolved on every poll: absent when the match the selection picks is
-     * hidden or when the selection matches nothing (the strategy's "not
-     * found"), as on web. A fatal driver error still fails at once, and a
-     * resolution that does not answer is never read as an answer.
+     * hidden or when a clean pass of the selection matches nothing (the
+     * strategy's "not found" with no driver error), as on web. A pass cut
+     * short by a transient driver error is not an answer: the poll tries
+     * again. A fatal driver error still fails at once, and a resolution that
+     * does not answer is never read as an answer.
      *
      * The web cross-check (default vs `ALL` resolution landing on different
      * nodes) has no device counterpart: there is no element handle to
@@ -146,20 +188,14 @@ export class AppiumVerifications implements IVerifications {
     }
 
     /**
-     * Whether the match a selecting chain picks is displayed now. A selection
-     * that matches nothing is not displayed, and a transient (non-fatal)
-     * lookup or read error reads as not displayed, matching
-     * {@link anyDisplayed}; a fatal driver error is rethrown.
+     * Whether the match a selecting chain picks is displayed now
+     * ({@link selectionVisible}): not displayed when it is hidden or when a
+     * clean pass of the selection matches nothing. Any other error, a
+     * transient one included, is thrown, so the poll tries again and keeps it
+     * as its last error.
      */
     private async selectionDisplayed(entry: EntryTarget): Promise<boolean> {
-        let element: Element;
-        try {
-            element = await entry.resolve(DEVICE_POLL_ATTACH_MS);
-        } catch (err) {
-            if (isFatalDriverError(err)) throw err;
-            return false;
-        }
-        return softRead(() => element.isVisible(), false);
+        return selectionVisible(async () => (await entry.resolve(DEVICE_POLL_ATTACH_MS)).isVisible());
     }
 
     // ── Text ──
@@ -203,13 +239,16 @@ export class AppiumVerifications implements IVerifications {
      * the whole collection for an un-narrowed one or for an element picked
      * from a set, whose `all()` re-queries its selector), so absence holds only
      * when every match is hidden or gone, as the web family's absence on the
-     * first visible match of a set. A lookup or read that fails transiently
-     * (no such element, stale element) counts as not displayed; a fatal
-     * driver error (dead session, invalid selector) is rethrown, so it can
-     * never pass as "absent".
+     * first visible match of a set. A lookup that finds nothing is not
+     * displayed. A lookup that fails (a failed `$$`) did not see the matches,
+     * so it is not an answer: its error is thrown, and the poll tries again
+     * and keeps it as its last error. A match the lookup returned whose read
+     * then fails transiently (no such element, stale element: it left the
+     * tree) counts as not displayed. A fatal driver error (dead session,
+     * invalid selector) is rethrown, so it can never pass as "absent".
      */
     private async anyDisplayed(target: Element): Promise<boolean> {
-        const matches = await softRead(() => target.all(), [] as Element[]);
+        const matches = await target.all();
         for (const match of matches) {
             if (await softRead(() => match.isVisible(), false)) return true;
         }
@@ -219,8 +258,9 @@ export class AppiumVerifications implements IVerifications {
     /**
      * Passes once no match of the element is displayed (hidden or not in the
      * UI tree). A string is an Appium selector, resolved as a platform
-     * element. A transient lookup failure counts as absent; a fatal driver
-     * error fails the assertion.
+     * element. A failed lookup is retried, never read as absent; a match that
+     * fails to read transiently counts as gone; a fatal driver error fails
+     * the assertion.
      */
     async absence(selectorOrTarget: Element | string, options?: VerifyOptions): Promise<void> {
         const target = typeof selectorOrTarget === 'string'
@@ -257,10 +297,13 @@ export class AppiumVerifications implements IVerifications {
                 // Negated, an element no lookup finds (a selection that matches
                 // nothing, a node not in the tree) is not visible, as web's
                 // `not.toBeVisible()`; a fatal driver error still fails, and a
-                // probe that does not answer is never read as an answer.
+                // probe that does not answer is never read as an answer. A
+                // selecting chain is not visible only on a clean "not found":
+                // a selection pass cut short by a transient driver error is
+                // retried, never read as not visible.
                 // Not negated, the lookup's own reason stays the last error.
                 if (options.negated) {
-                    return this.expectEventually(() => softRead(() => target.isVisible(), false), v => v, 'element to be visible', options);
+                    return this.expectEventually(notVisibleRead(target), v => v, 'element to be visible', options);
                 }
                 return this.expectEventually(() => target.isVisible(), v => v, 'element to be visible', options);
             case 'inViewport':
@@ -268,7 +311,8 @@ export class AppiumVerifications implements IVerifications {
             case 'hidden':
                 // One element (a pick of `nth` / TEXT / ATTRIBUTE answers
                 // `all()` with every match of its selector, so not `anyDisplayed`).
-                return this.expectEventually(() => softRead(() => target.isVisible(), false), v => !v, 'element to be hidden', options);
+                // A selecting chain reads as the negated `visible` above.
+                return this.expectEventually(notVisibleRead(target), v => !v, 'element to be hidden', options);
             case 'attached':
                 return this.expectEventually(() => target.exists(), v => v, 'element to be attached', options);
             case 'focused': {

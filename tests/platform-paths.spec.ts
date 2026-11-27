@@ -492,6 +492,104 @@ for (const platform of DEVICE_PLATFORMS) {
         });
     });
 
+    test.describe(`a byText pass cut short by a transient driver error on ${platform}`, () => {
+        // A pass that met a transient driver error (a failed `$$`, a stale text read) did not see every match:
+        // its "not found" is not an answer, so it never reads as absent or not visible.
+
+        /**
+         * How long an armed failure lasts. Every lookup or read inside it fails, so a probe there cannot heal
+         * itself with a second pass inside its own 1 ms lookup budget; the step's timeout is 600 ms.
+         */
+        const FAILING_MS = 150;
+
+        /** The items lookup `$$('~item')` on the driver throws a stale-element error for {@link FAILING_MS} after each `arm()`. */
+        function failingItemsLookup(mock: ReturnType<typeof mockUiDriver>) {
+            const driver = mock.driver as unknown as Record<string, unknown>;
+            const lookupAll = driver.$$ as (selector: string) => Promise<unknown>;
+            let until = 0;
+            driver.$$ = async (selector: string) => {
+                if (selector === '~item' && Date.now() < until) {
+                    throw driverError('stale element reference', 'stale element reference: the list was redrawn');
+                }
+                return lookupAll(selector);
+            };
+            return { arm: () => { until = Date.now() + FAILING_MS; } };
+        }
+
+        test('a failed $$ for a while, then the shown match: verifyAbsence, not.visible and visible.toBeFalse fail', async () => {
+            const { steps, mock } = deviceSteps(platform, itemTree());
+            const lookup = failingItemsLookup(mock);
+            lookup.arm();
+            const absence = await caught(() => steps.on('items', 'Screen').byText('Green 2').verifyAbsence());
+            expect(absence?.message, 'a shown match is never absent').toMatch(/absent/);
+            lookup.arm();
+            const hidden = await caught(async () => { await steps.on('items', 'Screen').byText('Green 2').not.visible.toBeTrue(); });
+            expect(hidden?.message, 'a shown match is never not visible').toMatch(/not to be true/);
+            lookup.arm();
+            const falsy = await caught(async () => { await steps.on('items', 'Screen').byText('Green 2').visible.toBeFalse(); });
+            expect(falsy?.message, 'a shown match is never read as hidden').toMatch(/to be false/);
+        });
+
+        test('stale text reads of the match for a while: verifyAbsence and not.visible fail while it is shown', async () => {
+            const tree = itemTree();
+            let until = 0;
+            (tree[0]!.children![5] as MockNode).text = async () => {
+                if (Date.now() < until) throw driverError('stale element reference', 'stale element reference: the row was redrawn');
+                return 'Green 2';
+            };
+            const { steps } = deviceSteps(platform, tree);
+            until = Date.now() + FAILING_MS;
+            const absence = await caught(() => steps.on('items', 'Screen').byText('Green 2').verifyAbsence());
+            expect(absence?.message, 'a shown match is never absent').toMatch(/absent/);
+            until = Date.now() + FAILING_MS;
+            const hidden = await caught(async () => { await steps.on('items', 'Screen').byText('Green 2').not.visible.toBeTrue(); });
+            expect(hidden?.message, 'a shown match is never not visible').toMatch(/not to be true/);
+        });
+
+        test('a failed $$ for a while, then a hidden match: the next clean pass reads it as hidden', async () => {
+            const tree = itemTree();
+            (tree[0]!.children![5] as MockNode).visible = false;
+            const { steps, mock } = deviceSteps(platform, tree);
+            const lookup = failingItemsLookup(mock);
+            lookup.arm();
+            await steps.on('items', 'Screen').byText('Green 2').verifyAbsence();
+            lookup.arm();
+            await steps.on('items', 'Screen').byText('Green 2').not.visible.toBeTrue();
+            lookup.arm();
+            await steps.on('items', 'Screen').byText('Green 2').visible.toBeFalse();
+        });
+
+        test('a clean pass that finds no match: absent and not visible', async () => {
+            const { steps } = deviceSteps(platform, itemTree());
+            await steps.on('items', 'Screen').byText('Purple 9').verifyAbsence();
+            await steps.on('items', 'Screen').byText('Purple 9').not.visible.toBeTrue();
+            await steps.on('items', 'Screen').byText('Purple 9').visible.toBeFalse();
+        });
+
+        test('a plain entry: a failed $$ for a while, then the shown items: verifyAbsence fails', async () => {
+            const { steps, mock } = deviceSteps(platform, itemTree());
+            const lookup = failingItemsLookup(mock);
+            lookup.arm();
+            const absence = await caught(() => steps.on('items', 'Screen').verifyAbsence());
+            expect(absence?.message, 'shown items are never absent').toMatch(/absent/);
+            // A clean lookup of hidden items is absent.
+            const hiddenTree = itemTree();
+            for (const item of hiddenTree[0]!.children!) item.visible = false;
+            const hidden = deviceSteps(platform, hiddenTree);
+            failingItemsLookup(hidden.mock).arm();
+            await hidden.steps.on('items', 'Screen').verifyAbsence();
+        });
+
+        test('a failed $$ on every pass never reads as absent: the driver error is the last error', async () => {
+            const { steps, mock } = deviceSteps(platform, itemTree());
+            const driver = mock.driver as unknown as Record<string, unknown>;
+            driver.$$ = async () => { throw driverError('stale element reference', 'stale element reference: the list was redrawn'); };
+            const absence = await caught(() => steps.on('items', 'Screen').byText('Purple 9').verifyAbsence());
+            expect(absence?.message).toMatch(/absent/);
+            expect(absence?.message).toMatch(/last driver error: stale element reference/);
+        });
+    });
+
     test.describe(`verifyCount bounds on ${platform}`, () => {
         const passing: CountVerifyOptions[] = [
             { exactly: 6 }, { greaterThan: 5 }, { greaterThanOrEqual: 6 }, { lessThan: 7 }, { lessThanOrEqual: 6 },
