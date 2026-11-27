@@ -395,13 +395,16 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `steps.on(el, page).byText('Green 2').verifyText('Green 2')` (and a matcher,
   a `satisfy()` snapshot or `verifyState` after `.byText()`) timed out on a
   device when the item was not the first: every poll gave the text strategy a
-  1 ms budget, and element-repository's text lookup stops reading candidates at
-  its deadline, so each poll read only the first item. A `.byText()` chain now
-  gets up to 2 s per poll, and per visibility-probe attempt, to read every
-  candidate, capped at half the step's timeout so a text that matches nothing
-  still fails with `with text "..." not found`, not with an unanswered probe.
-  `.byAttribute()`, `.nth()`, `.random()` and plain entries keep the
-  one-existence-check poll. Web is not affected.
+  1 ms budget, and element-repository's text lookup stopped reading candidates
+  at its deadline, so each poll read only the first item. element-repository
+  0.4.0's text strategy reads every candidate of a pass it has started (the
+  budget only decides whether another pass starts), so every poll, snapshot and
+  visibility-probe attempt keeps its one-check budget and still reads the whole
+  list. A text that matches nothing still fails with `with text "..." not
+  found`. A list whose single read pass takes longer than the step's timeout
+  does not answer within it: the step fails (`did not answer`) and the cut-off
+  pass is never read as "not found", "absent" or "not visible". Web is not
+  affected.
 - **`not.visible` passes on a device for an element no lookup finds.**
   `steps.on(el, page).byText('No such row').not.visible.toBeTrue()` timed out
   on a device: every poll read the element's displayed state, the lookup threw

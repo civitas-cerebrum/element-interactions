@@ -3,7 +3,7 @@ import type { Element } from '@civitas-cerebrum/element-repository';
 import { AppiumFactory } from '../src/appium';
 import { MissingAppIdError } from '../src/appium/AppiumDevice';
 import { ReResolvingElement } from '../src/appium/ReResolvingElement';
-import { DEVICE_POLL_ATTACH_MS, DEVICE_POLL_SELECTION_MS, DEVICE_RESOLVE_SLICE_MS, selectionBudget } from '../src/appium/entry';
+import { DEVICE_POLL_ATTACH_MS, DEVICE_RESOLVE_SLICE_MS } from '../src/appium/entry';
 import { androidStrategy, iosStrategy } from '../src/appium/platform';
 import type { EntryTarget } from '../src/interfaces/IEntryTarget';
 import { PollTimeoutError } from '../src/utils/poll';
@@ -62,19 +62,6 @@ async function caught(call: () => unknown): Promise<unknown> {
     }
     return undefined;
 }
-
-test.describe('selectionBudget', () => {
-    test('is the full selection budget without a usable timeout, else half the timeout, between 1 ms and the budget', () => {
-        expect(DEVICE_POLL_SELECTION_MS).toBe(2000);
-        const cases: Array<[number | undefined, number]> = [
-            [undefined, 2000], [Number.NaN, 2000], [Number.POSITIVE_INFINITY, 2000], [Number.NEGATIVE_INFINITY, 2000],
-            [0, 1], [1, 1], [2, 1], [3, 1], [4, 2], [3999, 1999], [4000, 2000], [4001, 2000], [10000, 2000],
-        ];
-        for (const [timeout, budget] of cases) {
-            expect(selectionBudget(timeout), `selectionBudget(${timeout})`).toBe(budget);
-        }
-    });
-});
 
 for (const platform of DEVICE_PLATFORMS) {
     test.describe(`AppiumVerifications entry methods on ${platform}`, () => {

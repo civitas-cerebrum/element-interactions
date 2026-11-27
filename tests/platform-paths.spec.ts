@@ -82,6 +82,18 @@ function itemTree(readMs = 0): MockNode[] {
     return [{ match: '~column', children: ITEM_LABELS.map((text, i) => ({ match: '~item', text: slow(text), attributes: { name: `item-${i + 1}` } })) }];
 }
 
+/** `count` rows 'Row 1'..'Row <count>' under one entry, each text read taking `readMs`; `shown(i)` (1-based) says whether row i is displayed. */
+function rowTree(count: number, readMs = 0, shown: (i: number) => boolean = () => true): MockNode[] {
+    const slow = (text: string) => async () => {
+        if (readMs > 0) await new Promise(resolve => setTimeout(resolve, readMs));
+        return text;
+    };
+    return [{
+        match: '~column',
+        children: Array.from({ length: count }, (_, i) => ({ match: '~item', text: slow(`Row ${i + 1}`), visible: shown(i + 1), attributes: { name: `row-${i + 1}` } })),
+    }];
+}
+
 /** The six items of {@link itemTree}, but no text read ever answers (a driver that stopped responding to them). */
 function hangingItemTree(): MockNode[] {
     return [{ match: '~column', children: ITEM_LABELS.map(() => ({ match: '~item', text: () => new Promise<string>(() => undefined) })) }];
@@ -301,6 +313,15 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(mock.calls.filter(c => c[0] === 'click'), 'the gate opened and tapped').toHaveLength(1);
         });
 
+        test('a byText match late in a long list is found under polling, by a terminal, a matcher, a snapshot and a probe', async () => {
+            // 100 rows at 10 ms a read: one read pass (~1 s) is far longer than a poll's one-check budget.
+            const { steps } = deviceSteps(platform, rowTree(100, 10), 5000);
+            await steps.on('items', 'Screen').byText('Row 100').verifyText('Row 100');
+            await steps.on('items', 'Screen').byText('Row 100').text.toBe('Row 100');
+            await steps.on('items', 'Screen').byText('Row 100').satisfy(el => el.text === 'Row 100');
+            expect(await steps.on('items', 'Screen').byText('Row 100').isVisible({ timeout: 4000 })).toBe(true);
+        });
+
         test('a byText chain with no matching item still fails at its own timeout', async () => {
             const { steps } = deviceSteps(platform, itemTree(READ_MS), 3000);
             const { error, elapsed } = await timed(() => steps.on('items', 'Screen').timeout(400).byText('Purple').verifyText('Purple'));
@@ -312,13 +333,12 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(elapsed, 'bounded by the matcher timeout, not by a selection budget').toBeLessThan(400 + 600);
         });
 
-        test('a matcher-level .timeout(ms) caps the byText selection budget, not only the chain timeout', async () => {
+        test('a matcher-level .timeout(ms) bounds a byText chain, not only the chain timeout', async () => {
             // The chain keeps the 3 s step timeout; only the matcher says 400 ms.
             const { steps } = deviceSteps(platform, itemTree(READ_MS), 3000);
             const { error, elapsed } = await timed(async () => { await steps.on('items', 'Screen').byText('Purple').text.timeout(400).toBe('Purple'); });
             expect(error, 'no item has the text').toBeInstanceOf(Error);
-            // The strategy's reason is there: its budget (200 ms) fits in the matcher's 400 ms. A budget fitted
-            // to the 3 s chain timeout (1.5 s) would outlast the matcher, and no probe would have answered.
+            // The strategy's reason is there: one read pass (~90 ms) fits in the matcher's 400 ms.
             expect(error?.message).toMatch(/timed out after 400 ms/);
             expect(error?.message).toMatch(/Last error: Element 'items' on 'Screen' with text "Purple" not found/);
             expect(elapsed).toBeGreaterThanOrEqual(390);

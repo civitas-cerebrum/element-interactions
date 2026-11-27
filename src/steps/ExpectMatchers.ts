@@ -17,15 +17,11 @@ export interface ExpectContext {
     readonly timeout: number;
     readonly conditionalVisible: boolean;
     readonly visibilityTimeout: number;
-    /**
-     * Resolves the element with the current strategy (may be `.first()`-narrowed).
-     * `timeout` is the matcher's own, so a device family can fit a resolution in it.
-     */
-    resolveElement(timeout?: number): Promise<Element>;
+    /** Resolves the element with the current strategy (may be `.first()`-narrowed). */
+    resolveElement(): Promise<Element>;
     /** Resolves the element with the ALL strategy — no narrowing, used by count matchers. */
     resolveAll(): Promise<Element>;
-    /** A snapshot of the element; `timeout` is the matcher's own, as for {@link resolveElement}. */
-    captureSnapshot(timeout?: number): Promise<ElementSnapshot>;
+    captureSnapshot(): Promise<ElementSnapshot>;
     /** The family's verifications — the single implementation source for all matcher assertions. */
     readonly verify: IVerifications;
     /** The platform the context acts on. Omitted means `'web'`. */
@@ -56,7 +52,7 @@ async function honorIfVisibleGate(ctx: ExpectContext): Promise<boolean> {
     // rethrows a fatal driver error instead of skipping the assertion.
     if (ctx.probeVisible) return ctx.probeVisible(ctx.visibilityTimeout);
     try {
-        const element = await ctx.resolveElement(ctx.visibilityTimeout);
+        const element = await ctx.resolveElement();
         await element.waitFor({ state: 'visible', timeout: ctx.visibilityTimeout });
         return true;
     } catch {
@@ -88,7 +84,7 @@ async function runWithElement(
     ctx: ExpectContext,
     body: (el: Element) => Promise<void>,
     messageOverride: string | undefined,
-    resolve: (ctx: ExpectContext) => Promise<Element> = c => c.resolveElement(c.timeout),
+    resolve: (ctx: ExpectContext) => Promise<Element> = c => c.resolveElement(),
 ): Promise<void> {
     await runViaVerify(ctx, async () => {
         const el = await resolve(ctx);
@@ -112,7 +108,7 @@ async function assertPredicate(
 
     while (Date.now() < deadline) {
         try {
-            lastSnapshot = await ctx.captureSnapshot(ctx.timeout);
+            lastSnapshot = await ctx.captureSnapshot();
             if (predicate(lastSnapshot) !== negated) return;
         } catch (err) {
             // A platform refusal or a fatal driver error (dead session,
