@@ -490,6 +490,20 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   the step failed. A probe that runs out of time now ends the poll at once
   (it was already given all the time left); the verdict and the message are
   unchanged.
+- **A device check that times out no longer holds up the next test with its
+  leftover lookup.** A check that timed out during a slow lookup pass (a
+  `.byText()` pass over a long list) left the pass running; the next test's
+  relaunch made every element it held stale, WebdriverIO looked each one up
+  again, and that traffic (measured on the iOS simulator: about 65 s, 53 list
+  lookups) left the next test's own checks without an answer. The platform
+  fixture now waits for such lookups after the test body, before the failure
+  evidence and the next relaunch, and again before each relaunch and at
+  worker teardown, so each one ends on the app launch it started on. **A
+  failing device test may take up to one lookup pass longer.** The wait is
+  capped at 10000 ms; lookups still running then are named in a console
+  warning and a `warning` annotation on the test, and the run carries on. The
+  wait never fails a test nor replaces its error. A later element-repository
+  version that can stop a started lookup lets the check end it at once.
 - **A negated count range on a device is worded as on web**: `Expected count
   not > 5`, no longer `Expected NOT count > 5`.
 

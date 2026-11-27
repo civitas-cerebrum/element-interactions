@@ -268,6 +268,7 @@ export class AppiumInteractions implements IInteractions {
             timeout: this.timeout,
             message: `No listed element matched ${JSON.stringify(options)}`,
             noAnswerHint: ELEMENT_NO_ANSWER_HINT,
+            scope: this.driver,
         }) as Element;
         await this.utils.waitForState(matched, 'visible', remainingUntil(deadline));
         return childSelector === undefined ? matched : matched.locateChild(childSelector);

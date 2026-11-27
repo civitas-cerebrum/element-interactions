@@ -24,6 +24,89 @@ export interface PollOptions {
      * Never used when a probe answered, with a value or an error.
      */
     noAnswerHint?: string;
+    /**
+     * What the probes run on (the device session's driver). A probe this poll
+     * abandons is recorded under it until it settles, so whoever owns the
+     * session can wait for it with {@link drainAbandonedProbes} before the
+     * app is relaunched or the session is closed. Without a scope nothing is
+     * recorded.
+     */
+    scope?: object;
+}
+
+/** A probe a poll gave up on, still running. */
+interface AbandonedProbe {
+    /** When it was abandoned (epoch ms). */
+    readonly since: number;
+    /** Settles (never rejects) when the probe does. */
+    readonly settled: Promise<void>;
+}
+
+/** The abandoned probes still running, per scope. */
+const abandoned = new WeakMap<object, Set<AbandonedProbe>>();
+
+function recordAbandoned(scope: object, running: Promise<unknown>): void {
+    let set = abandoned.get(scope);
+    if (!set) {
+        set = new Set();
+        abandoned.set(scope, set);
+    }
+    const owner = set;
+    const entry: AbandonedProbe = {
+        since: Date.now(),
+        settled: running.then(() => undefined, () => undefined).then(() => { owner.delete(entry); }),
+    };
+    owner.add(entry);
+}
+
+/** How many probes abandoned under `scope` are still running. */
+export function abandonedProbeCount(scope: object): number {
+    return abandoned.get(scope)?.size ?? 0;
+}
+
+/** What {@link drainAbandonedProbes} found. */
+export interface DrainResult {
+    /** Abandoned probes that settled while the drain waited. */
+    drained: number;
+    /** Abandoned probes still running when the drain gave up at its cap. */
+    stillRunning: number;
+    /** How long the drain waited, in ms (0 when nothing was running). */
+    waitedMs: number;
+    /** How long the oldest probe still running has been running since it was abandoned, in ms (0 when none is). */
+    longestRunningMs: number;
+}
+
+/**
+ * Waits until every probe abandoned under `scope` has settled, or `capMs`
+ * passes. Never throws, and never cancels anything: a probe still running
+ * at the cap keeps running and stays recorded.
+ */
+export async function drainAbandonedProbes(scope: object, capMs: number): Promise<DrainResult> {
+    const set = abandoned.get(scope);
+    if (!set || set.size === 0) return { drained: 0, stillRunning: 0, waitedMs: 0, longestRunningMs: 0 };
+    const started = Date.now();
+    const stop = started + Math.max(0, capMs);
+    const seen = new Set<AbandonedProbe>();
+    // A probe abandoned while the drain waits is waited for too.
+    while (set.size > 0) {
+        const left = stop - Date.now();
+        if (left <= 0) break;
+        const batch = [...set];
+        batch.forEach(p => seen.add(p));
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const capped = new Promise<'cap'>(resolve => { timer = setTimeout(() => resolve('cap'), left); });
+        const outcome = await Promise.race([Promise.all(batch.map(p => p.settled)).then(() => 'done' as const), capped]);
+        clearTimeout(timer);
+        if (outcome === 'cap') break;
+    }
+    const now = Date.now();
+    const running = [...set];
+    return {
+        drained: [...seen].filter(p => !set.has(p)).length,
+        stillRunning: running.length,
+        waitedMs: now - started,
+        longestRunningMs: running.length === 0 ? 0 : now - Math.min(...running.map(p => p.since)),
+    };
 }
 
 /** Leads the timeout message of a poll in which no probe answered at all. */
@@ -78,8 +161,9 @@ export class ProbeTimeoutError extends Error {
  * Runs one probe, raced against `budget` ms. The timer is always cleared, so
  * nothing keeps the process alive; an abandoned probe's late rejection is
  * swallowed (it has already been replaced by a {@link ProbeTimeoutError}).
+ * With a `scope`, an abandoned probe is recorded under it until it settles.
  */
-async function boundedProbe<T>(probe: () => Promise<T> | T, budget: number): Promise<T> {
+async function boundedProbe<T>(probe: () => Promise<T> | T, budget: number, scope: object | undefined): Promise<T> {
     const running = Promise.resolve().then(probe);
     running.catch(() => undefined);
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -88,6 +172,9 @@ async function boundedProbe<T>(probe: () => Promise<T> | T, budget: number): Pro
     });
     try {
         return await Promise.race([running, expired]);
+    } catch (error) {
+        if (scope && error instanceof ProbeTimeoutError) recordAbandoned(scope, running);
+        throw error;
     } finally {
         clearTimeout(timer);
     }
@@ -119,6 +206,11 @@ async function boundedProbe<T>(probe: () => Promise<T> | T, budget: number): Pro
  *   probe is NOT cancelled. Its driver command keeps running in the
  *   background and may still complete after `pollUntil` moved on or returned,
  *   so a probe that changes the app (a click, a swipe) could act twice or late.
+ *   With `options.scope` (the device polls pass their driver) the abandoned
+ *   probe is recorded under it, and {@link drainAbandonedProbes} waits for
+ *   it: the platform fixture drains the session's driver after each test,
+ *   before the failure evidence and the next relaunch, so the lookup ends on
+ *   the app launch it started on.
  * - On timeout it throws {@link PollTimeoutError}, whose message names what
  *   was awaited, the timeout, the last observed value and the last error.
  *   When a probe answered and the probes after it only ran out of time, the
@@ -161,7 +253,7 @@ export async function pollUntil<T>(
         let probed = false;
         try {
             // Never a zero budget, even with `interval: 0` at the deadline.
-            const value = await boundedProbe(probe, Math.max(deadline - Date.now(), interval, 1));
+            const value = await boundedProbe(probe, Math.max(deadline - Date.now(), interval, 1), options.scope);
             probed = true;
             hasValue = true;
             lastValue = value;

@@ -30,6 +30,7 @@ import { prepareSession, RELAUNCH_TIMEOUT_MS, resolveStartTimeout, START_TIMEOUT
 import type { ServerOptions, SessionOptions, SessionProvider, SessionStartContext } from '../session/types';
 import { strategyFor } from '../appium/platform';
 import { PlatformInteractions } from './PlatformInteractions';
+import { drainAbandonedProbes } from '../utils/poll';
 
 type StepFixture = {
     /**
@@ -537,6 +538,12 @@ function webOnlyOptionsGiven(options: BaseFixtureOptions | undefined): string[] 
  * throw `PlatformNotSupportedError`. A failed test gets the device screenshot
  * (`failure-screenshot`, image/png) and the page source (`page-source`,
  * text/xml) attached.
+ * A lookup a timed-out check left running (a `.byText()` pass cannot be
+ * stopped) is waited for after the body, before that evidence and before the
+ * next relaunch, so a failing device test may take up to one lookup pass
+ * longer; the wait is capped ({@link ABANDONED_LOOKUP_DRAIN_MS}), warns and
+ * annotates the test when lookups are still running at the cap, and never
+ * fails a test nor replaces its error (see {@link drainAbandonedLookups}).
  *
  * @param baseTest - The Playwright `test` (or an already-extended test) to build on.
  * @param locatorPath - Absolute or project-relative path to `page-repository.json`.
@@ -683,6 +690,8 @@ function platformFixture(
                 }
                 await use({ driver, prepared, startError });
             } finally {
+                // Let a lookup a check abandoned end before the session closes. Never throws.
+                await drainAbandonedLookups(driver, 'at worker teardown');
                 // Never throws: a failing or hanging stop must not hide an
                 // onSessionStarted / test error, nor stall the worker teardown.
                 await stopSession(provider, driver);
@@ -690,16 +699,24 @@ function platformFixture(
         }, { scope: 'worker', timeout: startTimeout }],
 
         // Per test: relaunch the app before it, attach the evidence after a failure.
+        // A lookup a timed-out check abandoned is waited for (capped, never
+        // throwing) after the body, before the evidence and the next relaunch,
+        // so it ends on the launch it started on.
         _eiPlatformTest: [async ({ _eiPlatformSession }, use, testInfo) => {
             const { driver, prepared, startError } = _eiPlatformSession;
             try {
                 if (startError !== undefined) throw startError;
-                if (prepared.reset === 'relaunch') await relaunchApp(driver, platform, prepared);
+                if (prepared.reset === 'relaunch') {
+                    // Normally drained already after the previous test; this catches one still running past its cap.
+                    await drainAbandonedLookups(driver, 'before the relaunch', testInfo);
+                    await relaunchApp(driver, platform, prepared);
+                }
             } catch (error) {
                 await attachSetupEvidence(driver, testInfo, error, platform, prepared.appId, screenshotEnabled);
                 throw error;
             }
             await use();
+            await drainAbandonedLookups(driver, 'after the test', testInfo);
             if (testFailed(testInfo)) {
                 await attachPlatformEvidence(driver, testInfo, screenshotEnabled);
             }
@@ -941,6 +958,56 @@ export async function attachPlatformEvidence(
 
 /** How long closing the worker's session may take before it is given up, in ms. */
 export const STOP_TIMEOUT_MS = EVIDENCE_TIMEOUT_MS;
+
+/**
+ * How long the platform fixture waits for the device lookups a timed-out
+ * check left running, in ms (see {@link drainAbandonedLookups}).
+ *
+ * One `.byText()` pass, the longest lookup a check abandons, measured about
+ * 3.7 s for 16 cells on the iOS simulator and 3.05 to 3.57 s cold for 11
+ * cells on a real Android phone. 10 s holds one such pass with a margin of
+ * more than 2.5x for a longer list or a slower device, and stays below the
+ * 15 s default relaunch budget that follows it.
+ */
+export const ABANDONED_LOOKUP_DRAIN_MS = 10_000;
+
+/**
+ * Waits, up to `capMs`, for the device lookups a check gave up on to finish
+ * (`drainAbandonedProbes` on the session's driver).
+ *
+ * A check that times out while one of its lookups is still running (a
+ * `.byText()` pass reading a long list) cannot cancel it: the lookup keeps
+ * sending driver commands. Waiting here lets it end on the app launch it
+ * started on, before the failure evidence and the next relaunch; after a
+ * relaunch every element it holds would be stale, and WebdriverIO would find
+ * each one again with a whole new lookup, delaying the next test.
+ *
+ * Never throws, so it cannot replace the test's own error or fail a passing
+ * test. When lookups are still running at the cap, it prints a warning and
+ * adds a `warning` annotation to the test (when given) naming how many and
+ * for how long, then carries on.
+ *
+ * @param when - Where the fixture is, for the warning (e.g. `'after the test'`).
+ * @internal Exported for the tests; not part of the package entry point.
+ */
+export async function drainAbandonedLookups(
+    driver: WebdriverIO.Browser,
+    when: string,
+    testInfo?: Pick<TestInfo, 'annotations'>,
+    capMs: number = ABANDONED_LOOKUP_DRAIN_MS,
+): Promise<void> {
+    try {
+        const result = await drainAbandonedProbes(driver, capMs);
+        if (result.stillRunning === 0) return;
+        const message = `${result.stillRunning} device lookup(s) abandoned by a timed-out check still running ${when}, `
+            + `after waiting ${result.waitedMs} ms (the oldest for ${result.longestRunningMs} ms); carrying on. `
+            + 'They may still send driver commands to the device.';
+        console.warn(`[element-interactions] ${message}`);
+        testInfo?.annotations.push({ type: 'warning', description: message });
+    } catch (error) {
+        log.warn('Could not wait for the abandoned device lookups: %s', error instanceof Error ? error.message : String(error));
+    }
+}
 
 /**
  * Closes the worker's session at teardown. Best-effort, like the evidence: a

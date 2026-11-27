@@ -52,24 +52,26 @@ const names = (r: JsonResult | undefined) => (r?.attachments ?? [])
     .map(a => `${a.name} ${a.contentType}`).sort();
 
 /** The tests the nested run is built to end unexpectedly (so it exits 1); every other one ends as expected. */
-const UNEXPECTED = ['evidence errors never mask the failure', 'fails and gets evidence', 'unexpected pass under test.fail() gets evidence'];
+const MAIN_UNEXPECTED = ['evidence errors never mask the failure', 'fails and gets evidence', 'unexpected pass under test.fail() gets evidence'];
+const DRAIN_FAILING = 'drain: a failing test keeps its own error, and its lookup ends before the evidence';
+const UNEXPECTED = [...MAIN_UNEXPECTED, DRAIN_FAILING].sort();
 
 test('the nested run ends unexpectedly exactly where it is built to', () => {
-    expect(bySpec.size).toBe(21);
+    expect(bySpec.size).toBe(23);
     expect([...outcome].filter(([, status]) => status !== 'expected').map(([title]) => title).sort()).toEqual(UNEXPECTED);
     expect([...outcome].filter(([, status]) => status === 'unexpected').map(([title]) => title).sort()).toEqual(UNEXPECTED);
     expect(exitCode).toBe(1);
 });
 
 /** Lifecycle events of the main ios session (the labelled sessions of other files left out). */
-const mainEvents = () => events.filter(e => !/^(hook-throws|stop-throws|macos|foreground|foreground-never|foreground-dead|reset-none|relaunch-retry|setup-evidence|setup-evidence-dead|start-timeout) /.test(e));
+const mainEvents = () => events.filter(e => !/^(hook-throws|stop-throws|macos|foreground|foreground-never|foreground-dead|reset-none|relaunch-retry|setup-evidence|setup-evidence-dead|start-timeout|drain) /.test(e));
 
 test('one session per worker: started once, stopped once at worker teardown, relaunch before every test', () => {
     const main = mainEvents();
     // Playwright replaces the worker after each unexpected outcome: one worker
     // for the first tests, then one more after each of the three unexpected ones.
     const lifecycle = main.filter(e => e === 'start' || e === 'stop');
-    expect(lifecycle).toEqual(Array.from({ length: 1 + UNEXPECTED.length }, () => ['start', 'stop']).flat());
+    expect(lifecycle).toEqual(Array.from({ length: 1 + MAIN_UNEXPECTED.length }, () => ['start', 'stop']).flat());
     expect(main.at(-1)).toBe('stop');
     // Eight platform tests, each preceded by terminate + activate.
     expect(main.filter(e => e === 'execute mobile: terminateApp')).toHaveLength(8);
@@ -262,4 +264,23 @@ test('a session start that never answers fails with our error before the fixture
     expect(message).not.toContain('someone');
     expect(message).not.toContain('timeout of 1000ms exceeded');
     expect(labelled('start-timeout')).toEqual(['start']);
+});
+
+test('drain: a lookup a check abandoned ends before the next relaunch and before the evidence; the test keeps its own error', () => {
+    const passing = 'drain: a passing test that left a lookup running lets it end before the next relaunch';
+    expect(outcome.get(passing)).toBe('expected');
+    expect(outcome.get(DRAIN_FAILING)).toBe('unexpected');
+    // The failing test's own poll error, not anything from the drain.
+    expect(plain(bySpec.get(DRAIN_FAILING))).toContain('drain check lookup 2: timed out after 20 ms.');
+    expect(names(bySpec.get(DRAIN_FAILING))).toEqual(['failure-screenshot image/png', 'page-source text/xml']);
+    // Only the order matters: the queries of the foreground wait are left out.
+    const seen = labelled('drain').filter(e => /^(start|stop|body \d|lookup \d end|screenshot|execute mobile: (terminate|activate)App)$/.test(e));
+    expect(seen).toEqual([
+        'start',
+        'execute mobile: terminateApp', 'execute mobile: activateApp',
+        'body 1', 'lookup 1 end',
+        'execute mobile: terminateApp', 'execute mobile: activateApp',
+        'body 2', 'lookup 2 end', 'screenshot',
+        'stop',
+    ]);
 });

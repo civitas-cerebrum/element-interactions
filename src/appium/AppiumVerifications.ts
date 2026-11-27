@@ -109,6 +109,7 @@ export class AppiumVerifications implements IVerifications {
             message: options?.errorMessage ? `${options.errorMessage} (${expectation})` : expectation,
             lastValueMeaning,
             noAnswerHint: ELEMENT_NO_ANSWER_HINT,
+            scope: this.driver,
         });
     }
 
@@ -157,7 +158,7 @@ export class AppiumVerifications implements IVerifications {
                     if (await softRead(() => match.isVisible(), false)) return true;
                 }
                 return false;
-            }, visible => visible, { timeout, noAnswerHint: ELEMENT_NO_ANSWER_HINT });
+            }, visible => visible, { timeout, noAnswerHint: ELEMENT_NO_ANSWER_HINT, scope: this.driver });
         } catch (err) {
             if (!(err instanceof PollTimeoutError)) throw err;
             const lead = `verifyPresence: ${entryLabel(entry)} is a list entry ("list": true) — expected at least one visible match within ${timeout}ms`;
@@ -437,6 +438,7 @@ export class AppiumVerifications implements IVerifications {
         await pollUntil(async () => (last = await target.count()), n => countMismatch(options, n, negated) === undefined, {
             timeout: verifyOptions?.timeout ?? this.timeout,
             noAnswerHint: ELEMENT_NO_ANSWER_HINT,
+            scope: this.driver,
             // Names the bound the last count broke: "... (Expected count > 1 and < 3); 6 is not < 3".
             message: () => {
                 const why = last === undefined ? undefined : countMismatch(options, last, negated);

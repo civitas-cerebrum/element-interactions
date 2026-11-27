@@ -180,7 +180,7 @@ export class AppiumDevice implements IDevice {
             await pollUntil(
                 () => this.strategy.queryAppState(this.driver, id),
                 state => state === APP_STATE_FOREGROUND,
-                { timeout },
+                { timeout, scope: this.driver },
             );
         } catch (error) {
             if (!(error instanceof PollTimeoutError)) throw error;
