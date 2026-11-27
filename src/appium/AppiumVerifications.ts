@@ -4,9 +4,9 @@ import type { IVerifications, VerifiableState } from '../interfaces/IVerificatio
 import type { EntryTarget } from '../interfaces/IEntryTarget';
 import type { CountVerifyOptions, TextVerifyOptions, VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
 import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
-import { describeValue, NO_ANSWER_LEAD, pollUntil, PollTimeoutError, softRead } from '../utils/poll';
+import { describeValue, NO_ANSWER_LEAD, pollUntil, PollTimeoutError, softRead, stopIfAborted, type PollProbe } from '../utils/poll';
 import { webOnly } from './unsupported';
-import { ReResolvingElement } from './ReResolvingElement';
+import { ReResolvingElement, withProbeSignal } from './ReResolvingElement';
 import { DEVICE_POLL_ATTACH_MS, ELEMENT_NO_ANSWER_HINT, entryLabel, probeVisibleOnDevice } from './entry';
 import { countMismatch, describeCountOptions, validateCountOptions } from '../utils/countRange';
 
@@ -57,9 +57,14 @@ async function selectionVisible(read: () => Promise<boolean>): Promise<boolean> 
 }
 
 /** The "not visible" read of a polled target: {@link selectionVisible} for a selecting chain, else a soft read. */
-function notVisibleRead(target: Element): () => Promise<boolean> {
-    if (target instanceof ReResolvingElement && target.selecting) return () => selectionVisible(() => target.isVisible());
-    return () => softRead(() => target.isVisible(), false);
+function notVisibleRead(target: Element): PollProbe<boolean> {
+    if (target instanceof ReResolvingElement && target.selecting) return signal => selectionVisible(() => target.withSignal(signal).isVisible());
+    return signal => softRead(() => withProbeSignal(target, signal).isVisible(), false);
+}
+
+/** A probe that reads `target` with `read`, the probe's signal bound to it ({@link withProbeSignal}). */
+function reading<T>(target: Element, read: (element: Element) => Promise<T>): PollProbe<T> {
+    return signal => read(withProbeSignal(target, signal));
 }
 
 /**
@@ -78,6 +83,12 @@ const SHOWN_ON_LAST_POLL = (value: unknown): string | undefined =>
  * with the last observed value. `negated` inverts the condition;
  * `errorMessage` leads the failure message. Web-only assertions throw
  * `PlatformNotSupportedError(method, platform)`.
+ *
+ * Every probe passes the poll's abort signal to the repository lookups it
+ * makes (through {@link ReResolvingElement.withSignal} and the entry's
+ * resolvers) and checks it between its own reads, so a probe the poll gave
+ * up on starts no driver call after that. A read already running on an
+ * element finishes: a resolved element does not carry the signal.
  */
 export class AppiumVerifications implements IVerifications {
     constructor(
@@ -96,7 +107,7 @@ export class AppiumVerifications implements IVerifications {
      * `lastValueMeaning` words the last answered value in the timeout message.
      */
     private async expectEventually<T>(
-        probe: () => Promise<T>,
+        probe: PollProbe<T>,
         passes: (value: T) => boolean,
         describe: string,
         options?: VerifyOptions,
@@ -113,8 +124,8 @@ export class AppiumVerifications implements IVerifications {
         });
     }
 
-    private readText(target: Element): () => Promise<string> {
-        return async () => (await target.textContent()) ?? '';
+    private readText(target: Element): PollProbe<string> {
+        return reading(target, async element => (await element.textContent()) ?? '');
     }
 
     // ── Repository entries (fluent chains) ──
@@ -128,9 +139,9 @@ export class AppiumVerifications implements IVerifications {
      * has started, so one poll still finds a later item.
      */
     async pollTarget(entry: EntryTarget, collection: boolean = false): Promise<Element> {
-        return new ReResolvingElement(() => collection
-            ? entry.resolveAll(DEVICE_POLL_ATTACH_MS)
-            : entry.resolve(DEVICE_POLL_ATTACH_MS), entryLabel(entry), !collection && entry.selecting === true);
+        return new ReResolvingElement(signal => collection
+            ? entry.resolveAll(DEVICE_POLL_ATTACH_MS, signal)
+            : entry.resolve(DEVICE_POLL_ATTACH_MS, signal), entryLabel(entry), !collection && entry.selecting === true);
     }
 
     /** The re-resolving visibility probe; a fatal driver error is thrown, never read as hidden. */
@@ -151,10 +162,13 @@ export class AppiumVerifications implements IVerifications {
     async listPresence(entry: EntryTarget, timeout: number): Promise<void> {
         let lastCount = 0;
         try {
-            await pollUntil(async () => {
-                const matches = await (await entry.resolveAll(DEVICE_POLL_ATTACH_MS)).all();
+            await pollUntil(async signal => {
+                const all = await entry.resolveAll(DEVICE_POLL_ATTACH_MS, signal);
+                stopIfAborted(signal, `the matches of ${entryLabel(entry)}`);
+                const matches = await all.all();
                 lastCount = matches.length;
                 for (const match of matches) {
+                    stopIfAborted(signal, `a visibility read of ${entryLabel(entry)}`);
                     if (await softRead(() => match.isVisible(), false)) return true;
                 }
                 return false;
@@ -196,7 +210,7 @@ export class AppiumVerifications implements IVerifications {
     async entryAbsence(entry: EntryTarget, options: { timeout: number; attachSlice: number }): Promise<void> {
         if (entry.selecting) {
             await this.expectEventually(
-                () => this.selectionDisplayed(entry),
+                signal => this.selectionDisplayed(entry, signal),
                 visible => !visible,
                 'element to be absent (not displayed)',
                 { timeout: options.timeout },
@@ -215,8 +229,12 @@ export class AppiumVerifications implements IVerifications {
      * transient one included, is thrown, so the poll tries again and keeps it
      * as its last error.
      */
-    private async selectionDisplayed(entry: EntryTarget): Promise<boolean> {
-        return selectionVisible(async () => (await entry.resolve(DEVICE_POLL_ATTACH_MS)).isVisible());
+    private async selectionDisplayed(entry: EntryTarget, signal: AbortSignal): Promise<boolean> {
+        return selectionVisible(async () => {
+            const match = await entry.resolve(DEVICE_POLL_ATTACH_MS, signal);
+            stopIfAborted(signal, `a visibility read of ${entryLabel(entry)}`);
+            return match.isVisible();
+        });
     }
 
     // ── Text ──
@@ -251,7 +269,7 @@ export class AppiumVerifications implements IVerifications {
     // ── Presence and state ──
 
     async presence(target: Element, options?: VerifyOptions): Promise<void> {
-        await this.expectEventually(() => target.isVisible(), v => v, 'element to be displayed', options, SHOWN_ON_LAST_POLL);
+        await this.expectEventually(reading(target, e => e.isVisible()), v => v, 'element to be displayed', options, SHOWN_ON_LAST_POLL);
     }
 
     /**
@@ -269,9 +287,10 @@ export class AppiumVerifications implements IVerifications {
      * session, invalid selector) fails the poll at once, so it can never
      * pass as "absent".
      */
-    private async anyDisplayed(target: Element): Promise<boolean> {
-        const matches = await target.all();
+    private async anyDisplayed(target: Element, signal: AbortSignal): Promise<boolean> {
+        const matches = await withProbeSignal(target, signal).all();
         for (const match of matches) {
+            stopIfAborted(signal, 'a visibility read of a match');
             if (await match.isVisible()) return true;
         }
         return false;
@@ -297,7 +316,7 @@ export class AppiumVerifications implements IVerifications {
             ? new PlatformElement(this.driver, selectorOrTarget, undefined, options?.timeout ?? this.timeout, { platform: this.platform })
             : selectorOrTarget;
         await this.expectEventually(
-            () => this.anyDisplayed(target),
+            signal => this.anyDisplayed(target, signal),
             visible => !visible,
             'element to be absent (not displayed)',
             options,
@@ -319,11 +338,11 @@ export class AppiumVerifications implements IVerifications {
         switch (state) {
             case 'enabled':
             case 'editable':
-                return this.expectEventually(() => target.isEnabled(), v => v, `element to be ${state}`, options);
+                return this.expectEventually(reading(target, e => e.isEnabled()), v => v, `element to be ${state}`, options);
             case 'disabled':
-                return this.expectEventually(() => target.isEnabled(), v => !v, 'element to be disabled', options);
+                return this.expectEventually(reading(target, e => e.isEnabled()), v => !v, 'element to be disabled', options);
             case 'checked':
-                return this.expectEventually(() => target.isChecked(), v => v, 'element to be checked', options);
+                return this.expectEventually(reading(target, e => e.isChecked()), v => v, 'element to be checked', options);
             case 'visible':
                 // Negated, an element no lookup finds (a selection that matches
                 // nothing, a node not in the tree) is not visible, as web's
@@ -336,21 +355,21 @@ export class AppiumVerifications implements IVerifications {
                 if (options.negated) {
                     return this.expectEventually(notVisibleRead(target), v => v, 'element to be visible', options, SHOWN_ON_LAST_POLL);
                 }
-                return this.expectEventually(() => target.isVisible(), v => v, 'element to be visible', options, SHOWN_ON_LAST_POLL);
+                return this.expectEventually(reading(target, e => e.isVisible()), v => v, 'element to be visible', options, SHOWN_ON_LAST_POLL);
             case 'inViewport':
-                return this.expectEventually(() => target.isVisible(), v => v, 'element to be inViewport', options, SHOWN_ON_LAST_POLL);
+                return this.expectEventually(reading(target, e => e.isVisible()), v => v, 'element to be inViewport', options, SHOWN_ON_LAST_POLL);
             case 'hidden':
                 // One element (a pick of `nth` / TEXT / ATTRIBUTE answers
                 // `all()` with every match of its selector, so not `anyDisplayed`).
                 // A selecting chain reads as the negated `visible` above.
                 return this.expectEventually(notVisibleRead(target), v => !v, 'element to be hidden', options, SHOWN_ON_LAST_POLL);
             case 'attached':
-                return this.expectEventually(() => target.exists(), v => v, 'element to be attached', options);
+                return this.expectEventually(reading(target, e => e.exists()), v => v, 'element to be attached', options);
             case 'focused': {
                 const attribute = this.strategy.focusedAttribute;
                 if (!attribute) throw new PlatformNotSupportedError("state('focused')", this.platform);
                 return this.expectEventually(
-                    async () => target.getAttribute(attribute),
+                    reading(target, e => e.getAttribute(attribute)),
                     v => v === 'true',
                     'element to be focused',
                     options,
@@ -364,38 +383,38 @@ export class AppiumVerifications implements IVerifications {
     // ── Attributes ──
 
     async attribute(target: Element, attributeName: string, expectedValue: string, options?: VerifyOptions): Promise<void> {
-        await this.expectEventually(() => target.getAttribute(attributeName), v => v === expectedValue,
+        await this.expectEventually(reading(target, e => e.getAttribute(attributeName)), v => v === expectedValue,
             `attribute "${attributeName}" to be ${describeValue(expectedValue)}`, options);
     }
 
     async attributeContains(target: Element, attributeName: string, substring: string, options?: VerifyOptions): Promise<void> {
-        await this.expectEventually(() => target.getAttribute(attributeName), v => v !== null && v.includes(substring),
+        await this.expectEventually(reading(target, e => e.getAttribute(attributeName)), v => v !== null && v.includes(substring),
             `attribute "${attributeName}" to contain ${describeValue(substring)}`, options);
     }
 
     async attributeMatches(target: Element, attributeName: string, regex: RegExp, options?: VerifyOptions): Promise<void> {
-        await this.expectEventually(() => target.getAttribute(attributeName),
+        await this.expectEventually(reading(target, e => e.getAttribute(attributeName)),
             v => v !== null && new RegExp(regex.source, regex.flags).test(v),
             `attribute "${attributeName}" to match ${regex}`, options);
     }
 
     async hasAttribute(target: Element, attributeName: string, options?: VerifyOptions): Promise<void> {
-        await this.expectEventually(() => target.getAttribute(attributeName), v => v !== null,
+        await this.expectEventually(reading(target, e => e.getAttribute(attributeName)), v => v !== null,
             `attribute "${attributeName}" to be present`, options);
     }
 
     // ── Input values ──
 
     async inputValue(target: Element, expectedValue: string, options?: VerifyOptions): Promise<void> {
-        await this.expectEventually(() => target.inputValue(), v => v === expectedValue, `input value ${describeValue(expectedValue)}`, options);
+        await this.expectEventually(reading(target, e => e.inputValue()), v => v === expectedValue, `input value ${describeValue(expectedValue)}`, options);
     }
 
     async inputValueContains(target: Element, substring: string, options?: VerifyOptions): Promise<void> {
-        await this.expectEventually(() => target.inputValue(), v => v.includes(substring), `input value to contain ${describeValue(substring)}`, options);
+        await this.expectEventually(reading(target, e => e.inputValue()), v => v.includes(substring), `input value to contain ${describeValue(substring)}`, options);
     }
 
     async inputValueMatches(target: Element, regex: RegExp, options?: VerifyOptions): Promise<void> {
-        await this.expectEventually(() => target.inputValue(), v => new RegExp(regex.source, regex.flags).test(v), `input value to match ${regex}`, options);
+        await this.expectEventually(reading(target, e => e.inputValue()), v => new RegExp(regex.source, regex.flags).test(v), `input value to match ${regex}`, options);
     }
 
     async inputValueStartsWith(target: Element, prefix: string, options?: VerifyOptions): Promise<void> {
@@ -408,9 +427,10 @@ export class AppiumVerifications implements IVerifications {
 
     // ── Lists and counts ──
 
-    private allTexts(target: Element): () => Promise<string[]> {
-        return async () => {
-            const all = await target.all();
+    private allTexts(target: Element): PollProbe<string[]> {
+        return async signal => {
+            const all = await withProbeSignal(target, signal).all();
+            stopIfAborted(signal, 'the text reads of the matches');
             return Promise.all(all.map(async e => (await e.textContent()) ?? ''));
         };
     }
@@ -435,7 +455,7 @@ export class AppiumVerifications implements IVerifications {
         const expectation = `Expected count ${negated ? 'not ' : ''}${describeCountOptions(options)}`;
         const lead = verifyOptions?.errorMessage ? `${verifyOptions.errorMessage} (${expectation})` : expectation;
         let last: number | undefined;
-        await pollUntil(async () => (last = await target.count()), n => countMismatch(options, n, negated) === undefined, {
+        await pollUntil(async signal => (last = await withProbeSignal(target, signal).count()), n => countMismatch(options, n, negated) === undefined, {
             timeout: verifyOptions?.timeout ?? this.timeout,
             noAnswerHint: ELEMENT_NO_ANSWER_HINT,
             scope: this.driver,

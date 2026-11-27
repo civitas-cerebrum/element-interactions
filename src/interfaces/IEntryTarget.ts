@@ -11,7 +11,12 @@ import type { Element } from '@civitas-cerebrum/element-repository';
  * re-resolves on every poll.
  *
  * Every `attachBudget` is the per-`fallback`-node attach wait in ms the
- * repository spends; omitted, the repository's default.
+ * repository spends; omitted, the repository's default. Every `signal` is
+ * passed to the repository lookup (element-repository's
+ * `LookupOptions.signal`): once it is aborted the lookup starts no further
+ * driver call and rejects with a `LookupAbortedError`. It stops that lookup
+ * only; the element it returns does not carry it. A scoped (`findBy*`)
+ * chain, web only, ignores it.
  */
 export interface EntryTarget {
     /** The element name (a stamped label for a scoped `findBy*` chain), for messages. */
@@ -19,13 +24,13 @@ export interface EntryTarget {
     /** The page name, for messages. */
     readonly pageName: string;
     /** The chain's element: its strategy selector applied (`.nth()`, `.byText()`, `.visible()`, ...). */
-    resolve(attachBudget?: number): Promise<Element>;
+    resolve(attachBudget?: number, signal?: AbortSignal): Promise<Element>;
     /** The entry's default resolution: no strategy selector applied. */
-    resolveDefault(attachBudget?: number): Promise<Element>;
+    resolveDefault(attachBudget?: number, signal?: AbortSignal): Promise<Element>;
     /** The whole collection (the `ALL` strategy), whatever the strategy selector. */
-    resolveAll(attachBudget?: number): Promise<Element>;
+    resolveAll(attachBudget?: number, signal?: AbortSignal): Promise<Element>;
     /** The element a visibility probe reads: the strategy selector applied, `.visible()` not. */
-    probe(attachBudget: number): Promise<Element>;
+    probe(attachBudget: number, signal?: AbortSignal): Promise<Element>;
     /**
      * `true` when {@link resolve} and {@link probe} pick one match by its
      * text (`.byText()`). Absence of such a chain is asserted on the match

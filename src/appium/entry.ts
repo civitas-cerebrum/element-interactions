@@ -1,4 +1,4 @@
-import { isFatalDriverError, type Element } from '@civitas-cerebrum/element-repository';
+import { isFatalDriverError, LookupAbortedError, type Element } from '@civitas-cerebrum/element-repository';
 import type { EntryTarget } from '../interfaces/IEntryTarget';
 import { softRead } from '../utils/poll';
 
@@ -52,7 +52,8 @@ export function entryLabel(entry: EntryTarget): string {
  *
  * Unlike web, it never answers `false` for a fatal driver error (dead
  * session, invalid selector): that error is thrown, so a gate on a dead
- * device fails loudly instead of skipping its action. A transient miss (no
+ * device fails loudly instead of skipping its action. A cancelled lookup
+ * (`LookupAbortedError`) is thrown too, never read as "not visible". A transient miss (no
  * match yet, a stale element, an eager strategy that found nothing) is "not
  * visible yet" and the probe keeps trying.
  *
@@ -76,7 +77,8 @@ export async function probeVisibleOnDevice(
             element = await entry.probe(slice);
             visible = await element.isVisible();
         } catch (err) {
-            if (isFatalDriverError(err)) throw err;
+            // A cancelled lookup is no answer: never "not visible yet".
+            if (isFatalDriverError(err) || err instanceof LookupAbortedError) throw err;
         }
         if (visible && element) {
             if (containsText === undefined) return true;

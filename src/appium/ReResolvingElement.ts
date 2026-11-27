@@ -12,6 +12,7 @@ import type {
     TapOffset,
     ZoomOptions,
 } from '@civitas-cerebrum/element-repository';
+import { stopIfAborted } from '../utils/poll';
 
 /**
  * A device-platform `Element` that RE-RESOLVES on every call: each primitive
@@ -38,6 +39,12 @@ import type {
  * `selector` is `undefined`: one entry may resolve to a different selector on
  * every call (a `fallback` chain), so no single selector describes it.
  * {@link description} names the entry in error messages instead.
+ *
+ * A poll's probe binds its abort signal with {@link withSignal}: every
+ * resolution then passes it to the repository lookup (which stops starting
+ * driver calls once it is aborted), and the read after a resolution does not
+ * start once it is aborted. The element a resolution returns does not carry
+ * the signal, so a read already running on it finishes.
  */
 export class ReResolvingElement implements Element {
     readonly _type = ElementType.PLATFORM;
@@ -47,21 +54,30 @@ export class ReResolvingElement implements Element {
      * @param description - Names the entry in error messages (e.g. `'LoginPage.submit'`).
      * @param selecting - The resolution picks one match by its text (a `.byText()` chain): a
      *   failed resolution means "no match" only when it is the text strategy's clean "not found".
+     * @param signal - Passed to every resolution; once aborted, no read starts after one.
      */
     constructor(
-        private readonly resolve: () => Promise<Element>,
+        private readonly resolve: (signal?: AbortSignal) => Promise<Element>,
         readonly description: string = 'a re-resolving element',
         readonly selecting: boolean = false,
+        private readonly signal?: AbortSignal,
     ) {}
 
     get selector(): string | undefined { return undefined; }
 
+    /** The same element, its resolutions and reads stopped by `signal` (a poll probe's). */
+    withSignal(signal: AbortSignal): ReResolvingElement {
+        return new ReResolvingElement(this.resolve, this.description, this.selecting, signal);
+    }
+
     private async target(): Promise<Element> {
-        return this.resolve();
+        const element = await this.resolve(this.signal);
+        stopIfAborted(this.signal, `a read of ${this.description}`);
+        return element;
     }
 
     private derived(step: (el: Element) => Element): ReResolvingElement {
-        return new ReResolvingElement(async () => step(await this.target()), this.description, this.selecting);
+        return new ReResolvingElement(async signal => step(await this.resolve(signal)), this.description, this.selecting, this.signal);
     }
 
     action(timeout?: number): ElementChain { return new ElementChain(this, timeout); }
@@ -117,5 +133,18 @@ export class ReResolvingElement implements Element {
     first(): Element { return this.derived(el => el.first()); }
     nth(index: number): Element { return this.derived(el => el.nth(index)); }
     filter(options: { hasText?: string | RegExp }): Element { return this.derived(el => el.filter(options)); }
-    async waitFor(options?: { state?: string; timeout?: number }): Promise<void> { return (await this.target()).waitFor(options); }
+    async waitFor(options?: { state?: string; timeout?: number; signal?: AbortSignal }): Promise<void> {
+        const signal = options?.signal ?? this.signal;
+        return (await this.target()).waitFor(signal ? { ...options, signal } : options);
+    }
+}
+
+/**
+ * `target` with a poll probe's `signal` bound, when it is a
+ * {@link ReResolvingElement} (its resolutions pass it to the repository);
+ * any other element as it is: an element already resolved does not carry a
+ * signal, so the probe checks it between its reads itself.
+ */
+export function withProbeSignal(target: Element, signal: AbortSignal): Element {
+    return target instanceof ReResolvingElement ? target.withSignal(signal) : target;
 }

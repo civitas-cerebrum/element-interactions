@@ -11,9 +11,10 @@ import type {
 import type { AppiumDriver } from './platform/PlatformStrategy';
 import { Utils } from '../utils/ElementUtilities';
 import { touchDrag } from './touch';
-import { pollUntil, softRead } from '../utils/poll';
+import { pollUntil, softRead, stopIfAborted } from '../utils/poll';
 import { webOnly } from './unsupported';
 import { ELEMENT_NO_ANSWER_HINT } from './entry';
+import { withProbeSignal } from './ReResolvingElement';
 
 /** Finger travel time of an offset drag, in ms. */
 const DRAG_DURATION_MS = 600;
@@ -240,24 +241,30 @@ export class AppiumInteractions implements IInteractions {
             const { value } = options.attribute;
             return typeof value === 'string' ? actual === value : new RegExp(value.regex, value.flags).test(actual);
         };
-        const hasDescendant = async (e: Element): Promise<boolean> => {
+        const hasDescendant = async (e: Element, signal: AbortSignal): Promise<boolean> => {
             if (descendantSelector === undefined) return true;
             const found = await e.locateChild(descendantSelector).all();
             if (descendant?.text === undefined) return found.length > 0;
             for (const d of found) {
+                stopIfAborted(signal, 'the reads of a listed item');
                 if (listedTextMatches((await d.rawText()) ?? '', descendant.text)) return true;
             }
             return false;
         };
 
-        const pick = async (): Promise<Element | undefined> => {
-            const all = await base.all();
+        // The items are elements already resolved: they do not carry the
+        // probe's signal, so the probe checks it before each of its reads.
+        const pick = async (signal: AbortSignal): Promise<Element | undefined> => {
+            const all = await withProbeSignal(base, signal).all();
             const text = options.text;
+            stopIfAborted(signal, 'the reads of the listed items');
             const texts = text !== undefined ? await Promise.all(all.map(async e => (await e.rawText()) ?? '')) : [];
             for (let i = 0; i < all.length; i++) {
                 if (text !== undefined && !listedTextMatches(texts[i], text)) continue;
+                stopIfAborted(signal, 'the reads of a listed item');
                 if (!(await matchesAttribute(all[i]))) continue;
-                if (!(await hasDescendant(all[i]))) continue;
+                stopIfAborted(signal, 'the reads of a listed item');
+                if (!(await hasDescendant(all[i], signal))) continue;
                 return all[i];
             }
             return undefined;

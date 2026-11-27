@@ -1,4 +1,26 @@
-import { isFatalDriverError } from '@civitas-cerebrum/element-repository';
+import { isFatalDriverError, LookupAbortedError } from '@civitas-cerebrum/element-repository';
+
+/**
+ * One probe of {@link pollUntil}. It gets an `AbortSignal` of its own, which
+ * the poll aborts once it no longer needs the probe: when the probe runs out
+ * of its share of the timeout, and when the poll is done with it (answered,
+ * failed, or the poll ended). A probe passes the signal to every repository
+ * lookup it makes (element-repository's `LookupOptions.signal`) and checks it
+ * between its own driver calls, so that once aborted it starts no new
+ * driver call. A driver call already running is not stopped: it finishes,
+ * and its result is dropped.
+ */
+export type PollProbe<T> = (signal: AbortSignal) => Promise<T> | T;
+
+/**
+ * Throws element-repository's `LookupAbortedError` (naming `operation`) when
+ * `signal` is aborted. A probe calls it between its own driver calls: a read
+ * on an element a lookup already returned does not carry the lookup's
+ * signal, so the probe stops itself before the next one.
+ */
+export function stopIfAborted(signal: AbortSignal | undefined, operation: string): void {
+    if (signal?.aborted) throw new LookupAbortedError({ operation, reason: signal.reason });
+}
 
 /** Options for {@link pollUntil}. */
 export interface PollOptions {
@@ -26,10 +48,10 @@ export interface PollOptions {
     noAnswerHint?: string;
     /**
      * What the probes run on (the device session's driver). A probe this poll
-     * abandons is recorded under it until it settles, so whoever owns the
-     * session can wait for it with {@link drainAbandonedProbes} before the
-     * app is relaunched or the session is closed. Without a scope nothing is
-     * recorded.
+     * abandons is recorded under it, with its abort controller, until it
+     * settles, so whoever owns the session can stop and wait for it with
+     * {@link drainAbandonedProbes} before the app is relaunched or the
+     * session is closed. Without a scope nothing is recorded.
      */
     scope?: object;
 }
@@ -40,12 +62,14 @@ interface AbandonedProbe {
     readonly since: number;
     /** Settles (never rejects) when the probe does. */
     readonly settled: Promise<void>;
+    /** Aborts the probe's signal. */
+    readonly controller: AbortController;
 }
 
 /** The abandoned probes still running, per scope. */
 const abandoned = new WeakMap<object, Set<AbandonedProbe>>();
 
-function recordAbandoned(scope: object, running: Promise<unknown>): void {
+function recordAbandoned(scope: object, running: Promise<unknown>, controller: AbortController): void {
     let set = abandoned.get(scope);
     if (!set) {
         set = new Set();
@@ -54,6 +78,7 @@ function recordAbandoned(scope: object, running: Promise<unknown>): void {
     const owner = set;
     const entry: AbandonedProbe = {
         since: Date.now(),
+        controller,
         settled: running.then(() => undefined, () => undefined).then(() => { owner.delete(entry); }),
     };
     owner.add(entry);
@@ -157,14 +182,21 @@ export class ProbeTimeoutError extends Error {
     }
 }
 
+/** The abort reason of a probe the poll is done with (it answered, failed, or the poll ended). */
+export const PROBE_DONE_REASON = 'the poll no longer needs this probe';
+
 /**
- * Runs one probe, raced against `budget` ms. The timer is always cleared, so
- * nothing keeps the process alive; an abandoned probe's late rejection is
- * swallowed (it has already been replaced by a {@link ProbeTimeoutError}).
- * With a `scope`, an abandoned probe is recorded under it until it settles.
+ * Runs one probe, raced against `budget` ms, with an abort signal of its
+ * own. The timer is always cleared, so nothing keeps the process alive; an
+ * abandoned probe's late rejection is swallowed (it has already been
+ * replaced by a {@link ProbeTimeoutError}). A probe that runs out of time has
+ * its signal aborted (the reason is the {@link ProbeTimeoutError}) before the
+ * poll goes on, and, with a `scope`, is recorded under it until it settles.
+ * Every probe's signal is aborted once the poll is done with it.
  */
-async function boundedProbe<T>(probe: () => Promise<T> | T, budget: number, scope: object | undefined): Promise<T> {
-    const running = Promise.resolve().then(probe);
+async function boundedProbe<T>(probe: PollProbe<T>, budget: number, scope: object | undefined): Promise<T> {
+    const controller = new AbortController();
+    const running = Promise.resolve().then(() => probe(controller.signal));
     running.catch(() => undefined);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const expired = new Promise<never>((_, reject) => {
@@ -173,10 +205,14 @@ async function boundedProbe<T>(probe: () => Promise<T> | T, budget: number, scop
     try {
         return await Promise.race([running, expired]);
     } catch (error) {
-        if (scope && error instanceof ProbeTimeoutError) recordAbandoned(scope, running);
+        if (error instanceof ProbeTimeoutError) {
+            controller.abort(error);
+            if (scope) recordAbandoned(scope, running, controller);
+        }
         throw error;
     } finally {
         clearTimeout(timer);
+        controller.abort(new Error(PROBE_DONE_REASON));
     }
 }
 
@@ -202,15 +238,24 @@ async function boundedProbe<T>(probe: () => Promise<T> | T, budget: number, scop
  *   answered. A probe that ran out of time ends the poll there and then
  *   (it was given all the time left), so a poll never runs two probes at
  *   once and starts none after an abandoned one.
- * - Probes must be read-only (a state getter, a text read): an abandoned
- *   probe is NOT cancelled. Its driver command keeps running in the
- *   background and may still complete after `pollUntil` moved on or returned,
- *   so a probe that changes the app (a click, a swipe) could act twice or late.
- *   With `options.scope` (the device polls pass their driver) the abandoned
- *   probe is recorded under it, and {@link drainAbandonedProbes} waits for
- *   it: the platform fixture drains the session's driver after each test,
- *   before the failure evidence and the next relaunch, so the lookup ends on
- *   the app launch it started on.
+ * - Every probe gets an abort signal of its own ({@link PollProbe}). The
+ *   signal of a probe that ran out of time is aborted (its reason is the
+ *   {@link ProbeTimeoutError}) before the poll moves on, and every probe's
+ *   signal is aborted once the poll is done with it. A probe that passes it
+ *   to its repository lookups and checks it between its own driver calls
+ *   ({@link stopIfAborted}) starts no driver call after that. A driver call
+ *   already running is NOT stopped: it finishes in the background, after
+ *   `pollUntil` moved on or returned. So probes must be read-only (a state
+ *   getter, a text read): a probe that changes the app (a click, a swipe)
+ *   could act late. With `options.scope` (the device polls pass their
+ *   driver) the abandoned probe is recorded under it, and
+ *   {@link drainAbandonedProbes} waits for it: the platform fixture drains
+ *   the session's driver after each test, before the failure evidence and
+ *   the next relaunch, so that last call ends on the app launch it started on.
+ * - The poll's own aborts never reach its verdict: it aborts a probe only
+ *   once it stopped waiting for it. A `LookupAbortedError` from a probe
+ *   (a lookup cancelled by some other signal) is rethrown at once, like a
+ *   fatal error: never retried, never the last error, never an answer.
  * - On timeout it throws {@link PollTimeoutError}, whose message names what
  *   was awaited, the timeout, the last observed value and the last error.
  *   When a probe answered and the probes after it only ran out of time, the
@@ -226,7 +271,7 @@ async function boundedProbe<T>(probe: () => Promise<T> | T, budget: number, scop
  * @returns the accepted value.
  */
 export async function pollUntil<T>(
-    probe: () => Promise<T> | T,
+    probe: PollProbe<T>,
     check: (value: T) => boolean | void,
     options: PollOptions,
 ): Promise<T> {
@@ -261,7 +306,11 @@ export async function pollUntil<T>(
             unansweredBudget = undefined;
             if (check(value) !== false) return value;
         } catch (error) {
-            if (!probed && isFatalDriverError(error)) throw error;
+            // A lookup aborted by a signal other than this poll's (the poll
+            // aborts a probe only once it stopped waiting for it, so its own
+            // aborts never get here) is the caller's cancel: never a last
+            // error, never retried, never an answer.
+            if (!probed && (isFatalDriverError(error) || error instanceof LookupAbortedError)) throw error;
             if (error instanceof ProbeTimeoutError) longestUnanswered = Math.max(longestUnanswered, error.budget);
             if (error instanceof ProbeTimeoutError && lastError !== undefined && !(lastError instanceof ProbeTimeoutError)) {
                 unansweredBudget = error.budget;
@@ -316,15 +365,16 @@ export async function pollUntil<T>(
 /**
  * Runs `read`; a transient failure answers `fallback`, a fatal driver error
  * (element-repository's `isFatalDriverError`: dead session, invalid selector,
- * lost connection) is rethrown. A fatal error must never be read as "not
- * displayed" or "not there": that would turn a dead session into a passing
- * absence check or a silently skipped gate.
+ * lost connection) and an aborted lookup (`LookupAbortedError`) are
+ * rethrown. Neither must ever be read as "not displayed" or "not there":
+ * that would turn a dead session into a passing absence check or a silently
+ * skipped gate, and a cancelled read into an answer.
  */
 export async function softRead<T>(read: () => Promise<T>, fallback: T): Promise<T> {
     try {
         return await read();
     } catch (err) {
-        if (isFatalDriverError(err)) throw err;
+        if (isFatalDriverError(err) || err instanceof LookupAbortedError) throw err;
         return fallback;
     }
 }

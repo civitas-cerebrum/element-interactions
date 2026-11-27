@@ -74,6 +74,15 @@ export type VisibleField = (() => ElementAction) & {
  * slicing rather than deferring to `repo.get`'s own budget.
  */
 const ABSENCE_ATTACH_SLICE_FLOOR_MS = 250;
+
+/** `options` with a per-call attach budget and a lookup signal, each only when given. */
+function withLookup(options: ElementResolutionOptions, attachBudget?: number, signal?: AbortSignal): ElementResolutionOptions {
+    return {
+        ...options,
+        ...(attachBudget === undefined ? {} : { timeout: attachBudget }),
+        ...(signal === undefined ? {} : { signal }),
+    };
+}
 const ABSENCE_ATTACH_SLICE_CAP_MS = 1000;
 
 /**
@@ -250,8 +259,9 @@ export class ElementAction {
      * @param attachBudget - Per-call attach budget for the repository (per
      *   `fallback` node). Omitted: the repository's default. A family that
      *   re-resolves an entry per poll passes a short budget of its own.
+     * @param signal - Stops the repository lookup (a poll probe's signal); see {@link EntryTarget}.
      */
-    private async resolve(attachBudget?: number): Promise<Element> {
+    private async resolve(attachBudget?: number, signal?: AbortSignal): Promise<Element> {
         // Scoped chains never resolve via the repository — the stamped scoped
         // name has no repo entry. `narrowScoped` honours `visibleStrategy`, so
         // the check order here does not lose `.visible()` on scoped chains.
@@ -261,36 +271,34 @@ export class ElementAction {
         if (this.visibleStrategy) {
             // strict: true → throws when no visible match exists, matching the
             // throw-on-miss contract of every other strategy selector.
-            const visible = await this.repo.getVisible(this.elementName, this.pageName, true);
+            const visible = signal
+                ? await this.repo.getVisible(this.elementName, this.pageName, true, { signal })
+                : await this.repo.getVisible(this.elementName, this.pageName, true);
             // Unreachable with `strict: true` (it throws first); kept so the type is honest.
             if (!visible) throw new Error(`No visible match for "${this.elementName}" in "${this.pageName}".`);
             return visible;
         }
-        const options = attachBudget === undefined ? this.resolutionOptions : { ...this.resolutionOptions, timeout: attachBudget };
-        return await this.repo.get(this.elementName, this.pageName, options);
+        return await this.repo.get(this.elementName, this.pageName, withLookup(this.resolutionOptions, attachBudget, signal));
     }
 
-    private async resolveAll(attachBudget?: number): Promise<Element> {
+    private async resolveAll(attachBudget?: number, signal?: AbortSignal): Promise<Element> {
         if (this.scopedChild) {
             // Collection-level: ignore any .first()/.nth() narrowing, return the
             // whole child set so count / order / image terminals see every match.
             return new WebElement(await this.scopedChild());
         }
-        return await this.repo.get(this.elementName, this.pageName, {
-            strategy: SelectionStrategy.ALL,
-            ...(attachBudget === undefined ? {} : { timeout: attachBudget }),
-        });
+        return await this.repo.get(this.elementName, this.pageName, withLookup({ strategy: SelectionStrategy.ALL }, attachBudget, signal));
     }
 
     /**
      * The entry's default resolution: no strategy selector applied (a scoped
      * chain answers its first child match).
      */
-    private async resolveDefault(attachBudget?: number): Promise<Element> {
+    private async resolveDefault(attachBudget?: number, signal?: AbortSignal): Promise<Element> {
         if (this.scopedChild) {
             return new WebElement((await this.scopedChild()).first());
         }
-        return await this.repo.get(this.elementName, this.pageName, attachBudget === undefined ? {} : { timeout: attachBudget });
+        return await this.repo.get(this.elementName, this.pageName, withLookup({}, attachBudget, signal));
     }
 
     /**
@@ -303,10 +311,10 @@ export class ElementAction {
         return {
             elementName: this.elementName,
             pageName: this.pageName,
-            resolve: (attachBudget?: number) => this.resolve(attachBudget),
-            resolveDefault: (attachBudget?: number) => this.resolveDefault(attachBudget),
-            resolveAll: (attachBudget?: number) => this.resolveAll(attachBudget),
-            probe: (attachBudget: number) => this.probeTarget(attachBudget),
+            resolve: (attachBudget?: number, signal?: AbortSignal) => this.resolve(attachBudget, signal),
+            resolveDefault: (attachBudget?: number, signal?: AbortSignal) => this.resolveDefault(attachBudget, signal),
+            resolveAll: (attachBudget?: number, signal?: AbortSignal) => this.resolveAll(attachBudget, signal),
+            probe: (attachBudget: number, signal?: AbortSignal) => this.probeTarget(attachBudget, signal),
             selecting: !this.scopedChild && this.resolutionOptions.strategy === SelectionStrategy.TEXT,
         };
     }
@@ -368,13 +376,14 @@ export class ElementAction {
      *   to pay for (see `VisibleChain.probe`), not hand its whole budget over.
      *   Defaults to the chain's visibility timeout. Clamped to at least 1ms,
      *   because a Playwright timeout of 0 means "wait forever".
+     * @param signal - Stops the repository lookup; see {@link EntryTarget}.
      */
-    async probeTarget(timeout?: number): Promise<Element> {
+    async probeTarget(timeout?: number, signal?: AbortSignal): Promise<Element> {
         if (this.scopedChild) {
             return new WebElement(this.narrowScoped(await this.scopedChild()));
         }
         const budget = Math.max(1, timeout ?? this.visibilityTimeout);
-        return await this.repo.get(this.elementName, this.pageName, { ...this.resolutionOptions, timeout: budget });
+        return await this.repo.get(this.elementName, this.pageName, withLookup(this.resolutionOptions, budget, signal));
     }
 
     /**
