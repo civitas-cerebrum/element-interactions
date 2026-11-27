@@ -2,6 +2,11 @@ import { test, expect } from '@playwright/test';
 import type { Steps } from '../src/index';
 import { abandonedProbeCount, drainAbandonedProbes, pollUntil } from '../src/utils/poll';
 import { cellTree, slowDeviceSteps, type SlowDriverOptions } from './appium/slow-driver';
+import * as fs from 'fs';
+import * as path from 'path';
+import { AppiumDevice } from '../src/appium/AppiumDevice';
+import { strategyFor } from '../src/appium/platform';
+import { mockDriver } from './appium/mocks';
 
 /**
  * Probes a device poll gives up on.
@@ -61,6 +66,51 @@ async function reject(platform: 'android' | 'ios', run: (steps: Steps) => Promis
 }
 
 const summary = (late: Array<{ method: string; start: number }>) => late.map(c => `${c.method}@${c.start}`).join(' ');
+
+/**
+ * Every `pollUntil` call (`pollUntil(` or `pollUntil<...>(`) in `source`, as
+ * the text from its name to its closing parenthesis.
+ */
+function pollUntilCalls(source: string): string[] {
+    const calls: string[] = [];
+    const name = /\bpollUntil\s*(<[^>(]*>)?\s*\(/g;
+    for (let match = name.exec(source); match; match = name.exec(source)) {
+        let depth = 0;
+        let end = match.index + match[0].length - 1;
+        for (; end < source.length; end++) {
+            if (source[end] === '(') depth++;
+            else if (source[end] === ')' && --depth === 0) break;
+        }
+        calls.push(source.slice(match.index, end + 1));
+    }
+    return calls;
+}
+
+test.describe('every device poll records what it abandons under its driver', () => {
+    test('a source scan: every pollUntil call under src/appium passes scope: this.driver', () => {
+        const root = path.resolve(__dirname, '../src/appium');
+        const files = fs.readdirSync(root, { recursive: true, encoding: 'utf-8' }).filter(f => f.endsWith('.ts'));
+        const calls = files.flatMap(file => pollUntilCalls(fs.readFileSync(path.join(root, file), 'utf-8')).map(call => ({ file, call })));
+        // The scan itself must see both forms, or it proves nothing.
+        expect(calls.length, 'pollUntil calls found').toBeGreaterThanOrEqual(6);
+        expect(calls.some(c => /^pollUntil\s*</.test(c.call)), 'a generic pollUntil<...>( call is seen').toBe(true);
+        const missing = calls.filter(c => !/\bscope:\s*this\.driver\b/.test(c.call)).map(c => `${c.file}: ${c.call.slice(0, 80)}`);
+        expect(missing, 'pollUntil calls without scope: this.driver').toEqual([]);
+    });
+
+    for (const platform of ['ios', 'android'] as const) {
+        test(`${platform}: a device check (verifyOrientation) that times out leaves its probe recorded under the driver`, async () => {
+            const mock = mockDriver({ capabilities: { platformName: platform } });
+            (mock.driver as unknown as { getOrientation: () => Promise<string> }).getOrientation =
+                () => new Promise(resolve => setTimeout(() => resolve('PORTRAIT'), 300));
+            const device = new AppiumDevice(mock.driver, strategyFor(platform), 'com.example.app');
+            await expect(device.verifyOrientation('landscape', { timeout: 20 })).rejects.toThrow(/timed out after 20 ms/);
+            expect(abandonedProbeCount(mock.driver as object)).toBe(1);
+            await drainAbandonedProbes(mock.driver as object, 2000);
+            expect(abandonedProbeCount(mock.driver as object)).toBe(0);
+        });
+    }
+});
 
 test.describe('abandoned probes are recorded per scope and drained', () => {
     test('a probe that ran out of time is recorded under its scope until it settles', async () => {

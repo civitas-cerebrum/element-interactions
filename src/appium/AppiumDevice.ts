@@ -349,7 +349,7 @@ export class AppiumDevice implements IDevice {
                 }
             },
             value => value === REFUSED || accept(value as T),
-            { timeout: options?.timeout ?? this.timeout, message: options?.errorMessage ?? message },
+            { timeout: options?.timeout ?? this.timeout, message: options?.errorMessage ?? message, scope: this.driver },
         );
         if (refusal) throw refusal;
     }
