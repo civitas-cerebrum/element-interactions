@@ -8,6 +8,15 @@ export interface PollOptions {
     interval?: number;
     /** What was being waited for; leads the timeout error message. */
     message?: string | (() => string);
+    /**
+     * What the last answered value means, as a sentence (e.g. "The element was
+     * still displayed on the last answered poll"). When it returns a sentence,
+     * the timeout message states it ahead of the value:
+     * `<sentence> (Last value: <value>).` Returning `undefined` (or leaving
+     * the option out) keeps `Last value: <value>.`. Never used when no probe
+     * answered.
+     */
+    lastValueMeaning?: (value: unknown) => string | undefined;
 }
 
 /** Default pause between two probes, in ms. */
@@ -98,6 +107,10 @@ async function boundedProbe<T>(probe: () => Promise<T> | T, budget: number): Pro
  *   so a probe that changes the app (a click, a swipe) could act twice or late.
  * - On timeout it throws {@link PollTimeoutError}, whose message names what
  *   was awaited, the timeout, the last observed value and the last error.
+ *   When a probe answered and the probes after it only ran out of time, the
+ *   last value leads and the unanswered probe is a note after it, not the
+ *   last error (the error's `lastError` still holds the
+ *   {@link ProbeTimeoutError}).
  *
  * @returns the accepted value.
  */
@@ -150,7 +163,19 @@ export async function pollUntil<T>(
 
     const what = typeof options.message === 'function' ? options.message() : options.message;
     const parts = [`${what ?? 'Condition not met'}: timed out after ${timeout} ms.`];
-    parts.push(`Last value: ${hasValue ? describeValue(lastValue) : '(no value; every probe failed)'}.`);
+    if (!hasValue) {
+        parts.push('Last value: (no value; every probe failed).');
+    } else {
+        const meaning = options.lastValueMeaning?.(lastValue);
+        const value = meaning ? `${meaning} (Last value: ${describeValue(lastValue)})` : `Last value: ${describeValue(lastValue)}`;
+        // The probes after the last answered one merely ran out of time: the
+        // value is the answer, the timeout only a note after it.
+        if (lastError instanceof ProbeTimeoutError) {
+            parts.push(`${value}; the last probe did not answer within ${lastError.budget} ms.`);
+            throw new PollTimeoutError(parts.join(' '), timeout, lastValue, lastError);
+        }
+        parts.push(`${value}.`);
+    }
     if (lastError !== undefined) {
         const note = unansweredBudget === undefined ? '' : `; the last probe did not answer within ${unansweredBudget} ms`;
         parts.push(`Last error: ${errorText(lastError)}${note}`);

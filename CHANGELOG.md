@@ -446,6 +446,16 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   not answer before the deadline, the timeout message named only the
   unanswered probe; it now gives the reason, followed by
   `; the last probe did not answer within N ms`.
+- **A poll whose last probe does not answer after one that did leads with the
+  last value.** The timeout message named the unanswered probe as its last
+  error (`Last value: true. Last error: the probe did not answer within N ms`);
+  it now gives the value, with the unanswered probe as a note after it:
+  `Last value: true; the last probe did not answer within N ms.` A failing
+  device absence, `hidden` or negated `visible` check also says what the value
+  means: `Expected element to be absent (not displayed): timed out after
+  8000 ms. The element was still displayed on the last answered poll (Last
+  value: true).` `lastError` is unchanged. A poll in which no probe answered
+  keeps `(no value; every probe failed)`. Web messages are not affected.
 - **A negated count range on a device is worded as on web**: `Expected count
   not > 5`, no longer `Expected NOT count > 5`.
 

@@ -63,6 +63,15 @@ function notVisibleRead(target: Element): () => Promise<boolean> {
 }
 
 /**
+ * What a visibility probe's last answer means in a timeout message: `true`
+ * is the element displayed on the last poll that answered (a failing
+ * absence, `hidden` or negated `visible` check), so the message leads with
+ * that rather than with a probe that merely ran out of time after it.
+ */
+const SHOWN_ON_LAST_POLL = (value: unknown): string | undefined =>
+    value === true ? 'The element was still displayed on the last answered poll' : undefined;
+
+/**
  * Retrying assertions for the Appium family. Every element assertion polls
  * the element's primitives with {@link pollUntil} (100 ms interval) until
  * its timeout (`options.timeout`, else the instance timeout) and then throws
@@ -83,19 +92,22 @@ export class AppiumVerifications implements IVerifications {
 
     /**
      * Polls `probe` until `passes(value)` (inverted when `negated`) holds.
-     * `describe` says what was expected, without the negation.
+     * `describe` says what was expected, without the negation;
+     * `lastValueMeaning` words the last answered value in the timeout message.
      */
     private async expectEventually<T>(
         probe: () => Promise<T>,
         passes: (value: T) => boolean,
         describe: string,
         options?: VerifyOptions,
+        lastValueMeaning?: (value: unknown) => string | undefined,
     ): Promise<void> {
         const negated = options?.negated === true;
         const expectation = negated ? `Expected NOT ${describe}` : `Expected ${describe}`;
         await pollUntil(probe, value => passes(value) !== negated, {
             timeout: options?.timeout ?? this.timeout,
             message: options?.errorMessage ? `${options.errorMessage} (${expectation})` : expectation,
+            lastValueMeaning,
         });
     }
 
@@ -186,6 +198,7 @@ export class AppiumVerifications implements IVerifications {
                 visible => !visible,
                 'element to be absent (not displayed)',
                 { timeout: options.timeout },
+                SHOWN_ON_LAST_POLL,
             );
             return;
         }
@@ -236,7 +249,7 @@ export class AppiumVerifications implements IVerifications {
     // ── Presence and state ──
 
     async presence(target: Element, options?: VerifyOptions): Promise<void> {
-        await this.expectEventually(() => target.isVisible(), v => v, 'element to be displayed', options);
+        await this.expectEventually(() => target.isVisible(), v => v, 'element to be displayed', options, SHOWN_ON_LAST_POLL);
     }
 
     /**
@@ -286,6 +299,7 @@ export class AppiumVerifications implements IVerifications {
             visible => !visible,
             'element to be absent (not displayed)',
             options,
+            SHOWN_ON_LAST_POLL,
         );
     }
 
@@ -318,16 +332,16 @@ export class AppiumVerifications implements IVerifications {
                 // retried, never read as not visible.
                 // Not negated, the lookup's own reason stays the last error.
                 if (options.negated) {
-                    return this.expectEventually(notVisibleRead(target), v => v, 'element to be visible', options);
+                    return this.expectEventually(notVisibleRead(target), v => v, 'element to be visible', options, SHOWN_ON_LAST_POLL);
                 }
-                return this.expectEventually(() => target.isVisible(), v => v, 'element to be visible', options);
+                return this.expectEventually(() => target.isVisible(), v => v, 'element to be visible', options, SHOWN_ON_LAST_POLL);
             case 'inViewport':
-                return this.expectEventually(() => target.isVisible(), v => v, 'element to be inViewport', options);
+                return this.expectEventually(() => target.isVisible(), v => v, 'element to be inViewport', options, SHOWN_ON_LAST_POLL);
             case 'hidden':
                 // One element (a pick of `nth` / TEXT / ATTRIBUTE answers
                 // `all()` with every match of its selector, so not `anyDisplayed`).
                 // A selecting chain reads as the negated `visible` above.
-                return this.expectEventually(notVisibleRead(target), v => !v, 'element to be hidden', options);
+                return this.expectEventually(notVisibleRead(target), v => !v, 'element to be hidden', options, SHOWN_ON_LAST_POLL);
             case 'attached':
                 return this.expectEventually(() => target.exists(), v => v, 'element to be attached', options);
             case 'focused': {

@@ -123,6 +123,44 @@ test.describe('pollUntil', () => {
         expect(error.message).toMatch(/Last error: Element not found; the last probe did not answer within \d+ ms$/);
     });
 
+    test('a probe that does not answer after one that did: the last value leads, the timeout is only a note', async () => {
+        let calls = 0;
+        // The first probe answers `true` (still shown); every later one hangs past the deadline.
+        const probe = () => ++calls === 1
+            ? Promise.resolve(true)
+            : new Promise<boolean>(resolve => setTimeout(() => resolve(true), 2000).unref());
+        const error = await pollUntil(probe, v => !v, { timeout: 200, interval: 50, message: 'Expected NOT shown' }).catch(e => e);
+        expect(error).toBeInstanceOf(PollTimeoutError);
+        expect(error.lastValue).toBe(true);
+        expect(error.lastError).toBeInstanceOf(ProbeTimeoutError);
+        expect(error.message).toMatch(/^Expected NOT shown: timed out after 200 ms\. Last value: true; the last probe did not answer within \d+ ms\.$/);
+        expect(error.message).not.toMatch(/Last error/);
+    });
+
+    test('lastValueMeaning states what the last answered value means, ahead of the value', async () => {
+        const meaning = (value: unknown) => value === true ? 'The element was still displayed on the last answered poll' : undefined;
+        let calls = 0;
+        const probe = () => ++calls === 1
+            ? Promise.resolve(true)
+            : new Promise<boolean>(resolve => setTimeout(() => resolve(true), 2000).unref());
+        const cut = await pollUntil(probe, v => !v, { timeout: 200, interval: 50, message: 'Expected absent', lastValueMeaning: meaning }).catch(e => e);
+        expect(cut.message).toMatch(
+            /^Expected absent: timed out after 200 ms\. The element was still displayed on the last answered poll \(Last value: true\); the last probe did not answer within \d+ ms\.$/,
+        );
+        // Every probe answered: no note.
+        const answered = await pollUntil(async () => true, v => !v, { timeout: 30, interval: 5, message: 'Expected absent', lastValueMeaning: meaning }).catch(e => e);
+        expect(answered.message).toBe('Expected absent: timed out after 30 ms. The element was still displayed on the last answered poll (Last value: true).');
+        // A real error after the value stays the last error.
+        const failed = await pollUntil(async () => true, () => { throw new Error('stale element reference'); }, { timeout: 30, interval: 5, message: 'Expected absent', lastValueMeaning: meaning }).catch(e => e);
+        expect(failed.message).toBe('Expected absent: timed out after 30 ms. The element was still displayed on the last answered poll (Last value: true). Last error: stale element reference');
+        // A value the meaning does not describe keeps the plain form.
+        const plain = await pollUntil(async () => false, v => v, { timeout: 30, interval: 5, message: 'Expected shown', lastValueMeaning: meaning }).catch(e => e);
+        expect(plain.message).toBe('Expected shown: timed out after 30 ms. Last value: false.');
+        // No value at all: the "every probe failed" wording, whatever the meaning.
+        const none = await pollUntil(async () => { throw new Error('no such element'); }, () => true, { timeout: 30, interval: 5, message: 'Expected absent', lastValueMeaning: meaning }).catch(e => e);
+        expect(none.message).toBe('Expected absent: timed out after 30 ms. Last value: (no value; every probe failed). Last error: no such element');
+    });
+
     test('a slow probe that answers within the deadline is still accepted', async () => {
         const value = await pollUntil(() => new Promise<string>(resolve => setTimeout(() => resolve('ok'), 150)), v => v === 'ok', { timeout: 1000 });
         expect(value).toBe('ok');

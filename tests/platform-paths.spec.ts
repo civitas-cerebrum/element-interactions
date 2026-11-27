@@ -422,6 +422,23 @@ for (const platform of DEVICE_PLATFORMS) {
             expect((await caught(() => steps.on('items', 'Screen').verifyAbsence()))?.message).toMatch(/absent/);
         });
 
+        test('a shown element whose last probe does not answer: the failure leads with the shown state, not the probe', async () => {
+            // The element answers "displayed" twice, then every read hangs (a driver slowing down at the end).
+            const shownThenHanging = (): MockNode[] => {
+                let reads = 0;
+                return [{ match: '~green-2', text: 'Green 2', visible: () => (++reads <= 2 ? true : new Promise<boolean>(() => undefined)) }];
+            };
+            const absence = await caught(() => deviceSteps(platform, shownThenHanging(), 600).steps.on('green2', 'Screen').verifyAbsence());
+            expect(absence?.message).toMatch(
+                /^Expected element to be absent \(not displayed\): timed out after 600 ms\. The element was still displayed on the last answered poll \(Last value: true\); the last probe did not answer within \d+ ms\.$/,
+            );
+            expect(absence?.message).not.toMatch(/Last error/);
+            const hidden = await caught(async () => { await deviceSteps(platform, shownThenHanging(), 600).steps.on('green2', 'Screen').not.visible.toBeTrue(); });
+            expect(hidden?.message).toMatch(/not to be true/);
+            expect(hidden?.message).toMatch(/: timed out after 600 ms\. The element was still displayed on the last answered poll \(Last value: true\); the last probe did not answer within \d+ ms\.$/);
+            expect(hidden?.message).not.toMatch(/Last error/);
+        });
+
         test('a selection that never answers is never read as absent', async () => {
             const { steps } = deviceSteps(platform, hangingItemTree(), 600);
             const absence = await caught(() => steps.on('items', 'Screen').byText('Purple').verifyAbsence());
