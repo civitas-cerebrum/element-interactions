@@ -109,7 +109,10 @@ test.describe('live iOS test app', () => {
             await steps.fill('passwordInput', 'LoginFormPage', 'password123');
             await steps.verifyKeyboardShown();
             // Without a neutral element the dismissal may press the keyboard's Return key.
+            const started = Date.now();
             expect(await steps.hideKeyboard()).toBe(true);
+            // Recorded, not asserted: the cost of the refused bare call, against which the tapElement test's bound is set.
+            test.info().annotations.push({ type: 'hideKeyboard without options, ms', description: String(Date.now() - started) });
             await steps.verifyKeyboardShown({ negated: true });
             await steps.verifyInputValue('usernameInput', 'LoginFormPage', 'admin');
             expect(await steps.hideKeyboard(), 'no keyboard shown: nothing to hide').toBe(false);
@@ -123,7 +126,18 @@ test.describe('live iOS test app', () => {
             await steps.fill('passwordInput', 'LoginFormPage', 'password123');
             await steps.verifyKeyboardShown();
             // The title is tapped first: the screen ends editing on a tap outside the field, no key is pressed.
+            // The step answers only true or false, not which dismissal step worked, so the time proves it was the
+            // tap: when the tap leaves the keyboard up, the step pauses 300 ms and then sends the bare
+            // `mobile: hideKeyboard`, which WebDriverAgent refuses on this keyboard after about 3.5 s (measured on a
+            // simulator), so that path takes at least about 3.8 s on top of the tap. The tap path is the title's
+            // resolution, its visible wait and click, one 300 ms pause and two keyboard checks. The bound, 3000 ms,
+            // stays 0.8 s below the fallback path's floor and leaves the tap path room for slow element reads
+            // on a real device (an iOS visibility read can take most of a second there).
+            const started = Date.now();
             expect(await steps.hideKeyboard({ tapElement: { pageName: 'LoginFormPage', elementName: 'title' } })).toBe(true);
+            const elapsed = Date.now() - started;
+            test.info().annotations.push({ type: 'hideKeyboard with tapElement, ms', description: String(elapsed) });
+            expect(elapsed, 'the tap dismissed the keyboard: the bare mobile: hideKeyboard step did not run').toBeLessThan(3000);
             await steps.verifyKeyboardShown({ negated: true });
             await steps.verifyInputValue('usernameInput', 'LoginFormPage', 'admin');
             await steps.click('submitButton', 'LoginFormPage');
