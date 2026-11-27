@@ -257,6 +257,18 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `dismissAlert`, `setPermission`; `getContexts`, `switchContext`; polling
   `verifyAppInForeground`, `verifyOrientation`, `verifyKeyboardShown`,
   `verifyContext`; `getPageSource`. `steps.platform` names the active platform.
+- **`hideKeyboard(options?)` hides any soft keyboard through element-repository's `dismissKeyboard`.**
+  On iOS a bare `mobile: hideKeyboard` was all it sent, which WebDriverAgent
+  refuses on a keyboard without a Done key (a login form's Return key). The
+  step now runs element-repository's dismissal on iOS and Android, checks the
+  keyboard after every step and returns `true` when a shown keyboard is gone,
+  `false` (nothing else sent) when none was shown. `options.tapElement`
+  (`{ pageName, elementName }`, a repository entry) names a neutral element
+  that iOS taps first; without it **iOS may press the keyboard's action key,
+  which can submit a form or run a search**. `options.timeout` bounds the
+  call. A keyboard still shown after every step throws element-repository's
+  `KeyboardStillShownError`, now re-exported from the package root; the new
+  `HideKeyboardOptions` type is exported too.
 - **A scroll container for `scrollIntoView` / `scrollUntilFound`.** The steps
   and the fluent terminals take `ScrollStepOptions`:
   element-repository's `ScrollIntoViewOptions` with `container?: string`, the

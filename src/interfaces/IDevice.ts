@@ -1,3 +1,5 @@
+import type { DismissKeyboardOptions } from '@civitas-cerebrum/element-repository';
+
 /** Screen orientation. */
 export type Orientation = 'portrait' | 'landscape';
 
@@ -10,6 +12,25 @@ export interface DeviceVerifyOptions {
     timeout?: number;
     /** Replaces the default description at the head of the failure message. */
     errorMessage?: string;
+}
+
+/** Options of the `hideKeyboard` step. */
+export interface HideKeyboardOptions {
+    /**
+     * iOS only: a neutral element on the screen, named by its page-repository
+     * entry, that does nothing when tapped (a screen title, a navigation-bar
+     * label). It is tapped first, so a screen that ends editing on a tap
+     * outside the field dismisses its keyboard without pressing the
+     * keyboard's action key. It must be on screen and not covered by the
+     * keyboard. It is resolved on every device platform (an entry the page
+     * does not define fails before anything is sent); Android ignores the tap.
+     */
+    tapElement?: { pageName: string; elementName: string };
+    /**
+     * Upper bound in ms for resolving `tapElement` and for the whole
+     * dismissal. Omitted: the dismissal steps bound the call.
+     */
+    timeout?: number;
 }
 
 /**
@@ -56,7 +77,15 @@ export interface IDevice {
     // System navigation and keyboard
     /** System back. Android only. */
     pressBack(): Promise<void>;
-    hideKeyboard(): Promise<void>;
+    /**
+     * Hides the soft keyboard with element-repository's `dismissKeyboard`:
+     * `true` when a keyboard was shown and is now gone, `false` when none was
+     * shown (or the driver cannot tell), with nothing sent. `options.tapElement`
+     * (iOS only) is a neutral element tapped first; `options.timeout` bounds
+     * the call. Throws element-repository's `KeyboardStillShownError` when the
+     * keyboard is still shown after every dismissal step.
+     */
+    hideKeyboard(options?: DismissKeyboardOptions): Promise<boolean>;
     isKeyboardShown(): Promise<boolean>;
 
     // Orientation

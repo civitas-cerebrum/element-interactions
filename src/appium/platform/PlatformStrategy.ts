@@ -1,7 +1,7 @@
 import type {} from 'webdriverio';
 // Keeps `WebdriverIO.Browser` resolvable in the published types without webdriverio installed.
 import '../../types/webdriverio-global';
-import type { Platform } from '@civitas-cerebrum/element-repository';
+import type { DismissKeyboardOptions, Platform } from '@civitas-cerebrum/element-repository';
 import type { PermissionState } from '../../interfaces/IDevice';
 import type { SwipeDirection } from '@civitas-cerebrum/element-repository';
 
@@ -71,7 +71,8 @@ export interface PlatformStrategy {
 
     // System navigation and keyboard
     pressBack(driver: AppiumDriver): Promise<void>;
-    hideKeyboard(driver: AppiumDriver): Promise<void>;
+    /** element-repository's `dismissKeyboard` with this platform's name: `true` when a shown keyboard is now gone. */
+    hideKeyboard(driver: AppiumDriver, options?: DismissKeyboardOptions): Promise<boolean>;
     isKeyboardShown(driver: AppiumDriver): Promise<boolean>;
 
     // Screen gestures

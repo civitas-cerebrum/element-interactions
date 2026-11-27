@@ -1,4 +1,4 @@
-import { PlatformNotSupportedError, type Platform } from '@civitas-cerebrum/element-repository';
+import { PlatformNotSupportedError, type DismissKeyboardOptions, type Platform } from '@civitas-cerebrum/element-repository';
 import type { DeviceVerifyOptions, IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
 import { APP_STATE_FOREGROUND, APP_STATE_NAMES, type AppiumDriver, type PlatformStrategy } from './platform/PlatformStrategy';
 import { notImplementedError } from './platform/notImplemented';
@@ -195,9 +195,14 @@ export class AppiumDevice implements IDevice {
         await this.strategy.pressBack(this.driver);
     }
 
-    async hideKeyboard(): Promise<void> {
+    /**
+     * element-repository's `dismissKeyboard` (through the strategy): `false`
+     * with nothing sent when no keyboard is shown; its
+     * `KeyboardStillShownError` and fatal driver errors pass unchanged.
+     */
+    async hideKeyboard(options?: DismissKeyboardOptions): Promise<boolean> {
         this.requireImplemented();
-        await this.strategy.hideKeyboard(this.driver);
+        return this.strategy.hideKeyboard(this.driver, options);
     }
 
     async isKeyboardShown(): Promise<boolean> {

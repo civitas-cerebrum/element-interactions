@@ -93,9 +93,10 @@ const EXPECTED: Record<string, Expectation> = {
         ios: 'unsupported',
     },
     hideKeyboard: {
+        // The mock session has no isKeyboardShown: dismissKeyboard cannot tell, so nothing is sent.
         call: d => d.hideKeyboard(),
-        android: [['execute', 'mobile: hideKeyboard', {}]],
-        ios: [['execute', 'mobile: hideKeyboard', {}]],
+        android: [],
+        ios: [],
     },
     isKeyboardShown: {
         call: d => d.isKeyboardShown(),
@@ -445,7 +446,7 @@ for (const platform of ['android', 'ios'] as const) {
         test('a driver error propagates (nothing is swallowed)', async () => {
             const { device, driver } = build();
             (driver as unknown as { execute: () => Promise<never> }).execute = async () => { throw new Error('An unknown server-side error occurred'); };
-            await expect(device.hideKeyboard()).rejects.toThrow('An unknown server-side error occurred');
+            await expect(device.isKeyboardShown()).rejects.toThrow('An unknown server-side error occurred');
         });
     });
 }

@@ -12,7 +12,7 @@ import type { INavigation } from '../interfaces/INavigation';
 import type { IUtils } from '../interfaces/IUtils';
 import { toScrollIntoViewOptions } from './scrollContainer';
 import type { IGestures, LongPressOptions, PinchOptions, ScreenSwipeOptions, ScrollStepOptions, SwipeDirection, SwipeOptions, ZoomOptions } from '../interfaces/IGestures';
-import type { DeviceVerifyOptions, IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
+import type { DeviceVerifyOptions, HideKeyboardOptions, IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
 import { PlatformNotSupportedError, isFatalDriverError } from '@civitas-cerebrum/element-repository';
 import { actionFamilyOf, assertFactoryFamily, requireDevicePlatform, requireWebPlatform } from './platformGuard';
 import { EmailClient, EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
@@ -1070,11 +1070,40 @@ export class Steps {
         await this.device.pressBack();
     }
 
-    /** Hides the on-screen keyboard. Device platforms only. */
-    async hideKeyboard(): Promise<void> {
+    /**
+     * Hides the on-screen keyboard with element-repository's
+     * `dismissKeyboard`. Device platforms only.
+     *
+     * Returns `true` when a keyboard was shown and is now gone, and `false`
+     * when none was shown (or the driver cannot tell): then nothing is sent.
+     * On iOS without `options.tapElement` the dismissal may press the
+     * keyboard's action key (Done, Return, Go, Search, Send, Join), which can
+     * submit a form or run a search; name a neutral element (a screen title)
+     * in `tapElement` to have it tapped first. A keyboard still shown after
+     * every dismissal step throws element-repository's
+     * `KeyboardStillShownError` (re-exported by this package); a fatal driver
+     * error passes unchanged.
+     *
+     * @param options - `tapElement` as `{ pageName, elementName }`, resolved
+     *   through the repository (an entry the page does not define fails
+     *   before anything is sent; Android ignores the tap); `timeout` bounds
+     *   that resolution and the dismissal.
+     */
+    async hideKeyboard(options?: HideKeyboardOptions): Promise<boolean> {
         this.requirePlatform('hideKeyboard');
         log.interact('Hiding the keyboard');
-        await this.device.hideKeyboard();
+        const timeout = options?.timeout;
+        let tapElement: Element | undefined;
+        if (options?.tapElement !== undefined) {
+            const { pageName, elementName } = options.tapElement;
+            try {
+                tapElement = await this.repo.get(elementName, pageName, timeout !== undefined ? { timeout } : undefined);
+            } catch (err) {
+                const cause = err instanceof Error ? err.message : String(err);
+                throw new Error(`hideKeyboard: tapElement "${elementName}" on page "${pageName}" could not be resolved: ${cause}`, { cause: err });
+            }
+        }
+        return this.device.hideKeyboard(definedOptions({ tapElement, timeout }));
     }
 
     /** Rotates the device to `orientation`. Device platforms only. */

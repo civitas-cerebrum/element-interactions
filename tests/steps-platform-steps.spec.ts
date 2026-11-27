@@ -6,7 +6,7 @@ import { MissingAppIdError } from '../src/appium/AppiumDevice';
 import { PlaywrightFactory } from '../src/playwright/PlaywrightFactory';
 import { stepLog } from '../src/logger/Logger';
 import type { Direction, LongPressOptions, PinchOptions, ScrollStepOptions, SwipeOptions } from '../src/interfaces/IGestures';
-import type { DeviceVerifyOptions, Orientation, PermissionState } from '../src/interfaces/IDevice';
+import type { DeviceVerifyOptions, HideKeyboardOptions, Orientation, PermissionState } from '../src/interfaces/IDevice';
 import type { StepOptions } from '../src/enum/Options';
 import { PollTimeoutError } from '../src/utils/poll';
 import { mockDriver, mockElement, expectNotSupported, screenSwipes, touches, DEVICE_PLATFORMS, type Call } from './appium/mocks';
@@ -43,7 +43,7 @@ interface PlatformStepSurface {
     zoom(elementName: string, pageName: string, options?: StepOptions & PinchOptions): Promise<void>;
 
     pressBack(): Promise<void>;
-    hideKeyboard(): Promise<void>;
+    hideKeyboard(options?: HideKeyboardOptions): Promise<boolean>;
     setOrientation(orientation: 'portrait' | 'landscape'): Promise<void>;
     acceptAlert(): Promise<void>;
     dismissAlert(): Promise<void>;
@@ -253,9 +253,11 @@ const DEVICE_EXPECTED: Record<string, Expectation> = {
         ios: 'unsupported',
     },
     hideKeyboard: {
+        // The mock session has no isKeyboardShown: dismissKeyboard cannot tell, so nothing is sent.
         call: s => s.hideKeyboard(),
-        android: [['execute', 'mobile: hideKeyboard', {}]],
-        ios: [['execute', 'mobile: hideKeyboard', {}]],
+        android: [],
+        ios: [],
+        returns: false,
     },
     setOrientation: {
         call: s => s.setOrientation('landscape'),

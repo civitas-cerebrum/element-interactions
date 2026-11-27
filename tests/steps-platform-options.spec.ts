@@ -383,4 +383,10 @@ test.describe('gesture terminals on web', () => {
         await expectNotSupported(() => steps.verifyKeyboardShown({ negated: true, timeout: 1 }), 'verifyKeyboardShown', 'web');
         await expectNotSupported(() => steps.verifyAppInForeground('x', { errorMessage: 'm' }), 'verifyAppInForeground', 'web');
     });
+
+    test('hideKeyboard on web refuses before its tapElement is resolved', async () => {
+        const { steps, repoCalls } = webSteps();
+        await expectNotSupported(() => steps.hideKeyboard({ tapElement: { pageName: 'Home', elementName: 'title' }, timeout: 1 }), 'hideKeyboard', 'web');
+        expect(repoCalls).toEqual([]);
+    });
 });

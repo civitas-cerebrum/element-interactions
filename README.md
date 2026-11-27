@@ -759,7 +759,7 @@ steps.zoom(elementName, pageName, options?: StepOptions & ZoomOptions)          
 
 // Device
 steps.pressBack()                                  // android only
-steps.hideKeyboard()
+steps.hideKeyboard(options?: HideKeyboardOptions): Promise<boolean>   // tapElement { pageName, elementName }, timeout
 steps.setOrientation(orientation: Orientation)
 steps.acceptAlert()
 steps.dismissAlert()
@@ -1272,7 +1272,7 @@ The steps below drive native apps (see [Platform testing](#-platform-testing-and
 ### 📱 Device
 
 * **`pressBack()`** — Presses the system back button. Android only; throws `PlatformNotSupportedError` on web and on ios (tap the on-screen back button there).
-* **`hideKeyboard()`** — Hides the on-screen keyboard. Platform only; throws `PlatformNotSupportedError` on web.
+* **`hideKeyboard(options?: HideKeyboardOptions)`** — Hides the on-screen keyboard with element-repository's `dismissKeyboard` and returns whether it had to: `true` when a keyboard was shown and is now gone, `false` when none was shown (or the driver cannot tell), in which case nothing else is sent. iOS tries, in order: a tap on `options.tapElement` (when given), a bare `mobile: hideKeyboard`, then `mobile: hideKeyboard` with the action-key names (done, return, go, search, send, join); Android sends WebdriverIO's `hideKeyboard()` and then the two legacy `mobile: hideKeyboard` strategies. The keyboard is checked again after every step. **Warning:** without a neutral element, iOS may press the keyboard's action key, which can submit a form or run a search. To avoid it, name a neutral element on the screen that does nothing when tapped and is not covered by the keyboard (a screen title, a navigation-bar label) by its repository entry: `await steps.hideKeyboard({ tapElement: { pageName: 'LoginPage', elementName: 'title' } })`. `tapElement` takes `{ pageName, elementName }`, the form the listed-element `child` option takes; it is resolved through the repository on every device platform (an entry the page does not define fails with `hideKeyboard: tapElement "<name>" on page "<page>" could not be resolved: ...` before anything is sent), and Android ignores the tap. `options.timeout` (ms) bounds that resolution and the whole dismissal; without it the dismissal steps bound the call. A keyboard still shown after every step throws element-repository's `KeyboardStillShownError` (its `steps` lists the steps tried), re-exported by this package so `instanceof` works; it is passed through unchanged rather than wrapped, so the step names and the error class stay the ones element-repository documents. A fatal driver error (dead session) also passes unchanged. Platform only; throws `PlatformNotSupportedError` on web before `tapElement` is resolved.
 * **`setOrientation(orientation: Orientation)`** — Rotates the device to `'portrait'` or `'landscape'`. Platform only; throws `PlatformNotSupportedError` on web.
 * **`acceptAlert()`** — Accepts the open system or app alert. Platform only; throws `PlatformNotSupportedError` on web.
 * **`dismissAlert()`** — Dismisses the open system or app alert. Platform only; throws `PlatformNotSupportedError` on web.

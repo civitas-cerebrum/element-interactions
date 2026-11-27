@@ -1,3 +1,4 @@
+import { dismissKeyboard, type DismissKeyboardOptions } from '@civitas-cerebrum/element-repository';
 import type { PermissionState } from '../../interfaces/IDevice';
 import type { SwipeDirection } from '@civitas-cerebrum/element-repository';
 import { swipeScreenW3C, type SwipeInset } from '../touch';
@@ -69,8 +70,8 @@ export const androidStrategy: PlatformStrategy = Object.freeze({
     async pressBack(driver: AppiumDriver) {
         await driver.back();
     },
-    async hideKeyboard(driver: AppiumDriver) {
-        await mobile(driver, 'hideKeyboard');
+    async hideKeyboard(driver: AppiumDriver, options?: DismissKeyboardOptions) {
+        return dismissKeyboard(driver, 'android', options);
     },
     async isKeyboardShown(driver: AppiumDriver) {
         return Boolean(await mobile<boolean>(driver, 'isKeyboardShown'));

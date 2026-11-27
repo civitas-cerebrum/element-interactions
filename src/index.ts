@@ -27,12 +27,15 @@ export type {
     Orientation,
     PermissionState,
     DeviceVerifyOptions,
+    HideKeyboardOptions,
     EntryTarget,
     IInteractionFactory,
 } from './interfaces';
 // (vocabulary and error are element-repository's own; re-exported so `instanceof` works across packages)
 export type { Platform, DriverFamily } from '@civitas-cerebrum/element-repository';
 export { PLATFORMS, isPlatformName, familyOf, PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
+// The error `hideKeyboard` throws when the keyboard is still shown after every dismissal step
+export { KeyboardStillShownError } from '@civitas-cerebrum/element-repository';
 
 // Utilities
 export { reformatDateString } from './utils/DateUtilities';

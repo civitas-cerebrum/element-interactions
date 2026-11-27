@@ -4,6 +4,6 @@ export type { IExtractions } from './IExtractions';
 export type { INavigation } from './INavigation';
 export type { IUtils } from './IUtils';
 export type { IGestures, Direction, ScreenSwipeOptions, ScrollStepOptions, SwipeDirection, SwipeOptions, ScrollIntoViewOptions, LongPressOptions, TapOffset, TapAtOptions, PinchOptions, ZoomOptions } from './IGestures';
-export type { IDevice, Orientation, PermissionState, DeviceVerifyOptions } from './IDevice';
+export type { IDevice, Orientation, PermissionState, DeviceVerifyOptions, HideKeyboardOptions } from './IDevice';
 export type { EntryTarget, ElementSnapshot } from './IEntryTarget';
 export type { IInteractionFactory } from './IInteractionFactory';

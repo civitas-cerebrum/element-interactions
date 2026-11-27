@@ -27,7 +27,7 @@ export class PlaywrightDevice implements IDevice {
     async openDeepLink(_url: string, _appId?: string): Promise<void> { unsupported('openDeepLink'); }
     async isAppInForeground(_appId?: string): Promise<boolean> { return unsupported('isAppInForeground'); }
     async pressBack(): Promise<void> { unsupported('pressBack'); }
-    async hideKeyboard(): Promise<void> { unsupported('hideKeyboard'); }
+    async hideKeyboard(): Promise<boolean> { unsupported('hideKeyboard'); }
     async isKeyboardShown(): Promise<boolean> { return unsupported('isKeyboardShown'); }
     async getOrientation(): Promise<Orientation> { return unsupported('getOrientation'); }
     async setOrientation(_orientation: Orientation): Promise<void> { unsupported('setOrientation'); }

@@ -1,4 +1,4 @@
-import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
+import { PlatformNotSupportedError, dismissKeyboard, type DismissKeyboardOptions } from '@civitas-cerebrum/element-repository';
 import type { PermissionState } from '../../interfaces/IDevice';
 import type { SwipeDirection } from '@civitas-cerebrum/element-repository';
 import { swipeScreenW3C, type SwipeInset } from '../touch';
@@ -66,8 +66,8 @@ export const iosStrategy: PlatformStrategy = Object.freeze({
         // iOS has no system back; apps navigate back with an in-app control.
         throw new PlatformNotSupportedError('pressBack', 'ios');
     },
-    async hideKeyboard(driver: AppiumDriver) {
-        await mobile(driver, 'hideKeyboard');
+    async hideKeyboard(driver: AppiumDriver, options?: DismissKeyboardOptions) {
+        return dismissKeyboard(driver, 'ios', options);
     },
     async isKeyboardShown(driver: AppiumDriver) {
         return Boolean(await mobile<boolean>(driver, 'isKeyboardShown'));
