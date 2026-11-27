@@ -228,6 +228,9 @@ export interface MockNode {
  */
 const ANDROID_DESCENDANT_TEXT_XPATH = ".//*[@text!='' and not(@showing-hint='true')]";
 
+/** A text-narrowing query of element-repository (see `lookupAll`). */
+const NARROWED_TEXT_QUERY = /contains\((?:translate\()?@text|CONTAINS\[cd\]/;
+
 export interface MockUiDriver extends MockDriver {
     /** Every `$` / `$$` the session received, as `[method, selector, scope]` (`scope` is `'driver'` or the parent node's first selector). */
     lookups: Array<[string, string, string]>;
@@ -371,6 +374,13 @@ export function mockUiDriver(nodes: MockNode[], options: Parameters<typeof mockD
     async function lookupAll(selector: string, scope: MockNode[], label: string) {
         check();
         lookups.push(['$$', selector, label]);
+        // element-repository narrows a text lookup with a native query built on
+        // the selector (an XPath on @text, an iOS predicate on label / value).
+        // The mock cannot evaluate those: it rejects them as a driver that does
+        // not support the query would, and element-repository then reads the
+        // full list, the path these tests model. Narrowing itself is
+        // element-repository's, tested there and on devices.
+        if (NARROWED_TEXT_QUERY.test(selector)) throw driverError('invalid selector', `invalid selector: the mock cannot run ${selector}`);
         const found = await search(scope, selector);
         return found.map(node => {
             if (!idOf.has(node)) idOf.set(node, `el-${++ids}`);
