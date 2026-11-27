@@ -54,17 +54,20 @@ const names = (r: JsonResult | undefined) => (r?.attachments ?? [])
 /** The tests the nested run is built to end unexpectedly (so it exits 1); every other one ends as expected. */
 const MAIN_UNEXPECTED = ['evidence errors never mask the failure', 'fails and gets evidence', 'unexpected pass under test.fail() gets evidence'];
 const DRAIN_FAILING = 'drain: a failing test keeps its own error, and its lookup ends before the evidence';
-const UNEXPECTED = [...MAIN_UNEXPECTED, DRAIN_FAILING].sort();
+/** Their teardown is built to run out of Playwright's own teardown slot, to pin its length. */
+const SLOT_PIN_BELOW = 'teardown slot pin: a test timeout below the project timeout gets the project timeout';
+const SLOT_PIN_ABOVE = 'teardown slot pin: a test timeout above the project timeout gets the test timeout';
+const UNEXPECTED = [...MAIN_UNEXPECTED, DRAIN_FAILING, SLOT_PIN_BELOW, SLOT_PIN_ABOVE].sort();
 
 test('the nested run ends unexpectedly exactly where it is built to', () => {
-    expect(bySpec.size).toBe(24);
+    expect(bySpec.size).toBe(27);
     expect([...outcome].filter(([, status]) => status !== 'expected').map(([title]) => title).sort()).toEqual(UNEXPECTED);
     expect([...outcome].filter(([, status]) => status === 'unexpected').map(([title]) => title).sort()).toEqual(UNEXPECTED);
     expect(exitCode).toBe(1);
 });
 
 /** Lifecycle events of the main ios session (the labelled sessions of other files left out). */
-const mainEvents = () => events.filter(e => !/^(hook-throws|stop-throws|macos|foreground|foreground-never|foreground-dead|reset-none|relaunch-retry|setup-evidence|setup-evidence-dead|start-timeout|drain|drain-timeout) /.test(e));
+const mainEvents = () => events.filter(e => !/^(hook-throws|stop-throws|macos|foreground|foreground-never|foreground-dead|reset-none|relaunch-retry|setup-evidence|setup-evidence-dead|start-timeout|drain|drain-timeout|drain-teardown) /.test(e));
 
 test('one session per worker: started once, stopped once at worker teardown, relaunch before every test', () => {
     const main = mainEvents();
@@ -291,4 +294,41 @@ test('drain: the wait for an abandoned lookup never makes a passing test run out
     expect(outcome.get(title)).toBe('expected');
     expect(bySpec.get(title)!.status).toBe('passed');
     expect(labelled('drain-timeout').filter(e => /^(start|stop|body|lookup end)$/.test(e))).toEqual(['start', 'body', 'lookup end', 'stop']);
+});
+
+/** The `drain-teardown` events of the test whose body logged the `n`-th `body` (from 0), each with its time in ms. */
+function teardownEvents(n: number): Array<{ line: string; at: number }> {
+    const all = labelled('drain-teardown').map(e => /^(.*) @(\d+)$/.exec(e)).filter((m): m is RegExpExecArray => m !== null)
+        .map(m => ({ line: m[1], at: Number(m[2]) }));
+    const bodies = all.map((e, i) => (e.line === 'body' ? i : -1)).filter(i => i >= 0);
+    return all.slice(bodies[n], bodies[n + 1] ?? all.length);
+}
+
+test('drain: a later teardown fixture runs inside the slot the drain extended (project and test timeout 600 ms)', () => {
+    // The drain waits 1000 ms for a call it cannot abort, then a later
+    // teardown fixture sleeps 1500 ms: 2500 ms in a 600 ms slot, which only
+    // the drain's extension (600 + its 10000 ms cap) holds.
+    const title = 'teardown slot: a later teardown fixture runs inside the slot the drain extended';
+    expect(outcome.get(title)).toBe('expected');
+    expect(bySpec.get(title)!.status).toBe('passed');
+    const seen = teardownEvents(0);
+    expect(seen.map(e => e.line)).toEqual(['body', 'lookup end', 'later start', 'later end']);
+    const at = (line: string) => seen.find(e => e.line === line)!.at;
+    expect(at('later start') - at('lookup end'), 'the later fixture is torn down after the drain').toBeGreaterThanOrEqual(0);
+    expect(at('later end') - at('body'), 'the teardown ran far past the 600 ms slot').toBeGreaterThanOrEqual(2400);
+});
+
+test("drain: Playwright's own teardown slot is the larger of the project and the test timeout", () => {
+    // Nothing is abandoned, so the fixture extends nothing: a teardown that
+    // sleeps past the larger timeout runs out of exactly that slot. A
+    // Playwright that gave teardown another length (the test timeout alone,
+    // the project timeout alone, their sum) fails here.
+    for (const [title, slot, sleep] of [[SLOT_PIN_BELOW, 600, 800], [SLOT_PIN_ABOVE, 800, 1000]] as const) {
+        const r = bySpec.get(title)!;
+        expect(r.status, title).toBe('timedOut');
+        expect(plain(r), title).toContain(`Tearing down "later" exceeded the test timeout of ${slot}ms.`);
+        expect(r.error?.message ?? '', `${title}: the teardown sleeps ${sleep} ms`).not.toContain('Test timeout of');
+    }
+    expect(teardownEvents(1).map(e => e.line)).toEqual(['body', 'later start']);
+    expect(teardownEvents(2).map(e => e.line)).toEqual(['body', 'later start']);
 });

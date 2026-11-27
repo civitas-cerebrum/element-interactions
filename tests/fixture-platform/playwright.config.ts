@@ -19,8 +19,8 @@ export default defineConfig({
         launchOptions: { executablePath: '/nonexistent/browser' },
     },
     projects: [
-        { name: 'default', testIgnore: 'drain-timeout.pw.ts' },
+        { name: 'default', testIgnore: ['drain-timeout.pw.ts', 'drain-teardown.pw.ts'] },
         // A project timeout shorter than one wait for an abandoned lookup.
-        { name: 'short-timeout', testMatch: 'drain-timeout.pw.ts', timeout: 600 },
+        { name: 'short-timeout', testMatch: ['drain-timeout.pw.ts', 'drain-teardown.pw.ts'], timeout: 600 },
     ],
 });
