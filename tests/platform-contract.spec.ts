@@ -22,6 +22,9 @@ import {
 import type { Platform, IDevice } from '../src/index';
 import { PlaywrightGestures } from '../src/playwright/PlaywrightGestures';
 import { PlaywrightDevice } from '../src/playwright/PlaywrightDevice';
+import { ElementRepository, SelectionStrategy } from '@civitas-cerebrum/element-repository';
+import { isCleanTextNotFound } from '../src/appium/AppiumVerifications';
+import { DEVICE_PLATFORMS, driverError, mockUiDriver } from './appium/mocks';
 
 /**
  * Pure unit tests for the platform interfaces: the shared vocabulary, the
@@ -334,3 +337,37 @@ test.describe('PlaywrightGestures', () => {
         expect(seen).toEqual([]);
     });
 });
+
+/**
+ * The Appium family tells a clean text-strategy miss from a pass cut short
+ * by a driver error by element-repository's message (it has no error class
+ * or code for it). These pin that wording against the installed package.
+ */
+for (const platform of DEVICE_PLATFORMS) {
+    test.describe(`element-repository's text not-found on ${platform}`, () => {
+        const PAGES = { pages: [{ name: 'Screen', platform, elements: [{ elementName: 'items', selector: { 'accessibility id': 'item' } }] }] };
+        const TREE = [{ match: '~item', text: 'Red 1' }, { match: '~item', text: 'Blue 1' }];
+
+        async function notFound(mock: ReturnType<typeof mockUiDriver>): Promise<unknown> {
+            const repo = new ElementRepository(mock.driver, PAGES, { platform, timeout: 1 });
+            return repo.get('items', 'Screen', { strategy: SelectionStrategy.TEXT, value: 'Nope' }).then(() => undefined, (e: unknown) => e);
+        }
+
+        test('a clean miss is recognised as a clean not-found', async () => {
+            const error = await notFound(mockUiDriver(TREE, { capabilities: { platformName: platform } }));
+            expect(error).toBeInstanceOf(Error);
+            expect(isCleanTextNotFound(error), `element-repository's text not-found wording changed: ${(error as Error).message}`).toBe(true);
+        });
+
+        test('a miss after a failed $$ is not a clean not-found', async () => {
+            const mock = mockUiDriver(TREE, { capabilities: { platformName: platform } });
+            (mock.driver as unknown as Record<string, unknown>).$$ = async () => {
+                throw driverError('stale element reference', 'stale element reference: the list was redrawn');
+            };
+            const error = await notFound(mock);
+            expect(error).toBeInstanceOf(Error);
+            expect((error as Error).message).toMatch(/last driver error: stale element reference/);
+            expect(isCleanTextNotFound(error), `element-repository's text not-found wording changed: ${(error as Error).message}`).toBe(false);
+        });
+    });
+}

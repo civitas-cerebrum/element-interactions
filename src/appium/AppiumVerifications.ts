@@ -27,10 +27,16 @@ function escapeRegex(value: string): string {
  * with no error class or code to tell a clean miss from a pass cut short.
  * The wording is element-repository's own, the same as `getByText`'s:
  * `Element '<name>' on '<page>' with text "<text>" not found.`
+ *
+ * Known edge: on a `fallback` entry element-repository walks the chain and,
+ * when every node fails, throws the PRIMARY node's error. A clean miss on
+ * the primary followed by a fallback pass cut short by a transient driver
+ * error therefore reads as a clean miss here; only element-repository can
+ * surface the later node's error.
  */
 const CLEAN_TEXT_NOT_FOUND = /^Element '[\s\S]*' on '[\s\S]*' with text "[\s\S]*" not found\.$/;
 
-function isCleanTextNotFound(err: unknown): boolean {
+export function isCleanTextNotFound(err: unknown): boolean {
     return err instanceof Error && CLEAN_TEXT_NOT_FOUND.test(err.message);
 }
 

@@ -176,11 +176,14 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(elapsed).toBeLessThan(TIMEOUT + 1000);
         });
 
-        test('an options.timeout that is not a budget is refused by the dismissal, unchanged', async () => {
-            const { steps, mock } = keyboardSteps(platform, () => true);
-            const error = await caught(() => steps.hideKeyboard({ timeout: -1 }));
-            expect((error as Error).message).toBe('dismissKeyboard: options.timeout must be a non-negative number of ms, got -1');
-            expect(keyboardCalls(mock.calls)).toEqual([]);
+        test('an options.timeout that is not a budget is refused before anything is resolved or sent', async () => {
+            for (const timeout of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+                const { steps, mock } = keyboardSteps(platform, () => true);
+                const error = await caught(() => steps.hideKeyboard({ ...TAP, timeout }));
+                expect((error as Error).message).toBe(`dismissKeyboard: options.timeout must be a non-negative number of ms, got ${String(timeout)}`);
+                expect(mock.lookupCount('~login-title'), 'the tap element is not resolved').toBe(0);
+                expect(keyboardCalls(mock.calls)).toEqual([]);
+            }
         });
 
         test('a driver without isKeyboardShown(): a keyboard shown per mobile: isKeyboardShown throws, nothing sent', async () => {

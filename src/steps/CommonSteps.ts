@@ -1099,12 +1099,18 @@ export class Steps {
      *   its end (with its 300 ms pause and keyboard check), so the call can
      *   end up to one dismissal step after `timeout`. A dismissal stopped by
      *   the budget throws `KeyboardStillShownError`, whose `(timeout <ms> ms)`
-     *   names the time that was left for it.
+     *   names the time that was left for it. A `timeout` that is not a
+     *   finite, non-negative number is refused before anything is resolved
+     *   or sent.
      */
     async hideKeyboard(options?: HideKeyboardOptions): Promise<boolean> {
         this.requirePlatform('hideKeyboard');
         log.interact('Hiding the keyboard');
         const timeout = options?.timeout;
+        // Refused before anything is resolved or sent, with the dismissal's own message.
+        if (timeout !== undefined && !(typeof timeout === 'number' && Number.isFinite(timeout) && timeout >= 0)) {
+            throw new Error(`dismissKeyboard: options.timeout must be a non-negative number of ms, got ${String(timeout)}`);
+        }
         const started = Date.now();
         let tapElement: Element | undefined;
         if (options?.tapElement !== undefined) {
@@ -1116,10 +1122,8 @@ export class Steps {
                 throw new Error(`hideKeyboard: tapElement "${elementName}" on page "${pageName}" could not be resolved: ${cause}`, { cause: err });
             }
         }
-        // The time left of the budget; a value that is not a valid budget goes on as it is, for the dismissal to refuse.
-        const left = typeof timeout === 'number' && Number.isFinite(timeout) && timeout >= 0
-            ? Math.max(0, timeout - (Date.now() - started))
-            : timeout;
+        // The time left of the budget.
+        const left = timeout === undefined ? undefined : Math.max(0, timeout - (Date.now() - started));
         return this.device.hideKeyboard(definedOptions({ tapElement, timeout: left }));
     }
 

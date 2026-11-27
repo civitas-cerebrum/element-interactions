@@ -148,9 +148,8 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   on a device, and on a device only a clean "not found" reads as absent: a
   selection pass that met a transient driver error (a failed `$$`, a stale
   text read) is polled again, for `verifyAbsence`, `not.visible` and
-  `visible.toBeFalse()` alike, and a plain entry's failed lookup or failed
-  read of a match is retried rather than read as absent. Other strategy selectors and plain entries keep asserting on
-  every match. To assert that no element with the text is shown, use the plain
+  `visible.toBeFalse()` alike. Other strategy selectors and plain entries keep
+  asserting on every match. To assert that no element with the text is shown, use the plain
   entry with an attribute- or text-specific selector in the repository.
   **Migration:** to assert that no match of the entry is shown, drop the
   `.byText()` from the chain: `await steps.on(el, page).verifyAbsence()`.
@@ -236,6 +235,9 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   Steps. The Appium family's classes and per-platform rules are internal and
   reached through the factory, and so are the web family's gesture and device
   members. `PlatformInteractions` is the `interactions` fixture on a device.
+  On a device a plain entry's `verifyAbsence` retries a failed lookup or a
+  failed read of a match (a list redrawn while shown leaves every handle
+  stale) rather than reading it as absent.
 - **Errors catchable by type**: `MissingAppIdError` (an app step without an app
   id), `PollTimeoutError` (a polling device verification ran out of time; it
   carries `timeout`, `lastValue` and `lastError`) and `ProbeTimeoutError` (the
