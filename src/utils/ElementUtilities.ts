@@ -1,4 +1,5 @@
-import { WebElement } from '@civitas-cerebrum/element-repository';
+import type { Element } from '@civitas-cerebrum/element-repository';
+import type { IUtils } from '../interfaces/IUtils';
 import { log } from '../logger/Logger';
 
 /**
@@ -7,7 +8,7 @@ import { log } from '../logger/Logger';
  * All waits go through `Element.waitFor` rather than raw Playwright so the
  * framework works consistently across web and platform drivers.
  */
-export class Utils {
+export class Utils implements IUtils {
     static readonly SOFT_PROBE_MS = 2_000;
     private readonly timeout: number;
     constructor(timeout: number = 30000) {
@@ -19,7 +20,7 @@ export class Utils {
         return this.timeout;
     }
 
-    async softProbe(element: WebElement, state: 'visible' | 'attached' = 'attached', timeout?: number): Promise<void> {
+    async softProbe(element: Element, state: 'visible' | 'attached' = 'attached', timeout?: number): Promise<void> {
         // `optional: true` — a probe must never fail the action; the action
         // call that follows carries the real timeout and throws on its own.
         await this.waitForState(element, state, Math.min(timeout ?? this.timeout, Utils.SOFT_PROBE_MS), true);
@@ -39,7 +40,7 @@ export class Utils {
      * @returns `true` when the state was reached; `false` only when `optional` and the wait timed out.
      */
     async waitForState(
-        element: WebElement,
+        element: Element,
         state: 'visible' | 'attached' | 'hidden' | 'detached' = 'visible',
         timeout?: number,
         optional: boolean = false,

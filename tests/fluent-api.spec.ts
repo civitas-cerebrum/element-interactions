@@ -1,6 +1,7 @@
 import { test, expect } from './fixture/StepFixture';
 import path from 'path';
 import { WebElement } from '@civitas-cerebrum/element-repository';
+import type { CountVerifyOptions } from '../src/enum/Options';
 
 test.describe('Fluent API — steps.on()', () => {
 
@@ -37,6 +38,25 @@ test.describe('Fluent API — steps.on()', () => {
       // Use byText to find a button by its visible text
       const text = await steps.on('primaryButton', 'ButtonsPage').byText('Primary').getText();
       expect(text).toContain('Primary');
+    });
+
+    test('.byText() for a text no button shows is not visible; visible.toBeTrue() fails', async ({ steps }) => {
+      await steps.navigateTo('/');
+      await steps.click( 'buttonsLink','SidebarNav');
+      await steps.on('variantButtons', 'ButtonsPage').byText('Danger').visible.toBeTrue();
+      await steps.on('variantButtons', 'ButtonsPage').timeout(2000).byText('No such button').not.visible.toBeTrue();
+      await expect(steps.on('variantButtons', 'ButtonsPage').timeout(500).byText('No such button').visible.toBeTrue()).rejects.toThrow();
+    });
+
+    test('.byText() verifyAbsence passes for a text no button shows and fails for a shown one', async ({ steps }) => {
+      await steps.navigateTo('/');
+      await steps.click( 'buttonsLink','SidebarNav');
+      await steps.on('variantButtons', 'ButtonsPage').byText('Danger').verifyPresence();
+      await steps.on('variantButtons', 'ButtonsPage').timeout(2000).byText('No such button').verifyAbsence();
+      await steps.verifyAbsence('variantButtons', 'ButtonsPage', { timeout: 2000, strategy: 'text', text: 'No such button' });
+      await expect(steps.on('variantButtons', 'ButtonsPage').timeout(500).byText('Danger').verifyAbsence()).rejects.toThrow();
+      // Without a selection, absence is still asserted on every match.
+      await expect(steps.on('variantButtons', 'ButtonsPage').timeout(500).verifyAbsence()).rejects.toThrow();
     });
 
     test('.byAttribute() selects element by attribute', async ({ steps }) => {
@@ -114,6 +134,30 @@ test.describe('Fluent API — steps.on()', () => {
     test('scrollIntoView()', async ({ steps }) => {
       await steps.on('loadingButton', 'ButtonsPage').scrollIntoView();
       await steps.on('loadingButton', 'ButtonsPage').verifyState('inViewport');
+    });
+
+    test('scrollIntoView({ direction, timeout }): the browser scrolls whichever way is needed', async ({ steps }) => {
+      await steps.on('loadingButton', 'ButtonsPage').scrollIntoView({ direction: 'up', timeout: 5000 });
+      await steps.on('loadingButton', 'ButtonsPage').verifyState('inViewport');
+    });
+
+    test('scrollIntoView / scrollUntilFound accept a container on web and ignore it', async ({ steps }) => {
+      await steps.on('loadingButton', 'ButtonsPage').scrollIntoView({ direction: 'right', container: 'variantButtons' });
+      await steps.on('loadingButton', 'ButtonsPage').verifyState('inViewport');
+      await steps.on('primaryButton', 'ButtonsPage').scrollUntilFound({ container: 'variantButtons', timeout: 5000 });
+      await steps.scrollIntoView('loadingButton', 'ButtonsPage', { container: 'variantButtons' });
+      await steps.scrollUntilFound('primaryButton', 'ButtonsPage', { container: 'variantButtons' });
+      await steps.verifyState('primaryButton', 'ButtonsPage', 'inViewport');
+    });
+
+    test('a scroll container the page does not define fails on web too, naming it', async ({ steps }) => {
+      await expect(steps.on('loadingButton', 'ButtonsPage').scrollIntoView({ container: 'noSuchContainer' }))
+        .rejects.toThrow(/scrollIntoView: container "noSuchContainer" on page "ButtonsPage" could not be resolved/);
+    });
+
+    test('tapAt(offset) clicks inside the element with the mouse', async ({ steps }) => {
+      await steps.on('primaryButton', 'ButtonsPage').tapAt({ x: 5, y: 5 });
+      await steps.verifyTextContains( 'resultText','ButtonsPage', 'Primary');
     });
   });
 
@@ -381,11 +425,10 @@ test.describe('Fluent API — steps.on()', () => {
       await steps.click( 'tableLink','SidebarNav');
       // Click the Name header to sort, then verify order of name cells
       await steps.click( 'headerName','TablePage');
+      // getAllTexts reads every name cell; verifyOrder asserts that whole list in order.
       const texts = await steps.on('nameCell', 'TablePage').getAllTexts();
-      // Verify the first few names are in the order shown
-      if (texts.length >= 2) {
-        await steps.on('nameCell', 'TablePage').verifyOrder(texts.slice(0, 2));
-      }
+      expect(texts.length).toBeGreaterThanOrEqual(2);
+      await steps.on('nameCell', 'TablePage').verifyOrder(texts);
     });
 
     test('verifyListOrder()', async ({ steps }) => {
@@ -397,12 +440,91 @@ test.describe('Fluent API — steps.on()', () => {
     });
   });
 
+  test.describe('verifyCount bounds', () => {
+
+    test('every bound and every lower + upper range holds, both forms', async ({ steps }) => {
+      await steps.navigateTo('/');
+      const n = await steps.getCount('categories', 'HomePage');
+      expect(n).toBeGreaterThan(2);
+      const passing: CountVerifyOptions[] = [
+        { exactly: n }, { greaterThan: n - 1 }, { greaterThanOrEqual: n }, { lessThan: n + 1 }, { lessThanOrEqual: n },
+        { greaterThan: n - 1, lessThan: n + 1 }, { greaterThanOrEqual: n, lessThanOrEqual: n },
+        { greaterThan: n - 1, lessThanOrEqual: n }, { greaterThanOrEqual: n, lessThan: n + 1 },
+      ];
+      for (const options of passing) {
+        await steps.verifyCount('categories', 'HomePage', options);
+        await steps.on('categories', 'HomePage').verifyCount(options);
+      }
+    });
+
+    test('a range checks its upper bound too, and the failure names the failed bound', async ({ steps }) => {
+      await steps.navigateTo('/');
+      const n = await steps.getCount('categories', 'HomePage');
+      const cases: Array<[CountVerifyOptions, string]> = [
+        [{ greaterThan: 1, lessThan: 3 }, `${n} is not < 3`],
+        [{ greaterThanOrEqual: n + 1 }, `${n} is not >= ${n + 1}`],
+        [{ greaterThanOrEqual: 1, lessThanOrEqual: n - 1 }, `${n} is not <= ${n - 1}`],
+      ];
+      for (const [options, failed] of cases) {
+        for (const run of [
+          () => steps.verifyCount('categories', 'HomePage', options, { timeout: 500 }),
+          () => steps.on('categories', 'HomePage').timeout(500).verifyCount(options),
+        ]) {
+          const error = await run().then(() => undefined, (e: Error) => e);
+          expect(error, JSON.stringify(options)).toBeDefined();
+          // Playwright colours the received value: compare the plain text.
+          expect(error!.message.replace(/\u001b\[[0-9;]*m/g, '')).toContain(failed);
+        }
+      }
+    });
+
+    test('a negated count range says "Expected count not ..."', async ({ steps }) => {
+      await steps.navigateTo('/');
+      const n = await steps.getCount('categories', 'HomePage');
+      const error = await steps.expect('categories', 'HomePage').not.count.toBeGreaterThan(n - 1).timeout(500)
+        .then(() => undefined, (e: unknown) => e as Error);
+      expect(error).toBeDefined();
+      const message = error!.message.replace(/\u001b\[[0-9;]*m/g, '');
+      expect(message).toContain(`Expected count not > ${n - 1}`);
+      expect(message).not.toContain('Expected NOT count');
+    });
+
+    test('contradictory, empty or malformed options are refused at once', async ({ steps }) => {
+      await steps.navigateTo('/');
+      const invalid: Array<[unknown, RegExp]> = [
+        [{}, /You must provide 'exactly'/],
+        [{ exactly: 8, lessThan: 9 }, /'exactly' cannot be combined with 'lessThan'/],
+        [{ greaterThan: 1, greaterThanOrEqual: 2 }, /one lower bound/],
+        [{ lessThan: 9, lessThanOrEqual: 8 }, /one upper bound/],
+        [{ greaterThan: 3, lessThan: 4 }, /No element count is > 3 and < 4/],
+      ];
+      for (const [options, message] of invalid) {
+        const started = Date.now();
+        await expect(steps.verifyCount('categories', 'HomePage', options as CountVerifyOptions)).rejects.toThrow(message);
+        await expect(steps.on('categories', 'HomePage').verifyCount(options as CountVerifyOptions)).rejects.toThrow(message);
+        expect(Date.now() - started).toBeLessThan(1000);
+      }
+    });
+  });
+
   test.describe('Terminal — additional extractions', () => {
 
     test('getAllTexts()', async ({ steps }) => {
       await steps.navigateTo('/');
       const texts = await steps.on('categories', 'HomePage').getAllTexts();
       expect(texts.length).toBeGreaterThan(0);
+    });
+
+    test('getCount() and getAllTexts() read every match, as steps.getCount / steps.getAll do', async ({ steps }) => {
+      await steps.navigateTo('/');
+      const all = await steps.getAll('categories', 'HomePage');
+      expect(all.length).toBeGreaterThan(1);
+      expect(await steps.on('categories', 'HomePage').getCount()).toBe(await steps.getCount('categories', 'HomePage'));
+      expect(await steps.on('categories', 'HomePage').getCount()).toBe(all.length);
+      expect(await steps.on('categories', 'HomePage').getAllTexts()).toEqual(all);
+      // Collection-level: a strategy selector does not narrow them.
+      expect(await steps.on('categories', 'HomePage').nth(1).getCount()).toBe(all.length);
+      expect(await steps.on('categories', 'HomePage').first().getAllTexts()).toEqual(all);
     });
 
     test('getInputValue()', async ({ steps }) => {

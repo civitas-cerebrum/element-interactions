@@ -1,22 +1,10 @@
-import { Locator } from '@playwright/test';
-import { Element, WebElement } from '@civitas-cerebrum/element-repository';
-import { Verifications } from '../interactions/Verification';
+import { Element, PlatformNotSupportedError, isFatalDriverError } from '@civitas-cerebrum/element-repository';
+import type { Platform } from '@civitas-cerebrum/element-repository';
+import type { IVerifications } from '../interfaces/IVerifications';
+import { requireWebPlatform } from './platformGuard';
 
-/**
- * Snapshot of an element's state at a single point in time.
- *
- * Passed to predicates in `steps.expect(el, page).satisfy(predicate)` and
- * `steps.on(el, page).satisfy(predicate)`. All fields are primitives or plain
- * data — no async methods, no Playwright types.
- */
-export interface ElementSnapshot {
-    readonly text: string;
-    readonly value: string;
-    readonly attributes: Readonly<Record<string, string>>;
-    readonly visible: boolean;
-    readonly enabled: boolean;
-    readonly count: number;
-}
+import type { ElementSnapshot } from '../interfaces/IEntryTarget';
+export type { ElementSnapshot } from '../interfaces/IEntryTarget';
 
 /**
  * Surface the matcher tree needs from its host (typically an `ElementAction`).
@@ -30,12 +18,20 @@ export interface ExpectContext {
     readonly conditionalVisible: boolean;
     readonly visibilityTimeout: number;
     /** Resolves the element with the current strategy (may be `.first()`-narrowed). */
-    resolveElement(): Promise<WebElement>;
+    resolveElement(): Promise<Element>;
     /** Resolves the element with the ALL strategy — no narrowing, used by count matchers. */
-    resolveAll(): Promise<WebElement>;
+    resolveAll(): Promise<Element>;
     captureSnapshot(): Promise<ElementSnapshot>;
-    /** The shared Verifications facade — the single implementation source for all matcher assertions. */
-    readonly verify: Verifications;
+    /** The family's verifications — the single implementation source for all matcher assertions. */
+    readonly verify: IVerifications;
+    /** The platform the context acts on. Omitted means `'web'`. */
+    readonly platform?: Platform;
+    /**
+     * The ifVisible / isVisible gate: whether the element is visible within
+     * `timeout` ms. `ElementAction` passes its family's `visibleWithin`.
+     * Omitted: the gate resolves once and waits for visibility.
+     */
+    readonly probeVisible?: (timeout: number) => Promise<boolean>;
 }
 
 /** One assertion queued on an `ExpectBuilder`. Executes when the builder is awaited. */
@@ -52,6 +48,9 @@ interface QueuedAssertion {
 
 async function honorIfVisibleGate(ctx: ExpectContext): Promise<boolean> {
     if (!ctx.conditionalVisible) return true;
+    // The host's gate (the family's `visibleWithin`); on a device it
+    // rethrows a fatal driver error instead of skipping the assertion.
+    if (ctx.probeVisible) return ctx.probeVisible(ctx.visibilityTimeout);
     try {
         const element = await ctx.resolveElement();
         await element.waitFor({ state: 'visible', timeout: ctx.visibilityTimeout });
@@ -72,6 +71,9 @@ async function runViaVerify(
         await action();
     } catch (err) {
         if (!messageOverride) throw err;
+        // A platform refusal is not an assertion failure: keep its type (and
+        // its step name) instead of re-wrapping it under the custom message.
+        if (err instanceof PlatformNotSupportedError) throw err;
         const original = err instanceof Error ? err.message : String(err);
         throw new Error(`${messageOverride}\n  ${original}`);
     }
@@ -80,9 +82,9 @@ async function runViaVerify(
 /** Runs a matcher body that needs a resolved element. Applies the ifVisible gate first so resolve errors on absent elements are silently skipped when conditional. */
 async function runWithElement(
     ctx: ExpectContext,
-    body: (el: WebElement) => Promise<void>,
+    body: (el: Element) => Promise<void>,
     messageOverride: string | undefined,
-    resolve: (ctx: ExpectContext) => Promise<WebElement> = c => c.resolveElement(),
+    resolve: (ctx: ExpectContext) => Promise<Element> = c => c.resolveElement(),
 ): Promise<void> {
     await runViaVerify(ctx, async () => {
         const el = await resolve(ctx);
@@ -109,6 +111,10 @@ async function assertPredicate(
             lastSnapshot = await ctx.captureSnapshot();
             if (predicate(lastSnapshot) !== negated) return;
         } catch (err) {
+            // A platform refusal or a fatal driver error (dead session,
+            // invalid selector) is not a transient miss: fail now instead of
+            // polling it for the whole timeout.
+            if (err instanceof PlatformNotSupportedError || isFatalDriverError(err)) throw err;
             lastError = err;
         }
         await new Promise(resolve => setTimeout(resolve, pollMs));
@@ -176,11 +182,11 @@ abstract class BaseMatcher {
 abstract class StringMatcher extends BaseMatcher {
     protected abstract fieldLabel(): string;
     /** Subclasses identify which Verifications family handles their field. */
-    protected abstract verifyEq(target: WebElement, expected: string, opts: VerifyOpts): Promise<void>;
-    protected abstract verifyContains(target: WebElement, expected: string, opts: VerifyOpts): Promise<void>;
-    protected abstract verifyMatches(target: WebElement, re: RegExp, opts: VerifyOpts): Promise<void>;
-    protected abstract verifyStartsWith(target: WebElement, prefix: string, opts: VerifyOpts): Promise<void>;
-    protected abstract verifyEndsWith(target: WebElement, suffix: string, opts: VerifyOpts): Promise<void>;
+    protected abstract verifyEq(target: Element, expected: string, opts: VerifyOpts): Promise<void>;
+    protected abstract verifyContains(target: Element, expected: string, opts: VerifyOpts): Promise<void>;
+    protected abstract verifyMatches(target: Element, re: RegExp, opts: VerifyOpts): Promise<void>;
+    protected abstract verifyStartsWith(target: Element, prefix: string, opts: VerifyOpts): Promise<void>;
+    protected abstract verifyEndsWith(target: Element, suffix: string, opts: VerifyOpts): Promise<void>;
 
     toBe(expected: string): ExpectBuilder {
         return this.builder.enqueue(this.ctx, (entry) =>
@@ -215,22 +221,22 @@ type VerifyOpts = { negated?: boolean; timeout?: number; errorMessage?: string }
 export class TextMatcher extends StringMatcher {
     get not(): TextMatcher { return new TextMatcher(this.builder, this.ctx, !this.negated); }
     protected fieldLabel() { return 'text'; }
-    protected verifyEq(t: WebElement, v: string, o: VerifyOpts) { return this.ctx.verify.text(t, v, o); }
-    protected verifyContains(t: WebElement, v: string, o: VerifyOpts) { return this.ctx.verify.textContains(t, v, o); }
-    protected verifyMatches(t: WebElement, re: RegExp, o: VerifyOpts) { return this.ctx.verify.textMatches(t, re, o); }
-    protected verifyStartsWith(t: WebElement, p: string, o: VerifyOpts) { return this.ctx.verify.textStartsWith(t, p, o); }
-    protected verifyEndsWith(t: WebElement, s: string, o: VerifyOpts) { return this.ctx.verify.textEndsWith(t, s, o); }
+    protected verifyEq(t: Element, v: string, o: VerifyOpts) { return this.ctx.verify.text(t, v, o); }
+    protected verifyContains(t: Element, v: string, o: VerifyOpts) { return this.ctx.verify.textContains(t, v, o); }
+    protected verifyMatches(t: Element, re: RegExp, o: VerifyOpts) { return this.ctx.verify.textMatches(t, re, o); }
+    protected verifyStartsWith(t: Element, p: string, o: VerifyOpts) { return this.ctx.verify.textStartsWith(t, p, o); }
+    protected verifyEndsWith(t: Element, s: string, o: VerifyOpts) { return this.ctx.verify.textEndsWith(t, s, o); }
 }
 
 /** Asserts on the `value` of an input-like element. Reached via `.value`. Supports `.toBe`, `.toContain`, `.toMatch`, `.toStartWith`, `.toEndWith`. */
 export class ValueMatcher extends StringMatcher {
     get not(): ValueMatcher { return new ValueMatcher(this.builder, this.ctx, !this.negated); }
     protected fieldLabel() { return 'value'; }
-    protected verifyEq(t: WebElement, v: string, o: VerifyOpts) { return this.ctx.verify.inputValue(t, v, o); }
-    protected verifyContains(t: WebElement, v: string, o: VerifyOpts) { return this.ctx.verify.inputValueContains(t, v, o); }
-    protected verifyMatches(t: WebElement, re: RegExp, o: VerifyOpts) { return this.ctx.verify.inputValueMatches(t, re, o); }
-    protected verifyStartsWith(t: WebElement, p: string, o: VerifyOpts) { return this.ctx.verify.inputValueStartsWith(t, p, o); }
-    protected verifyEndsWith(t: WebElement, s: string, o: VerifyOpts) { return this.ctx.verify.inputValueEndsWith(t, s, o); }
+    protected verifyEq(t: Element, v: string, o: VerifyOpts) { return this.ctx.verify.inputValue(t, v, o); }
+    protected verifyContains(t: Element, v: string, o: VerifyOpts) { return this.ctx.verify.inputValueContains(t, v, o); }
+    protected verifyMatches(t: Element, re: RegExp, o: VerifyOpts) { return this.ctx.verify.inputValueMatches(t, re, o); }
+    protected verifyStartsWith(t: Element, p: string, o: VerifyOpts) { return this.ctx.verify.inputValueStartsWith(t, p, o); }
+    protected verifyEndsWith(t: Element, s: string, o: VerifyOpts) { return this.ctx.verify.inputValueEndsWith(t, s, o); }
 }
 
 /** Asserts on a specific HTML attribute. Reached via `.attributes.get(name)`. Supports `.toBe`, `.toContain`, `.toMatch`, `.toStartWith`, `.toEndWith`. */
@@ -240,14 +246,14 @@ export class AttributeMatcher extends StringMatcher {
     }
     get not(): AttributeMatcher { return new AttributeMatcher(this.builder, this.ctx, this.attrName, !this.negated); }
     protected fieldLabel() { return `attribute "${this.attrName}"`; }
-    protected verifyEq(t: WebElement, v: string, o: VerifyOpts) { return this.ctx.verify.attribute(t, this.attrName, v, o); }
-    protected verifyContains(t: WebElement, v: string, o: VerifyOpts) { return this.ctx.verify.attributeContains(t, this.attrName, v, o); }
-    protected verifyMatches(t: WebElement, re: RegExp, o: VerifyOpts) { return this.ctx.verify.attributeMatches(t, this.attrName, re, o); }
-    protected verifyStartsWith(t: WebElement, p: string, o: VerifyOpts) {
+    protected verifyEq(t: Element, v: string, o: VerifyOpts) { return this.ctx.verify.attribute(t, this.attrName, v, o); }
+    protected verifyContains(t: Element, v: string, o: VerifyOpts) { return this.ctx.verify.attributeContains(t, this.attrName, v, o); }
+    protected verifyMatches(t: Element, re: RegExp, o: VerifyOpts) { return this.ctx.verify.attributeMatches(t, this.attrName, re, o); }
+    protected verifyStartsWith(t: Element, p: string, o: VerifyOpts) {
         const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         return this.ctx.verify.attributeMatches(t, this.attrName, new RegExp('^' + escaped), o);
     }
-    protected verifyEndsWith(t: WebElement, s: string, o: VerifyOpts) {
+    protected verifyEndsWith(t: Element, s: string, o: VerifyOpts) {
         const escaped = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         return this.ctx.verify.attributeMatches(t, this.attrName, new RegExp(escaped + '$'), o);
     }
@@ -332,11 +338,11 @@ export class HtmlMatcher extends StringMatcher {
     }
     get not(): HtmlMatcher { return new HtmlMatcher(this.builder, this.ctx, this.outer, !this.negated); }
     protected fieldLabel() { return this.outer ? 'outerHtml' : 'html'; }
-    protected verifyEq(t: WebElement, v: string, o: VerifyOpts) { return this.ctx.verify.html(t, v, { ...o, outer: this.outer }); }
-    protected verifyContains(t: WebElement, v: string, o: VerifyOpts) { return this.ctx.verify.htmlContains(t, v, { ...o, outer: this.outer }); }
-    protected verifyMatches(t: WebElement, re: RegExp, o: VerifyOpts) { return this.ctx.verify.htmlMatches(t, re, { ...o, outer: this.outer }); }
-    protected verifyStartsWith(t: WebElement, p: string, o: VerifyOpts) { return this.ctx.verify.htmlStartsWith(t, p, { ...o, outer: this.outer }); }
-    protected verifyEndsWith(t: WebElement, s: string, o: VerifyOpts) { return this.ctx.verify.htmlEndsWith(t, s, { ...o, outer: this.outer }); }
+    protected verifyEq(t: Element, v: string, o: VerifyOpts) { return this.ctx.verify.html(t, v, { ...o, outer: this.outer }); }
+    protected verifyContains(t: Element, v: string, o: VerifyOpts) { return this.ctx.verify.htmlContains(t, v, { ...o, outer: this.outer }); }
+    protected verifyMatches(t: Element, re: RegExp, o: VerifyOpts) { return this.ctx.verify.htmlMatches(t, re, { ...o, outer: this.outer }); }
+    protected verifyStartsWith(t: Element, p: string, o: VerifyOpts) { return this.ctx.verify.htmlStartsWith(t, p, { ...o, outer: this.outer }); }
+    protected verifyEndsWith(t: Element, s: string, o: VerifyOpts) { return this.ctx.verify.htmlEndsWith(t, s, { ...o, outer: this.outer }); }
 }
 
 /** Asserts on a computed CSS property value. Reached via `.css(propertyName)`. Supports `.toBe`, `.toContain`, `.toMatch`. */
@@ -428,9 +434,17 @@ export class ExpectBuilder implements PromiseLike<void> {
     get visible(): BooleanMatcher { return new BooleanMatcher(this, this.ctx, 'visible', this.consumeNot()); }
     get enabled(): BooleanMatcher { return new BooleanMatcher(this, this.ctx, 'enabled', this.consumeNot()); }
     get attributes(): AttributesMatcher { return new AttributesMatcher(this, this.ctx, this.consumeNot()); }
-    get html(): HtmlMatcher { return new HtmlMatcher(this, this.ctx, false, this.consumeNot()); }
-    get outerHtml(): HtmlMatcher { return new HtmlMatcher(this, this.ctx, true, this.consumeNot()); }
-    css(property: string): CssMatcher { return new CssMatcher(this, this.ctx, property, this.consumeNot()); }
+    // Web-only fields: refused with the matcher's own name when the chain is
+    // built, before anything is resolved (the family would otherwise throw
+    // later, under its own method name, after resolving the element).
+    get html(): HtmlMatcher { this.requireWeb('html'); return new HtmlMatcher(this, this.ctx, false, this.consumeNot()); }
+    get outerHtml(): HtmlMatcher { this.requireWeb('outerHtml'); return new HtmlMatcher(this, this.ctx, true, this.consumeNot()); }
+    css(property: string): CssMatcher { this.requireWeb('css'); return new CssMatcher(this, this.ctx, property, this.consumeNot()); }
+
+    /** Throws `PlatformNotSupportedError(field, platform)` off the Playwright family. */
+    private requireWeb(field: string): void {
+        requireWebPlatform(field, this.ctx.platform ?? 'web');
+    }
 
     /**
      * Predicate escape hatch. Queues a custom predicate assertion on this

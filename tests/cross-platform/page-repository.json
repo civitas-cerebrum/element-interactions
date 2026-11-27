@@ -1,0 +1,60 @@
+{
+  "pages": [
+    {
+      "name": "StartScreen",
+      "platform": "web",
+      "elements": [
+        { "elementName": "landmark", "selector": { "css": "h1:has-text('UI Components Test Suite')" } },
+        { "elementName": "entries", "selector": { "css": "[data-testid^='home-card-']" } },
+        { "elementName": "destinationEntry", "selector": { "css": "[data-testid='home-card-forms']" } }
+      ]
+    },
+    {
+      "name": "DestinationScreen",
+      "platform": "web",
+      "elements": [
+        { "elementName": "landmark", "selector": { "css": "h1:has-text('Submission Form')" } },
+        { "elementName": "backButton", "selector": { "css": "[data-testid='sidebar-home-link']" } }
+      ]
+    },
+    {
+      "name": "StartScreen",
+      "platform": "ios",
+      "elements": [
+        { "elementName": "landmark", "selector": { "predicate": "type == \"XCUIElementTypeButton\" AND name == \"com.apple.settings.general\"" } },
+        { "elementName": "entries", "selector": { "class name": "XCUIElementTypeCell" } },
+        { "elementName": "destinationEntry", "selector": { "accessibility id": "com.apple.settings.general" } }
+      ]
+    },
+    {
+      "name": "DestinationScreen",
+      "platform": "ios",
+      "elements": [
+        { "elementName": "landmark", "note": "English only: the navigation bar is named by its localized title (General); a device in another language needs its own title here.", "selector": { "predicate": "type == \"XCUIElementTypeNavigationBar\" AND name == \"General\"" } },
+        {
+          "elementName": "backButton",
+          "selector": {
+            "accessibility id": "BackButton",
+            "fallback": { "class chain": "**/XCUIElementTypeNavigationBar[`name == \"General\"`]/XCUIElementTypeButton[1]" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "StartScreen",
+      "platform": "android",
+      "elements": [
+        { "elementName": "landmark", "note": "The test app's home grid (content-desc home-grid).", "selector": { "accessibility id": "home-grid" } },
+        { "elementName": "entries", "note": "The category cards of the home grid (content-desc home-card-*).", "selector": { "uiautomator": "new UiSelector().descriptionStartsWith(\"home-card-\")" } },
+        { "elementName": "destinationEntry", "note": "The Edge Cases card; it opens a category list and changes nothing.", "selector": { "accessibility id": "home-card-longList" } }
+      ]
+    },
+    {
+      "name": "DestinationScreen",
+      "platform": "android",
+      "elements": [
+        { "elementName": "landmark", "note": "The Long List row of the Edge Cases category list, present only on that list. No backButton entry: the test app has no on-screen back control, the fixture's goBack uses the system back on Android.", "selector": { "accessibility id": "category-item-longList" } }
+      ]
+    }
+  ]
+}

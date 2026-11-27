@@ -1,34 +1,43 @@
 import { Page, expect, Locator } from '@playwright/test';
+import type { IVerifications } from '../interfaces/IVerifications';
 type LocatorAssertions = ReturnType<typeof expect<Locator>>;
 import { CountVerifyOptions, TextVerifyOptions } from '../enum/Options';
+import type { VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
+export type { VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
+import { Element, WebElement } from '@civitas-cerebrum/element-repository';
+import type { EntryTarget } from '../interfaces/IEntryTarget';
+import { requireWebElement } from './requireWebElement';
+import { countMismatch, describeCountOptions, validateCountOptions } from '../utils/countRange';
 
 /**
- * Internal shape that `Verifications.visuallyMatches` consumes. The
- * high-level step layer (`steps.verifyVisualMatch`) resolves
- * {@link import('../enum/Options').VisualMaskTarget} entries to
- * Playwright Locators before calling in; this interface is therefore
- * already-resolved.
+ * Attach slice the visibility probe gives the repository per ATTEMPT (see
+ * {@link Verifications.probeVisible}), and the cap on each attempt's
+ * visibility wait.
+ *
+ * Deliberately a fixed duration rather than a fraction of the probe budget.
+ * The repository walks a `fallback` chain by attach-waiting every missing node
+ * (two waits per non-terminal node, one for the node the walk lands on), so a
+ * slice expressed as `budget / k` makes the walk's cost scale with the budget
+ * and blow it on any chain longer than `k / 2` nodes — which is how a five-node
+ * chain came to leave the node it landed on a 1ms visibility wait and report a
+ * plainly visible element hidden. With a fixed slice the walk costs the same
+ * `(2N-1) x 250ms` whatever the budget, and the attempt loop simply stops
+ * starting attempts once the budget is spent.
+ *
+ * 250ms is the floor at which a node that is ALREADY attached is seen
+ * reliably; shorter deadlines routinely expire before Playwright's first poll,
+ * which makes the walk step over a node that is sitting in the DOM.
  */
-export interface VisualMatchPrimitiveOptions {
-    mask?: Locator[];
-    maskColor?: string;
-    fullPage?: boolean;
-    maxDiffPixelRatio?: number;
-    maxDiffPixels?: number;
-    timeout?: number;
-    errorMessage?: string;
-}
-import { Element, WebElement } from '@civitas-cerebrum/element-repository';
+const PROBE_SLICE_MS = 250;
 
-/** Shared options every Verifications method accepts. */
-export interface VerifyOptions {
-    /** When `true`, flips the assertion — passes when the underlying condition fails. */
-    negated?: boolean;
-    /** Override the class-level timeout for this single assertion. */
-    timeout?: number;
-    /** Custom message prepended to Playwright's error on failure. */
-    errorMessage?: string;
-}
+/**
+ * How many times `entryAbsence` resolves the entry before it reports a
+ * divergence between the default and `ALL` resolutions. One extra attempt is
+ * enough: a node that attached while the two walks were in flight agrees on
+ * the retry, and a divergence that persists is a real disagreement about which
+ * chain node exists.
+ */
+const ABSENCE_RESOLVE_ATTEMPTS = 2;
 
 /** Reach the Playwright Locator under a WebElement — used for Playwright's `expect(locator)` assertions. */
 function resolveLocator(target: WebElement): Locator {
@@ -40,7 +49,7 @@ function resolveLocator(target: WebElement): Locator {
  * It standardizes timeouts and includes advanced custom, robust verifications
  * (like image decoding) to keep your test assertions clean and reliable.
  */
-export class Verifications {
+export class Verifications implements IVerifications {
     /** The standard timeout applied to all verifications in this class. */
     private ELEMENT_TIMEOUT: number;
 
@@ -51,6 +60,188 @@ export class Verifications {
      */
     constructor(private page: Page, timeout: number = 30000) {
         this.ELEMENT_TIMEOUT = timeout;
+    }
+
+    // ── Repository entries (fluent chains) ──
+
+    /** Resolves the entry once: a Playwright locator re-queries on every read. */
+    async pollTarget(entry: EntryTarget, collection: boolean = false): Promise<Element> {
+        return collection ? entry.resolveAll() : entry.resolve();
+    }
+
+    /** Resolves the entry once and waits up to `timeout` for it to be visible; any failure answers `false`. */
+    async visibleWithin(entry: EntryTarget, timeout: number): Promise<boolean> {
+        try {
+            const element = await entry.resolve();
+            await element.waitFor({ state: 'visible', timeout });
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Runs the visibility check (and optional `containsText` filter) without
+     * throwing. Resolves the probe target through `entry.probe()`, so scoped
+     * `findBy*` chains probe their child locator (the stamped scoped name has
+     * no repository entry) while repository chains resolve the entry's FULL
+     * selector through the repository — role+name, regex text, fallback and
+     * frame scope — exactly as an action on the same entry would. `timeout`
+     * is the probe's whole budget, so the 15s repository-resolution default
+     * is never imposed on a probe.
+     *
+     * The probe RE-RESOLVES on every attempt instead of resolving once and then
+     * waiting. A repository resolution is a point-in-time answer: the walk
+     * commits to the first `fallback` node that is attached *while the walk is
+     * running* and the caller is then stuck with that node. So an entry whose
+     * primary hydrates a second into the probe used to be answered on the
+     * fallback the walk had already settled on — reporting `false` for an
+     * element that the very action being gated goes on to find, and silently
+     * skipping a click on a visible element. Re-resolving means a late primary
+     * is picked up by a later attempt; the loop just stops starting attempts
+     * once the budget is spent.
+     *
+     * Each attempt is bounded by {@link PROBE_SLICE_MS}, both for the
+     * repository's per-node attach wait and for that attempt's visibility wait.
+     * A chain walk is not interruptible, so an entry with a long `fallback`
+     * chain can overrun the nominal budget by at most the cost of the final
+     * walk — a correct answer slightly late, rather than a wrong answer on time.
+     */
+    async probeVisible(entry: EntryTarget, timeout: number, containsText?: string): Promise<boolean> {
+        // `Math.max(1, …)`: a Playwright timeout of 0 means "wait forever", and
+        // a 0ms budget must still buy one attempt rather than no answer at all.
+        const deadline = Date.now() + Math.max(1, timeout);
+
+        for (;;) {
+            const slice = Math.max(1, Math.min(PROBE_SLICE_MS, deadline - Date.now()));
+            const element = await entry.probe(slice).catch(() => null);
+            if (element) {
+                // Look at the resolved node with no wait at all before waiting
+                // on it. The walk may have spent the entire budget and still
+                // landed on a node that is visible *right now*; a residual
+                // `waitFor({ timeout: 1 })` is not a substitute, because a 1ms
+                // deadline routinely expires before Playwright's first poll and
+                // reports an attached, visible node as hidden.
+                let visible = await element.isVisible().catch(() => false);
+                if (!visible) {
+                    const left = Math.min(deadline - Date.now(), slice);
+                    if (left > 0) {
+                        visible = await element
+                            .waitFor({ state: 'visible', timeout: left })
+                            .then(() => true, () => false);
+                    }
+                }
+                if (visible) {
+                    if (containsText) {
+                        const text = await element.textContent().catch(() => null);
+                        return text !== null && text.includes(containsText);
+                    }
+                    return true;
+                }
+            }
+            if (Date.now() >= deadline) return false;
+        }
+    }
+
+    /** At least one match of the collection becomes visible within `timeout`. */
+    async listPresence(entry: EntryTarget, timeout: number): Promise<void> {
+        const all = await entry.resolveAll();
+        requireWebElement('ElementAction.verifyPresence', all);
+        try {
+            await all.locator.filter({ visible: true }).first().waitFor({ state: 'visible', timeout });
+        } catch {
+            const count = await all.locator.count();
+            throw new Error(
+                `verifyPresence: '${entry.pageName}.${entry.elementName}' is a list entry ("list": true) — ` +
+                `expected at least one visible match within ${timeout}ms, found ${count} match(es) and none visible.`,
+            );
+        }
+    }
+
+    /**
+     * Asserts the entry hidden or detached with `toBeHidden()` on the first
+     * VISIBLE match of the entry's full match set (so it holds for every match,
+     * never a strict-mode violation on a multi-match entry), resolved through
+     * the entry's default and whole-collection resolvers (`resolveDefault` /
+     * `resolveAll`) with `attachSlice` per `fallback` chain node.
+     *
+     * A `fallback` entry is asserted on the variant the repository resolves:
+     * the first chain node that exists, exactly as an action would target. The
+     * assertion needs that node's FULL match set, so it reads the ALL
+     * resolution — and cross-checks it against the default one, refusing to
+     * assert when they land on different nodes: asserting on a node the action
+     * would not target (for an absent fallback, a false PASS) is worse than
+     * failing loudly. element-repository 0.3.4 and later probe a node by its
+     * first match under every strategy, so the two agree on a multi-match node;
+     * before that, ALL walked past it.
+     *
+     * The two resolutions run CONCURRENTLY, and a divergence is confirmed by a
+     * second round before it is reported. Run back to back they were two walks
+     * over two different moments in the page's life, so a perfectly ordinary
+     * single-match primary that attached between them made the walks land on
+     * different nodes.
+     *
+     * A chain that picks one match by its text (`.byText()`;
+     * {@link EntryTarget.selecting}) is asserted on its selection instead: a
+     * text-filtered locator, hidden when the match it picks is hidden and
+     * when no match has the text.
+     */
+    async entryAbsence(entry: EntryTarget, options: { timeout: number; attachSlice: number }): Promise<void> {
+        const slice = options.attachSlice;
+        if (entry.selecting) {
+            const selected = await entry.resolve(slice);
+            requireWebElement('ElementAction.verifyAbsence', selected);
+            await this.absence(selected, { timeout: options.timeout });
+            return;
+        }
+        let element!: WebElement;
+        let divergence: Error | undefined;
+        for (let attempt = 1; attempt <= ABSENCE_RESOLVE_ATTEMPTS; attempt++) {
+            const lastAttempt = attempt === ABSENCE_RESOLVE_ATTEMPTS;
+            divergence = undefined;
+            const [resolved, all] = await Promise.all([
+                entry.resolveDefault(slice),
+                entry.resolveAll(slice),
+            ]);
+            requireWebElement('ElementAction.verifyAbsence', resolved);
+            requireWebElement('ElementAction.verifyAbsence', all);
+            element = all;
+            const handle = await resolved.locator.elementHandle({ timeout: slice }).catch(() => null);
+            if (!handle) break;
+            let inMatchSet: boolean;
+            try {
+                inMatchSet = await all.locator.evaluateAll((els, target) => (els as unknown[]).includes(target), handle);
+            } catch (error) {
+                // The membership check runs against a live handle, so it can
+                // fail for reasons that have nothing to do with the assertion
+                // (the node detached mid-evaluation, a navigation tore the
+                // execution context down). Retry rather than report a failure
+                // the page's own churn caused; on the final attempt let it
+                // surface — loudly wrong beats quietly passing.
+                if (lastAttempt) throw error;
+                continue;
+            } finally {
+                // `dispose()` must run on the throwing path too, or every failed
+                // membership check leaks a handle into the browser process for
+                // the lifetime of the page.
+                await handle.dispose().catch(() => undefined);
+            }
+            if (inMatchSet) break;
+            divergence = new Error(
+                `verifyAbsence: "${entry.elementName}" on "${entry.pageName}" is a fallback entry whose default and ALL resolutions ` +
+                `landed on different chain nodes on ${ABSENCE_RESOLVE_ATTEMPTS} consecutive attempts, so absence cannot be asserted reliably. ` +
+                `Check that @civitas-cerebrum/element-repository is 0.3.4 or later.`,
+            );
+        }
+        if (divergence) throw divergence;
+        // `toBeHidden()` is strict: on the ALL match set it throws "resolved to
+        // N elements" as soon as two nodes match, even when every one is hidden.
+        // Assert on the first VISIBLE match instead — hidden (passes) when every
+        // match is hidden or none exists, visible (fails) when any match shows.
+        await this.absence(
+            new WebElement(element.locator.filter({ visible: true }).first()),
+            { timeout: options.timeout },
+        );
     }
 
     /** Pick `expect(locator)` vs `expect(locator).not` based on options, with the right timeout and custom error message. */
@@ -72,7 +263,8 @@ export class Verifications {
      * @param expectedText - The exact text string expected (optional if checking 'notEmpty').
      * @param options - Configuration to alter the verification behavior.
      */
-    async text(target: WebElement, expectedText?: string, options?: TextVerifyOptions & VerifyOptions): Promise<void> {
+    async text(target: Element, expectedText?: string, options?: TextVerifyOptions & VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.text', target);
         const locator = resolveLocator(target);
         const { matcher, timeout } = this.prepare(locator, options);
         if (options?.notEmpty) {
@@ -88,25 +280,29 @@ export class Verifications {
     /**
      * Asserts that the specified element contains the expected substring.
      */
-    async textContains(target: WebElement, expectedText: string, options?: VerifyOptions): Promise<void> {
+    async textContains(target: Element, expectedText: string, options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.textContains', target);
         const { matcher, timeout } = this.prepare(resolveLocator(target), options);
         await matcher.toContainText(expectedText, { timeout });
     }
 
     /** Asserts the element's text matches a regular expression. */
-    async textMatches(target: WebElement, regex: RegExp, options?: VerifyOptions): Promise<void> {
+    async textMatches(target: Element, regex: RegExp, options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.textMatches', target);
         const { matcher, timeout } = this.prepare(resolveLocator(target), options);
         await matcher.toHaveText(regex, { timeout });
     }
 
     /** Asserts the element's text starts with the given prefix. */
-    async textStartsWith(target: WebElement, prefix: string, options?: VerifyOptions): Promise<void> {
+    async textStartsWith(target: Element, prefix: string, options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.textStartsWith', target);
         const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         await this.textMatches(target, new RegExp('^' + escaped), options);
     }
 
     /** Asserts the element's text ends with the given suffix. */
-    async textEndsWith(target: WebElement, suffix: string, options?: VerifyOptions): Promise<void> {
+    async textEndsWith(target: Element, suffix: string, options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.textEndsWith', target);
         const escaped = suffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         await this.textMatches(target, new RegExp(escaped + '$'), options);
     }
@@ -115,7 +311,8 @@ export class Verifications {
      * Asserts that the specified element is attached to the DOM and is visible.
      * @param target - A Playwright Locator or Element pointing to the target element.
      */
-    async presence(target: WebElement, options?: VerifyOptions): Promise<void> {
+    async presence(target: Element, options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.presence', target);
         const { matcher, timeout } = this.prepare(resolveLocator(target), options);
         await matcher.toBeVisible({ timeout });
     }
@@ -129,7 +326,8 @@ export class Verifications {
      *   anything: without it the caller's timeout reached the resolution but
      *   not `toBeHidden`, which is the wait that decides the assertion.
      */
-    async absence(selectorOrTarget: WebElement | string, options?: VerifyOptions): Promise<void> {
+    async absence(selectorOrTarget: Element | string, options?: VerifyOptions): Promise<void> {
+        if (typeof selectorOrTarget !== 'string') requireWebElement('Verifications.absence', selectorOrTarget);
         const locator = typeof selectorOrTarget === 'string'
             ? this.page.locator(selectorOrTarget)
             : resolveLocator(selectorOrTarget);
@@ -143,7 +341,7 @@ export class Verifications {
   * @param target - A Playwright Locator or Element pointing to the target element.
   * @param state - The expected state to verify.
   */
-    async state(target: WebElement, state: 'enabled' | 'disabled' | 'editable' | 'checked' | 'focused' | 'visible' | 'hidden' | 'attached' | 'inViewport', options?: VerifyOptions): Promise<void>;
+    async state(target: Element, state: 'enabled' | 'disabled' | 'editable' | 'checked' | 'focused' | 'visible' | 'hidden' | 'attached' | 'inViewport', options?: VerifyOptions): Promise<void>;
 
     /**
      * Asserts the state of an element using Playwright's built-in locator assertions.
@@ -154,10 +352,11 @@ export class Verifications {
     async state(locator: string, state: 'enabled' | 'disabled' | 'editable' | 'checked' | 'focused' | 'visible' | 'hidden' | 'attached' | 'inViewport', timeout?: number): Promise<void>;
 
     async state(
-        locator: WebElement | string,
+        locator: Element | string,
         state: 'enabled' | 'disabled' | 'editable' | 'checked' | 'focused' | 'visible' | 'hidden' | 'attached' | 'inViewport',
         timeoutOrOptions?: number | VerifyOptions,
     ): Promise<void> {
+        if (typeof locator !== 'string') requireWebElement('Verifications.state', locator);
         const resolvedLocator: Locator = typeof locator === 'string' ? this.page.locator(locator) : resolveLocator(locator);
         const options: VerifyOptions = typeof timeoutOrOptions === 'number'
             ? { timeout: timeoutOrOptions }
@@ -297,7 +496,8 @@ export class Verifications {
     }
 
     /** Asserts the element's `innerHTML` (or `outerHTML` with `{ outer: true }`) equals the expected string exactly. */
-    async html(target: WebElement, expected: string, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+    async html(target: Element, expected: string, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+        requireWebElement('Verifications.html', target);
         const outer = options?.outer ?? false;
         await this.pollHtml(
             () => this.readElementHtml(resolveLocator(target), outer),
@@ -309,7 +509,8 @@ export class Verifications {
     }
 
     /** Asserts the element's HTML contains the given substring. */
-    async htmlContains(target: WebElement, substring: string, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+    async htmlContains(target: Element, substring: string, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+        requireWebElement('Verifications.htmlContains', target);
         const outer = options?.outer ?? false;
         await this.pollHtml(
             () => this.readElementHtml(resolveLocator(target), outer),
@@ -321,7 +522,8 @@ export class Verifications {
     }
 
     /** Asserts the element's HTML matches a regular expression. */
-    async htmlMatches(target: WebElement, regex: RegExp, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+    async htmlMatches(target: Element, regex: RegExp, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+        requireWebElement('Verifications.htmlMatches', target);
         const outer = options?.outer ?? false;
         await this.pollHtml(
             () => this.readElementHtml(resolveLocator(target), outer),
@@ -333,7 +535,8 @@ export class Verifications {
     }
 
     /** Asserts the element's HTML starts with the given prefix. */
-    async htmlStartsWith(target: WebElement, prefix: string, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+    async htmlStartsWith(target: Element, prefix: string, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+        requireWebElement('Verifications.htmlStartsWith', target);
         const outer = options?.outer ?? false;
         await this.pollHtml(
             () => this.readElementHtml(resolveLocator(target), outer),
@@ -345,7 +548,8 @@ export class Verifications {
     }
 
     /** Asserts the element's HTML ends with the given suffix. */
-    async htmlEndsWith(target: WebElement, suffix: string, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+    async htmlEndsWith(target: Element, suffix: string, options?: VerifyOptions & { outer?: boolean }): Promise<void> {
+        requireWebElement('Verifications.htmlEndsWith', target);
         const outer = options?.outer ?? false;
         await this.pollHtml(
             () => this.readElementHtml(resolveLocator(target), outer),
@@ -614,25 +818,29 @@ export class Verifications {
      * @param attributeName - The name of the HTML attribute to check (e.g., 'href', 'class', 'alt').
      * @param expectedValue - The exact expected value of the attribute.
      */
-    async attribute(target: WebElement, attributeName: string, expectedValue: string, options?: VerifyOptions): Promise<void> {
+    async attribute(target: Element, attributeName: string, expectedValue: string, options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.attribute', target);
         const { matcher, timeout } = this.prepare(resolveLocator(target), options);
         await matcher.toHaveAttribute(attributeName, expectedValue, { timeout });
     }
 
     /** Asserts that a given HTML attribute contains the substring. */
-    async attributeContains(target: WebElement, attributeName: string, substring: string, options?: VerifyOptions): Promise<void> {
+    async attributeContains(target: Element, attributeName: string, substring: string, options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.attributeContains', target);
         const escaped = substring.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         await this.attributeMatches(target, attributeName, new RegExp(escaped), options);
     }
 
     /** Asserts that a given HTML attribute matches a regular expression. */
-    async attributeMatches(target: WebElement, attributeName: string, regex: RegExp, options?: VerifyOptions): Promise<void> {
+    async attributeMatches(target: Element, attributeName: string, regex: RegExp, options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.attributeMatches', target);
         const { matcher, timeout } = this.prepare(resolveLocator(target), options);
         await matcher.toHaveAttribute(attributeName, regex, { timeout });
     }
 
     /** Asserts that the element has a given HTML attribute present (regardless of value). */
-    async hasAttribute(target: WebElement, attributeName: string, options?: VerifyOptions): Promise<void> {
+    async hasAttribute(target: Element, attributeName: string, options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.hasAttribute', target);
         const { matcher, timeout } = this.prepare(resolveLocator(target), options);
         await matcher.toHaveAttribute(attributeName, /[\s\S]*/, { timeout });
     }
@@ -647,10 +855,12 @@ export class Verifications {
      *
      * @param imagesTarget - A Playwright Locator or Element pointing to the image element(s).
      * @param scroll - Whether to scroll the image(s) into the viewport before verifying (default: true).
-     * @param options - `verifyDecoded`: run `Image.decode()` per image (default: false).
+     * @param options - `verifyDecoded`: run `Image.decode()` per image (default: false); `timeout`: each check's wait (default: the family timeout).
      * @throws Will throw an error if no images are found or any image fails verification.
      */
-    async images(imagesTarget: WebElement, scroll: boolean = true, options?: { verifyDecoded?: boolean }): Promise<void> {
+    async images(imagesTarget: Element, scroll: boolean = true, options?: { verifyDecoded?: boolean; timeout?: number }): Promise<void> {
+        requireWebElement('Verifications.images', imagesTarget);
+        const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
         const imagesLocator = resolveLocator(imagesTarget);
         const productImages = await imagesLocator.all();
 
@@ -665,9 +875,9 @@ export class Verifications {
                 await productImage.scrollIntoViewIfNeeded().catch(() => { });
             }
 
-            await expect(productImage).toBeVisible({ timeout: this.ELEMENT_TIMEOUT });
-            await expect(productImage).toHaveAttribute('src', /.+/, { timeout: this.ELEMENT_TIMEOUT });
-            await expect(productImage).not.toHaveJSProperty('naturalWidth', 0, { timeout: this.ELEMENT_TIMEOUT });
+            await expect(productImage).toBeVisible({ timeout });
+            await expect(productImage).toHaveAttribute('src', /.+/, { timeout });
+            await expect(productImage).not.toHaveJSProperty('naturalWidth', 0, { timeout });
 
             if (options?.verifyDecoded) {
                 const isDecoded = await productImage.evaluate(async (img: HTMLImageElement) => {
@@ -690,31 +900,36 @@ export class Verifications {
      * @param target - A Playwright Locator or Element pointing to the input element.
      * @param expectedValue - The expected value of the input.
      */
-    async inputValue(target: WebElement, expectedValue: string, options?: VerifyOptions): Promise<void> {
+    async inputValue(target: Element, expectedValue: string, options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.inputValue', target);
         const { matcher, timeout } = this.prepare(resolveLocator(target), options);
         await matcher.toHaveValue(expectedValue, { timeout });
     }
 
     /** Asserts the input value contains the given substring. */
-    async inputValueContains(target: WebElement, substring: string, options?: VerifyOptions): Promise<void> {
+    async inputValueContains(target: Element, substring: string, options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.inputValueContains', target);
         const escaped = substring.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         await this.inputValueMatches(target, new RegExp(escaped), options);
     }
 
     /** Asserts the input value matches a regular expression. */
-    async inputValueMatches(target: WebElement, regex: RegExp, options?: VerifyOptions): Promise<void> {
+    async inputValueMatches(target: Element, regex: RegExp, options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.inputValueMatches', target);
         const { matcher, timeout } = this.prepare(resolveLocator(target), options);
         await matcher.toHaveValue(regex, { timeout });
     }
 
     /** Asserts the input value starts with the given prefix. */
-    async inputValueStartsWith(target: WebElement, prefix: string, options?: VerifyOptions): Promise<void> {
+    async inputValueStartsWith(target: Element, prefix: string, options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.inputValueStartsWith', target);
         const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         await this.inputValueMatches(target, new RegExp('^' + escaped), options);
     }
 
     /** Asserts the input value ends with the given suffix. */
-    async inputValueEndsWith(target: WebElement, suffix: string, options?: VerifyOptions): Promise<void> {
+    async inputValueEndsWith(target: Element, suffix: string, options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.inputValueEndsWith', target);
         const escaped = suffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         await this.inputValueMatches(target, new RegExp(escaped + '$'), options);
     }
@@ -761,9 +976,10 @@ export class Verifications {
      * @param target - A Playwright Locator or Element resolving to the list of elements.
      * @param expectedTexts - The expected text values in order.
      */
-    async order(target: WebElement, expectedTexts: string[]): Promise<void> {
-        const locator = resolveLocator(target);
-        await expect(locator).toHaveText(expectedTexts, { timeout: this.ELEMENT_TIMEOUT });
+    async order(target: Element, expectedTexts: string[], options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.order', target);
+        const { matcher, timeout } = this.prepare(resolveLocator(target), options);
+        await matcher.toHaveText(expectedTexts, { timeout });
     }
 
     /**
@@ -774,19 +990,22 @@ export class Verifications {
      * @param property - The CSS property name (e.g. `'color'`, `'font-size'`, `'display'`).
      * @param expectedValue - The expected computed value.
      */
-    async cssProperty(target: WebElement, property: string, expectedValue: string, options?: VerifyOptions): Promise<void> {
+    async cssProperty(target: Element, property: string, expectedValue: string, options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.cssProperty', target);
         const { matcher, timeout } = this.prepare(resolveLocator(target), options);
         await matcher.toHaveCSS(property, expectedValue, { timeout });
     }
 
     /** Asserts a computed CSS property value contains the given substring. */
-    async cssPropertyContains(target: WebElement, property: string, substring: string, options?: VerifyOptions): Promise<void> {
+    async cssPropertyContains(target: Element, property: string, substring: string, options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.cssPropertyContains', target);
         const escaped = substring.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         await this.cssPropertyMatches(target, property, new RegExp(escaped), options);
     }
 
     /** Asserts a computed CSS property value matches a regular expression. */
-    async cssPropertyMatches(target: WebElement, property: string, regex: RegExp, options?: VerifyOptions): Promise<void> {
+    async cssPropertyMatches(target: Element, property: string, regex: RegExp, options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.cssPropertyMatches', target);
         const { matcher, timeout } = this.prepare(resolveLocator(target), options);
         await matcher.toHaveCSS(property, regex, { timeout });
     }
@@ -796,81 +1015,66 @@ export class Verifications {
      * in the specified direction. Each element's trimmed `textContent` is compared
      * using locale-aware string comparison.
      * @param target - A Playwright Locator or Element resolving to the list of elements.
+     * The list is re-read every 100 ms until it is sorted or `options.timeout`
+     * (default: the configured element timeout) runs out. A list of fewer than
+     * two items (an empty list included) passes at once, as on a device.
      * @param direction - `'asc'` for ascending (A-Z) or `'desc'` for descending (Z-A).
+     * @param options - Optional `{ timeout? }` override.
      */
-    async listOrder(target: WebElement, direction: 'asc' | 'desc'): Promise<void> {
+    async listOrder(target: Element, direction: 'asc' | 'desc', options?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.listOrder', target);
         const locator = resolveLocator(target);
-        const texts = (await locator.allTextContents()).map(t => t.trim());
+        const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
+        const deadline = Date.now() + timeout;
 
-        if (texts.length < 2) return;
+        for (;;) {
+            const texts = (await locator.allTextContents()).map(t => t.trim());
+            if (texts.length < 2) return;
 
-        const sorted = [...texts].sort((a, b) =>
-            direction === 'asc' ? a.localeCompare(b) : b.localeCompare(a)
-        );
+            const sorted = [...texts].sort((a, b) =>
+                direction === 'asc' ? a.localeCompare(b) : b.localeCompare(a)
+            );
+            if (texts.every((t, i) => t === sorted[i])) return;
 
-        expect(texts, `Expected list to be sorted ${direction}ending`).toEqual(sorted);
+            if (Date.now() >= deadline) {
+                expect(texts, `Expected list to be sorted ${direction}ending`).toEqual(sorted);
+            }
+            await new Promise(resolve => setTimeout(resolve, Math.min(100, Math.max(0, deadline - Date.now()))));
+        }
     }
 
 
     /**
-     * Asserts the number of elements matching the locator based on the provided conditions.
-     * Exactly one of `exactly`, `greaterThan`, `lessThan`, `greaterThanOrEqual`, or
-     * `lessThanOrEqual` must be set on `options`.
+     * Asserts the number of elements matching the locator based on the provided conditions:
+     * `exactly`, or a range of at most one lower bound (`greaterThan` / `greaterThanOrEqual`)
+     * and at most one upper bound (`lessThan` / `lessThanOrEqual`), every given bound holding.
      * @param target - A Playwright Locator or Element pointing to the target elements.
      * @param options - Configuration specifying which comparator to apply and the expected count.
      * @param verifyOptions - Optional `{ negated?, timeout?, errorMessage? }` override.
-     * @throws Error if any count in `options` is negative, or if the count does not match.
+     * @throws Error at once when `options` is empty, negative or contradictory (no count can
+     *   satisfy it); an assertion error naming the failed bound when the count does not match.
      */
-    async count(target: WebElement, options: CountVerifyOptions, verifyOptions?: VerifyOptions): Promise<void> {
+    async count(target: Element, options: CountVerifyOptions, verifyOptions?: VerifyOptions): Promise<void> {
+        requireWebElement('Verifications.count', target);
+        validateCountOptions(options);
         const locator = resolveLocator(target);
         const timeout = verifyOptions?.timeout ?? this.ELEMENT_TIMEOUT;
         const { matcher } = this.prepare(locator, verifyOptions);
-
-        if (options.exactly !== undefined && options.exactly < 0) {
-            throw new Error(`'exact' count cannot be negative.`);
-        }
-        if (options.greaterThan !== undefined && options.greaterThan < 0) {
-            throw new Error(`'greaterThan' count cannot be negative.`);
-        }
-        if (options.lessThan !== undefined && options.lessThan <= 0) {
-            throw new Error(`'lessThan' must be greater than 0. Element counts cannot be negative.`);
-        }
-        if (options.greaterThanOrEqual !== undefined && options.greaterThanOrEqual < 0) {
-            throw new Error(`'greaterThanOrEqual' count cannot be negative.`);
-        }
-        if (options.lessThanOrEqual !== undefined && options.lessThanOrEqual < 0) {
-            throw new Error(`'lessThanOrEqual' count cannot be negative.`);
-        }
 
         if (options.exactly !== undefined) {
             await matcher.toHaveCount(options.exactly, { timeout });
             return;
         }
 
-        if (
-            options.greaterThan === undefined && options.lessThan === undefined
-            && options.greaterThanOrEqual === undefined && options.lessThanOrEqual === undefined
-        ) {
-            throw new Error(`You must provide 'exact', 'greaterThan', 'lessThan', 'greaterThanOrEqual', or 'lessThanOrEqual' in CountVerifyOptions.`);
-        }
-
-        const describe = [
-            options.greaterThan !== undefined ? `> ${options.greaterThan}` : null,
-            options.lessThan !== undefined ? `< ${options.lessThan}` : null,
-            options.greaterThanOrEqual !== undefined ? `>= ${options.greaterThanOrEqual}` : null,
-            options.lessThanOrEqual !== undefined ? `<= ${options.lessThanOrEqual}` : null,
-        ].filter(Boolean).join(' and ');
-        const negatedSuffix = verifyOptions?.negated ? ' (negated)' : '';
-
-        await expect.poll(async () => {
-            const actualCount = await target.count();
-            const passes =
-                (options.greaterThan === undefined || actualCount > options.greaterThan) &&
-                (options.lessThan === undefined || actualCount < options.lessThan) &&
-                (options.greaterThanOrEqual === undefined || actualCount >= options.greaterThanOrEqual) &&
-                (options.lessThanOrEqual === undefined || actualCount <= options.lessThanOrEqual);
-            return verifyOptions?.negated ? !passes : passes;
-        }, { timeout, message: `Expected count ${describe}${negatedSuffix}` }).toBe(true);
+        // Polls a verdict instead of a boolean, so the failure names the bound
+        // the last count broke: Expected "count > 1 and < 3", Received "6 is not < 3".
+        const negated = verifyOptions?.negated === true;
+        const expected = `count ${negated ? 'not ' : ''}${describeCountOptions(options)}`;
+        const lead = `Expected ${expected}`;
+        await expect.poll(async () => countMismatch(options, await target.count(), negated) ?? expected, {
+            timeout,
+            message: verifyOptions?.errorMessage ? `${verifyOptions.errorMessage} (${lead})` : lead,
+        }).toBe(expected);
     }
 
     // ==========================================
@@ -915,10 +1119,11 @@ export class Verifications {
      *                           badges, user avatars, etc.).
      */
     async visuallyMatches(
-        target: WebElement | Page,
+        target: Element | Page,
         snapshotName?: string,
         options?: VisualMatchPrimitiveOptions,
     ): Promise<void> {
+        if (!this.isPage(target)) requireWebElement('Verifications.visuallyMatches', target);
         const targetForMatcher = this.isPage(target)
             ? target
             : resolveLocator(target);
@@ -946,7 +1151,7 @@ export class Verifications {
     }
 
     /** Type guard — distinguishes a Playwright Page from a framework WebElement. */
-    private isPage(target: WebElement | Page): target is Page {
+    private isPage(target: Element | Page): target is Page {
         return typeof (target as Page).goto === 'function';
     }
 }

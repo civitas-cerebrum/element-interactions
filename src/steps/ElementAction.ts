@@ -1,6 +1,10 @@
+import { isNoMatchAnswer, readVisible, resolveConfirmed } from '../utils/visibility';
 import { Locator } from '@playwright/test';
 import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
-import { ElementInteractions } from '../interactions/facade/ElementInteractions';
+import type { Platform } from '@civitas-cerebrum/element-repository';
+import { requireWebElement } from '../playwright/requireWebElement';
+import { ElementActionFamily, requireDevicePlatform, requireWebPlatform } from './platformGuard';
+import { describeCountOptions, validateCountOptions } from '../utils/countRange';
 import { DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ScreenshotOptions, IsVisibleOptions } from '../enum/Options';
 import {
     ElementSnapshot,
@@ -9,7 +13,20 @@ import {
     BooleanMatcher,
 } from './ExpectMatchers';
 import { VisibleChain } from './VisibleChain';
+import { toScrollIntoViewOptions } from './scrollContainer';
 import { isListEntry } from './listEntry';
+import type { EntryTarget } from '../interfaces/IEntryTarget';
+import type {
+    IGestures,
+    LongPressOptions,
+    PinchOptions,
+    ScrollStepOptions,
+    SwipeDirection,
+    SwipeOptions,
+    TapAtOptions,
+    TapOffset,
+    ZoomOptions,
+} from '../interfaces/IGestures';
 
 /**
  * The shape returned by the `ElementAction.visible` getter: it is BOTH the
@@ -58,16 +75,16 @@ export type VisibleField = (() => ElementAction) & {
  * slicing rather than deferring to `repo.get`'s own budget.
  */
 const ABSENCE_ATTACH_SLICE_FLOOR_MS = 250;
-const ABSENCE_ATTACH_SLICE_CAP_MS = 1000;
 
-/**
- * How many times `verifyAbsence` resolves the entry before it reports a
- * divergence between the default and `ALL` resolutions. One extra attempt is
- * enough: a node that attached while the two walks were in flight agrees on
- * the retry, and a divergence that persists is a real disagreement about which
- * chain node exists.
- */
-const ABSENCE_RESOLVE_ATTEMPTS = 2;
+/** `options` with a per-call attach budget and a lookup signal, each only when given. */
+function withLookup(options: ElementResolutionOptions, attachBudget?: number, signal?: AbortSignal): ElementResolutionOptions {
+    return {
+        ...options,
+        ...(attachBudget === undefined ? {} : { timeout: attachBudget }),
+        ...(signal === undefined ? {} : { signal }),
+    };
+}
+const ABSENCE_ATTACH_SLICE_CAP_MS = 1000;
 
 /**
  * Fluent builder for performing actions on a repository element.
@@ -99,10 +116,22 @@ export class ElementAction {
         private _repo: ElementRepository,
         private _elementName: string,
         private _pageName: string,
-        private interactions: ElementInteractions,
+        private interactions: ElementActionFamily,
         private timeoutMs?: number,
     ) {
         this._timeout = timeoutMs ?? 30000;
+    }
+
+    /**
+     * The platform this chain acts on: the family's platform (the factory's,
+     * when built by `Steps`), `'web'` for the Playwright `ElementInteractions`
+     * facade.
+     */
+    get platform(): Platform { return this.interactions.platform ?? 'web'; }
+
+    /** Web-only terminal: throws `PlatformNotSupportedError(step, platform)` off the Playwright family. */
+    private requireWeb(step: string): void {
+        requireWebPlatform(step, this.platform);
     }
 
     /** Repository this chain resolves elements against. Readonly — set at construction. */
@@ -224,16 +253,16 @@ export class ElementAction {
      */
     private async shouldProceed(): Promise<boolean> {
         if (!this.conditionalVisible) return true;
-        try {
-            const element = await this.resolve();
-            await element.waitFor({ state: 'visible', timeout: this.visibilityTimeout });
-            return true;
-        } catch {
-            return false;
-        }
+        return this.interactions.verify.visibleWithin(this.entry(), this.visibilityTimeout);
     }
 
-    private async resolve(): Promise<WebElement> {
+    /**
+     * @param attachBudget - Per-call attach budget for the repository (per
+     *   `fallback` node). Omitted: the repository's default. A family that
+     *   re-resolves an entry per poll passes a short budget of its own.
+     * @param signal - Stops the repository lookup (a poll probe's signal); see {@link EntryTarget}.
+     */
+    private async resolve(attachBudget?: number, signal?: AbortSignal): Promise<Element> {
         // Scoped chains never resolve via the repository — the stamped scoped
         // name has no repo entry. `narrowScoped` honours `visibleStrategy`, so
         // the check order here does not lose `.visible()` on scoped chains.
@@ -243,18 +272,89 @@ export class ElementAction {
         if (this.visibleStrategy) {
             // strict: true → throws when no visible match exists, matching the
             // throw-on-miss contract of every other strategy selector.
-            return (await this.repo.getVisible(this.elementName, this.pageName, true)) as WebElement;
+            const visible = signal
+                ? await this.repo.getVisible(this.elementName, this.pageName, true, { signal })
+                : await this.repo.getVisible(this.elementName, this.pageName, true);
+            // Unreachable with `strict: true` (it throws first); kept so the type is honest.
+            if (!visible) throw new Error(`No visible match for "${this.elementName}" in "${this.pageName}".`);
+            return visible;
         }
-        return (await this.repo.get(this.elementName, this.pageName, this.resolutionOptions)) as WebElement;
+        return await this.lookup(withLookup(this.resolutionOptions, attachBudget, signal), attachBudget, signal);
     }
 
-    private async resolveAll(): Promise<WebElement> {
+    /**
+     * `repo.get` with `options`. On a device a RANDOM / ATTRIBUTE miss is
+     * confirmed by a lookup of every match (`resolveConfirmed`): its
+     * `No elements found` hides why the strategy's wait failed, a dead
+     * session included. Web is unchanged.
+     */
+    private async lookup(options: ElementResolutionOptions, attachBudget?: number, signal?: AbortSignal): Promise<Element> {
+        const get = () => this.repo.get(this.elementName, this.pageName, options);
+        if (this.platform === 'web') return await get();
+        return await resolveConfirmed(options.strategy, get, () => this.resolveAll(attachBudget, signal));
+    }
+
+    private async resolveAll(attachBudget?: number, signal?: AbortSignal): Promise<Element> {
         if (this.scopedChild) {
             // Collection-level: ignore any .first()/.nth() narrowing, return the
             // whole child set so count / order / image terminals see every match.
             return new WebElement(await this.scopedChild());
         }
-        return (await this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL })) as WebElement;
+        return await this.repo.get(this.elementName, this.pageName, withLookup({ strategy: SelectionStrategy.ALL }, attachBudget, signal));
+    }
+
+    /**
+     * The entry's default resolution: no strategy selector applied (a scoped
+     * chain answers its first child match).
+     */
+    private async resolveDefault(attachBudget?: number, signal?: AbortSignal): Promise<Element> {
+        if (this.scopedChild) {
+            return new WebElement((await this.scopedChild()).first());
+        }
+        return await this.repo.get(this.elementName, this.pageName, withLookup({}, attachBudget, signal));
+    }
+
+    /**
+     * This chain as an {@link EntryTarget}: the repository entry with the
+     * chain's strategy selector and scope folded into its resolvers. The
+     * family's entry-level methods (polling targets, visibility probes, list
+     * presence, absence, snapshots) decide how often to resolve it.
+     */
+    private entry(): EntryTarget {
+        return {
+            elementName: this.elementName,
+            pageName: this.pageName,
+            resolve: (attachBudget?: number, signal?: AbortSignal) => this.resolve(attachBudget, signal),
+            resolveDefault: (attachBudget?: number, signal?: AbortSignal) => this.resolveDefault(attachBudget, signal),
+            resolveAll: (attachBudget?: number, signal?: AbortSignal) => this.resolveAll(attachBudget, signal),
+            probe: (attachBudget: number, signal?: AbortSignal) => this.probeTarget(attachBudget, signal),
+            selecting: !this.scopedChild && this.resolutionOptions.strategy === SelectionStrategy.TEXT,
+        };
+    }
+
+    /**
+     * The element a verification polls (`all`: the whole collection, for
+     * count / order verifications), as the family's `pollTarget` builds it.
+     */
+    private async verifyTarget(all: boolean = false): Promise<Element> {
+        return this.interactions.verify.pollTarget(this.entry(), all);
+    }
+
+    /**
+     * The visibility probe behind `isVisible()`: whether this chain's element
+     * becomes visible within `timeout` ms (and, with `containsText`, whether
+     * its text then contains it). The family's `probeVisible`: it re-resolves
+     * the entry on every attempt; on a device a fatal driver error is thrown
+     * instead of answering `false`.
+     *
+     * Internal plumbing of `isVisible()` / `ifVisible()`, public only so the
+     * visibility chain can reach it: test code should use `isVisible()` /
+     * `ifVisible()` instead.
+     *
+     * @internal
+     */
+    async probeVisible(timeout: number, containsText?: string): Promise<boolean> {
+        return this.interactions.verify.probeVisible(this.entry(), timeout, containsText);
     }
 
     /**
@@ -289,13 +389,14 @@ export class ElementAction {
      *   to pay for (see `VisibleChain.probe`), not hand its whole budget over.
      *   Defaults to the chain's visibility timeout. Clamped to at least 1ms,
      *   because a Playwright timeout of 0 means "wait forever".
+     * @param signal - Stops the repository lookup; see {@link EntryTarget}.
      */
-    async probeTarget(timeout?: number): Promise<WebElement> {
+    async probeTarget(timeout?: number, signal?: AbortSignal): Promise<Element> {
         if (this.scopedChild) {
             return new WebElement(this.narrowScoped(await this.scopedChild()));
         }
         const budget = Math.max(1, timeout ?? this.visibilityTimeout);
-        return (await this.repo.get(this.elementName, this.pageName, { ...this.resolutionOptions, timeout: budget })) as WebElement;
+        return await this.lookup(withLookup(this.resolutionOptions, budget, signal), budget, signal);
     }
 
     /**
@@ -349,6 +450,7 @@ export class ElementAction {
         const scoped = new ElementAction(this.repo, scopedName, this.pageName, this.interactions, this._timeout);
         scoped.scopedChild = async () => {
             const parent = await this.resolve();
+            requireWebElement('ElementAction.findBy*', parent);
             return childFactory(parent.locator);
         };
         return scoped;
@@ -369,6 +471,7 @@ export class ElementAction {
      * await steps.on('table', 'TablePage').findByRole('cell', { name: 'Alice Martin' }).getText();
      */
     findByRole(role: Parameters<Locator['getByRole']>[0], options?: { name?: string | RegExp; exact?: boolean }): ElementAction {
+        this.requireWeb('findByRole');
         const label = options?.name !== undefined ? `findByRole(${role}, name=${String(options.name)})` : `findByRole(${role})`;
         return this.spawnScoped(label, parent => parent.getByRole(role, options));
     }
@@ -379,6 +482,7 @@ export class ElementAction {
      * await steps.on('cartPanel', 'CartPage').findByText('Your cart is empty').verifyState('visible');
      */
     findByText(text: string | RegExp, options?: { exact?: boolean }): ElementAction {
+        this.requireWeb('findByText');
         return this.spawnScoped(`findByText(${String(text)})`, parent => parent.getByText(text, options));
     }
 
@@ -388,6 +492,7 @@ export class ElementAction {
      * await steps.on('panel', 'Page').findBySelector("input[name='email']").fill('a@b.com');
      */
     findBySelector(css: string): ElementAction {
+        this.requireWeb('findBySelector');
         return this.spawnScoped(`findBySelector(${css})`, parent => parent.locator(css));
     }
 
@@ -405,10 +510,14 @@ export class ElementAction {
         });
     }
 
-    /** Click the resolved element if present. Returns `true` if clicked, `false` if skipped. */
+    /**
+     * Click the resolved element if present. Returns `true` if clicked,
+     * `false` if skipped. Only a no-match answer skips; any other error of
+     * the visibility read is thrown, never read as "not present".
+     */
     async clickIfPresent(options?: { withoutScrolling?: boolean; force?: boolean }): Promise<boolean> {
         const element = await this.resolve();
-        if (await element.isVisible()) {
+        if (await readVisible(() => element.isVisible())) {
             await this.interactions.interact.click(element, {
                 withoutScrolling: options?.withoutScrolling,
                 ifPresent: true,
@@ -423,6 +532,7 @@ export class ElementAction {
 
     /** Hover over the resolved element. Skips silently if `ifVisible()` was set and element is hidden. */
     async hover(): Promise<void> {
+        this.requireWeb('hover');
         if (!await this.shouldProceed()) return;
         const element = await this.resolve();
         await element.action(this._timeout).hover();
@@ -435,15 +545,121 @@ export class ElementAction {
         await element.action(this._timeout).fill(text);
     }
 
-    /** Scroll the resolved element into view. Skips silently if `ifVisible()` was set and element is hidden. */
-    async scrollIntoView(): Promise<void> {
+    /**
+     * Scroll the resolved element into view. Skips silently if `ifVisible()` was set and element is hidden.
+     * @param options - `direction`: where the element lies relative to the view on a device (default
+     *   `'down'`; the browser scrolls whichever way is needed); `maxSwipes`: the most swipes a device sweep
+     *   makes (default 20); `container`: the element name, on the chain's page, of the scrollable ancestor
+     *   the device sweep swipes inside (see {@link ScrollStepOptions}; ignored on web); `timeout` in ms
+     *   (default the chain timeout), which also bounds a device sweep.
+     */
+    async scrollIntoView(options?: ScrollStepOptions): Promise<void> {
         if (!await this.shouldProceed()) return;
         const element = await this.resolve();
-        await element.action(this._timeout).scrollIntoView();
+        await element.scrollIntoView(await toScrollIntoViewOptions(this.repo, 'scrollIntoView', this.pageName, options, options?.timeout ?? this._timeout));
+    }
+
+    // -- Terminal actions: gestures --
+    //
+    // Each resolves the chain's element (strategy selectors and scope applied)
+    // and hands it to the family's gestures with the chain timeout, unless the
+    // options carry their own `timeout`.
+
+    /** The family's gestures; a chain built without them (not through `Steps`) cannot run a gesture. */
+    private requireGestures(step: string): IGestures {
+        const gestures = this.interactions.gestures;
+        if (!gestures) {
+            throw new Error(`${step}: this chain has no gestures; build it through Steps (steps.on(...)).`);
+        }
+        return gestures;
+    }
+
+    /**
+     * Swipe on the resolved element: the finger moves in `direction` (`'up'`
+     * reveals content below), through the element's centre. On web a mouse
+     * drag. Skips silently if `ifVisible()` was set and the element is hidden.
+     * @param options - `distance`: finger travel in px (platform default when omitted); `timeout` in ms.
+     */
+    async swipe(direction: SwipeDirection, options?: SwipeOptions): Promise<void> {
+        const gestures = this.requireGestures('swipe');
+        if (!await this.shouldProceed()) return;
+        const element = await this.resolve();
+        await gestures.swipe(element, direction, { ...options, timeout: options?.timeout ?? this._timeout });
+    }
+
+    /**
+     * Scroll until the resolved element is displayed; throws when the timeout
+     * expires or the swipe limit is reached first. On web the browser scrolls
+     * it into view. Not gated by `ifVisible()`: the element is expected to be
+     * off screen.
+     * @param options - `direction`: where the element lies relative to the view (default `'down'`);
+     *   `maxSwipes`: the most swipes a device sweep makes (default 20); `container`: the element name,
+     *   on the chain's page, of the scrollable ancestor the device sweep swipes inside (see
+     *   {@link ScrollStepOptions}; ignored on web); `timeout` in ms (default the chain timeout).
+     */
+    async scrollUntilFound(options?: ScrollStepOptions): Promise<void> {
+        const gestures = this.requireGestures('scrollUntilFound');
+        const element = await this.resolve();
+        await gestures.scrollUntilFound(element, await toScrollIntoViewOptions(this.repo, 'scrollUntilFound', this.pageName, options, options?.timeout ?? this._timeout));
+    }
+
+    /**
+     * Press and hold the resolved element (on web the mouse button is held).
+     * Skips silently if `ifVisible()` was set and the element is hidden.
+     * @param options - `duration`: hold time in ms (default 1000); `timeout` in ms.
+     */
+    async longPress(options?: LongPressOptions): Promise<void> {
+        const gestures = this.requireGestures('longPress');
+        if (!await this.shouldProceed()) return;
+        const element = await this.resolve();
+        await gestures.longPress(element, { ...options, timeout: options?.timeout ?? this._timeout });
+    }
+
+    /**
+     * Tap a point inside the resolved element, `offset` px from its top-left
+     * corner (`0 <= x < width`, `0 <= y < height`). On a device a W3C touch
+     * tap; on web a mouse click at that point. Skips silently if
+     * `ifVisible()` was set and the element is hidden.
+     * @param options - `timeout` in ms (default the chain timeout).
+     */
+    async tapAt(offset: TapOffset, options?: TapAtOptions): Promise<void> {
+        const gestures = this.requireGestures('tapAt');
+        if (!await this.shouldProceed()) return;
+        const element = await this.resolve();
+        await gestures.tapAtElement(element, offset, { ...options, timeout: options?.timeout ?? this._timeout });
+    }
+
+    /**
+     * Two-finger pinch (fingers move together) on the resolved element.
+     * Device platforms only: on web it throws `PlatformNotSupportedError('pinch', 'web')`
+     * before resolving. Skips silently if `ifVisible()` was set and the element is hidden.
+     * @param options - `scale` in (0, 1), default 0.5; `timeout` in ms.
+     */
+    async pinch(options?: PinchOptions): Promise<void> {
+        requireDevicePlatform('pinch', this.platform);
+        const gestures = this.requireGestures('pinch');
+        if (!await this.shouldProceed()) return;
+        const element = await this.resolve();
+        await gestures.pinch(element, { ...options, timeout: options?.timeout ?? this._timeout });
+    }
+
+    /**
+     * Two-finger zoom (fingers spread) on the resolved element.
+     * Device platforms only: on web it throws `PlatformNotSupportedError('zoom', 'web')`
+     * before resolving. Skips silently if `ifVisible()` was set and the element is hidden.
+     * @param options - `scale` above 1, default 2; `timeout` in ms.
+     */
+    async zoom(options?: ZoomOptions): Promise<void> {
+        requireDevicePlatform('zoom', this.platform);
+        const gestures = this.requireGestures('zoom');
+        if (!await this.shouldProceed()) return;
+        const element = await this.resolve();
+        await gestures.zoom(element, { ...options, timeout: options?.timeout ?? this._timeout });
     }
 
     /** Select a dropdown option. */
     async selectDropdown(options?: DropdownSelectOptions): Promise<string> {
+        this.requireWeb('selectDropdown');
         const element = await this.resolve();
         return await this.interactions.interact.selectDropdown(element, {
             ...options,
@@ -473,6 +689,7 @@ export class ElementAction {
 
     /** Right-click the resolved element. */
     async rightClick(): Promise<void> {
+        this.requireWeb('rightClick');
         const element = await this.resolve();
         await this.interactions.interact.rightClick(element, { timeout: this._timeout });
     }
@@ -485,12 +702,14 @@ export class ElementAction {
 
     /** Upload one or more files to a file input. Pass a string array for multi-file inputs. */
     async uploadFile(filePath: string | string[]): Promise<void> {
+        this.requireWeb('uploadFile');
         const element = await this.resolve();
         await this.interactions.interact.uploadFile(element, filePath, { timeout: this._timeout });
     }
 
     /** Simulate dropping files onto a drop-zone element via DataTransfer drag events. */
     async dropFiles(filenames: string[], mimeType?: string): Promise<void> {
+        this.requireWeb('dropFiles');
         const element = await this.resolve();
         await this.interactions.interact.dropFiles(element, filenames, { mimeType, timeout: this._timeout });
     }
@@ -512,12 +731,14 @@ export class ElementAction {
 
     /** Set slider value. */
     async setSliderValue(value: number): Promise<void> {
+        this.requireWeb('setSliderValue');
         const element = await this.resolve();
         await this.interactions.interact.setSliderValue(element, value, { timeout: this._timeout });
     }
 
     /** Select multiple options from a multi-select. */
     async selectMultiple(values: string[]): Promise<string[]> {
+        this.requireWeb('selectMultiple');
         const element = await this.resolve();
         return await this.interactions.interact.selectMultiple(element, values, { timeout: this._timeout });
     }
@@ -559,16 +780,7 @@ export class ElementAction {
 
     /** List presence: at least one match of the collection becomes visible within the chain timeout. */
     private async verifyListPresence(): Promise<void> {
-        const all = await this.resolveAll();
-        try {
-            await all.locator.filter({ visible: true }).first().waitFor({ state: 'visible', timeout: this._timeout });
-        } catch {
-            const count = await all.locator.count();
-            throw new Error(
-                `verifyPresence: '${this.pageName}.${this.elementName}' is a list entry ("list": true) — ` +
-                `expected at least one visible match within ${this._timeout}ms, found ${count} match(es) and none visible.`,
-            );
-        }
+        await this.interactions.verify.listPresence(this.entry(), this._timeout);
     }
 
     /**
@@ -595,7 +807,8 @@ export class ElementAction {
      * timeout buy a slow-hydrating primary more room instead of being ignored
      * in favour of a hard-coded constant. A resolved node that matches several
      * elements is asserted on its whole match set: absent only when every
-     * match is hidden.
+     * match is hidden. A `.byText()` chain is asserted on its selection:
+     * absent when the match it picks is hidden or no match has the text.
      *
      * Scoped `findBy*` chains assert on the child locator itself (the stamped
      * scoped name has no repository entry). Resolving the PARENT still waits
@@ -609,69 +822,10 @@ export class ElementAction {
             );
             return;
         }
-        const slice = this.absenceAttachSlice();
-        let element!: WebElement;
-        let divergence: Error | undefined;
-        for (let attempt = 1; attempt <= ABSENCE_RESOLVE_ATTEMPTS; attempt++) {
-            const lastAttempt = attempt === ABSENCE_RESOLVE_ATTEMPTS;
-            divergence = undefined;
-            // A `fallback` entry is asserted on the variant the repository
-            // resolves: the first chain node that exists, exactly as an action
-            // would target. The assertion needs that node's FULL match set, so
-            // it reads the ALL resolution — and cross-checks it against the
-            // default one, refusing to assert when they land on different
-            // nodes: asserting on a node the action would not target (for an
-            // absent fallback, a false PASS) is worse than failing loudly.
-            // element-repository 0.3.4 and later probe a node by its first
-            // match under every strategy, so the two agree on a multi-match
-            // node; before that, ALL walked past it.
-            //
-            // The two resolutions run CONCURRENTLY, and a divergence is
-            // confirmed by a second round before it is reported. Run back to
-            // back they were two walks over two different moments in the page's
-            // life, so a perfectly ordinary single-match primary that attached
-            // between them made the walks land on different nodes.
-            const [resolved, all] = (await Promise.all([
-                this.repo.get(this.elementName, this.pageName, { timeout: slice }),
-                this.repo.get(this.elementName, this.pageName, { strategy: SelectionStrategy.ALL, timeout: slice }),
-            ])) as [WebElement, WebElement];
-            element = all;
-            const handle = await resolved.locator.elementHandle({ timeout: slice }).catch(() => null);
-            if (!handle) break;
-            let inMatchSet: boolean;
-            try {
-                inMatchSet = await all.locator.evaluateAll((els, target) => (els as unknown[]).includes(target), handle);
-            } catch (error) {
-                // The membership check runs against a live handle, so it can
-                // fail for reasons that have nothing to do with the assertion
-                // (the node detached mid-evaluation, a navigation tore the
-                // execution context down). Retry rather than report a failure
-                // the page's own churn caused; on the final attempt let it
-                // surface — loudly wrong beats quietly passing.
-                if (lastAttempt) throw error;
-                continue;
-            } finally {
-                // `dispose()` must run on the throwing path too, or every failed
-                // membership check leaks a handle into the browser process for
-                // the lifetime of the page.
-                await handle.dispose().catch(() => undefined);
-            }
-            if (inMatchSet) break;
-            divergence = new Error(
-                `verifyAbsence: "${this.elementName}" on "${this.pageName}" is a fallback entry whose default and ALL resolutions ` +
-                `landed on different chain nodes on ${ABSENCE_RESOLVE_ATTEMPTS} consecutive attempts, so absence cannot be asserted reliably. ` +
-                `Check that @civitas-cerebrum/element-repository is 0.3.4 or later.`,
-            );
-        }
-        if (divergence) throw divergence;
-        // `toBeHidden()` is strict: on the ALL match set it throws "resolved to
-        // N elements" as soon as two nodes match, even when every one is hidden.
-        // Assert on the first VISIBLE match instead — hidden (passes) when every
-        // match is hidden or none exists, visible (fails) when any match shows.
-        await this.interactions.verify.absence(
-            new WebElement(element.locator.filter({ visible: true }).first()),
-            { timeout: this._timeout },
-        );
+        await this.interactions.verify.entryAbsence(this.entry(), {
+            timeout: this._timeout,
+            attachSlice: this.absenceAttachSlice(),
+        });
     }
 
     /**
@@ -722,22 +876,37 @@ export class ElementAction {
         await this.expectBuilder().text.toContain(expected);
     }
 
-    /** Assert the element count. Delegates to the matcher tree's count matchers. */
+    /**
+     * Assert the element count: `exactly`, or a range of one lower bound
+     * (`greaterThan` / `greaterThanOrEqual`) and / or one upper bound
+     * (`lessThan` / `lessThanOrEqual`); every given bound must hold at the
+     * same time. Collection-level (the whole collection, whatever the
+     * strategy selector), polled until the chain timeout; the failure names
+     * the bound the last count broke. Contradictory or empty options are
+     * refused before anything is resolved. Honours the `ifVisible()` gate.
+     */
     async verifyCount(options: CountVerifyOptions): Promise<void> {
-        const builder = this.expectBuilder();
-        if (options.exactly !== undefined) await builder.count.toBe(options.exactly);
-        else if (options.greaterThan !== undefined) await builder.count.toBeGreaterThan(options.greaterThan);
-        else if (options.lessThan !== undefined) await builder.count.toBeLessThan(options.lessThan);
-        else throw new Error("verifyCount requires 'exactly', 'greaterThan', or 'lessThan' in CountVerifyOptions.");
+        validateCountOptions(options);
+        if (!await this.shouldProceed()) return;
+        const element = await this.verifyTarget(true);
+        await this.interactions.verify.count(element, options, {
+            timeout: this._timeout,
+            errorMessage: `expected ${this.pageName}.${this.elementName} count to be ${describeCountOptions(options)}`,
+        });
     }
 
-    /** Check if element is visible (boolean, no assertion). */
+    /**
+     * Check if element is visible (boolean, no assertion). On web any error
+     * answers `false`; on a device only a no-match answer does, and any
+     * other error is thrown (see `Steps.isPresent`).
+     */
     async isPresent(): Promise<boolean> {
         try {
             const element = await this.resolve();
             return await element.action(this._timeout).isPresent();
-        } catch {
-            return false;
+        } catch (err) {
+            if (this.platform === 'web' || isNoMatchAnswer(err)) return false;
+            throw err;
         }
     }
 
@@ -790,18 +959,20 @@ export class ElementAction {
      * `SelectionStrategy.ALL` regardless of any strategy selector.
      */
     async verifyImages(scroll: boolean = true, options?: { verifyDecoded?: boolean }): Promise<void> {
+        this.requireWeb('verifyImages');
         const element = await this.resolveAll();
-        await this.interactions.verify.images(element, scroll, options);
+        await this.interactions.verify.images(element, scroll, { ...options, timeout: this._timeout });
     }
 
     /** Assert element state. */
     async verifyState(state: 'enabled' | 'disabled' | 'editable' | 'checked' | 'focused' | 'visible' | 'hidden' | 'attached' | 'inViewport'): Promise<void> {
-        const element = await this.resolve();
-        await this.interactions.verify.state(element, state);
+        const element = await this.verifyTarget();
+        await this.interactions.verify.state(element, state, { timeout: this._timeout });
     }
 
     /** Assert CSS property value. Delegates to the matcher tree's `.css(property).toBe(value)`. */
     async verifyCssProperty(property: string, expectedValue: string): Promise<void> {
+        this.requireWeb('verifyCssProperty');
         await this.expectBuilder().css(property).toBe(expectedValue);
     }
 
@@ -813,8 +984,8 @@ export class ElementAction {
      * compared against `expectedTexts`.
      */
     async verifyOrder(expectedTexts: string[]): Promise<void> {
-        const element = await this.resolveAll();
-        await this.interactions.verify.order(element, expectedTexts);
+        const element = await this.verifyTarget(true);
+        await this.interactions.verify.order(element, expectedTexts, { timeout: this._timeout });
     }
 
     /**
@@ -824,16 +995,19 @@ export class ElementAction {
      * strategy selector on the chain.
      */
     async verifyListOrder(direction: 'asc' | 'desc'): Promise<void> {
-        const element = await this.resolveAll();
-        await this.interactions.verify.listOrder(element, direction);
+        const element = await this.verifyTarget(true);
+        await this.interactions.verify.listOrder(element, direction, { timeout: this._timeout });
     }
 
     // -- Terminal actions: extractions --
 
-    /** Get the text content of the resolved element. */
+    /**
+     * Get the text content of the resolved element, trimmed, read once the
+     * element is attached. On a device it is the platform's visible text.
+     */
     async getText(): Promise<string | null> {
         const element = await this.resolve();
-        return element.action(this._timeout).getText();
+        return await this.interactions.extract.readText(element, this._timeout);
     }
 
     /** Get an attribute value. */
@@ -842,15 +1016,23 @@ export class ElementAction {
         return element.action(this._timeout).getAttribute(name);
     }
 
-    /** Get the count of matching elements. */
+    /**
+     * Get the count of matching elements. Collection-level, like the `.count`
+     * matchers and `steps.getCount`: it counts the entry's whole collection
+     * (`SelectionStrategy.ALL`) whatever the strategy selector on the chain.
+     */
     async getCount(): Promise<number> {
-        const element = await this.resolve();
+        const element = await this.resolveAll();
         return element.action(this._timeout).getCount();
     }
 
-    /** Get all text contents from matching elements. */
+    /**
+     * Get the text contents of every matching element, in order.
+     * Collection-level, like `verifyOrder`: it reads the entry's whole
+     * collection (`SelectionStrategy.ALL`) whatever the strategy selector.
+     */
     async getAllTexts(): Promise<string[]> {
-        const element = await this.resolve();
+        const element = await this.resolveAll();
         return await this.interactions.extract.getAllTexts(element);
     }
 
@@ -862,6 +1044,7 @@ export class ElementAction {
 
     /** Get computed CSS property value. */
     async getCssProperty(property: string): Promise<string> {
+        this.requireWeb('getCssProperty');
         const element = await this.resolve();
         return await this.interactions.extract.getCssProperty(element, property);
     }
@@ -871,22 +1054,26 @@ export class ElementAction {
      * pass `{ outer: true }` to get `outerHTML` (the element tag + subtree).
      */
     async getHtml(options?: { outer?: boolean }): Promise<string> {
+        this.requireWeb('getHtml');
         const element = await this.resolve();
         return await this.interactions.extract.getHtml(element, options);
     }
 
     /** Assert the element's HTML equals the expected string exactly. Delegates to the matcher tree's `.html.toBe(...)` (or `.outerHtml.toBe(...)` when `outer`). */
     async verifyHtml(expected: string, options?: { outer?: boolean }): Promise<void> {
+        this.requireWeb('verifyHtml');
         await (options?.outer ? this.expectBuilder().outerHtml : this.expectBuilder().html).toBe(expected);
     }
 
     /** Assert the element's HTML contains a substring. Delegates to the matcher tree's `.html.toContain(...)`. */
     async verifyHtmlContains(substring: string, options?: { outer?: boolean }): Promise<void> {
+        this.requireWeb('verifyHtmlContains');
         await (options?.outer ? this.expectBuilder().outerHtml : this.expectBuilder().html).toContain(substring);
     }
 
     /** Assert the element's HTML matches a regex. Delegates to the matcher tree's `.html.toMatch(...)`. */
     async verifyHtmlMatches(regex: RegExp, options?: { outer?: boolean }): Promise<void> {
+        this.requireWeb('verifyHtmlMatches');
         await (options?.outer ? this.expectBuilder().outerHtml : this.expectBuilder().html).toMatch(regex);
     }
 
@@ -906,26 +1093,7 @@ export class ElementAction {
      * Snapshot fields are all primitives — no async access needed in predicates.
      */
     async captureSnapshot(): Promise<ElementSnapshot> {
-        const element = await this.resolve();
-        const first = element.first();
-        // Count is always the un-narrowed match count so count-based matchers
-        // work even when the default `.first()` narrowing has been applied.
-        // Other fields use the narrowed element so strategy selectors
-        // (nth / byText / byAttribute) still scope to the chosen element.
-        const allElement = await this.resolveAll();
-        // getAllAttributes is web-only (DOM iteration); narrow for that one read.
-        const firstAsWeb = first as WebElement;
-
-        const [count, rawText, value, attributes, visible, enabled] = await Promise.all([
-            allElement.count().catch(() => 0),
-            first.textContent().catch(() => null),
-            first.inputValue().catch(() => ''),
-            firstAsWeb.getAllAttributes().catch(() => ({} as Record<string, string>)),
-            first.isVisible().catch(() => false),
-            first.isEnabled().catch(() => false),
-        ]);
-
-        return { text: (rawText ?? '').trim(), value, attributes, visible, enabled, count };
+        return this.interactions.extract.captureSnapshot(this.entry());
     }
 
     /** Build the context object consumed by the matcher tree classes. */
@@ -936,10 +1104,12 @@ export class ElementAction {
             timeout: this._timeout,
             conditionalVisible: this.conditionalVisible,
             visibilityTimeout: this.visibilityTimeout,
-            resolveElement: () => this.resolve(),
-            resolveAll: () => this.resolveAll(),
+            resolveElement: () => this.verifyTarget(),
+            resolveAll: () => this.verifyTarget(true),
             captureSnapshot: () => this.captureSnapshot(),
+            probeVisible: (timeout: number) => this.interactions.verify.visibleWithin(this.entry(), timeout),
             verify: this.interactions.verify,
+            platform: this.platform,
         };
     }
 

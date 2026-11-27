@@ -1,17 +1,41 @@
+import { isNoMatchAnswer, resolveConfirmed } from '../utils/visibility';
 import { Page, Response, Locator } from '@playwright/test';
 import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
-import { ElementInteractions } from '../interactions/facade/ElementInteractions';
-import { Utils } from '../utils/ElementUtilities';
-import { EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
+import type { Platform } from '@civitas-cerebrum/element-repository';
+import { PlaywrightFactory } from '../playwright/PlaywrightFactory';
+import { BrowserRequest } from '../playwright/BrowserRequest';
+import { requireWebElement } from '../playwright/requireWebElement';
+import type { IInteractionFactory } from '../interfaces/IInteractionFactory';
+import type { IInteractions } from '../interfaces/IInteractions';
+import type { IVerifications } from '../interfaces/IVerifications';
+import type { IExtractions } from '../interfaces/IExtractions';
+import type { INavigation } from '../interfaces/INavigation';
+import type { IUtils } from '../interfaces/IUtils';
+import { toScrollIntoViewOptions } from './scrollContainer';
+import type { IGestures, LongPressOptions, PinchOptions, ScreenSwipeOptions, ScrollStepOptions, SwipeDirection, SwipeOptions, ZoomOptions } from '../interfaces/IGestures';
+import type { DeviceVerifyOptions, HideKeyboardOptions, IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
+import { PlatformNotSupportedError, isFatalDriverError } from '@civitas-cerebrum/element-repository';
+import { actionFamilyOf, assertFactoryFamily, requireDevicePlatform, requireWebPlatform } from './platformGuard';
+import { EmailClient, EmailClientConfig, EmailSendOptions, EmailReceiveOptions, ReceivedEmail, EmailMarkOptions, EmailMarkAction, EmailFilter } from '@civitas-cerebrum/email-client';
 import { WasapiClient, ApiResponse } from '@civitas-cerebrum/wasapi';
 import { SqlClient, SqlResult, QueryBuilder, UnsupportedEngineException } from '@civitas-cerebrum/sql-client';
 import { StepOptions, DropdownSelectOptions, TextVerifyOptions, CountVerifyOptions, DragAndDropOptions, ListedElementOptions, ListedElementMatch, VerifyListedOptions, GetListedDataOptions, FillFormValue, GetAllOptions, ScreenshotOptions, IsVisibleOptions, StorageVerifyOptions, WindowVerifyOptions, VisualMatchOptions, VisualMaskTarget } from '../enum/Options';
-import { BrowserResponse, BrowserRequestOptions } from '../interactions/BrowserRequest';
-import { ExpectNoRequestOptions, WaitUntilState, WaitForNetworkIdleOptions, LoadState } from '../interactions/Navigation';
+import type { BrowserResponse, BrowserRequestOptions } from '../playwright/BrowserRequest';
+import { ExpectNoRequestOptions, WaitUntilState, WaitForNetworkIdleOptions, LoadState } from '../playwright/PlaywrightNavigation';
 import { stepLog as log } from '../logger/Logger';
 import { ElementAction } from './ElementAction';
-import { isListEntry } from './listEntry';
+import { isListEntry, requireListedMatch } from './listEntry';
 import { ExpectBuilder } from './ExpectMatchers';
+
+/**
+ * `options` without its `undefined` fields, or `undefined` when none is set:
+ * a gesture step hands its family only the options the caller gave, so the
+ * family's own defaults apply to the rest.
+ */
+function definedOptions<T extends object>(options: T): Partial<T> | undefined {
+    const entries = Object.entries(options).filter(([, value]) => value !== undefined);
+    return entries.length > 0 ? Object.fromEntries(entries) as Partial<T> : undefined;
+}
 
 /**
  * `JSON.stringify` that never throws — `bigint` and circular references would
@@ -101,6 +125,99 @@ function guardResolutionTarget(view: ElementRepository): void {
     }
 }
 
+/** Options for `new Steps(...)`, in both constructor forms. */
+export interface StepsOptions {
+    emailCredentials?: EmailClientConfig;
+    timeout?: number;
+    /**
+     * When a click is intercepted by an overlaying element, retry it as a
+     * dispatched DOM click event. Default `true` (compat). Set `false` so
+     * genuine overlay bugs (stuck modals, cookie walls) fail the click.
+     * Used when `Steps` builds its own `PlaywrightFactory` (the repository form).
+     */
+    interceptionRetry?: boolean;
+    apiBaseUrl?: string;
+    apiProviders?: Record<string, string>;
+    dbUrl?: string;
+    dbProviders?: Record<string, string>;
+    /**
+     * Connect-timeout (ms) applied to every SQL client, so a wrong/unreachable
+     * `dbUrl` fails fast in CI instead of hanging on the first query.
+     */
+    dbConnectTimeoutMs?: number;
+}
+
+/** `true` for an `IInteractionFactory` (the factory constructor form), `false` for an `ElementRepository`. */
+function isInteractionFactory(value: unknown): value is IInteractionFactory {
+    return typeof value === 'object' && value !== null
+        && typeof (value as IInteractionFactory).createInteractions === 'function'
+        && typeof (value as IInteractionFactory).family === 'string';
+}
+
+/** `true` for anything usable as the repository argument (resolves elements through `get`). */
+function isElementRepository(value: unknown): value is ElementRepository {
+    return typeof value === 'object' && value !== null
+        && typeof (value as ElementRepository).get === 'function';
+}
+
+/**
+ * The factory form's single timeout: the factory's own (read through its
+ * utils, which every family implements). A `StepsOptions.timeout` that differs
+ * from it throws instead of letting the family members and the chains disagree.
+ */
+function factoryTimeout(utils: IUtils, optionTimeout: number | undefined): number {
+    const timeout = utils.getTimeout();
+    if (optionTimeout !== undefined && optionTimeout !== timeout) {
+        throw new Error(
+            `new Steps(factory, repo, options): options.timeout (${optionTimeout}ms) conflicts with the factory's timeout `
+            + `(${timeout}ms). In the factory form the timeout belongs to the factory: build the factory with `
+            + `{ timeout: ${optionTimeout} } and leave it out of the Steps options (or pass the same value).`,
+        );
+    }
+    return timeout;
+}
+
+/**
+ * The factory form's interception behaviour: the factory's own when it has
+ * one (`PlaywrightFactory.interceptionRetry`). A `StepsOptions.interceptionRetry`
+ * that differs from it, or that is set for a factory without the setting (the
+ * Appium family has no intercepted clicks), throws instead of being ignored.
+ */
+function factoryInterceptionRetry(factory: IInteractionFactory, optionRetry: boolean | undefined): boolean | undefined {
+    const own = (factory as { interceptionRetry?: unknown }).interceptionRetry;
+    const factoryRetry = typeof own === 'boolean' ? own : undefined;
+    if (optionRetry !== undefined && optionRetry !== factoryRetry) {
+        throw new Error(
+            factoryRetry === undefined
+                ? `new Steps(factory, repo, options): options.interceptionRetry is set, but the "${factory.family}" factory `
+                  + 'has no interception setting, so it would be ignored. Leave it out of the Steps options.'
+                : `new Steps(factory, repo, options): options.interceptionRetry (${optionRetry}) conflicts with the factory's `
+                  + `(${factoryRetry}). In the factory form it belongs to the factory: build the factory with `
+                  + `{ interceptionRetry: ${optionRetry} } and leave it out of the Steps options (or pass the same value).`,
+        );
+    }
+    return factoryRetry;
+}
+
+/**
+ * The factory form's Playwright page (Playwright family only; `undefined`
+ * otherwise). Elements resolve through `repo.driver` while the family members
+ * act on the factory's page, so the two must be the same page: a mismatch
+ * throws here instead of resolving on one page and acting on another.
+ */
+function factoryPage(factory: IInteractionFactory, repo: ElementRepository): Page | undefined {
+    if (factory.family !== 'playwright') return undefined;
+    const driver = repo.driver as Page | undefined;
+    const own = (factory as { page?: unknown }).page;
+    if (own !== undefined && own !== driver) {
+        throw new Error(
+            'new Steps(factory, repo, options): the PlaywrightFactory acts on a different page than the repository '
+            + "resolves on (repo.driver). Build both on the same page, or use steps.forPage(page) to bind another page.",
+        );
+    }
+    return (own as Page | undefined) ?? driver;
+}
+
 /**
  * The `Steps` class serves as a unified Facade for test orchestration.
  * It combines element acquisition (via `@civitas-cerebrum/element-repository`) with
@@ -108,14 +225,21 @@ function guardResolutionTarget(view: ElementRepository): void {
  * readable, and free of raw locators.
  */
 export class Steps {
-    private page: Page;
-    private interact;
-    private navigate;
-    private extract;
-    private verify;
-    private request;
-    private utils;
-    private email;
+    /** The family factory every UI member comes from. */
+    private readonly factory: IInteractionFactory;
+    private repo: ElementRepository;
+    /** The Playwright page (Playwright family only); steps reach it through {@link webPage}. */
+    private page: Page | undefined;
+    private interact: IInteractions;
+    private navigate: INavigation;
+    private extract: IExtractions;
+    private verify: IVerifications;
+    private gestures: IGestures;
+    private device: IDevice;
+    /** Session-aware browser requests (Playwright family only). */
+    private request: BrowserRequest | undefined;
+    private utils: IUtils;
+    private email: EmailClient | null;
     private apiClients: Map<string, WasapiClient>;
     /** Lazily-built SqlClient cache, keyed by provider name (constructed on first DB step). */
     private dbClients: Map<string, SqlClient>;
@@ -128,46 +252,88 @@ export class Steps {
     private pageIndependentOptions: { emailCredentials?: EmailClientConfig; timeout?: number; interceptionRetry?: boolean; dbConnectTimeoutMs?: number };
 
     /**
-     * Initializes the Steps class with the element repository.
-     * The Playwright Page is obtained from the repository's driver.
-     * @param repo - An initialized instance of `ElementRepository` containing your locators and the bound driver.
-     * @param options - Optional configuration: emailCredentials, timeout, interceptionRetry, apiBaseUrl, and/or apiProviders.
+     * Builds Steps on an explicit driver family: every UI member comes from
+     * `factory` (`PlaywrightFactory` for `web`, the Appium family's factory for
+     * a device session). Nothing about the platform is global or static, so two
+     * `Steps` on two factories live side by side.
+     *
+     * Web-only steps (URL, tabs, storage, network, HTML, CSS, file upload,
+     * dropdowns, hover, right-click, keyboard, visual match, ...) throw
+     * `PlatformNotSupportedError(step, platform)` off the Playwright family.
+     * API, SQL and email steps work on every platform.
+     *
+     * @param factory - The driver family to act through; its `platform` is the platform of these steps.
+     * @param repo - The `ElementRepository` elements are resolved from (built for the same platform; for a
+     *   `PlaywrightFactory`, on the factory's page).
+     * @param options - As in the repository form, except that `timeout` and `interceptionRetry` belong to the
+     *   factory: every step, chain and matcher uses the factory's timeout. Passing either here is allowed only with
+     *   the factory's own value; a different value throws.
+     * @throws If `repo` is not a repository, if the factory's `family` is not its `platform`'s family, if a
+     *   `PlaywrightFactory`'s page is not `repo.driver`, or if `timeout` / `interceptionRetry` conflict with the factory.
      */
+    constructor(factory: IInteractionFactory, repo: ElementRepository, options?: StepsOptions);
+    /**
+     * Builds web Steps on the repository's driver: the Playwright page is
+     * `repo.driver` and the Playwright family is built on it
+     * (`PlaywrightFactory`), exactly as before the factory form existed.
+     * (Declared last so `ConstructorParameters<typeof Steps>` keeps naming this form.)
+     *
+     * @param repo - An initialized `ElementRepository` with your locators and the bound driver.
+     * @param options - Optional configuration: emailCredentials, timeout, interceptionRetry, apiBaseUrl, apiProviders, dbUrl, dbProviders, dbConnectTimeoutMs.
+     */
+    constructor(repo: ElementRepository, options?: StepsOptions);
     constructor(
-        private repo: ElementRepository,
-        options?: {
-            emailCredentials?: EmailClientConfig;
-            timeout?: number;
-            /**
-             * When a click is intercepted by an overlaying element, retry it as a
-             * dispatched DOM click event. Default `true` (compat). Set `false` so
-             * genuine overlay bugs (stuck modals, cookie walls) fail the click.
-             */
-            interceptionRetry?: boolean;
-            apiBaseUrl?: string;
-            apiProviders?: Record<string, string>;
-            dbUrl?: string;
-            dbProviders?: Record<string, string>;
-            /**
-             * Connect-timeout (ms) applied to every SQL client, so a wrong/unreachable
-             * `dbUrl` fails fast in CI instead of hanging on the first query.
-             */
-            dbConnectTimeoutMs?: number;
-        }
+        repoOrFactory: ElementRepository | IInteractionFactory,
+        repoOrOptions?: ElementRepository | StepsOptions,
+        maybeOptions?: StepsOptions,
     ) {
-        this.page = repo.driver;
-        const { emailCredentials, timeout, interceptionRetry, apiBaseUrl, apiProviders } = options ?? {};
-        this.pageIndependentOptions = { emailCredentials, timeout, interceptionRetry, dbConnectTimeoutMs: options?.dbConnectTimeoutMs };
-        const interactions = new ElementInteractions(this.page, { emailCredentials, timeout, interceptionRetry });
-        this.interceptionRetry = interceptionRetry;
-        this.interact = interactions.interact;
-        this.navigate = interactions.navigate;
-        this.extract = interactions.extract;
-        this.verify = interactions.verify;
-        this.request = interactions.request;
-        this.timeout = timeout;
-        this.utils = new Utils(timeout);
-        this.email = interactions.email;
+        let options: StepsOptions | undefined;
+        if (isInteractionFactory(repoOrFactory)) {
+            this.factory = repoOrFactory;
+            assertFactoryFamily(this.factory);
+            if (!isElementRepository(repoOrOptions)) {
+                throw new Error(
+                    'new Steps(factory, repo, options?): the second argument must be the ElementRepository elements are '
+                    + 'resolved from (an object with a "get" method). Did you pass the options in its place?',
+                );
+            }
+            this.repo = repoOrOptions;
+            options = maybeOptions;
+        } else {
+            this.repo = repoOrFactory;
+            options = repoOrOptions as StepsOptions | undefined;
+            this.factory = new PlaywrightFactory(this.repo.driver, { timeout: options?.timeout, interceptionRetry: options?.interceptionRetry });
+        }
+        const { emailCredentials, apiBaseUrl, apiProviders } = options ?? {};
+        this.utils = this.factory.createUtils();
+        if (isInteractionFactory(repoOrFactory)) {
+            // Factory form: the factory owns the timeout and the interception
+            // behaviour. One value flows everywhere (family members, ElementAction
+            // chains, matchers, list checks, forPage); a conflicting option is an
+            // error, never a silent pick.
+            this.timeout = factoryTimeout(this.utils, options?.timeout);
+            this.interceptionRetry = factoryInterceptionRetry(this.factory, options?.interceptionRetry);
+            this.page = factoryPage(this.factory, this.repo);
+        } else {
+            // Repository form: exactly as before the factory form existed.
+            this.timeout = options?.timeout;
+            this.interceptionRetry = options?.interceptionRetry;
+            this.page = this.repo.driver;
+        }
+        this.pageIndependentOptions = {
+            emailCredentials,
+            timeout: this.timeout,
+            interceptionRetry: this.interceptionRetry,
+            dbConnectTimeoutMs: options?.dbConnectTimeoutMs,
+        };
+        this.interact = this.factory.createInteractions();
+        this.navigate = this.factory.createNavigation();
+        this.extract = this.factory.createExtractions();
+        this.verify = this.factory.createVerifications();
+        this.gestures = this.factory.createGestures();
+        this.device = this.factory.createDevice();
+        this.request = this.page ? new BrowserRequest(this.page) : undefined;
+        this.email = emailCredentials ? new EmailClient(emailCredentials) : null;
         this.apiClients = new Map();
 
         if (apiBaseUrl) {
@@ -193,6 +359,39 @@ export class Steps {
                 this.dbConfigs.set(name, url);
             }
         }
+    }
+
+    /** The platform these steps act on (the factory's platform). Read-only. */
+    get platform(): Platform {
+        return this.factory.platform;
+    }
+
+    /**
+     * The single web-only guard: throws `PlatformNotSupportedError(stepName,
+     * platform)` unless the factory is the Playwright family. Every web-only
+     * step calls it first, before resolving or acting on anything.
+     */
+    private requireWeb(stepName: string): void {
+        // The same helper ElementAction uses; the constructor asserted that
+        // the factory's family is the one its platform belongs to.
+        requireWebPlatform(stepName, this.factory.platform);
+    }
+
+    /** The session-aware browser request client; call after {@link requireWeb}. */
+    private webRequest(): BrowserRequest {
+        if (!this.request) {
+            throw new Error('Browser requests need a Playwright page; these steps have none (the repository has no driver).');
+        }
+        return this.request;
+    }
+
+    /** {@link requireWeb}, then the Playwright page: the only way a step reaches `this.page`. */
+    private webPage(stepName: string): Page {
+        this.requireWeb(stepName);
+        if (!this.page) {
+            throw new Error(`${stepName}: these steps have no Playwright page (the repository has no driver).`);
+        }
+        return this.page;
     }
 
     /**
@@ -229,33 +428,41 @@ export class Steps {
     }
 
     /**
-     * Resolves an element from the repository and narrows its type to
-     * `WebElement`. This package is Playwright-only, so every resolved element
-     * is in practice a `WebElement`. Calling this once at the repo boundary
-     * lets every downstream call use the richer `WebElement` type (with its
-     * `locator` / `rightClick` / `selectOption` / `getAllAttributes`) without
-     * per-call casts.
+     * Resolves an element from the repository as element-repository's neutral
+     * `Element` (a `WebElement` on web, a `PlatformElement` on a device). The
+     * family member the step hands it to does the rest; a web-only reach to the
+     * Playwright `locator` goes through `requireWebElement` after `requireWeb`.
      */
-    private async getWebElement(elementName: string, pageName: string, options?: StepOptions): Promise<WebElement> {
-        return (await this.repo.get(elementName, pageName, this.toResolutionOptions(options))) as WebElement;
+    private async getElement(elementName: string, pageName: string, options?: StepOptions): Promise<Element> {
+        const resolution = this.toResolutionOptions(options);
+        const get = () => this.repo.get(elementName, pageName, resolution);
+        if (this.platform === 'web') return await get();
+        // On a device a RANDOM / ATTRIBUTE miss is confirmed by a lookup of
+        // every match: its `No elements found` hides why the wait failed.
+        return await resolveConfirmed(resolution?.strategy, get,
+            () => this.repo.get(elementName, pageName, { strategy: SelectionStrategy.ALL }));
     }
 
     /**
-     * Same as `getWebElement` but forces the ALL strategy. For collection-based
+     * Same as `getElement` but forces the ALL strategy. For collection-based
      * methods (getCount, verifyOrder, verifyImages, etc.).
      */
-    private async getAllWebElement(elementName: string, pageName: string, options?: StepOptions): Promise<WebElement> {
-        return (await this.repo.get(elementName, pageName, this.toAllResolutionOptions(options))) as WebElement;
+    private async getAllElement(elementName: string, pageName: string, options?: StepOptions): Promise<Element> {
+        return await this.repo.get(elementName, pageName, this.toAllResolutionOptions(options));
     }
 
     /**
      * Returns a fluent `ElementAction` with the caller's `StepOptions` strategy
-     * applied via the fluent strategy selectors. Lets the legacy positional
+     * applied via the fluent strategy selectors, and the caller's per-call
+     * `timeout` applied via `.timeout(ms)`. Lets the legacy positional
      * `verify*` methods delegate into the matcher tree without losing the
-     * `{ strategy: 'random' | 'index' | 'text' | 'attribute' }` escape hatch.
+     * `{ strategy: 'random' | 'index' | 'text' | 'attribute' }` escape hatch
+     * or the `{ timeout }` override. Without a `timeout` the chain keeps the
+     * step timeout.
      */
     private actionWithStrategy(elementName: string, pageName: string, options?: StepOptions): ElementAction {
         const action = this.on(elementName, pageName);
+        if (options?.timeout !== undefined) action.timeout(options.timeout);
         if (!options?.strategy || options.strategy === 'first') return action;
         switch (options.strategy) {
             case 'random':
@@ -288,8 +495,7 @@ export class Steps {
      * ```
      */
     on(elementName: string, pageName: string): ElementAction {
-        const interactions = new ElementInteractions(this.page, { timeout: this.timeout, interceptionRetry: this.interceptionRetry });
-        return new ElementAction(this.repo, elementName, pageName, interactions, this.timeout);
+        return new ElementAction(this.repo, elementName, pageName, actionFamilyOf(this.factory), this.timeout);
     }
 
     // ==========================================
@@ -311,6 +517,7 @@ export class Steps {
      *   return value when you only care about side-effects.
      */
     async navigateTo(url: string, options?: { query?: Record<string, string>; waitUntil?: WaitUntilState }): Promise<Response | null> {
+        this.requireWeb('navigateTo');
         let targetUrl = url;
         if (options?.query) {
             const params = new URLSearchParams(options.query).toString();
@@ -332,6 +539,7 @@ export class Steps {
      * URL to compute a path, diff against a start URL, or build a pattern.
      */
     getUrl(): string {
+        this.requireWeb('getUrl');
         log.navigate('Getting current URL');
         return this.navigate.getUrl();
     }
@@ -341,6 +549,7 @@ export class Steps {
      * Convenience over `new URL(steps.getUrl()).pathname`.
      */
     getCurrentPath(): string {
+        this.requireWeb('getCurrentPath');
         log.navigate('Getting current path');
         return this.navigate.getCurrentPath();
     }
@@ -366,6 +575,7 @@ export class Steps {
         action?: () => Promise<unknown>,
         options?: { timeout?: number; waitUntil?: WaitUntilState },
     ): Promise<void> {
+        this.requireWeb('waitForUrl');
         log.wait('Waiting for URL to match');
         await this.navigate.waitForUrl(url, action, options);
     }
@@ -374,6 +584,7 @@ export class Steps {
      * Refreshes (reloads) the current page.
      */
     async refresh(): Promise<void> {
+        this.requireWeb('refresh');
         log.navigate('Refreshing the current page');
         await this.navigate.reload();
     }
@@ -383,6 +594,7 @@ export class Steps {
      * @param direction - The direction to navigate: `'back'` or `'forward'`.
      */
     async backOrForward(direction: 'back' | 'forward'): Promise<void> {
+        this.requireWeb('backOrForward');
         log.navigate('Navigating browser: "%s"', direction);
         await this.navigate.backOrForward(direction);
     }
@@ -393,6 +605,7 @@ export class Steps {
      * @param height - The viewport height in pixels.
      */
     async setViewport(width: number, height: number): Promise<void> {
+        this.requireWeb('setViewport');
         log.navigate('Setting viewport to %dx%d', width, height);
         await this.navigate.setViewport(width, height);
     }
@@ -407,6 +620,7 @@ export class Steps {
      * @returns The newly opened Page object.
      */
     async switchToNewTab(action: () => Promise<unknown>): Promise<Page> {
+        this.requireWeb('switchToNewTab');
         log.navigate('Switching to new tab...');
         return await this.navigate.switchToNewTab(action);
     }
@@ -424,6 +638,8 @@ export class Steps {
      * `ElementRepository` itself.
      *
      * The original `Steps` stays bound to its own page; nothing is switched.
+     * Steps built in the factory form bind with a `PlaywrightFactory` on the
+     * new page carrying the factory's timeout and interception setting.
      *
      * @param page - The page to bind, e.g. the `Page` returned by `switchToNewTab`.
      * @returns A new `Steps` whose element steps act on `page`.
@@ -439,7 +655,7 @@ export class Steps {
      * ```
      */
     forPage(page: Page): Steps {
-        if (page === this.page) return this;
+        if (page === this.webPage('forPage')) return this;
         if (page.isClosed()) {
             // Popups self-close routinely (`window.close()` on a "done" button),
             // and a Steps bound to a dead page fails at its *next* step with
@@ -484,6 +700,7 @@ export class Steps {
      * @returns The page that received focus after closing.
      */
     async closeTab(targetPage?: Page): Promise<Page> {
+        this.requireWeb('closeTab');
         log.navigate('Closing tab...');
         return await this.navigate.closeTab(targetPage);
     }
@@ -493,6 +710,7 @@ export class Steps {
      * @returns The count of open pages.
      */
     getTabCount(): number {
+        this.requireWeb('getTabCount');
         log.navigate('Getting tab count');
         return this.navigate.getTabCount();
     }
@@ -509,7 +727,7 @@ export class Steps {
      */
     async click(elementName: string, pageName: string, options?: StepOptions): Promise<boolean | void> {
         log.interact('Clicking on "%s" in "%s"', elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         return await this.interact.click(element, {
             withoutScrolling: options?.withoutScrolling,
             ifPresent: options?.ifPresent,
@@ -529,7 +747,7 @@ export class Steps {
         log.interact('Clicking a random element from "%s" in "%s"', elementName, pageName);
         const element = await this.repo.getRandom(elementName, pageName);
         if (!element) throw new Error(`No visible element found for "${elementName}" in "${pageName}"`);
-        await this.interact.click(element as WebElement, {
+        await this.interact.click(element, {
             withoutScrolling: options?.withoutScrolling,
             subject: `${pageName}.${elementName}`,
         });
@@ -545,7 +763,7 @@ export class Steps {
      */
     async clickIfPresent(elementName: string, pageName: string, options?: StepOptions): Promise<boolean> {
         log.interact('Clicking on "%s" in "%s" (if present)', elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         return await this.interact.click(element, { ifPresent: true, subject: `${pageName}.${elementName}` }) as boolean;
     }
 
@@ -556,8 +774,9 @@ export class Steps {
      * @param options - Optional step options for element resolution.
      */
     async rightClick(elementName: string, pageName: string, options?: StepOptions): Promise<void> {
+        this.requireWeb('rightClick');
         log.interact('Right-clicking on "%s" in "%s"', elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         await this.interact.rightClick(element);
     }
 
@@ -569,7 +788,7 @@ export class Steps {
      */
     async doubleClick(elementName: string, pageName: string, options?: StepOptions): Promise<void> {
         log.interact('Double-clicking on "%s" in "%s"', elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         await this.interact.doubleClick(element);
     }
 
@@ -581,7 +800,7 @@ export class Steps {
      */
     async check(elementName: string, pageName: string, options?: StepOptions): Promise<void> {
         log.interact('Checking "%s" in "%s"', elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         await this.interact.check(element);
     }
 
@@ -593,7 +812,7 @@ export class Steps {
      */
     async uncheck(elementName: string, pageName: string, options?: StepOptions): Promise<void> {
         log.interact('Unchecking "%s" in "%s"', elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         await this.interact.uncheck(element);
     }
 
@@ -604,21 +823,427 @@ export class Steps {
      * @param options - Optional step options for element resolution.
      */
     async hover(elementName: string, pageName: string, options?: StepOptions): Promise<void> {
+        this.requireWeb('hover');
         log.interact('Hovering over "%s" in "%s"', elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         await this.interact.hover(element);
     }
 
     /**
-     * Scrolls the specified element into the visible viewport.
+     * Scrolls the specified element into the visible viewport / screen.
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
-     * @param options - Optional step options for element resolution.
+     * @param options - Optional step options for element resolution, plus
+     *   `direction`: where the element is relative to the current view on a
+     *   device (`'down'` by default there). The browser scrolls whichever way
+     *   is needed, so `direction` is ignored on web. `maxSwipes`: the most
+     *   swipes a device sweep makes (default 20). `container`: the element
+     *   name, on `pageName`, of the scrollable ancestor (a carousel, a side
+     *   list) the device sweep swipes inside; see {@link ScrollStepOptions}.
+     *   Ignored on web. `timeout` in ms (default the step timeout) bounds the
+     *   scroll.
      */
-    async scrollIntoView(elementName: string, pageName: string, options?: StepOptions): Promise<void> {
+    async scrollIntoView(elementName: string, pageName: string, options?: StepOptions & ScrollStepOptions): Promise<void> {
         log.interact('Scrolling "%s" in "%s" into view', elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
-        await this.interact.scrollIntoView(element);
+        const element = await this.getElement(elementName, pageName, options);
+        await this.gestures.scrollIntoView(element, await toScrollIntoViewOptions(this.repo, 'scrollIntoView', pageName, options, options?.timeout));
+    }
+
+    // ==========================================
+    // PLATFORM STEPS
+    // ==========================================
+    //
+    // App lifecycle, device, contexts, device assertions, page source, the
+    // screen-level gestures (`swipeScreen`, `tapAt`) and the two-finger
+    // gestures (`pinch`, `zoom`) refuse web: they throw
+    // `PlatformNotSupportedError(<step>, 'web')` first, before any element is
+    // resolved, anything is logged or anything is acted on. A step one device
+    // platform cannot do (`pressBack` on ios, listed in the strategy's
+    // `unsupported`) throws the same error for that platform, also first. The
+    // other element-level gestures (`swipe`, `scrollUntilFound`, `longPress`)
+    // resolve the element and delegate to its element-repository primitive on
+    // every platform: on web `swipe` and `longPress` drag / hold with the
+    // mouse and `scrollUntilFound` scrolls the element into view. `pinch` /
+    // `zoom` delegate to the element primitive on device platforms only.
+
+    /** {@link requireDevicePlatform} on this factory's platform. */
+    private requirePlatform(stepName: string): void {
+        requireDevicePlatform(stepName, this.factory.platform);
+    }
+
+    /**
+     * {@link requirePlatform}, then refuses a device step the platform cannot
+     * perform (the strategy's `unsupported` list, e.g. `pressBack` on ios)
+     * with `PlatformNotSupportedError(stepName, platform)`, before anything is
+     * logged or sent.
+     */
+    private requireDeviceStep(stepName: keyof IDevice): void {
+        this.requirePlatform(stepName);
+        if (!this.device.supports(stepName)) {
+            throw new PlatformNotSupportedError(stepName, this.factory.platform);
+        }
+    }
+
+    /**
+     * The app id a polling step queries: `appId`, else the app under test,
+     * resolved by the family before anything is logged or polled (a family
+     * that needs one and has none throws, naming the step and the capability
+     * key to set).
+     */
+    private stepAppId(stepName: string, appId?: string): string | undefined {
+        return this.device.resolveAppId(stepName, appId);
+    }
+
+    /** The options of a polling device assertion: the per-call timeout, else the step timeout. */
+    private deviceVerifyOptions(options?: DeviceVerifyOptions): DeviceVerifyOptions {
+        const verifyOptions: DeviceVerifyOptions = { timeout: options?.timeout ?? this.timeout ?? this.utils.getTimeout() };
+        if (options?.errorMessage !== undefined) verifyOptions.errorMessage = options.errorMessage;
+        return verifyOptions;
+    }
+
+    // ── App lifecycle ──
+
+    /**
+     * Launches the app (starts it when not running). Device platforms only.
+     * @param appId - Android package / iOS bundle id; defaults to the app under test from the capabilities file.
+     */
+    async launchApp(appId?: string): Promise<void> {
+        this.requirePlatform('launchApp');
+        log.navigate('Launching app "%s"', appId ?? '<app under test>');
+        await this.device.launchApp(appId);
+    }
+
+    /**
+     * Brings the app to the foreground (starting it when needed). Device platforms only.
+     * @param appId - Android package / iOS bundle id; defaults to the app under test.
+     */
+    async activateApp(appId?: string): Promise<void> {
+        this.requirePlatform('activateApp');
+        log.navigate('Activating app "%s"', appId ?? '<app under test>');
+        await this.device.activateApp(appId);
+    }
+
+    /**
+     * Terminates the app. Device platforms only.
+     * @param appId - Android package / iOS bundle id; defaults to the app under test.
+     */
+    async terminateApp(appId?: string): Promise<void> {
+        this.requirePlatform('terminateApp');
+        log.navigate('Terminating app "%s"', appId ?? '<app under test>');
+        await this.device.terminateApp(appId);
+    }
+
+    /**
+     * Sends the app under test to the background for `seconds`, then brings it back. Device platforms only.
+     * @param seconds - Non-negative, finite number of seconds.
+     */
+    async backgroundApp(seconds: number): Promise<void> {
+        this.requirePlatform('backgroundApp');
+        log.navigate('Backgrounding the app for %ds', seconds);
+        await this.device.backgroundApp(seconds);
+    }
+
+    /** Terminates and re-activates the app under test. Device platforms only. */
+    async resetApp(): Promise<void> {
+        this.requirePlatform('resetApp');
+        log.navigate('Resetting the app under test (terminate + activate)');
+        await this.device.resetApp();
+    }
+
+    /**
+     * Installs an app from `appPath` (an `.apk` / `.app` / `.ipa` path or URL the Appium server can reach).
+     * Device platforms only.
+     */
+    async installApp(appPath: string): Promise<void> {
+        this.requirePlatform('installApp');
+        log.navigate('Installing app from "%s"', appPath);
+        await this.device.installApp(appPath);
+    }
+
+    /**
+     * Uninstalls the app `appId` (Android package / iOS bundle id). Device platforms only.
+     */
+    async removeApp(appId: string): Promise<void> {
+        this.requirePlatform('removeApp');
+        log.navigate('Removing app "%s"', appId);
+        await this.device.removeApp(appId);
+    }
+
+    /**
+     * Opens a deep link. Device platforms only.
+     * @param url - The deep link (custom scheme or universal / app link).
+     * @param appId - The app that should handle it; defaults to the app under test.
+     */
+    async openDeepLink(url: string, appId?: string): Promise<void> {
+        this.requirePlatform('openDeepLink');
+        log.navigate('Opening deep link "%s"', url);
+        await this.device.openDeepLink(url, appId);
+    }
+
+    // ── Gestures ──
+
+    /**
+     * Swipes on an element: the finger moves in `direction` (`'up'` reveals content below), through the
+     * element's centre. Delegates to the element's `swipe` primitive on every platform (on web a mouse drag).
+     * @param options - Optional step options for element resolution (`strategy`, `index`, ...; `timeout` is
+     *   also the gesture's), plus `distance`: finger travel in px (platform default when omitted).
+     */
+    async swipe(elementName: string, pageName: string, direction: SwipeDirection, options?: StepOptions & SwipeOptions): Promise<void> {
+        log.interact('Swiping %s on "%s" in "%s"', direction, elementName, pageName);
+        const element = await this.getElement(elementName, pageName, options);
+        await this.gestures.swipe(element, direction, definedOptions({ distance: options?.distance, timeout: options?.timeout }));
+    }
+
+    /**
+     * Swipes across the screen: the finger moves in `direction` through the screen centre (`'up'` reveals
+     * content below), kept clear of the system gesture zones. Device platforms only.
+     * @param options - `distance`: finger travel in px (default half the screen along that axis).
+     */
+    async swipeScreen(direction: SwipeDirection, options?: ScreenSwipeOptions): Promise<void> {
+        this.requirePlatform('swipeScreen');
+        log.interact('Swiping the screen %s', direction);
+        await this.gestures.swipeScreen(direction, options?.distance !== undefined ? { distance: options.distance } : undefined);
+    }
+
+    /**
+     * Scrolls the screen until the element is displayed; throws when `timeout` expires or the swipe limit is
+     * reached first. On web the browser scrolls the element into view directly.
+     * @param options - Optional step options for element resolution, plus `direction`: where the element
+     *   lies relative to the view (default `'down'`), `maxSwipes`: the most swipes a device sweep makes
+     *   (default 20) and `container`: the element name, on `pageName`, of the scrollable ancestor the
+     *   device sweep swipes inside (see {@link ScrollStepOptions}; ignored on web). `timeout` in ms
+     *   (default the step timeout) bounds when a new swipe may start: an in-flight swipe always finishes,
+     *   so the step may run up to one swipe longer.
+     */
+    async scrollUntilFound(elementName: string, pageName: string, options?: StepOptions & ScrollStepOptions): Promise<void> {
+        log.interact('Scrolling %s until "%s" in "%s" is found', options?.direction ?? 'down', elementName, pageName);
+        const element = await this.getElement(elementName, pageName, options);
+        await this.gestures.scrollUntilFound(element, await toScrollIntoViewOptions(this.repo, 'scrollUntilFound', pageName, options, options?.timeout));
+    }
+
+    /**
+     * Presses and holds an element. Delegates to the element's `longPress` primitive on every platform
+     * (on web the mouse button is held).
+     * @param options - Optional step options for element resolution (`timeout` is also the gesture's),
+     *   plus `duration`: hold time in ms (default 1000).
+     */
+    async longPress(elementName: string, pageName: string, options?: StepOptions & LongPressOptions): Promise<void> {
+        log.interact('Long-pressing "%s" in "%s"', elementName, pageName);
+        const element = await this.getElement(elementName, pageName, options);
+        await this.gestures.longPress(element, definedOptions({ duration: options?.duration, timeout: options?.timeout }));
+    }
+
+    /**
+     * Taps the screen at (`x`, `y`) px, native-context screen coordinates. Device platforms only.
+     */
+    async tapAt(x: number, y: number): Promise<void> {
+        this.requirePlatform('tapAt');
+        log.interact('Tapping the screen at (%d, %d)', x, y);
+        await this.gestures.tapAt(x, y);
+    }
+
+    /**
+     * Two-finger pinch (fingers move together) on an element. Delegates to the element's `pinch` primitive.
+     * Device platforms only: on web it throws `PlatformNotSupportedError('pinch', 'web')` before resolving.
+     * @param options - Optional step options for element resolution (`timeout` is also the gesture's),
+     *   plus `scale` in (0, 1), default 0.5.
+     */
+    async pinch(elementName: string, pageName: string, options?: StepOptions & PinchOptions): Promise<void> {
+        this.requirePlatform('pinch');
+        log.interact('Pinching "%s" in "%s"', elementName, pageName);
+        const element = await this.getElement(elementName, pageName, options);
+        await this.gestures.pinch(element, definedOptions({ scale: options?.scale, timeout: options?.timeout }));
+    }
+
+    /**
+     * Two-finger zoom (fingers spread) on an element. Delegates to the element's `zoom` primitive.
+     * Device platforms only: on web it throws `PlatformNotSupportedError('zoom', 'web')` before resolving.
+     * @param options - Optional step options for element resolution (`timeout` is also the gesture's),
+     *   plus `scale` above 1, default 2.
+     */
+    async zoom(elementName: string, pageName: string, options?: StepOptions & ZoomOptions): Promise<void> {
+        this.requirePlatform('zoom');
+        log.interact('Zooming "%s" in "%s"', elementName, pageName);
+        const element = await this.getElement(elementName, pageName, options);
+        await this.gestures.zoom(element, definedOptions({ scale: options?.scale, timeout: options?.timeout }));
+    }
+
+    // ── Device ──
+
+    /** System back. Android only: throws `PlatformNotSupportedError('pressBack', 'ios')` on ios. */
+    async pressBack(): Promise<void> {
+        this.requireDeviceStep('pressBack');
+        log.navigate('Pressing system back');
+        await this.device.pressBack();
+    }
+
+    /**
+     * Hides the on-screen keyboard with element-repository's
+     * `dismissKeyboard`. Device platforms only.
+     *
+     * Returns `true` when a keyboard was shown and is now gone, and `false`
+     * only when no keyboard was shown: then nothing is sent. element-repository
+     * answers "no keyboard" also when WebdriverIO's `isKeyboardShown()` is
+     * missing or fails, so that answer is checked again with `mobile:
+     * isKeyboardShown`; when that check reports a keyboard, or fails, the
+     * step throws `hideKeyboard: the keyboard state could not be confirmed
+     * and nothing was sent: ...` (a fatal driver error of that check passes
+     * unchanged).
+     * On iOS without `options.tapElement` the dismissal may press the
+     * keyboard's action key (Done, Return, Go, Search, Send, Join), which can
+     * submit a form or run a search; name a neutral element (a screen title)
+     * in `tapElement` to have it tapped first. A keyboard still shown after
+     * every dismissal step throws element-repository's
+     * `KeyboardStillShownError` (re-exported by this package); a fatal driver
+     * error passes unchanged.
+     *
+     * @param options - `tapElement` as `{ pageName, elementName }`, resolved
+     *   through the repository (an entry the page does not define fails
+     *   before anything is sent; Android ignores the tap). `timeout` (ms)
+     *   is one budget for the whole step: the `tapElement` resolution spends
+     *   from it and the dismissal gets only what is left. The dismissal checks
+     *   the budget before each of its steps; a step it has started runs to
+     *   its end (with its 300 ms pause and keyboard check), so the call can
+     *   end up to one dismissal step after `timeout`. A dismissal stopped by
+     *   the budget throws `KeyboardStillShownError`, whose `(timeout <ms> ms)`
+     *   names the time that was left for it. A `timeout` that is not a
+     *   finite, non-negative number is refused before anything is resolved
+     *   or sent.
+     */
+    async hideKeyboard(options?: HideKeyboardOptions): Promise<boolean> {
+        this.requirePlatform('hideKeyboard');
+        log.interact('Hiding the keyboard');
+        const timeout = options?.timeout;
+        // Refused before anything is resolved or sent, with the dismissal's own message.
+        if (timeout !== undefined && !(typeof timeout === 'number' && Number.isFinite(timeout) && timeout >= 0)) {
+            throw new Error(`dismissKeyboard: options.timeout must be a non-negative number of ms, got ${String(timeout)}`);
+        }
+        const started = Date.now();
+        let tapElement: Element | undefined;
+        if (options?.tapElement !== undefined) {
+            const { pageName, elementName } = options.tapElement;
+            try {
+                tapElement = await this.repo.get(elementName, pageName, timeout !== undefined ? { timeout } : undefined);
+            } catch (err) {
+                const cause = err instanceof Error ? err.message : String(err);
+                throw new Error(`hideKeyboard: tapElement "${elementName}" on page "${pageName}" could not be resolved: ${cause}`, { cause: err });
+            }
+        }
+        // The time left of the budget.
+        const left = timeout === undefined ? undefined : Math.max(0, timeout - (Date.now() - started));
+        return this.device.hideKeyboard(definedOptions({ tapElement, timeout: left }));
+    }
+
+    /** Rotates the device to `orientation`. Device platforms only. */
+    async setOrientation(orientation: Orientation): Promise<void> {
+        this.requirePlatform('setOrientation');
+        log.interact('Setting orientation to %s', orientation);
+        await this.device.setOrientation(orientation);
+    }
+
+    /** Accepts the open system / app alert. Device platforms only. */
+    async acceptAlert(): Promise<void> {
+        this.requirePlatform('acceptAlert');
+        log.interact('Accepting the alert');
+        await this.device.acceptAlert();
+    }
+
+    /** Dismisses the open system / app alert. Device platforms only. */
+    async dismissAlert(): Promise<void> {
+        this.requirePlatform('dismissAlert');
+        log.interact('Dismissing the alert');
+        await this.device.dismissAlert();
+    }
+
+    /**
+     * Grants, denies or resets a permission of the app under test. Device platforms only.
+     * @param permission - The platform's name: an Android permission (`android.permission.CAMERA`) or an
+     *   iOS service (`camera`, `photos`, ...).
+     * @param state - `'grant'`, `'deny'` or `'reset'` (on Android `'reset'` revokes).
+     */
+    async setPermission(permission: string, state: PermissionState): Promise<void> {
+        this.requirePlatform('setPermission');
+        log.interact('Setting permission "%s" to %s', permission, state);
+        await this.device.setPermission(permission, state);
+    }
+
+    // ── Contexts ──
+
+    /** The available contexts (`'NATIVE_APP'`, `'WEBVIEW_*'`). Device platforms only. */
+    async getContexts(): Promise<string[]> {
+        this.requirePlatform('getContexts');
+        log.extract('Getting the available contexts');
+        return await this.device.getContexts();
+    }
+
+    /** Switches to the context `name` (`'NATIVE_APP'` or a `'WEBVIEW_*'` name). Device platforms only. */
+    async switchContext(name: string): Promise<void> {
+        this.requirePlatform('switchContext');
+        log.navigate('Switching to context "%s"', name);
+        await this.device.switchContext(name);
+    }
+
+    // ── Assertions (polling, step timeout) ──
+
+    /**
+     * Waits until the app is in the foreground; fails after the timeout with the last observed state.
+     * Device platforms only.
+     * @param appId - Android package / iOS bundle id; defaults to the app under test.
+     * @param options - `timeout` in ms (default the step timeout); `errorMessage` replaces the failure header.
+     */
+    async verifyAppInForeground(appId?: string, options?: DeviceVerifyOptions): Promise<void> {
+        this.requirePlatform('verifyAppInForeground');
+        const id = this.stepAppId('verifyAppInForeground', appId);
+        log.verify('Verifying app "%s" is in the foreground', id ?? '<app under test>');
+        await this.device.verifyAppInForeground(id, this.deviceVerifyOptions(options));
+    }
+
+    /**
+     * Waits until the device reports `orientation`; fails after the timeout with the last observed one.
+     * Device platforms only.
+     * @param options - `timeout` in ms (default the step timeout); `errorMessage` replaces the failure header.
+     */
+    async verifyOrientation(orientation: Orientation, options?: DeviceVerifyOptions): Promise<void> {
+        this.requirePlatform('verifyOrientation');
+        // The device validates too; checked here only so a bad argument is refused before the log line.
+        if (orientation !== 'portrait' && orientation !== 'landscape') {
+            throw new Error(`verifyOrientation: expected 'portrait' or 'landscape', got "${orientation}".`);
+        }
+        log.verify('Verifying orientation is %s', orientation);
+        await this.device.verifyOrientation(orientation, this.deviceVerifyOptions(options));
+    }
+
+    /**
+     * Waits until the on-screen keyboard is shown (hidden with `negated`); fails after the timeout with the
+     * last observed state. Device platforms only.
+     * @param options - `negated`: wait for the keyboard to be hidden; `timeout` in ms (default the step
+     *   timeout); `errorMessage` replaces the failure header.
+     */
+    async verifyKeyboardShown(options?: DeviceVerifyOptions & { negated?: boolean }): Promise<void> {
+        this.requirePlatform('verifyKeyboardShown');
+        const negated = options?.negated === true;
+        log.verify('Verifying the keyboard is %s', negated ? 'hidden' : 'shown');
+        await this.device.verifyKeyboardShown({ ...this.deviceVerifyOptions(options), negated });
+    }
+
+    /**
+     * Waits until the current context is `name`; fails after the timeout with the last observed context.
+     * Device platforms only.
+     * @param options - `timeout` in ms (default the step timeout); `errorMessage` replaces the failure header.
+     */
+    async verifyContext(name: string, options?: DeviceVerifyOptions): Promise<void> {
+        this.requirePlatform('verifyContext');
+        log.verify('Verifying the current context is "%s"', name);
+        await this.device.verifyContext(name, this.deviceVerifyOptions(options));
+    }
+
+    // ── Extraction ──
+
+    /** The current screen's UI hierarchy as XML. Device platforms only (on web use `getPageHtml`). */
+    async getPageSource(): Promise<string> {
+        this.requirePlatform('getPageSource');
+        log.extract('Getting the page source');
+        return await this.device.getPageSource();
     }
 
     /**
@@ -630,7 +1255,7 @@ export class Steps {
      */
     async fill(elementName: string, pageName: string, text: string, options?: StepOptions): Promise<void> {
         log.interact('Filling "%s" in "%s" with text: "%s"', elementName, pageName, text);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         await this.interact.fill(element, text);
     }
 
@@ -642,9 +1267,10 @@ export class Steps {
      * @param options - Optional step options for element resolution.
      */
     async uploadFile(elementName: string, pageName: string, filePath: string | string[], options?: StepOptions): Promise<void> {
+        this.requireWeb('uploadFile');
         const label = Array.isArray(filePath) ? filePath.join(', ') : filePath;
         log.interact('Uploading file "%s" to "%s" in "%s"', label, elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         await this.interact.uploadFile(element, filePath);
     }
 
@@ -662,8 +1288,9 @@ export class Steps {
         filenames: string[],
         options?: { mimeType?: string } & StepOptions,
     ): Promise<void> {
+        this.requireWeb('dropFiles');
         log.interact('Dropping files "%s" onto "%s" in "%s"', filenames.join(', '), elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         await this.interact.dropFiles(element, filenames, { mimeType: options?.mimeType });
     }
 
@@ -681,8 +1308,9 @@ export class Steps {
         dropdownOptions?: DropdownSelectOptions,
         options?: StepOptions
     ): Promise<string> {
+        this.requireWeb('selectDropdown');
         log.interact('Selecting dropdown option for "%s" in "%s"', elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         return await this.interact.selectDropdown(element, dropdownOptions);
     }
 
@@ -695,7 +1323,7 @@ export class Steps {
      */
     async dragAndDrop(elementName: string, pageName: string, dragOptions: DragAndDropOptions, options?: StepOptions): Promise<void> {
         log.interact('Dragging and dropping "%s" in "%s"', elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         await this.interact.dragAndDrop(element, dragOptions);
     }
 
@@ -712,7 +1340,7 @@ export class Steps {
         log.interact('Dragging and dropping "%s" in "%s"', elementText, pageName);
         const element = await this.repo.getByText(elementName, pageName, elementText);
         if (!element) throw new Error(`No element with text "${elementText}" found for "${elementName}" in "${pageName}"`);
-        await this.interact.dragAndDrop(element as WebElement, dragOptions);
+        await this.interact.dragAndDrop(element, dragOptions);
     }
 
     /**
@@ -723,8 +1351,9 @@ export class Steps {
      * @param options - Optional step options for element resolution.
      */
     async setSliderValue(elementName: string, pageName: string, value: number, options?: StepOptions): Promise<void> {
+        this.requireWeb('setSliderValue');
         log.interact('Setting slider "%s" in "%s" to value: %d', elementName, pageName, value);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         await this.interact.setSliderValue(element, value);
     }
 
@@ -733,6 +1362,7 @@ export class Steps {
      * @param key - The key to press (e.g. `'Escape'`, `'Enter'`, `'Tab'`, `'Control+A'`).
      */
     async pressKey(key: string): Promise<void> {
+        this.requireWeb('pressKey');
         log.interact('Pressing key: "%s"', key);
         await this.interact.pressKey(key);
     }
@@ -744,6 +1374,7 @@ export class Steps {
      * @param keys - The keys to press together, e.g. `['Meta', 'K']` or `['Control', 'Shift', 'P']`.
      */
     async pressKeys(keys: string[]): Promise<void> {
+        this.requireWeb('pressKeys');
         // Enforce the contract before logging so an empty chord never produces a
         // misleading `Pressing keys: ""` line ahead of the throw.
         if (keys.length === 0) {
@@ -772,8 +1403,9 @@ export class Steps {
         eventInit?: Record<string, unknown>,
         options?: StepOptions,
     ): Promise<void> {
+        this.requireWeb('dispatchEvent');
         log.interact('Dispatching "%s" event on "%s" in "%s"', type, elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         await this.interact.dispatchEvent(element, type, eventInit);
     }
 
@@ -793,7 +1425,7 @@ export class Steps {
         options?: StepOptions
     ): Promise<void> {
         log.interact('Typing "%s" sequentially into "%s" in "%s" (delay: %dms)', text, elementName, pageName, delay);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         await this.interact.typeSequentially(element, text, delay);
     }
 
@@ -805,7 +1437,7 @@ export class Steps {
      */
     async clearInput(elementName: string, pageName: string, options?: StepOptions): Promise<void> {
         log.interact('Clearing input "%s" in "%s"', elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         await this.interact.clearInput(element);
     }
 
@@ -818,8 +1450,9 @@ export class Steps {
      * @returns An array of the actually selected `value` strings.
      */
     async selectMultiple(elementName: string, pageName: string, values: string[], options?: StepOptions): Promise<string[]> {
+        this.requireWeb('selectMultiple');
         log.interact('Selecting multiple values on "%s" in "%s": %O', elementName, pageName, values);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         return await this.interact.selectMultiple(element, values);
     }
 
@@ -836,7 +1469,7 @@ export class Steps {
      */
     async getText(elementName: string, pageName: string, options?: StepOptions): Promise<string | null> {
         log.extract('Getting text from "%s" in "%s"', elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         return await this.extract.getText(element);
     }
 
@@ -850,7 +1483,7 @@ export class Steps {
      */
     async getAttribute(elementName: string, pageName: string, attributeName: string, options?: StepOptions): Promise<string | null> {
         log.extract('Getting attribute "%s" from "%s" in "%s"', attributeName, elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         return await this.extract.getAttribute(element, attributeName);
     }
 
@@ -863,7 +1496,7 @@ export class Steps {
      */
     async getCount(elementName: string, pageName: string, options?: StepOptions): Promise<number> {
         log.extract('Getting count of "%s" in "%s"', elementName, pageName);
-        const element = await this.getAllWebElement(elementName, pageName, options);
+        const element = await this.getAllElement(elementName, pageName, options);
         return await this.extract.getCount(element);
     }
 
@@ -876,7 +1509,7 @@ export class Steps {
      */
     async getInputValue(elementName: string, pageName: string, options?: StepOptions): Promise<string> {
         log.extract('Getting input value of "%s" in "%s"', elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         return await this.extract.getInputValue(element);
     }
 
@@ -889,8 +1522,9 @@ export class Steps {
      * @returns The computed value as a string.
      */
     async getCssProperty(elementName: string, pageName: string, property: string, options?: StepOptions): Promise<string> {
+        this.requireWeb('getCssProperty');
         log.extract('Getting CSS "%s" from "%s" in "%s"', property, elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         return await this.extract.getCssProperty(element, property);
     }
 
@@ -909,7 +1543,7 @@ export class Steps {
         options?: StepOptions,
     ): Promise<{ x: number; y: number; width: number; height: number } | null> {
         log.extract('Getting bounding box of "%s" in "%s"', elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         return await this.extract.getBoundingBox(element);
     }
 
@@ -922,8 +1556,9 @@ export class Steps {
      * @param options - `outer` switches between innerHTML/outerHTML; other fields control strategy.
      */
     async getHtml(elementName: string, pageName: string, options?: StepOptions & { outer?: boolean }): Promise<string> {
+        this.requireWeb('getHtml');
         log.extract('Getting %s HTML of "%s" in "%s"', options?.outer ? 'outer' : 'inner', elementName, pageName);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         return await this.extract.getHtml(element, { outer: options?.outer });
     }
 
@@ -935,6 +1570,7 @@ export class Steps {
      * e.g. confirming an injected payload was HTML-escaped anywhere on the page.
      */
     async getPageHtml(options?: { outer?: boolean }): Promise<string> {
+        this.requireWeb('getPageHtml');
         log.extract('Getting page %s HTML', options?.outer ? 'outer' : 'inner');
         return await this.extract.getPageHtml(options);
     }
@@ -951,6 +1587,7 @@ export class Steps {
      * ```
      */
     async getPageText(): Promise<string> {
+        this.requireWeb('getPageText');
         log.extract('Getting page text');
         return await this.extract.getPageText();
     }
@@ -970,6 +1607,7 @@ export class Steps {
      * ```
      */
     async getWindowProperty<T = unknown>(path: string): Promise<T | undefined> {
+        this.requireWeb('getWindowProperty');
         log.extract('Getting window property "%s"', path);
         return await this.extract.getWindowProperty<T>(path);
     }
@@ -985,6 +1623,7 @@ export class Steps {
      * ```
      */
     async setWindowProperty(path: string, value: unknown): Promise<void> {
+        this.requireWeb('setWindowProperty');
         log.extract('Setting window property "%s"', path);
         await this.extract.setWindowProperty(path, value);
     }
@@ -1002,6 +1641,7 @@ export class Steps {
      * ```
      */
     async evaluateScript<T = unknown>(fn: (arg?: unknown) => T | Promise<T>, arg?: unknown): Promise<T> {
+        this.requireWeb('evaluateScript');
         log.extract('Evaluating script (escape hatch)');
         return await this.extract.evaluateScript<T>(fn, arg);
     }
@@ -1020,6 +1660,7 @@ export class Steps {
      * ```
      */
     async getLocalStorage(key: string): Promise<string | null> {
+        this.requireWeb('getLocalStorage');
         log.extract('Getting localStorage[%s]', JSON.stringify(key));
         return await this.extract.getLocalStorage(key);
     }
@@ -1029,6 +1670,7 @@ export class Steps {
      * when the key is absent — same contract as the native `getItem`.
      */
     async getSessionStorage(key: string): Promise<string | null> {
+        this.requireWeb('getSessionStorage');
         log.extract('Getting sessionStorage[%s]', JSON.stringify(key));
         return await this.extract.getSessionStorage(key);
     }
@@ -1046,6 +1688,7 @@ export class Steps {
      * ```
      */
     async getLocalStorageKeys(): Promise<string[]> {
+        this.requireWeb('getLocalStorageKeys');
         log.extract('Getting localStorage keys');
         return await this.extract.getLocalStorageKeys();
     }
@@ -1055,6 +1698,7 @@ export class Steps {
      * enumerating companion to {@link getSessionStorage}.
      */
     async getSessionStorageKeys(): Promise<string[]> {
+        this.requireWeb('getSessionStorageKeys');
         log.extract('Getting sessionStorage keys');
         return await this.extract.getSessionStorageKeys();
     }
@@ -1073,6 +1717,7 @@ export class Steps {
      * ```
      */
     async setLocalStorage(key: string, value: string): Promise<void> {
+        this.requireWeb('setLocalStorage');
         log.extract('Setting localStorage[%s]', JSON.stringify(key));
         await this.extract.setLocalStorage(key, value);
     }
@@ -1082,6 +1727,7 @@ export class Steps {
      * companion to {@link getSessionStorage}.
      */
     async setSessionStorage(key: string, value: string): Promise<void> {
+        this.requireWeb('setSessionStorage');
         log.extract('Setting sessionStorage[%s]', JSON.stringify(key));
         await this.extract.setSessionStorage(key, value);
     }
@@ -1092,6 +1738,7 @@ export class Steps {
      * without disturbing the rest.
      */
     async removeLocalStorage(key: string): Promise<void> {
+        this.requireWeb('removeLocalStorage');
         log.extract('Removing localStorage[%s]', JSON.stringify(key));
         await this.extract.removeLocalStorage(key);
     }
@@ -1101,6 +1748,7 @@ export class Steps {
      * native `removeItem` contract).
      */
     async removeSessionStorage(key: string): Promise<void> {
+        this.requireWeb('removeSessionStorage');
         log.extract('Removing sessionStorage[%s]', JSON.stringify(key));
         await this.extract.removeSessionStorage(key);
     }
@@ -1110,6 +1758,7 @@ export class Steps {
      * Use to reset persisted state between phases of a test.
      */
     async clearLocalStorage(): Promise<void> {
+        this.requireWeb('clearLocalStorage');
         log.extract('Clearing localStorage');
         await this.extract.clearLocalStorage();
     }
@@ -1118,6 +1767,7 @@ export class Steps {
      * Removes every key from `window.sessionStorage` (native `clear` contract).
      */
     async clearSessionStorage(): Promise<void> {
+        this.requireWeb('clearSessionStorage');
         log.extract('Clearing sessionStorage');
         await this.extract.clearSessionStorage();
     }
@@ -1139,30 +1789,26 @@ export class Steps {
      */
     async getAll(elementName: string, pageName: string, getAllOptions?: GetAllOptions, options?: StepOptions): Promise<string[]> {
         log.extract('Extracting all from "%s" in "%s"', elementName, pageName);
-        // `locateChild` widens the return type back to Element, so keep the
-        // local as Element and narrow at the extract boundary.
-        let element: Element = await this.getAllWebElement(elementName, pageName, options);
+        // A child given as a repository reference is looked up before anything
+        // resolves, so a wrong reference fails without touching the screen.
+        const child = getAllOptions?.child;
+        const childSelector = child === undefined
+            ? undefined
+            : typeof child === 'string' ? child : this.repo.getSelector(child.elementName, child.pageName);
+        const element: Element = await this.getAllElement(elementName, pageName, options);
 
         if ((!options?.strategy || options.strategy === 'all') && isListEntry(this.repo, elementName, pageName)) {
-            await this.requireListMatch(element as WebElement, elementName, pageName, 'getAll', options?.timeout);
+            await this.requireListMatch(element, elementName, pageName, 'getAll', options?.timeout);
         }
 
-        if (getAllOptions?.child) {
-            if (typeof getAllOptions.child === 'string') {
-                element = element.locateChild(getAllOptions.child);
-            } else {
-                const childSelector = this.repo.getSelector(getAllOptions.child.elementName, getAllOptions.child.pageName);
-                element = element.locateChild(childSelector);
-            }
-        }
-
-        if (getAllOptions?.extractAttribute) {
-            const elements = await element.all();
-            const values = await Promise.all(elements.map(el => el.getAttribute(getAllOptions.extractAttribute!)));
-            return values.filter((v): v is string => v !== null);
-        }
-
-        return await this.extract.getAllTexts(element as WebElement);
+        // A narrowing strategy (index / text / attribute / random) picked ONE
+        // match: the family reads that match as the whole list.
+        const picked = !!options?.strategy && options.strategy !== 'all' && options.strategy !== 'first';
+        const valueOptions: { child?: string; attribute?: string; picked?: boolean } = {};
+        if (childSelector !== undefined) valueOptions.child = childSelector;
+        if (getAllOptions?.extractAttribute) valueOptions.attribute = getAllOptions.extractAttribute;
+        if (picked) valueOptions.picked = true;
+        return await this.extract.getAllValues(element, valueOptions);
     }
 
     /**
@@ -1170,13 +1816,16 @@ export class Steps {
      * timeout for the collection's first match to attach, and throws a message
      * naming the entry when nothing ever matches. A per-call
      * `StepOptions.timeout` takes precedence over the instance timeout, in both
-     * directions (shorter or longer).
+     * directions (shorter or longer). A fatal driver error (dead session,
+     * invalid selector) is rethrown as is: it is not "found 0".
      */
-    private async requireListMatch(all: WebElement, elementName: string, pageName: string, step: string, timeoutOverride?: number): Promise<void> {
+    private async requireListMatch(all: Element, elementName: string, pageName: string, step: string, timeoutOverride?: number): Promise<void> {
         const timeout = timeoutOverride ?? this.timeout ?? 30000;
         try {
-            await all.locator.first().waitFor({ state: 'attached', timeout });
-        } catch {
+            // Neutral primitives: on web this is `locator.first().waitFor(...)`.
+            await all.first().waitFor({ state: 'attached', timeout });
+        } catch (err) {
+            if (isFatalDriverError(err)) throw err;
             throw new Error(
                 `${step}: '${pageName}.${elementName}' is a list entry ("list": true) — ` +
                 `expected at least one match within ${timeout}ms, found 0.`,
@@ -1234,6 +1883,11 @@ export class Steps {
     /**
      * Checks whether an element is currently present and visible in the DOM.
      * Returns a boolean instead of throwing.
+     *
+     * On web any error answers `false`. On a device only a no-match answer
+     * (no element matches) is `false`; any other error (an `unknown error`,
+     * a stale reference twice in a row, a dead session) is thrown: the check
+     * could not tell, and `false` would read it as "not there".
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param options - Optional step options for element resolution.
@@ -1242,10 +1896,11 @@ export class Steps {
     async isPresent(elementName: string, pageName: string, options?: StepOptions): Promise<boolean> {
         log.verify('Checking presence of "%s" in "%s"', elementName, pageName);
         try {
-            const element = await this.getWebElement(elementName, pageName, options);
+            const element = await this.getElement(elementName, pageName, options);
             return await element.isVisible();
-        } catch {
-            return false;
+        } catch (err) {
+            if (this.platform === 'web' || isNoMatchAnswer(err)) return false;
+            throw err;
         }
     }
 
@@ -1295,12 +1950,10 @@ export class Steps {
      */
     async verifyAbsence(elementName: string, pageName: string, options?: StepOptions): Promise<void> {
         log.verify('Verifying absence of "%s" in "%s"', elementName, pageName);
-        const action = this.actionWithStrategy(elementName, pageName, options);
         // `verifyAbsence` derives its per-node attach slice and its `toBeHidden`
-        // budget from the chain's effective timeout, so a caller-supplied
-        // `timeout` has to be applied to the chain to reach either of them.
-        if (options?.timeout !== undefined) action.timeout(options.timeout);
-        await action.verifyAbsence();
+        // budget from the chain's effective timeout; `actionWithStrategy`
+        // applies a caller-supplied `timeout` to the chain, so it reaches both.
+        await this.actionWithStrategy(elementName, pageName, options).verifyAbsence();
     }
 
     /**
@@ -1355,9 +2008,10 @@ export class Steps {
      * @param elementName - The element name as defined under the given page.
      * @param pageName - The page name as defined in `page-repository.json`.
      * @param scroll - Whether to scroll each image into view before checking. Defaults to `true`.
-     * @param options - Step options for element resolution, plus `verifyDecoded` to run `Image.decode()` per image.
+     * @param options - Step options for element resolution and the per-call `timeout` of the check, plus `verifyDecoded` to run `Image.decode()` per image.
      */
     async verifyImages(elementName: string, pageName: string, scroll: boolean = true, options?: StepOptions & { verifyDecoded?: boolean }): Promise<void> {
+        this.requireWeb('verifyImages');
         log.verify('Verifying images for "%s" in "%s" (scroll: %s)', elementName, pageName, scroll);
         const { verifyDecoded, ...stepOptions } = options ?? {};
         await this.actionWithStrategy(elementName, pageName, stepOptions).verifyImages(scroll, { verifyDecoded });
@@ -1429,6 +2083,7 @@ export class Steps {
      * @param options - Optional step options for element resolution.
      */
     async verifyHtml(elementName: string, pageName: string, expected: string, htmlOptions?: { outer?: boolean }, options?: StepOptions): Promise<void> {
+        this.requireWeb('verifyHtml');
         log.verify('Verifying %s HTML of "%s" in "%s" matches exactly', htmlOptions?.outer ? 'outer' : 'inner', elementName, pageName);
         await this.actionWithStrategy(elementName, pageName, options).verifyHtml(expected, htmlOptions);
     }
@@ -1446,6 +2101,7 @@ export class Steps {
      * @param options - Optional step options for element resolution.
      */
     async verifyHtmlContains(elementName: string, pageName: string, substring: string, htmlOptions?: { outer?: boolean }, options?: StepOptions): Promise<void> {
+        this.requireWeb('verifyHtmlContains');
         log.verify('Verifying %s HTML of "%s" in "%s" contains: "%s"', htmlOptions?.outer ? 'outer' : 'inner', elementName, pageName, substring);
         await this.actionWithStrategy(elementName, pageName, options).verifyHtmlContains(substring, htmlOptions);
     }
@@ -1457,6 +2113,7 @@ export class Steps {
      * Equivalent to `steps.on(elementName, pageName).verifyHtmlMatches(regex, htmlOptions)`.
      */
     async verifyHtmlMatches(elementName: string, pageName: string, regex: RegExp, htmlOptions?: { outer?: boolean }, options?: StepOptions): Promise<void> {
+        this.requireWeb('verifyHtmlMatches');
         log.verify('Verifying %s HTML of "%s" in "%s" matches regex %s', htmlOptions?.outer ? 'outer' : 'inner', elementName, pageName, regex);
         await this.actionWithStrategy(elementName, pageName, options).verifyHtmlMatches(regex, htmlOptions);
     }
@@ -1471,6 +2128,7 @@ export class Steps {
      *   `negated` flips the assertion; `timeout` overrides the default; `errorMessage` adds a header.
      */
     async verifyPageHtml(expected: string, options?: { outer?: boolean; negated?: boolean; timeout?: number; errorMessage?: string }): Promise<void> {
+        this.requireWeb('verifyPageHtml');
         log.verify('Verifying page %s HTML matches exactly', options?.outer ? 'outer' : 'inner');
         await this.verify.pageHtml(expected, options);
     }
@@ -1489,6 +2147,7 @@ export class Steps {
      * ```
      */
     async verifyPageHtmlContains(substring: string, options?: { outer?: boolean; negated?: boolean; timeout?: number; errorMessage?: string }): Promise<void> {
+        this.requireWeb('verifyPageHtmlContains');
         log.verify('Verifying page %s HTML contains: "%s"', options?.outer ? 'outer' : 'inner', substring);
         await this.verify.pageHtmlContains(substring, options);
     }
@@ -1498,6 +2157,7 @@ export class Steps {
      * Defaults to `document.body.innerHTML`; pass `{ outer: true }` for the full document outerHTML.
      */
     async verifyPageHtmlMatches(regex: RegExp, options?: { outer?: boolean; negated?: boolean; timeout?: number; errorMessage?: string }): Promise<void> {
+        this.requireWeb('verifyPageHtmlMatches');
         log.verify('Verifying page %s HTML matches regex %s', options?.outer ? 'outer' : 'inner', regex);
         await this.verify.pageHtmlMatches(regex, options);
     }
@@ -1522,11 +2182,13 @@ export class Steps {
      * ```
      */
     async verifyLocalStorage(key: string, options: StorageVerifyOptions): Promise<void> {
+        this.requireWeb('verifyLocalStorage');
         await this.verifyStorage('local', key, options);
     }
 
     /** See `verifyLocalStorage` — same matcher shape, against `window.sessionStorage`. */
     async verifySessionStorage(key: string, options: StorageVerifyOptions): Promise<void> {
+        this.requireWeb('verifySessionStorage');
         await this.verifyStorage('session', key, options);
     }
 
@@ -1583,6 +2245,7 @@ export class Steps {
      * ```
      */
     async verifyWindowProperty(path: string, options: WindowVerifyOptions): Promise<void> {
+        this.requireWeb('verifyWindowProperty');
         const modifiers = { negated: options.negated, timeout: options.timeout, errorMessage: options.errorMessage };
         // Dispatch on PROPERTY PRESENCE, not `!== undefined`: the union types
         // `equals`/`contains` as `unknown`, so a caller may legally pass an
@@ -1653,38 +2316,44 @@ export class Steps {
 
     /** Session-aware `GET`. Shares the browser context's cookies. */
     async requestGet(url: string, opts?: BrowserRequestOptions): Promise<BrowserResponse> {
+        this.requireWeb('requestGet');
         log.api('Request GET %s', url);
-        return await this.request.get(url, opts);
+        return await this.webRequest().get(url, opts);
     }
 
     /** Session-aware `POST`. Shares the browser context's cookies. */
     async requestPost(url: string, opts?: BrowserRequestOptions): Promise<BrowserResponse> {
+        this.requireWeb('requestPost');
         log.api('Request POST %s', url);
-        return await this.request.post(url, opts);
+        return await this.webRequest().post(url, opts);
     }
 
     /** Session-aware `PUT`. Shares the browser context's cookies. */
     async requestPut(url: string, opts?: BrowserRequestOptions): Promise<BrowserResponse> {
+        this.requireWeb('requestPut');
         log.api('Request PUT %s', url);
-        return await this.request.put(url, opts);
+        return await this.webRequest().put(url, opts);
     }
 
     /** Session-aware `PATCH`. Shares the browser context's cookies. */
     async requestPatch(url: string, opts?: BrowserRequestOptions): Promise<BrowserResponse> {
+        this.requireWeb('requestPatch');
         log.api('Request PATCH %s', url);
-        return await this.request.patch(url, opts);
+        return await this.webRequest().patch(url, opts);
     }
 
     /** Session-aware `DELETE`. Shares the browser context's cookies. */
     async requestDelete(url: string, opts?: BrowserRequestOptions): Promise<BrowserResponse> {
+        this.requireWeb('requestDelete');
         log.api('Request DELETE %s', url);
-        return await this.request.delete(url, opts);
+        return await this.webRequest().delete(url, opts);
     }
 
     /** Session-aware `HEAD`. Shares the browser context's cookies. */
     async requestHead(url: string, opts?: BrowserRequestOptions): Promise<BrowserResponse> {
+        this.requireWeb('requestHead');
         log.api('Request HEAD %s', url);
-        return await this.request.head(url, opts);
+        return await this.webRequest().head(url, opts);
     }
 
     /**
@@ -1740,6 +2409,7 @@ export class Steps {
      * @param text - The substring expected to be found in the current URL.
      */
     async verifyUrlContains(text: string): Promise<void> {
+        this.requireWeb('verifyUrlContains');
         log.verify('Verifying current URL contains: "%s"', text);
         await this.verify.urlContains(text);
     }
@@ -1761,6 +2431,7 @@ export class Steps {
      * ```
      */
     async verifyPageContainsText(text: string | RegExp, options?: { timeout?: number; errorMessage?: string }): Promise<void> {
+        this.requireWeb('verifyPageContainsText');
         log.verify('Verifying page body contains: %s', text instanceof RegExp ? text.toString() : `"${text}"`);
         await this.verify.pageContainsText(text, options);
     }
@@ -1785,6 +2456,7 @@ export class Steps {
      * ```
      */
     async verifyPageNotContainsText(text: string | RegExp, options?: { timeout?: number; errorMessage?: string }): Promise<void> {
+        this.requireWeb('verifyPageNotContainsText');
         log.verify('Verifying page body does NOT contain: %s', text instanceof RegExp ? text.toString() : `"${text}"`);
         await this.verify.pageNotContainsText(text, options);
     }
@@ -1802,6 +2474,7 @@ export class Steps {
      * ```
      */
     async verifyPageTitle(title: string | RegExp, options?: { timeout?: number; errorMessage?: string }): Promise<void> {
+        this.requireWeb('verifyPageTitle');
         log.verify('Verifying page title: %s', title instanceof RegExp ? title.toString() : `"${title}"`);
         await this.verify.pageTitle(title, options);
     }
@@ -1826,6 +2499,7 @@ export class Steps {
      * @param expectedCount - The expected number of open tabs.
      */
     async verifyTabCount(expectedCount: number): Promise<void> {
+        this.requireWeb('verifyTabCount');
         log.verify('Verifying tab count is %d', expectedCount);
         await this.verify.tabCount(expectedCount);
     }
@@ -1850,8 +2524,7 @@ export class Steps {
      *   .throws('price must be above $10');
      */
     expect(elementName: string, pageName: string): ExpectBuilder {
-        const interactions = new ElementInteractions(this.page, { timeout: this.timeout, interceptionRetry: this.interceptionRetry });
-        const action = new ElementAction(this.repo, elementName, pageName, interactions, this.timeout);
+        const action = new ElementAction(this.repo, elementName, pageName, actionFamilyOf(this.factory), this.timeout);
         log.verify('Building matcher tree for "%s" in "%s"', elementName, pageName);
         return new ExpectBuilder(action.buildExpectContext());
     }
@@ -1884,6 +2557,7 @@ export class Steps {
      * @param options - Optional step options for element resolution.
      */
     async verifyCssProperty(elementName: string, pageName: string, property: string, expectedValue: string, options?: StepOptions): Promise<void> {
+        this.requireWeb('verifyCssProperty');
         log.verify('Verifying CSS "%s" of "%s" in "%s" = "%s"', property, elementName, pageName, expectedValue);
         await this.actionWithStrategy(elementName, pageName, options).verifyCssProperty(property, expectedValue);
     }
@@ -1916,7 +2590,8 @@ export class Steps {
      */
     async clickListedElement(elementName: string, pageName: string, options: ListedElementMatch): Promise<void> {
         log.interact('Clicking listed element in "%s" > "%s" with options: %O', pageName, elementName, options);
-        const baseElement = await this.getAllWebElement(elementName, pageName);
+        requireListedMatch(this.repo, options);
+        const baseElement = await this.getAllElement(elementName, pageName);
         const target = await this.interact.getListedElement(baseElement, options, this.repo);
         await this.interact.click(target, { subject: `${pageName}.${elementName}` });
     }
@@ -1929,7 +2604,8 @@ export class Steps {
      */
     async verifyListedElement(elementName: string, pageName: string, options: VerifyListedOptions): Promise<void> {
         log.verify('Verifying listed element in "%s" > "%s" with options: %O', pageName, elementName, options);
-        const baseElement = await this.getAllWebElement(elementName, pageName);
+        requireListedMatch(this.repo, options);
+        const baseElement = await this.getAllElement(elementName, pageName);
         const target = await this.interact.getListedElement(baseElement, options, this.repo);
 
         if (options.expectedText !== undefined) {
@@ -1959,7 +2635,8 @@ export class Steps {
      */
     async getListedElementData(elementName: string, pageName: string, options: GetListedDataOptions): Promise<string | null> {
         log.extract('Extracting data from listed element in "%s" > "%s" with options: %O', pageName, elementName, options);
-        const baseElement = await this.getAllWebElement(elementName, pageName);
+        requireListedMatch(this.repo, options);
+        const baseElement = await this.getAllElement(elementName, pageName);
         const target = await this.interact.getListedElement(baseElement, options, this.repo);
 
         if (options.extractAttribute) {
@@ -1990,7 +2667,7 @@ export class Steps {
         options?: StepOptions
     ): Promise<boolean> {
         log.wait('Waiting for "%s" in "%s" to be "%s"', elementName, pageName, state);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         const timeout = options?.timeout ?? this.timeout;
         try {
             await element.waitFor({ state, timeout });
@@ -2019,7 +2696,7 @@ export class Steps {
         options?: StepOptions
     ): Promise<void> {
         log.interact('Waiting for "%s" in "%s" to be "%s", then clicking', elementName, pageName, state);
-        const element = await this.getWebElement(elementName, pageName, options);
+        const element = await this.getElement(elementName, pageName, options);
         // Deliberately NOT forwarding `options.optional`: a wait-then-click on a
         // missing element must throw — soft-skipping the wait would just defer
         // the failure to the click with a less precise error.
@@ -2038,7 +2715,7 @@ export class Steps {
         log.interact('Clicking element at index %d of "%s" in "%s"', index, elementName, pageName);
         const element = await this.repo.getByIndex(elementName, pageName, index);
         if (!element) throw new Error(`No element at index ${index} for "${elementName}" in "${pageName}"`);
-        await this.interact.click(element as WebElement, { subject: `${pageName}.${elementName}` });
+        await this.interact.click(element, { subject: `${pageName}.${elementName}` });
     }
 
     // ==========================================
@@ -2052,6 +2729,9 @@ export class Steps {
      */
     async fillForm(pageName: string, fields: Record<string, FillFormValue>): Promise<void> {
         log.interact('Filling form on "%s" with %d fields', pageName, Object.keys(fields).length);
+        // A dropdown value is web-only: refuse it before any field is filled,
+        // so a device run never leaves a half-filled form behind.
+        if (Object.values(fields).some(value => typeof value !== 'string')) this.requireWeb('selectDropdown');
         for (const [elementName, value] of Object.entries(fields)) {
             if (typeof value === 'string') {
                 await this.fill(elementName, pageName, value);
@@ -2068,6 +2748,7 @@ export class Steps {
      *   (best-effort settling). With no options, behaviour is unchanged.
      */
     async waitForNetworkIdle(options?: WaitForNetworkIdleOptions): Promise<void> {
+        this.requireWeb('waitForNetworkIdle');
         log.wait('Waiting for network idle');
         await this.navigate.waitForNetworkIdle(options);
     }
@@ -2082,6 +2763,7 @@ export class Steps {
      * @param options - Optional `{ timeout }` bounding the wait.
      */
     async waitForLoadState(state: LoadState, options?: { timeout?: number }): Promise<void> {
+        this.requireWeb('waitForLoadState');
         log.wait('Waiting for load state "%s"', state);
         await this.navigate.waitForLoadState(state, options);
     }
@@ -2142,6 +2824,7 @@ export class Steps {
      * @returns The captured Playwright Response object.
      */
     async waitForResponse(urlPattern: string | RegExp, action: () => Promise<void>): Promise<Response> {
+        this.requireWeb('waitForResponse');
         log.wait('Waiting for response matching "%s"', urlPattern);
         return await this.navigate.waitForResponse(urlPattern, action);
     }
@@ -2202,6 +2885,7 @@ export class Steps {
         action: () => Promise<void>,
         options?: ExpectNoRequestOptions,
     ): Promise<void> {
+        this.requireWeb('expectNoRequest');
         log.verify('Expecting no request matching "%s" during action (window %dms)', urlPattern, options?.timeout ?? 1000);
         await this.navigate.expectNoRequest(urlPattern, action, options);
     }
@@ -2231,7 +2915,9 @@ export class Steps {
             } catch (e) {
                 lastError = e as Error;
                 if (attempt < maxRetries) {
-                    await this.page.waitForTimeout(delayMs);
+                    // Web keeps the page's own timer; other families have no page.
+                    if (this.page) await this.page.waitForTimeout(delayMs);
+                    else await this.utils.pace(delayMs);
                 }
             }
         }
@@ -2253,7 +2939,7 @@ export class Steps {
     async screenshot(elementNameOrOptions?: string | ScreenshotOptions, pageName?: string, options?: ScreenshotOptions): Promise<Buffer> {
         if (typeof elementNameOrOptions === 'string' && pageName) {
             log.extract('Taking screenshot of "%s" in "%s"', elementNameOrOptions, pageName);
-            const element = await this.getWebElement(elementNameOrOptions, pageName);
+            const element = await this.getElement(elementNameOrOptions, pageName);
             return await this.extract.screenshot(element, options);
         }
 
@@ -2314,11 +3000,12 @@ export class Steps {
         snapshotName: string,
         options?: VisualMatchOptions & { elementName?: string; pageName?: string },
     ): Promise<void> {
+        const page = this.webPage('verifyVisualMatch');
         // 1. Pick the assertion target — element vs page.
         const target =
             options?.elementName && options?.pageName
-                ? await this.getWebElement(options.elementName, options.pageName)
-                : this.page;
+                ? await this.getElement(options.elementName, options.pageName)
+                : page;
 
         // 2. Resolve mask targets to Playwright Locators via the
         //    ElementRepository fixture (for elementName entries) or
@@ -2353,13 +3040,15 @@ export class Steps {
      * entries are passed straight to `page.locator`.
      */
     private async resolveVisualMaskLocators(mask: VisualMaskTarget[]): Promise<Locator[]> {
+        const page = this.webPage('verifyVisualMatch');
         const locators: Locator[] = [];
         for (const m of mask) {
             if ('selector' in m) {
-                locators.push(this.page.locator(m.selector));
+                locators.push(page.locator(m.selector));
                 continue;
             }
-            const el = await this.getWebElement(m.elementName, m.pageName);
+            const el = await this.getElement(m.elementName, m.pageName);
+            requireWebElement('Steps.verifyVisualMatch', el);
             locators.push(el.locator);
         }
         return locators;

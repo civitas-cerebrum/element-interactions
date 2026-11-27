@@ -1,5 +1,5 @@
 import { test, expect } from './fixture/StepFixture';
-import { ElementInteractions } from '../src/interactions/facade/ElementInteractions';
+import { ElementInteractions } from '../src/playwright/ElementInteractions';
 import { DropdownSelectType } from '../src/enum/Options';
 import { createLogger } from '../src/logger/Logger';
 import { WebElement } from '@civitas-cerebrum/element-repository';

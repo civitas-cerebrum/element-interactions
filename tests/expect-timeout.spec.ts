@@ -269,3 +269,100 @@ test.describe('ElementAction.timeout() — Interactions-routed actions', () => {
         expect(Date.now() - start).toBeLessThan(UPPER_BOUND);
     });
 });
+
+test.describe('ElementAction.timeout() — state and order verifications', () => {
+    test('verifyState honors the per-call timeout on a state that never arrives', async ({ steps }) => {
+        await steps.navigateTo('/');
+        await steps.click('elementsCard', 'HomePage');
+        await steps.verifyUrlContains('/radiobuttons');
+        for (const run of [
+            () => steps.verifyState('disabledRadio', 'RadioButtonsPage', 'checked', 500),
+            () => steps.on('disabledRadio', 'RadioButtonsPage').timeout(500).verifyState('checked'),
+        ]) {
+            const start = Date.now();
+            await expect(run()).rejects.toThrow(/toBeChecked/);
+            expect(Date.now() - start, 'did not wait for the 30000ms default').toBeLessThan(5000);
+        }
+    });
+
+    test('verifyOrder honors the per-call timeout on an order that never matches', async ({ steps }) => {
+        await steps.navigateTo('/');
+        const start = Date.now();
+        await expect(
+            steps.on('categories', 'HomePage').timeout(500).verifyOrder(['WRONG']),
+        ).rejects.toThrow(/toHaveText/);
+        expect(Date.now() - start, 'did not wait for the 30000ms default').toBeLessThan(5000);
+    });
+
+    test('verifyListOrder honors the per-call timeout on a list that is never in the requested order', async ({ steps }) => {
+        await steps.navigateTo('/');
+        await steps.click('tableLink', 'SidebarNav');
+        await steps.verifyUrlContains('/table');
+        const start = Date.now();
+        await expect(
+            steps.on('nameCell', 'TablePage').timeout(500).verifyListOrder('desc'),
+        ).rejects.toThrow(/sorted descending/);
+        expect(Date.now() - start, 'did not wait for the 30000ms default').toBeLessThan(5000);
+    });
+
+    test('verifyListOrder honors a StepOptions timeout on a list that is never in the requested order', async ({ steps }) => {
+        await steps.navigateTo('/');
+        await steps.click('tableLink', 'SidebarNav');
+        await steps.verifyUrlContains('/table');
+        const start = Date.now();
+        await expect(
+            steps.verifyListOrder('nameCell', 'TablePage', 'desc', { timeout: 500 }),
+        ).rejects.toThrow(/sorted descending/);
+        expect(Date.now() - start, 'did not wait for the 30000ms default').toBeLessThan(5000);
+    });
+
+    test('verifyOrder and verifyText honor a StepOptions timeout on a mismatch', async ({ steps }) => {
+        await steps.navigateTo('/');
+        for (const [run, mismatch] of [
+            [() => steps.verifyOrder('categories', 'HomePage', ['WRONG'], { timeout: 500 }), /toHaveText/],
+            [() => steps.verifyText('categories', 'HomePage', 'WRONG', undefined, { timeout: 500 }), /toHaveText/],
+        ] as const) {
+            const start = Date.now();
+            await expect(run()).rejects.toThrow(mismatch);
+            expect(Date.now() - start, 'did not wait for the 30000ms default').toBeLessThan(5000);
+        }
+    });
+
+    test('verifyCssProperty, a web-only verification, honors a StepOptions timeout on a mismatch', async ({ steps }) => {
+        await gotoButtons(steps);
+        const start = Date.now();
+        await expect(
+            steps.verifyCssProperty('primaryButton', 'ButtonsPage', 'display', 'not-a-display-value', { timeout: 500 }),
+        ).rejects.toThrow(/toHaveCSS/);
+        expect(Date.now() - start, 'did not wait for the 30000ms default').toBeLessThan(5000);
+    });
+
+    test('verifyListOrder polls until a list becomes sorted within the timeout', async ({ page, steps }) => {
+        await steps.navigateTo('/');
+        await steps.click('tableLink', 'SidebarNav');
+        await steps.verifyUrlContains('/table');
+        await steps.verifyListOrder('nameCell', 'TablePage', 'asc');
+        // Reverse the name cells' texts after a delay, so the list is descending
+        // only once the check has started.
+        await page.evaluate(() => {
+            setTimeout(() => {
+                const cells = Array.from(document.querySelectorAll('td:nth-child(2)'));
+                const texts = cells.map(c => c.textContent);
+                texts.reverse();
+                cells.forEach((c, i) => { c.textContent = texts[i]; });
+            }, 800);
+        });
+        await steps.on('nameCell', 'TablePage').timeout(5000).verifyListOrder('desc');
+    });
+
+    test('verifyImages honors the per-call timeout on an element with no image source', async ({ steps }) => {
+        await steps.navigateTo('/');
+        await steps.click('formsCard', 'HomePage');
+        await steps.verifyUrlContains('/forms');
+        const start = Date.now();
+        await expect(
+            steps.on('title', 'FormsPage').timeout(500).verifyImages(false),
+        ).rejects.toThrow(/toHaveAttribute/);
+        expect(Date.now() - start, 'did not wait for the 30000ms default').toBeLessThan(5000);
+    });
+});

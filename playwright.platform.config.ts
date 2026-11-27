@@ -1,0 +1,42 @@
+import { defineConfig } from '@playwright/test';
+import { resolvePlatform } from './src';
+
+/**
+ * Platform runs: the cross-platform spec and the live device
+ * checks against an Appium server. The only start form:
+ *
+ *   E2E_PLATFORM=<platform> E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url> \
+ *     npx playwright test -c playwright.platform.config.ts [tests/cross-platform | tests/live]
+ *
+ * One device session per worker, so one worker. Long timeouts: the first
+ * gesture of a fresh iOS session can take 15-30 s. No `use.baseURL`: a device
+ * run opens no browser. (The cross-platform spec's web run belongs to the
+ * default config, `npm run test:unit`, which has the test site's baseURL.)
+ *
+ * Opening the session (an iOS simulator builds WebDriverAgent on first use)
+ * is bounded by `session.startTimeout` (default 600000 ms), not the test
+ * timeout; pass Playwright's `--timeout <ms>` only if the tests themselves
+ * need more.
+ */
+const platform = resolvePlatform(undefined);
+if (platform === 'web') {
+    throw new Error(
+        'playwright.platform.config.ts runs device platforms only, but the platform resolved to "web" (E2E_PLATFORM unset, empty or "web"). '
+        + 'Set E2E_PLATFORM=ios or E2E_PLATFORM=android with E2E_CAPABILITIES and APPIUM_URL; '
+        + 'the web run of tests/cross-platform belongs to the default config (npx playwright test tests/cross-platform).',
+    );
+}
+
+export default defineConfig({
+    testDir: './tests',
+    testMatch: ['cross-platform/**/*.spec.ts', 'live/**/*.spec.ts'],
+    // Pure unit tests of the device-app guard and the entry lookup: they open no
+    // session, so they run in the default web suite only, never against a device.
+    testIgnore: ['cross-platform/appGuard.spec.ts', 'cross-platform/hasEntry.spec.ts'],
+    workers: 1,
+    fullyParallel: false,
+    retries: 0,
+    timeout: 180_000,
+    expect: { timeout: 30_000 },
+    reporter: [['list'], ['html', { open: 'never' }]],
+});

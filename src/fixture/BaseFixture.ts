@@ -1,20 +1,82 @@
-import { ElementInteractions } from '../interactions/facade/ElementInteractions';
-import { ElementRepository } from '@civitas-cerebrum/element-repository';
+import { ElementInteractions } from '../playwright/ElementInteractions';
+import {
+    ElementRepository,
+    PLATFORMS,
+    PlatformNotSupportedError,
+    familyOf,
+    isPlatformName,
+    type Platform,
+} from '@civitas-cerebrum/element-repository';
 import { EmailClientConfig } from '@civitas-cerebrum/email-client';
 import { ContextStore } from '@civitas-cerebrum/context-store';
 
-import { test as base, BrowserContext, Page } from '@playwright/test';
+import {
+    test as base,
+    BrowserContext,
+    Page,
+    TestInfo,
+    TestType,
+    PlaywrightTestArgs,
+    PlaywrightTestOptions,
+    PlaywrightWorkerArgs,
+    PlaywrightWorkerOptions,
+} from '@playwright/test';
 import { Steps } from '../steps/CommonSteps';
 import { log } from '../logger/Logger';
+import { AppiumFactory } from '../appium/AppiumFactory';
+import { AppNotInForegroundError, describeAppState } from '../appium/AppiumDevice';
+import { AppiumSessionProvider } from '../session/AppiumSessionProvider';
+import { prepareSession, RELAUNCH_TIMEOUT_MS, resolveStartTimeout, START_TIMEOUT_MS, type PreparedSession } from '../session/prepareSession';
+import type { ServerOptions, SessionOptions, SessionProvider, SessionStartContext } from '../session/types';
+import { strategyFor } from '../appium/platform';
+import { PlatformInteractions } from './PlatformInteractions';
+import { abandonedProbeCount, drainAbandonedProbes } from '../utils/poll';
 
 type StepFixture = {
-    interactions: ElementInteractions;
+    /**
+     * On `web` the Playwright facade ({@link ElementInteractions}). On a
+     * platform run a {@link PlatformInteractions} with the same member names
+     * (`interact`, `verify`, `extract`, `navigate`, `email`) plus `gestures`
+     * and `device`, built from the Appium family; its `request` throws
+     * `PlatformNotSupportedError`. Narrow with
+     * `interactions instanceof PlatformInteractions` to reach `gestures` /
+     * `device`.
+     */
+    interactions: ElementInteractions | PlatformInteractions;
     contextStore: ContextStore;
     repo: ElementRepository;
     steps: Steps;
+    /**
+     * The worker's WebdriverIO session (Appium family only). Requesting it on
+     * `web` throws `PlatformNotSupportedError('driver', 'web')`.
+     */
+    driver: WebdriverIO.Browser;
 };
 
+/** The `test` object `baseFixture` returns, on every platform. */
+export type BaseFixtureTest = TestType<
+    PlaywrightTestArgs & PlaywrightTestOptions & StepFixture,
+    PlaywrightWorkerArgs & PlaywrightWorkerOptions
+>;
+
 export interface BaseFixtureOptions {
+    /**
+     * The platform this run tests. Default: `process.env.E2E_PLATFORM`, else
+     * `'web'` (an empty `E2E_PLATFORM` counts as unset). Read once, when
+     * `baseFixture()` is called.
+     *
+     * - `web`: the Playwright fixtures, unchanged.
+     * - `android` / `ios`: a worker-scoped Appium session (see `session`); no
+     *   browser starts, and `page` / `context` throw `PlatformNotSupportedError`.
+     * - `macos` / `windows`: declared, not implemented yet; the session start throws.
+     *
+     * The web-only options `blockedOrigins`, `mutationInjection` (unless
+     * `false`), `interceptionRetry` and the object form of
+     * `screenshotOnFailure` throw on a platform run instead of being ignored.
+     */
+    platform?: Platform;
+    /** The Appium session of a platform run. Ignored on `web`. */
+    session?: SessionOptions;
     /** Email credentials for the email client (SMTP/IMAP). */
     emailCredentials?: EmailClientConfig;
     /**
@@ -419,24 +481,102 @@ export async function forwardMutationInjection(
 }
 
 /**
+ * Resolves the `platform` option: the option, else
+ * `process.env.E2E_PLATFORM`, else `'web'`. An empty `E2E_PLATFORM` counts as unset.
+ * A value that is not a {@link Platform} throws, naming where it came from.
+ */
+export function resolvePlatform(option: unknown, env: NodeJS.ProcessEnv = process.env): Platform {
+    const value = option !== undefined ? option : (env.E2E_PLATFORM === '' ? undefined : env.E2E_PLATFORM);
+    if (value === undefined) return 'web';
+    if (!isPlatformName(value)) {
+        const source = option !== undefined ? 'baseFixture option "platform"' : 'E2E_PLATFORM';
+        throw new Error(`${source} is "${String(value)}", which is not a platform. Expected one of: ${PLATFORMS.join(', ')}.`);
+    }
+    return value;
+}
+
+/**
+ * The options that only mean something on a Playwright page. Given on a
+ * platform run they throw instead of being ignored.
+ */
+function webOnlyOptionsGiven(options: BaseFixtureOptions | undefined): string[] {
+    if (!options) return [];
+    const given: string[] = [];
+    if (options.blockedOrigins !== undefined) given.push('blockedOrigins');
+    if (options.mutationInjection !== undefined && options.mutationInjection !== false) given.push('mutationInjection');
+    if (options.interceptionRetry !== undefined) given.push('interceptionRetry');
+    if (typeof options.screenshotOnFailure === 'object' && options.screenshotOnFailure !== null) {
+        given.push('screenshotOnFailure ({ fullPage })');
+    }
+    return given;
+}
+
+/**
  * Extends a Playwright `test` with the StepFixture surface — `repo`, `steps`,
- * `interactions`, `contextStore`, and a `page` wrapper that attaches a failure
- * screenshot on every failed test.
+ * `interactions`, `contextStore`, `driver` — for the platform chosen when this
+ * function is called (`options.platform`, else `E2E_PLATFORM`, else `web`).
+ *
+ * **web** — `repo` / `steps` / `interactions` on the Playwright `page`, and a
+ * `page` wrapper that attaches a failure screenshot on every failed test.
+ * `driver` throws `PlatformNotSupportedError('driver', 'web')`.
+ *
+ * **android / ios** — one WebdriverIO session per worker, opened through
+ * `options.session.provider` (default {@link AppiumSessionProvider}) with
+ * exactly the capabilities file's content, `onSessionStarted` called once,
+ * closed at worker teardown. Before every test the app under test is
+ * relaunched (terminate + activate) unless `session.reset` is `'none'`, and
+ * the test body starts only once it is in the foreground
+ * (`session.relaunchTimeout`, default 15000ms; otherwise the setup fails).
+ * On iOS an activation that WebDriverAgent answers with its launch timeout
+ * is retried once inside that budget. Opening the session is bounded by
+ * `session.startTimeout` (default 600000ms), the worker fixture's own timeout.
+ * A failed setup (relaunch, foreground wait, `onSessionStarted`) gets a
+ * `setup-error` text attachment (the error and the last app state) and the
+ * screenshot and page source when the device still answers.
+ * `repo` has the platform as its active platform; `steps` and `interactions`
+ * are built from an `AppiumFactory`. No browser starts: `page` and `context`
+ * throw `PlatformNotSupportedError`. A failed test gets the device screenshot
+ * (`failure-screenshot`, image/png) and the page source (`page-source`,
+ * text/xml) attached.
+ * A lookup a timed-out check left running is stopped and waited for after
+ * the body, before that evidence and before the next relaunch: the check
+ * aborted it when it gave up, so it ends with the driver call it was in, and
+ * a failing device test normally takes about one driver call longer; the
+ * wait is capped ({@link ABANDONED_LOOKUP_DRAIN_MS}), first
+ * extends the test's timeout by that cap when it has something to wait for, warns and
+ * annotates the test when lookups are still running at the cap, and never
+ * fails a test nor replaces its error (see {@link drainAbandonedLookups}).
  *
  * @param baseTest - The Playwright `test` (or an already-extended test) to build on.
  * @param locatorPath - Absolute or project-relative path to `page-repository.json`.
- * @param options - Optional fixture overrides: `timeout` (element-op default, 30000ms),
- *   `repoTimeout` (element resolution, 15000ms), `emailCredentials`,
- *   `blockedOrigins` (route filter), `screenshotOnFailure`, `mutationInjection`
- *   (forward an opted-in `E2E_MUTATION_INIT` / `E2E_MUTATION_CSS` payload to every
- *   page and frame of the context, announcing and verifying it).
+ * @param options - Optional fixture overrides: `platform`, `session`, `timeout`
+ *   (element-op default, 30000ms), `repoTimeout` (element resolution, 15000ms),
+ *   `emailCredentials`, `blockedOrigins` (route filter), `screenshotOnFailure`,
+ *   `mutationInjection` (forward an opted-in `E2E_MUTATION_INIT` /
+ *   `E2E_MUTATION_CSS` payload to every page and frame of the context,
+ *   announcing and verifying it).
  * @returns A new Playwright `test` object exposing the StepFixture surface.
  */
 export function baseFixture<T extends {}>(
     baseTest: ReturnType<typeof base.extend<T>>,
     locatorPath: string,
     options?: BaseFixtureOptions
-) {
+): BaseFixtureTest {
+    const platform = resolvePlatform(options?.platform);
+    if (familyOf(platform) === 'appium') {
+        const webOnly = webOnlyOptionsGiven(options);
+        if (webOnly.length > 0) {
+            throw new Error(
+                `baseFixture: ${webOnly.join(', ')} ${webOnly.length > 1 ? 'are' : 'is'} web-only and cannot be honoured on platform `
+                + `"${platform}". Remove ${webOnly.length > 1 ? 'them' : 'it'} from the options of this platform run.`,
+            );
+        }
+        return platformFixture(baseTest as typeof base, locatorPath, platform, options);
+    }
+    return webFixture(baseTest as typeof base, locatorPath, options);
+}
+
+function webFixture(baseTest: typeof base, locatorPath: string, options: BaseFixtureOptions | undefined): BaseFixtureTest {
     const mutationConfig = options?.mutationInjection ?? false;
     const mutationEnabled = mutationConfig !== false;
     const mutationStrict = typeof mutationConfig === 'object' ? mutationConfig.strict === true : false;
@@ -447,7 +587,7 @@ export function baseFixture<T extends {}>(
         ? (screenshotConfig.fullPage ?? true)
         : true;
 
-    return (baseTest as typeof base).extend<StepFixture>({
+    return baseTest.extend<StepFixture>({
         context: async ({ context }, use) => {
             if (!mutationEnabled) {
                 await use(context);
@@ -464,7 +604,9 @@ export function baseFixture<T extends {}>(
             }
         },
         repo: async ({ page }, use) => {
-            await use(new ElementRepository(page, locatorPath, options?.repoTimeout));
+            // `web` is the active platform, so a page name resolves to
+            // its web entry even when the file also holds android / ios pages.
+            await use(new ElementRepository(page, locatorPath, { platform: 'web', defaultTimeout: options?.repoTimeout }));
         },
         steps: async ({ repo }, use) => {
             const steps = new Steps(repo, {
@@ -486,6 +628,9 @@ export function baseFixture<T extends {}>(
         contextStore: async ({ }, use) => {
             await use(new ContextStore());
         },
+        driver: async ({ }, use) => {
+            throw new PlatformNotSupportedError('driver', 'web');
+        },
         page: async ({ page }, use, testInfo) => {
             if (options?.blockedOrigins) {
                 await page.route(options.blockedOrigins, (route) => route.abort());
@@ -500,4 +645,488 @@ export function baseFixture<T extends {}>(
             }
         },
     });
+}
+
+/** The worker's open session. */
+interface PlatformSession {
+    driver: WebdriverIO.Browser;
+    prepared: PreparedSession;
+    /**
+     * The `onSessionStarted` failure, if any. Every test of the worker raises
+     * it, so the test can attach evidence (a worker fixture cannot).
+     */
+    startError?: unknown;
+}
+
+type PlatformWorkerFixtures = { _eiPlatformSession: PlatformSession };
+type PlatformTestFixtures = StepFixture & { _eiPlatformTest: void; _eiFactory: AppiumFactory };
+
+function platformFixture(
+    baseTest: typeof base,
+    locatorPath: string,
+    platform: Platform,
+    options: BaseFixtureOptions | undefined,
+): BaseFixtureTest {
+    const screenshotEnabled = options?.screenshotOnFailure !== false;
+    // Needed when the fixtures are declared, before the session is prepared.
+    const startTimeout = resolveStartTimeout(options?.session?.startTimeout);
+
+    const extended = baseTest.extend<PlatformTestFixtures, PlatformWorkerFixtures>({
+        // One session per worker, opened lazily by the first test that needs it.
+        _eiPlatformSession: [async ({ }, use) => {
+            const prepared = prepareSession(platform, options?.session);
+            const provider = options?.session?.provider ?? new AppiumSessionProvider();
+            const deadline = Date.now() + startTimeout - startTimeoutMargin(startTimeout);
+            const driver = await startSession(provider, prepared.context, startTimeout);
+            try {
+                let startError: unknown;
+                const hook = options?.session?.onSessionStarted;
+                if (hook) {
+                    const left = Math.max(1, deadline - Date.now());
+                    try {
+                        await withTimeout(() => hook(driver), left,
+                            `session.onSessionStarted (what was left of session.startTimeout ${startTimeout} ms)`);
+                    } catch (error) {
+                        startError = error;
+                    }
+                }
+                await use({ driver, prepared, startError });
+            } finally {
+                // Stop a lookup a check abandoned and let it end before the session closes. Never throws.
+                await drainAbandonedLookups(driver, 'at worker teardown');
+                // Never throws: a failing or hanging stop must not hide an
+                // onSessionStarted / test error, nor stall the worker teardown.
+                await stopSession(provider, driver);
+            }
+        }, { scope: 'worker', timeout: startTimeout }],
+
+        // Per test: relaunch the app before it, attach the evidence after a failure.
+        // A lookup a timed-out check abandoned is stopped and waited for
+        // (capped, never throwing) after the body, before the evidence and the
+        // next relaunch, so its last driver call ends on the launch it started on.
+        _eiPlatformTest: [async ({ _eiPlatformSession }, use, testInfo) => {
+            const { driver, prepared, startError } = _eiPlatformSession;
+            try {
+                if (startError !== undefined) throw startError;
+                if (prepared.reset === 'relaunch') {
+                    // Normally drained already after the previous test; this catches one still running past its cap.
+                    await drainAbandonedLookups(driver, 'before the relaunch', testInfo, ABANDONED_LOOKUP_DRAIN_MS, 'setup');
+                    await relaunchApp(driver, platform, prepared);
+                }
+            } catch (error) {
+                await attachSetupEvidence(driver, testInfo, error, platform, prepared.appId, screenshotEnabled);
+                throw error;
+            }
+            await use();
+            await drainAbandonedLookups(driver, 'after the test', testInfo);
+            if (testFailed(testInfo)) {
+                await attachPlatformEvidence(driver, testInfo, screenshotEnabled);
+            }
+        }, { auto: true }],
+
+        _eiFactory: async ({ _eiPlatformSession }, use) => {
+            const { driver, prepared } = _eiPlatformSession;
+            await use(new AppiumFactory(driver, platform, { timeout: options?.timeout, appId: prepared.appId }));
+        },
+        driver: async ({ _eiPlatformSession }, use) => {
+            await use(_eiPlatformSession.driver);
+        },
+        repo: async ({ _eiPlatformSession }, use) => {
+            await use(new ElementRepository(_eiPlatformSession.driver, locatorPath, { platform, defaultTimeout: options?.repoTimeout }));
+        },
+        steps: async ({ _eiFactory, repo }, use) => {
+            // The factory owns timeout and interception: neither is passed here.
+            const steps = new Steps(_eiFactory, repo, {
+                emailCredentials: options?.emailCredentials,
+                apiBaseUrl: options?.apiBaseUrl,
+                apiProviders: options?.apiProviders,
+                dbUrl: options?.dbUrl,
+                dbProviders: options?.dbProviders,
+                dbConnectTimeoutMs: options?.dbConnectTimeoutMs,
+            });
+            await use(steps);
+            await steps.closeDbConnections();
+        },
+        interactions: async ({ _eiFactory }, use) => {
+            const interactions = new PlatformInteractions(_eiFactory, { emailCredentials: options?.emailCredentials });
+            await use(interactions);
+        },
+        contextStore: async ({ }, use) => {
+            await use(new ContextStore());
+        },
+        // No browser on a platform run: nothing here depends on Playwright's
+        // page, context or browser, and asking for them is an error.
+        page: async ({ }, use) => {
+            throw new PlatformNotSupportedError('page', platform);
+        },
+        context: async ({ }, use) => {
+            throw new PlatformNotSupportedError('context', platform);
+        },
+    });
+    return extended as unknown as BaseFixtureTest;
+}
+
+/**
+ * WebDriverAgent's answer when XCTest gave up launching the app it was asked
+ * to activate (`XCTDaemonErrorDomain` code 5, "Timed out attempting to launch
+ * app."). Only this text is matched: the domain and code alone are not.
+ */
+const IOS_LAUNCH_TIMEOUT = /Timed out attempting to launch app/i;
+
+/**
+ * Whether `error` is the driver's own app launch timeout: on iOS the
+ * WebDriverAgent text {@link IOS_LAUNCH_TIMEOUT}. No other platform's
+ * error is matched.
+ *
+ * @internal Exported for the tests; not part of the package entry point.
+ */
+export function isAppLaunchTimeout(platform: Platform, error: unknown): boolean {
+    if (platform !== 'ios' || error === undefined || error === null) return false;
+    return IOS_LAUNCH_TIMEOUT.test(errorText(error));
+}
+
+/**
+ * The `'relaunch'` reset: terminates and activates the app under test, then
+ * waits until it is in the foreground (polling `mobile: queryAppState` for
+ * `session.relaunchTimeout`), so the test body never starts on the home
+ * screen or another app.
+ *
+ * An activation the driver answers with its launch timeout
+ * ({@link isAppLaunchTimeout}) is retried once and logged as a warning; the
+ * retried activation and the foreground wait after it share the
+ * `relaunchTimeout` budget. A second failure, and any other error, fails the
+ * setup at once, naming the phase (terminate, activate, foreground wait), the
+ * app id, the platform and the budget. An app that never reaches the
+ * foreground fails the setup with the last app state.
+ *
+ * @internal Exported for the tests; not part of the package entry point.
+ */
+export async function relaunchApp(
+    driver: WebdriverIO.Browser,
+    platform: Platform,
+    prepared: Pick<PreparedSession, 'appId' | 'relaunchTimeout'>,
+): Promise<void> {
+    const device = new AppiumFactory(driver, platform, { appId: prepared.appId }).createDevice();
+    const budget = prepared.relaunchTimeout;
+    const appId = prepared.appId ?? '';
+    const failed = (phase: string, error: unknown) => new Error(
+        `session.reset 'relaunch' failed in phase "${phase}" for app "${appId}" on platform "${platform}": ${errorText(error)}. `
+        + `The test did not start. (session.relaunchTimeout: ${budget} ms for the foreground wait, shared with a retried `
+        + "activation; terminate and the first activation run under the driver's own command timeout.)",
+        { cause: error },
+    );
+
+    try {
+        await device.terminateApp();
+    } catch (error) {
+        throw failed('terminate', error);
+    }
+
+    let waitBudget = budget;
+    let retried = false;
+    try {
+        await device.activateApp();
+    } catch (error) {
+        if (!isAppLaunchTimeout(platform, error)) throw failed('activate', error);
+        log.warn(
+            'session.reset \'relaunch\': app "%s" did not launch on platform "%s" (%s); '
+            + 'activating it once more within session.relaunchTimeout (%d ms).',
+            appId, platform, errorText(error), budget,
+        );
+        const deadline = Date.now() + budget;
+        retried = true;
+        try {
+            await withTimeout(() => device.activateApp(), budget, 'the retried activateApp');
+        } catch (retryError) {
+            throw failed('activate (retried once after a launch timeout)', retryError);
+        }
+        waitBudget = Math.max(0, deadline - Date.now());
+    }
+
+    try {
+        await device.waitForAppInForeground(waitBudget);
+    } catch (error) {
+        if (!(error instanceof AppNotInForegroundError)) throw failed('foreground wait', error);
+        throw new Error(
+            `session.reset 'relaunch': app "${error.appId}" is not in the foreground on platform "${error.platform}" `
+            + (retried
+                ? `within session.relaunchTimeout ${budget} ms (activation retried once after a launch timeout; `
+                    + 'the retried activation and the foreground wait share that budget; '
+                : `${error.timeout} ms after it was terminated and activated (`)
+            + `${describeAppState(error.lastState, error.lastError)}). `
+            + `The test did not start. If the app needs longer to come up, raise session.relaunchTimeout `
+            + `(default ${RELAUNCH_TIMEOUT_MS} ms).`,
+            { cause: error },
+        );
+    }
+}
+
+/** The message of an error, else the value as text. */
+function errorText(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Attaches what is known about a failed platform setup (relaunch, foreground
+ * wait, `onSessionStarted`): `setup-error` (text/plain) with the error text
+ * and the last app state, then the screenshot and page source as for a failed
+ * test. The app state comes from the error when it carries one, else from one
+ * `mobile: queryAppState` given up after `timeoutMs`. Best-effort throughout:
+ * it never throws, so the original error is what fails the test.
+ *
+ * @internal Exported for the tests; not part of the package entry point.
+ */
+export async function attachSetupEvidence(
+    driver: WebdriverIO.Browser,
+    testInfo: Pick<TestInfo, 'attach'>,
+    error: unknown,
+    platform: Platform,
+    appId: string | undefined,
+    screenshot: boolean,
+    timeoutMs: number = EVIDENCE_TIMEOUT_MS,
+): Promise<void> {
+    try {
+        const state = await lastAppState(driver, error, platform, appId, timeoutMs);
+        const text = `${error instanceof Error && error.stack ? error.stack : errorText(error)}\n\n${state}\n`;
+        await testInfo.attach('setup-error', { body: text, contentType: 'text/plain' });
+    } catch (attachError) {
+        log.warn('Could not attach the setup error: %s', errorText(attachError));
+    }
+    await attachPlatformEvidence(driver, testInfo, screenshot, timeoutMs);
+}
+
+/** The last app state as text: from the error chain when it carries one, else one bounded query. */
+async function lastAppState(
+    driver: WebdriverIO.Browser,
+    error: unknown,
+    platform: Platform,
+    appId: string | undefined,
+    timeoutMs: number,
+): Promise<string> {
+    for (let e: unknown = error; e instanceof Error; e = e.cause) {
+        if (e instanceof AppNotInForegroundError) return describeAppState(e.lastState, e.lastError);
+    }
+    if (!appId) return 'app state unknown (no app id)';
+    try {
+        const state = await withTimeout(() => strategyFor(platform).queryAppState(driver, appId), timeoutMs, 'queryAppState');
+        return describeAppState(state);
+    } catch (queryError) {
+        return `app state could not be read: ${errorText(queryError)}`;
+    }
+}
+
+/**
+ * A test that did not end as expected: the same trigger as the web failure
+ * screenshot. A failure under `test.fail()` is expected and gets no evidence;
+ * an unexpected pass under `test.fail()` does.
+ */
+function testFailed(testInfo: TestInfo): boolean {
+    return testInfo.status !== testInfo.expectedStatus;
+}
+
+/** How long one evidence command (screenshot, page source) may take before it is given up, in ms. */
+export const EVIDENCE_TIMEOUT_MS = 10_000;
+
+/**
+ * Attaches the device screenshot and the page source of a failed test.
+ * Each is best-effort: a failure to collect one is logged and
+ * never replaces the test's own failure. Each command is given up after
+ * `timeoutMs`, so a dead device cannot stall the teardown.
+ *
+ * @internal Exported for the tests; not part of the package entry point.
+ */
+export async function attachPlatformEvidence(
+    driver: WebdriverIO.Browser,
+    testInfo: Pick<TestInfo, 'attach'>,
+    screenshot: boolean,
+    timeoutMs: number = EVIDENCE_TIMEOUT_MS,
+): Promise<void> {
+    const wd = driver as unknown as { takeScreenshot(): Promise<string>; getPageSource(): Promise<string> };
+    if (screenshot) {
+        try {
+            const png = await withTimeout(() => wd.takeScreenshot(), timeoutMs, 'takeScreenshot');
+            await testInfo.attach('failure-screenshot', { body: Buffer.from(png, 'base64'), contentType: 'image/png' });
+        } catch (error) {
+            log.warn('Could not attach the failure screenshot: %s', error instanceof Error ? error.message : String(error));
+        }
+    }
+    try {
+        const source = await withTimeout(() => wd.getPageSource(), timeoutMs, 'getPageSource');
+        await testInfo.attach('page-source', { body: source, contentType: 'text/xml' });
+    } catch (error) {
+        log.warn('Could not attach the page source: %s', error instanceof Error ? error.message : String(error));
+    }
+}
+
+/** How long closing the worker's session may take before it is given up, in ms. */
+export const STOP_TIMEOUT_MS = EVIDENCE_TIMEOUT_MS;
+
+/**
+ * How long the platform fixture waits for the device lookups a timed-out
+ * check left running, in ms (see {@link drainAbandonedLookups}).
+ *
+ * The lookups are aborted first, so the wait is normally one driver call
+ * (the one in flight). The cap is kept at one whole `.byText()` pass, the
+ * longest a probe could run if it did not stop (measured about 3.7 s for
+ * 16 cells on the iOS simulator, 3.05 to 3.57 s cold for 11 cells on a real
+ * Android phone), with a margin of more than 2.5x: it bounds a driver call
+ * that hangs, and stays below the 15 s default relaunch budget that
+ * follows it.
+ */
+export const ABANDONED_LOOKUP_DRAIN_MS = 10_000;
+
+/** What {@link drainAbandonedLookups} uses of Playwright's `TestInfo`. */
+export type DrainTestInfo = Pick<TestInfo, 'annotations' | 'timeout' | 'setTimeout'> & { project?: { timeout: number } };
+
+/**
+ * Stops the device lookups a check gave up on, then waits, up to `capMs`,
+ * for them to finish (`drainAbandonedProbes` on the session's driver).
+ *
+ * A check that times out while one of its lookups is still running (a
+ * `.byText()` pass reading a long list) aborts that lookup's signal: it
+ * starts no further driver call. The call already in flight cannot be
+ * stopped, and neither can a read on an element a lookup already returned
+ * (it does not carry the signal); the probe only starts no new one after
+ * it. Waiting here lets that last call end on the app launch it started
+ * on, before the failure evidence and the next relaunch; after a relaunch
+ * an element it holds would be stale, and WebdriverIO would find it again
+ * with a whole new lookup, delaying the next test. The wait is therefore
+ * normally about one driver call, not the rest of a pass.
+ *
+ * Never throws, so it cannot replace the test's own error or fail a passing
+ * test. When lookups are still running at the cap, it prints a warning and
+ * adds a `warning` annotation to the test (when given) naming how many and
+ * for how long, then carries on.
+ *
+ * The wait runs inside a test's timeout (its setup, or the teardown slot
+ * Playwright gives after the body), so when there is something to wait for
+ * and a test is given, the timeout of the part it runs in is first extended
+ * by `capMs`: the wait never makes a test run out of time. A timeout of `0`
+ * (none) is left alone.
+ *
+ * @param when - Where the fixture is, for the warning (e.g. `'after the test'`).
+ * @param phase - `'setup'` (before the body: the test's own timeout) or
+ *   `'teardown'` (after the body: Playwright's teardown slot, the larger of
+ *   the project and the test timeout).
+ * @internal Exported for the tests; not part of the package entry point.
+ */
+export async function drainAbandonedLookups(
+    driver: WebdriverIO.Browser,
+    when: string,
+    testInfo?: DrainTestInfo,
+    capMs: number = ABANDONED_LOOKUP_DRAIN_MS,
+    phase: 'setup' | 'teardown' = 'teardown',
+): Promise<void> {
+    try {
+        if (testInfo && abandonedProbeCount(driver) > 0) {
+            const projectTimeout = testInfo.project?.timeout ?? 0;
+            const base = phase === 'setup'
+                ? testInfo.timeout
+                // Playwright's teardown slot: the larger of the two, none if either is none.
+                : (testInfo.timeout === 0 || projectTimeout === 0 ? 0 : Math.max(projectTimeout, testInfo.timeout));
+            if (base > 0) testInfo.setTimeout(base + capMs);
+        }
+        const result = await drainAbandonedProbes(driver, capMs);
+        if (result.stillRunning === 0) return;
+        const message = `${result.stillRunning} device lookup(s) abandoned by a timed-out check still running ${when}, `
+            + `after waiting ${result.waitedMs} ms (the oldest for ${result.longestRunningMs} ms); carrying on. `
+            + 'They may still send driver commands to the device.';
+        console.warn(`[element-interactions] ${message}`);
+        testInfo?.annotations.push({ type: 'warning', description: message });
+    } catch (error) {
+        log.warn('Could not wait for the abandoned device lookups: %s', error instanceof Error ? error.message : String(error));
+    }
+}
+
+/**
+ * Closes the worker's session at teardown. Best-effort, like the evidence: a
+ * `provider.stop()` that throws is logged and never replaces an error already
+ * on its way (an `onSessionStarted` failure); one that does not settle within
+ * `timeoutMs` is given up, so a dead device cannot stall the teardown.
+ *
+ * @internal Exported for the tests; not part of the package entry point.
+ */
+export async function stopSession(
+    provider: Pick<SessionProvider, 'stop'>,
+    driver: WebdriverIO.Browser,
+    timeoutMs: number = STOP_TIMEOUT_MS,
+): Promise<void> {
+    try {
+        await withTimeout(() => provider.stop(driver), timeoutMs, 'session stop');
+    } catch (error) {
+        log.warn('Could not close the platform session: %s', error instanceof Error ? error.message : String(error));
+    }
+}
+
+/**
+ * How much of `session.startTimeout` is kept back so the library's own
+ * session-start error comes before Playwright's generic fixture timeout:
+ * a tenth of it, at most 5000 ms.
+ *
+ * @internal Exported for the tests; not part of the package entry point.
+ */
+export function startTimeoutMargin(startTimeout: number): number {
+    return Math.min(5000, Math.floor(startTimeout / 10));
+}
+
+/** The server URL without credentials, for error messages. */
+function describeServer(server: ServerOptions): string {
+    const port = server.port === undefined ? '' : `:${server.port}`;
+    return `${server.protocol ?? 'http'}://${server.hostname ?? ''}${port}${server.path ?? ''}`;
+}
+
+/**
+ * Opens the worker's session through `provider`, bounded by `startTimeout`
+ * minus {@link startTimeoutMargin}. A start that fails or does not answer in
+ * time throws an error naming the server (without credentials), the platform
+ * and the budget; the start's own error is kept as the cause. A session that
+ * arrives after the budget is closed when it arrives.
+ *
+ * @internal Exported for the tests; not part of the package entry point.
+ */
+export async function startSession(
+    provider: Pick<SessionProvider, 'start' | 'stop'>,
+    context: SessionStartContext,
+    startTimeout: number,
+): Promise<WebdriverIO.Browser> {
+    const budget = startTimeout - startTimeoutMargin(startTimeout);
+    const where = `session start on ${describeServer(context.server)} for platform "${context.platform}"`;
+    const pending = Promise.resolve().then(() => provider.start(context));
+    let timer: NodeJS.Timeout | undefined;
+    const expired = new Promise<'expired'>(resolve => { timer = setTimeout(() => resolve('expired'), budget); });
+    let outcome: WebdriverIO.Browser | 'expired';
+    try {
+        outcome = await Promise.race([pending, expired]);
+    } catch (error) {
+        throw new Error(`${where} failed: ${errorText(error)}`, { cause: error });
+    } finally {
+        clearTimeout(timer);
+    }
+    if (outcome === 'expired') {
+        // A session that still opens is closed, so it does not outlive the run.
+        pending.then(late => stopSession(provider, late), () => undefined);
+        throw new Error(
+            `${where}: no session within ${budget} ms (session.startTimeout ${startTimeout} ms, minus `
+            + `${startTimeout - budget} ms kept so this error comes before the fixture timeout). Check that the server is `
+            + 'reachable and the device free; a cold real-device start can need several minutes: raise session.startTimeout '
+            + `(default ${START_TIMEOUT_MS} ms) if it was still starting.`,
+        );
+    }
+    return outcome;
+}
+
+/** Runs `call`, rejecting when it has not settled after `ms`. The timer never outlives the race. */
+async function withTimeout<T>(call: () => Promise<T>, ms: number, name: string): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    const pending = Promise.resolve().then(call);
+    // A late rejection of the abandoned call must not become an unhandled rejection.
+    pending.catch(() => undefined);
+    const expired = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${name} did not answer within ${ms} ms`)), ms);
+    });
+    try {
+        return await Promise.race([pending, expired]);
+    } finally {
+        clearTimeout(timer);
+    }
 }

@@ -30,7 +30,7 @@ const log = createLogger('tests');
 const SHOP = `
     <main>
         <div role="button" tabindex="0" data-testid="add">Add to basket</div>
-        <button type="button" onclick="window.__applyClicks = (window.__applyClicks || 0) + 1">Apply code</button>
+        <button type="button" onclick="window.__applyClicks = (window.__applyClicks || 0) + 1" onmouseover="window.__applyHovers = (window.__applyHovers || 0) + 1">Apply code</button>
         <button type="button" style="display:none" onclick="window.__hiddenClicks = (window.__hiddenClicks || 0) + 1">Secret</button>
         <p class="summary">Total ¤12.50</p>
         <ul>
@@ -207,6 +207,17 @@ test.describe('Visibility probes resolve the full repository selector', () => {
         await steps.isVisible('secretButton', 'ShopPage', { timeout: PROBE_TIMEOUT }).click();
         expect(await page.evaluate(() => (window as unknown as Record<string, number>).__hiddenClicks)).toBeUndefined();
         log('probe resolution: gate act / skip — passed');
+    });
+
+    test('web-only gated terminals still skip a hidden or absent element and act on a shown one', async ({ page }) => {
+        const steps = await shopSteps(page);
+        await steps.isVisible('secretButton', 'ShopPage', { timeout: PROBE_TIMEOUT }).hover();
+        await steps.on('checkoutButton', 'ShopPage').isVisible({ timeout: PROBE_TIMEOUT }).rightClick();
+        expect(await steps.isVisible('checkoutButton', 'ShopPage', { timeout: PROBE_TIMEOUT }).selectDropdown()).toBe('');
+        expect(await steps.isVisible('secretButton', 'ShopPage', { timeout: PROBE_TIMEOUT }).selectMultiple(['a'])).toEqual([]);
+        expect(await page.evaluate(() => (window as unknown as Record<string, number>).__hiddenClicks)).toBeUndefined();
+        await steps.isVisible('applyCode', 'ShopPage', { timeout: PROBE_TIMEOUT }).hover();
+        expect(await page.evaluate(() => (window as unknown as Record<string, number>).__applyHovers)).toBeGreaterThanOrEqual(1);
     });
 
     test('a missing element reports false within the probe budget', async ({ page }) => {
@@ -494,5 +505,35 @@ test.describe('verifyAbsence resolves the full repository selector', () => {
         await expect(steps.verifyAbsence('payButton', 'PaymentFrame')).rejects.toThrow();
         await expect(steps.verifyAbsence('applyCode', 'ShopPage')).rejects.toThrow();
         log('absence resolution: present entries — passed');
+    });
+});
+
+test.describe('verifyAbsence on a byText chain checks only the match the selection picks', () => {
+    const DEALS = `
+        <ul>
+            <li class="deal" style="display:none">Sale</li>
+            <li class="deal">Sale</li>
+        </ul>
+    `;
+    const DEALS_REPOSITORY = {
+        pages: [{
+            name: 'DealsPage',
+            elements: [
+                { elementName: 'deals', selector: { css: '.deal' } },
+                // The plain entry with a text-specific selector: every element with the text.
+                { elementName: 'saleDeals', selector: { css: ".deal:has-text('Sale')" } },
+            ],
+        }],
+    };
+
+    test('a hidden first match passes while a later one with the text is shown; the text-specific entry fails', async ({ page }) => {
+        await page.setContent(DEALS);
+        const steps = new Steps(new ElementRepository(page, DEALS_REPOSITORY, 2000), { timeout: 1000 });
+        // The selection picks the first element containing the text: it is hidden.
+        await steps.on('deals', 'DealsPage').byText('Sale').verifyAbsence();
+        await steps.verifyAbsence('deals', 'DealsPage', { strategy: 'text', text: 'Sale' });
+        // To assert that no element with the text is shown: the plain entry with a text-specific selector.
+        await expect(steps.on('saleDeals', 'DealsPage').timeout(500).verifyAbsence()).rejects.toThrow();
+        await expect(steps.verifyAbsence('saleDeals', 'DealsPage', { timeout: 500 })).rejects.toThrow();
     });
 });

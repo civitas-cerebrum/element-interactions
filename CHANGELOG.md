@@ -1,5 +1,573 @@
 # Changelog
 
+## 0.4.0 — 2026-11-23
+
+Platform testing: the same `Steps` API on native Android and iOS apps through
+Appium and WebdriverIO. Web behaviour is unchanged except for the items under
+**Breaking** and **Fixed**. See the README section "Platform testing (Android, iOS)".
+
+### Breaking
+
+- **Depends on `@civitas-cerebrum/element-repository` `^0.4.0`** (was `^0.3.4`).
+  Its `webdriverio` peer moves to `^10` (element-repository 0.3.4 declared
+  `^9.27`), so the effective `webdriverio` range for platform runs is `^10`.
+  **Migration:** upgrade both packages together; a project that depends on
+  element-repository directly moves that range to `^0.4.0`.
+- **Deep imports moved** from `dist/interactions/*` to `dist/playwright/*`:
+  `interactions/Interaction` → `playwright/PlaywrightInteractions`,
+  `interactions/Verification` → `playwright/PlaywrightVerifications`,
+  `interactions/Extraction` → `playwright/PlaywrightExtractions`,
+  `interactions/Navigation` → `playwright/PlaywrightNavigation`,
+  `interactions/BrowserRequest` → `playwright/BrowserRequest`,
+  `interactions/facade/ElementInteractions` → `playwright/ElementInteractions`.
+  The package root exports keep their names (`Interactions`, `Verifications`,
+  `Extractions`, `Navigation`, `ElementInteractions`, `BrowserRequest`).
+  **Migration:** import from the package root instead of a deep path:
+  ```ts
+  import { Interactions, Verifications } from '@civitas-cerebrum/element-interactions';
+  ```
+- **Element parameters widened to `Element`.** The methods of `Interactions`,
+  `Verifications`, `Extractions` and `Navigation`, and `Utils.softProbe` /
+  `Utils.waitForState`, take element-repository's `Element` instead of
+  `WebElement`; on web a non-web element is refused with an error. Code that
+  passes `WebElement`s compiles unchanged, but a subclass that overrides one of
+  these methods with a `WebElement` parameter no longer type-checks.
+  **Migration:** type the overriding parameter as `Element` and narrow with
+  `isWeb(element)` where the override needs `element.locator`.
+- **`ExpectContext` (exported type) is family-neutral.** `resolveElement()` and
+  `resolveAll()` return `Promise<Element>` (was `Promise<WebElement>`), and
+  `verify` is typed `IVerifications` (was `Verifications`).
+  `resolveElement(timeout?)` and `captureSnapshot(timeout?)` take an optional
+  `timeout`, the matcher's own (a `.timeout(ms)` on the matcher), so a device
+  family can fit one resolution inside it; calls without it are unchanged, and
+  an object implementing `ExpectContext` may ignore it. Likewise
+  `steps.on(...).probeTarget()` on the exported `ElementAction` resolves to
+  `Element` (was `WebElement`). Code that reads `.locator` from a resolved
+  element, or calls a `Verifications`-only method through `ctx.verify`, no
+  longer compiles.
+  **Migration:** narrow the element first (the same for `probeTarget()`):
+  ```ts
+  const el = await ctx.resolveElement();
+  if (isWeb(el)) { /* el.locator is available here */ }
+  ```
+- **Fatal driver errors are no longer retried or disguised on web.** Matcher
+  predicates (`satisfy`) fail at once on an error matching the fatal driver
+  patterns (an invalid selector, an invalid or terminated session, a refused
+  or reset connection) where 0.3.12 retried until the timeout. The list-entry
+  check of `getAll` on a `"list": true` entry rethrows such an error as is
+  instead of reporting `found 0`.
+  **Migration:** none for passing suites. A test that relied on such an error
+  being retried, or on the `found 0` message for it, fixes the underlying error.
+- **Missing-page error text changed.** The web fixture's `repo` is built with
+  `{ platform: 'web' }`, so a page name resolves to its web block even when the
+  file also holds android / ios blocks. A page with no entry now throws
+  `ElementRepository: page '<name>' has no entry for platform 'web'. Available: <platforms>.`
+  (was `ElementRepository: Page '<name>' not found.`).
+  **Migration:** update assertions on the old text, e.g. match
+  `/has no entry for platform/`.
+- **`baseFixture` has an explicit return type**, `BaseFixtureTest`, and a new
+  `driver` fixture (the WebdriverIO session on a device; on web requesting it
+  throws `PlatformNotSupportedError('driver', 'web')`). Code that spelled out
+  the old inferred type, or that extends the result with a fixture of its own
+  named `driver`, is affected.
+  **Migration:** use `BaseFixtureTest` where the type is written out; rename a
+  custom `driver` fixture.
+- **The `interactions` fixture is typed `ElementInteractions | PlatformInteractions`**
+  (it is a `PlatformInteractions` on a device run). The members both share
+  (`interact`, `verify`, `extract`, `navigate`, `email`) work as before, but a
+  result they typed `WebElement` is now typed `Element` through the fixture,
+  e.g. `interactions.interact.getListedElement(...)`, so reading `.locator`
+  from it no longer compiles.
+  **Migration:** to use a member only one side has, narrow first, e.g.
+  `if (interactions instanceof ElementInteractions) { await interactions.request.get(url); }`;
+  narrow a returned element with `isWeb(element)` before reading `.locator`.
+- **The published `.d.ts` declares an empty global `WebdriverIO.Browser`
+  interface**, so the typings compile without `webdriverio`; it merges with
+  WebdriverIO's own interface when that is installed, and with any global
+  `WebdriverIO.Browser` a project declares itself.
+  **Migration:** TypeScript users of the Appium API add
+  `import type {} from 'webdriverio'` (or `"types": ["webdriverio"]`) to see
+  the full driver type.
+- **`baseFixture` reads `E2E_PLATFORM`.** A set, non-empty `E2E_PLATFORM` that
+  is not a platform name makes `baseFixture()` throw, naming the variable.
+  `E2E_CAPABILITIES` names the capabilities file of a platform run. The
+  unprefixed `PLATFORM` and `CAPABILITIES` are never read, so ambient values
+  cannot affect a run.
+  **Migration:** none for web projects that do not set `E2E_PLATFORM`.
+- **`getAll` honours an empty-string `child`** (`child: ''`) instead of
+  ignoring it.
+  **Migration:** drop `child: ''` from calls that meant "no child".
+- **A per-call timeout is honoured on web: `verifyState`, the `.timeout(ms)`
+  chain and the `StepOptions` `timeout` of the verification steps.** `steps.verifyState(el, page, state, timeout)`
+  and `steps.on(el, page).timeout(ms)` before `verifyState` / `verifyOrder` /
+  `verifyListOrder` / `verifyImages` used to wait for the default timeout (30 s
+  unless configured), whatever was passed. The same holds for a `{ timeout }`
+  in the `StepOptions` of `verifyPresence`, `verifyAllPresent`, `verifyText`,
+  `verifyTextContains`, `verifyCount`, `verifyAttribute`, `verifyInputValue`,
+  `verifyOrder`, `verifyListOrder`, `verifyImages`, `verifyCssProperty`,
+  `verifyHtml`, `verifyHtmlContains` and `verifyHtmlMatches`, which was
+  ignored (`verifyAbsence` already honoured it). A check that passed only
+  because it waited longer than its stated timeout now fails at that timeout.
+  **Migration:** none for calls without a timeout (but see `verifyListOrder`
+  below). If a step now fails at its own short timeout, raise that timeout (or
+  drop it to use the default).
+- **`verifyListOrder` on web polls until its timeout.** It used to read the
+  list once and fail at once on an unsorted list. It now re-reads the list
+  every 100 ms until it is sorted or the timeout (the configured element
+  timeout, 30 s unless configured) runs out, so an unsorted list fails only
+  after that timeout, and a list that becomes sorted within it now passes.
+  **Migration:** an unsorted list now fails after the step timeout; pass a
+  short timeout where a fast failure is wanted:
+  `await steps.on(elementName, pageName).timeout(2000).verifyListOrder('asc')`
+  or `await steps.verifyListOrder(elementName, pageName, 'asc', { timeout: 2000 })`.
+- **The fluent `getCount()` and `getAllTexts()` read the whole collection on web.**
+  `steps.on(el, page).getCount()` returned 1 and `getAllTexts()` a one-item
+  array for an entry with several matches; they now return the number and the
+  texts of every match, and a strategy selector on the chain (`.nth(i)`,
+  `.byText(...)`, ...) no longer narrows them.
+  **Migration:** none where the whole collection was meant. To read one match,
+  narrow and read it: `await steps.on(el, page).nth(i).getText()`.
+- **`verifyCount` checks the upper bound of a range and refuses contradictory options.**
+  On web, `verifyCount(el, page, { greaterThan: 1, lessThan: 3 })` passed for
+  any count above 1; it now fails unless the count is also below 3. Options
+  that combine `exactly` with a bound (`{ exactly: 3, greaterThan: 1 }`, which
+  used to assert `exactly` alone), give two lower or two upper bounds, or
+  describe a range no count satisfies now throw at once.
+  **Migration:** none for calls whose bounds were all meant. Fix a range whose
+  upper bound the count exceeds, and drop the extra bound next to `exactly`.
+- **`verifyAbsence` on a `.byText()` chain asserts on the selection, on web and on a device.**
+  `steps.on(el, page).byText('No such row').verifyAbsence()` (and
+  `steps.verifyAbsence(el, page, { strategy: 'text', text })`) ignored the
+  text and asserted that no match of the whole entry was shown, so it failed
+  while any other item was on screen. It now passes when the match the
+  selection picks is hidden or when no match has the text, and fails while that
+  match is shown. It checks only the match the selection picks (on web the
+  first element containing the text; on a device an exact text match, else the
+  first containing match), so a hidden first match passes even while a later
+  match with the same text is shown. A fatal driver error still fails at once
+  on a device, and on a device only a clean "not found" reads as absent
+  (element-repository's `TextNotFoundError` with `cleanMiss`): a selection
+  whose final pass met a transient driver error (a failed `$$`, a stale text
+  read) is polled again, for `verifyAbsence`, `not.visible` and
+  `visible.toBeFalse()` alike. Other strategy selectors and plain entries keep
+  asserting on every match. To assert that no element with the text is shown, use the plain
+  entry with an attribute- or text-specific selector in the repository.
+  **Migration:** to assert that no match of the entry is shown, drop the
+  `.byText()` from the chain: `await steps.on(el, page).verifyAbsence()`.
+
+### Added
+
+- **Platform testing.** `baseFixture(test, repo, { platform, session })`:
+  `platform` is `'web' | 'android' | 'ios' | 'macos' | 'windows'` (default
+  `E2E_PLATFORM`, else `web`; an empty value counts as unset). On `android` /
+  `ios` the fixture opens one WebdriverIO session per worker from a
+  capabilities file, relaunches the app under test before every test
+  (`session.reset`, default `'relaunch'`; `'none'` skips it) and starts the
+  test only once the app is in the foreground (`session.relaunchTimeout`,
+  default 15000 ms; otherwise the setup fails naming the app id, the platform
+  and the last app state; a dead session fails at once), calls
+  `session.onSessionStarted` once, and closes the session at worker teardown
+  (time-boxed, never masking a test error). No browser starts; `page` /
+  `context` throw `PlatformNotSupportedError`. A failed test gets
+  `failure-screenshot` (image/png) and `page-source` (text/xml) attachments,
+  each time-boxed. `macos` / `windows` are declared but not implemented: the
+  session start throws `Platform "<p>" is declared but not implemented yet.`
+- **Platform: the relaunch retries an iOS launch timeout once.** When
+  WebDriverAgent answers the fixture's between-tests `mobile: activateApp`
+  with "Timed out attempting to launch app", the activation is retried once,
+  logged as a warning naming the app id, the platform and the error. The
+  retried activation and the foreground wait after it share
+  `session.relaunchTimeout`; a second failure fails the setup, and no other
+  error is retried. The user-facing `resetApp` / `activateApp` / `launchApp`
+  steps never retry. A relaunch failure names its phase (terminate, activate,
+  foreground wait), the app id, the platform and the budget.
+- **Platform: setup evidence.** A platform test whose setup fails (relaunch,
+  foreground wait, `onSessionStarted`) gets a `setup-error` (text/plain)
+  attachment with the error and the last app state, plus `failure-screenshot`
+  and `page-source` when the device still answers; each is time-boxed and
+  never replaces the setup error. A failing `onSessionStarted` fails the test
+  that needs the session, in its setup and with this evidence, rather than the
+  worker fixture; the session is still closed at worker teardown.
+- **Platform: `session.startTimeout`** (ms, default 600000): the worker
+  fixture's own timeout for opening the session (the provider's start plus
+  `onSessionStarted`), independent of the test timeout, so a cold real-device
+  start (WebDriverAgent build, UiAutomator2 server install) has room. A start
+  that does not answer fails shortly before it expires (a tenth of the
+  budget, at most 5 s, is kept back) with an error naming the server URL
+  without credentials, the platform and the budget, instead of Playwright's
+  generic fixture timeout; a session that still arrives is closed. A failed
+  start names the same, keeping the provider's error.
+- **Environment variables**, the complete list: `E2E_PLATFORM`,
+  `E2E_CAPABILITIES`, `APPIUM_URL`, `APPIUM_USER`, `APPIUM_KEY`, documented in
+  `.env.example`. Empty values count as unset. `resolvePlatform(option?, env?)`
+  applies the platform rule in configs and fixtures.
+- **Session layer**: `AppiumSessionProvider` (dynamic `import('webdriverio')`
+  on first start, WebdriverIO implicit wait 0, capabilities sent as a deep copy
+  of the file) and the types `SessionProvider`, `SessionOptions`,
+  `ServerOptions`, `SessionStartContext`, `AppiumSessionProviderOptions`,
+  `AppiumClientOptions`, `WebdriverioLogLevel`, `WebdriverioModule`.
+  A capabilities file is one flat W3C object: `platformName` must match the
+  platform, wrapped files are refused, and a `browserName` file must set
+  `"wdio:enforceWebDriverClassic": true`. The server is its own URL (base path only if it has
+  one) or an object; credentials come from `APPIUM_USER` / `APPIUM_KEY`.
+- **Types of the steps and option shapes**: `StepsOptions` (the options of
+  `new Steps(...)`), `ElementActionFamily` (the family a `steps.on(...)` chain
+  acts through), `VerifyOptions` (the `{ negated?, timeout?, errorMessage? }`
+  every `Verifications` method accepts) and `VisualMatchPrimitiveOptions` (the
+  resolved options `Verifications.visuallyMatches` takes). The web classes are
+  also exported under their family names: `PlaywrightInteractions`,
+  `PlaywrightVerifications`, `PlaywrightExtractions`, `PlaywrightNavigation`
+  (the same classes as `Interactions`, `Verifications`, `Extractions`,
+  `Navigation`).
+- **Family interfaces**: `IInteractions`, `IVerifications`, `IExtractions`,
+  `INavigation`, `IUtils`, `IGestures`, `IDevice`, `IInteractionFactory`, with
+  the types `Direction` (an alias of element-repository's `SwipeDirection`),
+  `Orientation`, `PermissionState`, `VerifiableState`, `DeviceVerifyOptions`,
+  `ScreenSwipeOptions`, `ScrollStepOptions` and `EntryTarget`. The element gestures of
+  `IGestures` resolve to the element, as element-repository's primitives do.
+- **Gesture types re-exported from element-repository**: `SwipeDirection`,
+  `SwipeOptions`, `ScrollIntoViewOptions`, `LongPressOptions`, `TapOffset`,
+  `TapAtOptions`, `PinchOptions`, `ZoomOptions`. The package defines no copy of
+  its own.
+- **Factories**: `PlaywrightFactory(page)` and `AppiumFactory(driver, platform,
+  { timeout, appId })`, with the `PlaywrightFactoryOptions`,
+  `AppiumFactoryOptions` and `AppiumDriver` types. `new Steps(factory, repo,
+  options)` is the factory form; `new Steps(repo, options)` keeps building web
+  Steps. The Appium family's classes and per-platform rules are internal and
+  reached through the factory, and so are the web family's gesture and device
+  members. `PlatformInteractions` is the `interactions` fixture on a device.
+  On a device a plain entry's `verifyAbsence` retries a failed lookup or a
+  failed read of a match (a list redrawn while shown leaves every handle
+  stale) rather than reading it as absent.
+- **Errors catchable by type**: `MissingAppIdError` (an app step without an app
+  id), `PollTimeoutError` (a polling device verification ran out of time; it
+  carries `timeout`, `lastValue` and `lastError`) and `ProbeTimeoutError` (the
+  `lastError` when a device probe did not answer within its share of the
+  timeout), except list-entry `verifyPresence`, which throws a plain `Error`
+  (same message as on web) with the `PollTimeoutError` as `cause`.
+- **Platform steps**: `launchApp`, `activateApp`, `terminateApp`,
+  `backgroundApp`, `resetApp`, `installApp`, `removeApp`, `openDeepLink`;
+  `swipe`, `swipeScreen`, `scrollUntilFound`, `longPress`, `tapAt`, `pinch`,
+  `zoom`, and `scrollIntoView` gains `{ direction, maxSwipes }`; every element
+  gesture step takes `StepOptions` too. The fluent chain gains `swipe`,
+  `scrollUntilFound`, `longPress`, `tapAt(offset, options?)`, `pinch` and
+  `zoom`, and its `scrollIntoView` takes the scroll options too.
+  `scrollUntilFound` is element-repository's `scrollIntoView` sweep with the
+  timeout always given (stops at the timeout or after `maxSwipes` swipes).
+  On a device an element already on screen returns at once; otherwise, only
+  when a soft keyboard is shown, the keyboard is hidden first (best-effort),
+  then the sweep runs with fixed swipes up to `maxSwipes` (default 20),
+  bounded by the step timeout (default 30 s; pass a larger `timeout` for long
+  lists, and allow for the first gesture of a fresh iOS session taking tens of
+  seconds).
+  `pressBack` (android only), `hideKeyboard`, `setOrientation`, `acceptAlert`,
+  `dismissAlert`, `setPermission`; `getContexts`, `switchContext`; polling
+  `verifyAppInForeground`, `verifyOrientation`, `verifyKeyboardShown`,
+  `verifyContext`; `getPageSource`. `steps.platform` names the active platform.
+- **`hideKeyboard(options?)` hides any soft keyboard through element-repository's `dismissKeyboard`.**
+  It runs element-repository's dismissal steps on iOS and Android (on iOS
+  including the keyboards without a Done key, such as a login form's Return
+  key), checks the keyboard after every step and returns `true` when a shown
+  keyboard is gone, `false` (nothing else sent) only when no keyboard was
+  shown. A "no keyboard" answer is checked again with `mobile:
+  isKeyboardShown`; when that check reports a keyboard or fails, the step
+  throws `hideKeyboard: the keyboard state could not be confirmed and nothing
+  was sent: ...`. `options.tapElement` (`{ pageName, elementName }`, a
+  repository entry) names a neutral element that iOS taps first; without it
+  **iOS may press the keyboard's action key, which can submit a form or run a
+  search**. `options.timeout` is one budget for the whole step: the
+  `tapElement` resolution spends from it and the dismissal gets what is left;
+  a dismissal step already started runs to its end, so the call can end up to
+  one step after the budget. A keyboard still shown after every step throws
+  element-repository's `KeyboardStillShownError`, re-exported from the
+  package root, as is the `HideKeyboardOptions` type.
+- **A scroll container for `scrollIntoView` / `scrollUntilFound`.** The steps
+  and the fluent terminals take `ScrollStepOptions`:
+  element-repository's `ScrollIntoViewOptions` with `container?: string`, the
+  element name (on the target's page) of the scrollable ancestor, e.g.
+  `steps.scrollUntilFound('productName2', 'ProductCarouselPage', { direction: 'right', container: 'carousel' })`.
+  The step resolves it through the repository (the active platform's entry)
+  and passes the element on as `ScrollIntoViewOptions.container`; on a device
+  element-repository then sweeps inside the container's rect with a
+  paging-safe drag (85% to 15% of its extent), which a carousel or side list
+  that does not cross the window centre needs. A name the page does not
+  define fails before any swipe:
+  `scrollIntoView: container "<name>" on page "<page>" could not be resolved: ...`.
+  On web the container is resolved the same way and Playwright ignores it.
+- **Platform paths** for `"list": true` entries, `child` / `withDescendant` on
+  listed elements, `verifyAbsence`, `isVisible` / `ifVisible` probes and the
+  matcher tree on device platforms. Listed-element `text` and
+  `withDescendant.text` match as on web (case-insensitive substring, whitespace
+  normalised, first item in list order; a RegExp tested as is), while
+  `repo.getByText` on a device prefers an exact match.
+- **Visible text on iOS** is the element's `label`, falling back to its
+  `value` (never `name`; on a text field, secure text field, text view or
+  search field the `value` wins), not WebdriverIO's raw `getText()`, which
+  answers `value` first. The rule is element-repository's
+  (`Element.textContent()`); every device text read goes through it. Android
+  reads the element's text; a container whose own text is empty (a list row)
+  reads its descendants' text, hints left out, joined with single spaces in
+  document order (`Item 1 Alpha`), in `getText`, `verifyText*`, `getAll`,
+  listed-element `text` and the text strategy alike. iOS follows the same
+  rule: an element whose `label` and `value` are empty (not a text input, a
+  static text or an image) reads its descendants' static text joined with
+  single spaces. On a device `getText`
+  returns `''` (never `null`) when an element has no text.
+- **`doubleClick` on a device is a native double tap** on the element's
+  centre (element-repository: `mobile: doubleTap` on iOS,
+  `mobile: doubleClickGesture` on Android), so a 2-tap gesture recogniser and
+  a button counting taps see two taps; an element that is not found fails
+  `doubleClick: "<selector>" not found within N ms` before anything is sent.
+- **Checked state on a device** (`verifyState(..., 'checked')`, `check`,
+  `uncheck`) is element-repository's: Android reads the `checked` attribute,
+  iOS a switch's or toggle's `value` and other elements' `selected` state.
+  `check` / `uncheck` tap only when the state differs and confirm the new
+  state within the step timeout; they fail with `is still unchecked after
+  clicking` / `is still checked after clicking`, and refuse without a tap an
+  Android radio button being unchecked, a control that is not checkable, and
+  a control still disabled at the timeout. `getAttribute` on a device returns
+  `null` for a missing attribute (UiAutomator2 answers `"null"`) and for one
+  the driver does not know on either platform (XCUITest and UiAutomator2
+  answer with an "attribute is unknown" error), so a misspelt name reads as
+  missing and `attributes.not.toHaveKey(name)` passes on a device; other
+  driver errors still fail at once.
+- Platform verifications, list presence, listed-element steps and probes fail
+  at once on a fatal driver error (a dead session, an invalid selector, a lost
+  connection) instead of at the timeout; such an error never reads as absent.
+- Re-exported from element-repository: `Platform`, `DriverFamily`, `PLATFORMS`,
+  `isPlatformName`, `familyOf`, `PlatformNotSupportedError` (one class across
+  both packages, so `instanceof` works).
+- **Step classification.** Web-only steps throw
+  `PlatformNotSupportedError(<step>, <platform>)` on a device; platform-only
+  steps throw it on web. Element gestures `swipe` / `longPress` /
+  `scrollUntilFound` work on web through the element's mouse primitive;
+  `pinch` / `zoom` throw on web.
+- **Cross-platform spec** (`tests/cross-platform`): one spec that runs
+  unchanged on web (in the default suite) and on Android / iOS
+  (`playwright.platform.config.ts`), plus example capabilities files in
+  `tests/capabilities/`.
+- **Live device specs** (`tests/live`, run with `playwright.platform.config.ts`):
+  `ios-settings.spec.ts` against the built-in Settings app, read-only, and
+  `android-testapp.spec.ts` against the project's Android test app
+  `com.civitas.testapp` (already installed; nothing is installed or removed):
+  app lifecycle, the app's own dialogs, the keyboard, orientation (restored to
+  portrait), contexts, screen swipes, scrolling, lists, checkboxes and
+  switches, `pressBack` and web-only refusals. Both were run on a real device;
+  the README section "What is verified" lists what each covers.
+- **Device-app guard** (`tests/cross-platform/appGuard.ts`): before a device
+  session opens, the capabilities file is checked against an allow-list, so
+  each device platform drives only its one app (the Settings app on iOS, the
+  test app on Android): no install, no second app, no browser, no full reset,
+  `noReset: true`, no auto-granted permissions or auto-handled alerts.
+  Unit-tested in the default suite.
+- **CI workflow** `.github/workflows/platform.yml`: the cross-platform spec on
+  an Android emulator and an iOS simulator, started manually
+  (`workflow_dispatch`).
+- `webdriverio@^10` is an **optional** peer dependency: install it only for
+  platform runs. It is imported on first use; web users never load it.
+  WebdriverIO 10 requires Node `>=22.23.4 <23 || >=24.22.1 <25 || >=26.12.1`.
+
+### Changed
+
+- The web-only `baseFixture` options (`blockedOrigins`, `mutationInjection`,
+  `interceptionRetry`, `screenshotOnFailure: { fullPage }`) throw on a platform
+  run instead of being ignored.
+- The package description and keywords cover native Android and iOS testing.
+- The README states a limitation of `.byText()` on long lists: one text
+  pass reads every candidate serially (measured on the iOS simulator: about
+  3.8 s for 16 cells, about 17 s for 100 by the same figures; on a real
+  Android phone: 3.05 to 3.57 s cold and 2.46 to 2.68 s warm for 11 cells),
+  what that means with the default timeouts, and the selector-based
+  alternatives.
+
+### Fixed
+
+- **`verifyState` honours its per-call timeout.** `steps.verifyState(el, page,
+  state, timeout)` and `steps.on(el, page).timeout(ms).verifyState(state)`
+  waited for the default timeout (30 s unless configured) on web and on a
+  device, whatever `timeout` was passed. The same applies to `.timeout(ms)` on
+  `verifyOrder` (web and device), `verifyListOrder` (web and device) and
+  `verifyImages` (web). On web, `verifyListOrder` now polls until its timeout
+  instead of reading the list once; a sorted list passes on the first read as
+  before (the default polling of web `verifyListOrder` is listed under
+  Breaking). The chain's default is the configured timeout. The
+  `Verifications.order` / `listOrder` primitives take an optional
+  `VerifyOptions`, and `Verifications.images` an optional `timeout`.
+- **A `StepOptions` timeout reaches every verification step that takes
+  `StepOptions`.** `verifyPresence`, `verifyAllPresent`, `verifyText`,
+  `verifyTextContains`, `verifyCount`, `verifyAttribute`, `verifyInputValue`,
+  `verifyOrder`, `verifyListOrder`, `verifyImages`, `verifyCssProperty`,
+  `verifyHtml`, `verifyHtmlContains` and `verifyHtmlMatches` applied the
+  `StepOptions` strategy but dropped its `timeout`, so
+  `steps.verifyListOrder(el, page, 'desc', { timeout: 500 })` waited for the
+  default timeout (30 s unless configured), on web and on a device. They now
+  use the given `timeout`, exactly as `steps.on(el, page).timeout(ms)` does;
+  without one they keep the configured timeout.
+- **A web-only terminal behind a visibility gate is refused on a device.**
+  `steps.on(el, page).isVisible().hover()`, `steps.isVisible(el, page).hover()`
+  and the same gate before `rightClick`, `uploadFile`, `selectDropdown`,
+  `setSliderValue` or `selectMultiple` used to probe the element first and, when
+  it was not shown, return without doing anything; behind a shown element the
+  refusal came only after the probe. They now throw
+  `PlatformNotSupportedError(step, platform)` before anything is sent to the
+  device, like the ungated step. Web is unchanged.
+- **The fluent `getCount()` and `getAllTexts()` read every match.**
+  `steps.on(el, page).getCount()` answered 1 and `getAllTexts()` only the first
+  match's text, on web and on a device, because both resolved the first match.
+  They now read the entry's whole collection, like `steps.getCount` /
+  `steps.getAll` and the chain's `.count` matchers, whatever strategy selector
+  the chain carries.
+- **`verifyCount` accepts every documented bound and checks both ends of a range.**
+  `steps.verifyCount(...)` and `steps.on(el, page).verifyCount(...)` refused
+  `{ greaterThanOrEqual }` / `{ lessThanOrEqual }` at runtime although the
+  typings and the README accept them, and `{ greaterThan, lessThan }` checked
+  only `greaterThan`, on web and on a device. Every given bound is now checked
+  at the same time; `CountVerifyOptions` also types a mixed range
+  (`{ greaterThan, lessThanOrEqual }`, `{ greaterThanOrEqual, lessThan }`).
+  The failure names the bound the last count broke (`6 is not < 3`), and
+  contradictory or empty options throw at once, before the element is resolved.
+- **`byText` under a polling terminal finds a later item on a device.**
+  `steps.on(el, page).byText('Green 2').verifyText('Green 2')` (and a matcher,
+  a `satisfy()` snapshot or `verifyState` after `.byText()`) timed out on a
+  device when the item was not the first: every poll gave the text strategy a
+  1 ms budget, and element-repository's text lookup stopped reading candidates
+  at its deadline, so each poll read only the first item. element-repository
+  0.4.0's text strategy reads every candidate of a pass it has started (the
+  budget only decides whether another pass starts), so every poll, snapshot and
+  visibility-probe attempt keeps its one-check budget and still reads the whole
+  list. A text that matches nothing still fails with `with text "..." not
+  found`. A list whose single read pass takes longer than the step's timeout
+  does not answer within it: the step fails (`No answer was obtained`) and the cut-off
+  pass is never read as "not found", "absent" or "not visible". Web is not
+  affected.
+- **`not.visible` passes on a device for an element no lookup finds.**
+  `steps.on(el, page).byText('No such row').not.visible.toBeTrue()` timed out
+  on a device: every poll read the element's displayed state, the lookup threw
+  `with text "..." not found`, and a poll with no answer never passed. A
+  negated `visible` matcher now reads an element that is not found as not
+  visible, as web's `not.toBeVisible()` does; a fatal driver error still fails
+  at once, and a probe that does not answer is never read as an answer.
+  `visible.toBeTrue()` still fails with the lookup's reason. Web is not affected.
+- **A poll whose last probe does not answer keeps the earlier real error.**
+  When a probe failed for a reason (an element not found) and a later one did
+  not answer before the deadline, the timeout message named only the
+  unanswered probe; it now gives the reason, followed by
+  `; the last probe did not answer within N ms`.
+- **A poll whose last probe does not answer after one that did leads with the
+  last value.** The timeout message named the unanswered probe as its last
+  error (`Last value: true. Last error: the probe did not answer within N ms`);
+  it now gives the value, with the unanswered probe as a note after it:
+  `Last value: true; the last probe did not answer within N ms.` A failing
+  device absence, `hidden`, negated `visible`, negated presence or negated
+  `inViewport` check also says what the value means: `Expected element to be
+  absent (not displayed): timed out after 8000 ms. The element was still
+  displayed on the last answered poll (Last value: true).` `lastError` is
+  unchanged. A poll in which every probe answered with an error keeps
+  `(no value; every probe failed)`. Web messages are not affected.
+- **A device poll in which no probe answered says so.** When every probe ran
+  out of its share of the timeout (a driver call or a lookup pass longer than
+  the timeout, or a driver that stopped answering), the message read like a
+  failed check: `Last value: (no value; every probe failed). Last error: the
+  probe did not answer within N ms`. It now says no check finished, how long
+  the probe was given, and what may have caused it: `... timed out after
+  3000 ms. No answer was obtained: no check finished within the timeout. The
+  probe was still running when its 3000 ms ran out: one check (a driver call
+  or a lookup pass) takes longer than the 3000 ms timeout, or the driver
+  stopped answering. Allow more time with a longer timeout.` An element check
+  (a `verify*` step, a matcher, `verifyCount`, list presence, a listed-element
+  lookup) adds: `For an element check, one lookup pass may be slower than the
+  timeout: use a longer `.timeout(ms)` or a selector that matches fewer
+  elements (a `byText` selection reads the text of every candidate).` A device
+  check (`verifyOrientation`, `verifyKeyboardShown`, `verifyContext`,
+  `verifyAppInForeground`) does not. A `"list": true` entry's
+  `verifyPresence` keeps its lead (`verifyPresence: '<page>.<name>' is a list
+  entry ("list": true) — expected at least one visible match within Nms.`)
+  and follows it with the no-answer text instead of `found 0 match(es) and
+  none visible`, since no poll counted any match. The verdict is unchanged (the step still
+  fails); `lastValue` is `undefined` and `lastError` is still the
+  `ProbeTimeoutError`. Web messages are not affected.
+- **A device poll never runs two of its probes at once.** When a probe ran out
+  of its share of the timeout, the poll could start one more probe beside it
+  if the probe's timer fired a moment before the clock read the deadline, so
+  two lookup passes of the same check ran together and both kept going after
+  the step failed. A probe that runs out of time now ends the poll at once
+  (it was already given all the time left); the verdict and the message are
+  unchanged.
+- **A device check that times out no longer holds up the next test with its
+  leftover lookup.** A check that timed out during a slow lookup pass (a
+  `.byText()` pass over a long list) left the pass running; the next test's
+  relaunch made every element it held stale, WebdriverIO looked each one up
+  again, and that traffic (measured on the iOS simulator: about 65 s, 53 list
+  lookups) left the next test's own checks without an answer. The platform
+  fixture now waits for such lookups after the test body, before the failure
+  evidence and the next relaunch, and again before each relaunch and at
+  worker teardown, so each one ends on the app launch it started on. **A
+  failing device test may take a little longer** (about one driver command, or the commands of one element read in flight
+  (a container's text read reads its descendants), since the check stops its
+  lookup: see the next item). The wait is
+  capped at 10000 ms, and when there is something to wait for the fixture
+  first extends the test's timeout by that cap, so the wait never makes a
+  test run out of time (a timeout of `0` stays as it is). Lookups still
+  running at the cap are named in a console warning and a `warning`
+  annotation on the test, and the run carries on. The wait never fails a test
+  nor replaces its error. Device checks (`verifyOrientation`,
+  `verifyKeyboardShown`, `verifyContext`, `verifyAppInForeground`) are waited
+  for too.
+- **A device check that times out stops its lookup.** Every poll probe gets
+  an abort signal of its own, aborted when the poll gives up on it and once
+  the poll is done with it. The device checks pass it to every repository
+  lookup they make (element-repository's lookup `signal`) and check it
+  between their own reads, so a check that timed out starts no driver
+  command afterwards. The fixture aborts the lookups again before it waits
+  for them, so **the wait after a failing device test is normally about one
+  driver command, or the commands of one element read in flight (a
+  container's text read reads its descendants)**, no longer the rest of a lookup pass (the cap stays
+  10000 ms). What still finishes after the timeout: the driver command in
+  flight, and a read already running on an element a lookup returned (a
+  returned element does not carry the signal). An aborted lookup is never an
+  answer: it never reads as absent or not visible and is never a poll's last
+  error. `EntryTarget`'s resolvers take an optional `signal` after the
+  attach budget.
+- **A device visibility read that fails is never "not visible".**
+  element-repository's polled `isVisible()` now answers `false` only for a
+  real no-match and throws any other non-fatal driver error (an `unknown
+  error`, a stale reference twice in a row). Every device step that reads
+  visibility treats only a no-match answer (no element matches, an index
+  past the end, a clean text miss, ...) as "not visible", and never turns
+  another error into `false`:
+  - the `isVisible()` probe and the `isVisible()` / `ifVisible()` gates retry
+    within their timeout; when the timeout ends on such an error they throw
+    `isVisible: could not tell whether '<page>.<element>' is displayed within
+    <timeout> ms: <error>` instead of answering `false` or skipping the
+    action. With `containsText`, a failed text read is retried the same way.
+  - `isPresent` and `clickIfPresent` (the step and the fluent form) throw
+    the error, a dead session included, instead of answering `false` or
+    skipping the tap.
+  - `not.visible`, `visible.toBeFalse()` and `verifyState('hidden')` retry
+    it and fail with it as the last error; `verifyPresence` of a list entry
+    names the error instead of `none visible`.
+  - A `satisfy()` snapshot reads no field softly: a read that fails with
+    anything but a no-match (a stale reference, an `unknown error`) fails
+    the snapshot and is retried, so it never gives the field its default
+    (`visible: false`, `enabled: false`, `count: 0`, an empty text or
+    value, a missing attribute) for a predicate to pass on.
+  - `waitForState('hidden' | 'detached')` keeps waiting through it
+    (element-repository's own wait), and fails at its timeout.
+  - A `.random()` or `.byAttribute()` chain (and the `random` / `attribute`
+    step strategies) is not answered by element-repository's `No elements
+    found for ...`, which those strategies throw for any failure of their
+    first wait, a dead session included. The miss is confirmed with a lookup
+    of every match, whose errors pass through: no match is "not there"; for
+    `.random()` matches that are all hidden are "not there" too; an error of
+    that lookup passes through; otherwise the step fails (`The lookup failed
+    … although N match(es) exist`, element-repository's message as its
+    cause); a poll retries it. element-repository's random pick waits for
+    the first match to be shown; when it is hidden and a later one is shown,
+    the lookup fails with that reason.
+  Web is not affected: web `isPresent` still answers `false` on any error.
+- **A negated count range on a device is worded as on web**: `Expected count
+  not > 5`, no longer `Expected NOT count > 5`.
+
 ## 0.3.12 — 2026-11-01
 
 ### Added

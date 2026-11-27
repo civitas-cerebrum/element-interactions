@@ -44,3 +44,6 @@ tests/e2e/.selector-development/
 # Local tool caches / working artifacts
 /.understand-anything
 /.github-pr-body-*.md
+
+# Local capabilities files naming a real device (tests/capabilities/README.md).
+tests/capabilities/*.local.json

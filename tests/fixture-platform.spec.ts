@@ -1,0 +1,223 @@
+import { test as base, expect } from '@playwright/test';
+import * as fs from 'fs';
+import { PlatformNotSupportedError } from '@civitas-cerebrum/element-repository';
+import { attachPlatformEvidence, baseFixture, EVIDENCE_TIMEOUT_MS, resolvePlatform, STOP_TIMEOUT_MS, stopSession } from '../src/fixture/BaseFixture';
+import { PlatformInteractions } from '../src/fixture/PlatformInteractions';
+import { AppiumInteractions, AppiumVerifications, AppiumGestures, AppiumDevice } from '../src/appium';
+import { expectNotSupported } from './appium/mocks';
+import { appCommands, fakeSession } from './fixture-platform/fakeSession';
+
+const REPO = 'tests/fixture-platform/page-repository.json';
+const CAPS = 'tests/capabilities/ios.example.json';
+
+const fake = fakeSession();
+let sessionStartedHook = 0;
+
+const test = baseFixture(base, REPO, {
+    platform: 'ios',
+    timeout: 2000,
+    repoTimeout: 1000,
+    session: {
+        capabilities: CAPS,
+        provider: fake.provider,
+        onSessionStarted: async (driver) => {
+            expect(driver).toBe(fake.driver);
+            sessionStartedHook++;
+        },
+    },
+});
+
+// Any browser launch in this file fails: the platform fixtures must not start one.
+test.use({ launchOptions: { executablePath: '/nonexistent/browser' } });
+
+/** `mobile: terminateApp` then `mobile: activateApp` once per test so far (relaunch before every test). */
+function expectRelaunches(n: number) {
+    const commands = appCommands(fake.calls).filter(c => c === 'mobile: terminateApp' || c === 'mobile: activateApp');
+    expect(commands).toEqual(Array.from({ length: n }, () => ['mobile: terminateApp', 'mobile: activateApp']).flat());
+}
+
+test.describe.serial('baseFixture on ios (mock session)', () => {
+    test('driver, repo, steps, interactions and contextStore work on the session', async ({ driver, repo, steps, interactions, contextStore }) => {
+        expect(driver).toBe(fake.driver);
+        expect(repo.platform).toBe('ios');
+        expect(repo.driver).toBe(fake.driver);
+
+        await steps.click('submit', 'LoginPage');
+        expect(fake.calls.some(c => c[0] === 'el.click' && c[1] === '~login-submit')).toBe(true);
+        await steps.verifyText('title', 'LoginPage', 'Sign in');
+
+        expect(interactions).toBeInstanceOf(PlatformInteractions);
+        if (!(interactions instanceof PlatformInteractions)) throw new Error('expected PlatformInteractions');
+        const platformInteractions = interactions;
+        expect(platformInteractions.interact).toBeInstanceOf(AppiumInteractions);
+        expect(platformInteractions.verify).toBeInstanceOf(AppiumVerifications);
+        expect(platformInteractions.gestures).toBeInstanceOf(AppiumGestures);
+        expect(platformInteractions.device).toBeInstanceOf(AppiumDevice);
+        expect(platformInteractions.email).toBeNull();
+        await expectNotSupported(() => platformInteractions.request, 'request', 'ios');
+
+        contextStore.put('key', 'value');
+        expect(contextStore.get('key')).toBe('value');
+    });
+
+    test('the session started once, with exactly the capabilities file, and onSessionStarted ran once', async ({ driver }) => {
+        expect(driver).toBe(fake.driver);
+        expect(fake.starts).toHaveLength(1);
+        expect(sessionStartedHook).toBe(1);
+        expect(fake.starts[0].platform).toBe('ios');
+        expect(fake.starts[0].capabilities).toStrictEqual(JSON.parse(fs.readFileSync(CAPS, 'utf-8')));
+        expect(fake.stops).toBe(0);
+    });
+
+    test('the app is relaunched (terminate + activate) before every test, the first included', async () => {
+        expectRelaunches(3);
+        const relaunch = fake.calls.filter(c => c[0] === 'execute' && c[1] === 'mobile: terminateApp');
+        expect(relaunch[0][2]).toEqual({ bundleId: 'com.example.app' });
+    });
+
+    test('a test that asks for nothing still gets the relaunch (auto fixture)', async () => {
+        expectRelaunches(4);
+    });
+
+    test('a web-only step throws PlatformNotSupportedError', async ({ steps }) => {
+        await expectNotSupported(() => steps.navigateTo('/'), 'navigateTo', 'ios');
+        await expectNotSupported(() => steps.hover('submit', 'LoginPage'), 'hover', 'ios');
+    });
+
+    test('the family members act on the worker session with the app id from the file', async ({ interactions }) => {
+        if (!(interactions instanceof PlatformInteractions)) throw new Error('expected PlatformInteractions');
+        const device = interactions.device;
+        await device.terminateApp();
+        const last = fake.calls.filter(c => c[0] === 'execute').at(-1)!;
+        expect(last.slice(1)).toEqual(['mobile: terminateApp', { bundleId: 'com.example.app' }]);
+        expect(fake.starts).toHaveLength(1);
+    });
+});
+
+test.describe('platform resolution and web-only options', () => {
+    test('resolvePlatform: option, else E2E_PLATFORM, else web; bad values name their source', () => {
+        expect(resolvePlatform(undefined, {})).toBe('web');
+        expect(resolvePlatform(undefined, { E2E_PLATFORM: 'android' })).toBe('android');
+        expect(resolvePlatform('ios', { E2E_PLATFORM: 'android' })).toBe('ios');
+        expect(() => resolvePlatform(undefined, { E2E_PLATFORM: 'mobile' }))
+            .toThrow('E2E_PLATFORM is "mobile", which is not a platform. Expected one of: web, android, ios, macos, windows.');
+        expect(() => resolvePlatform('iOS', {}))
+            .toThrow('baseFixture option "platform" is "iOS", which is not a platform.');
+        expect(resolvePlatform(undefined, { E2E_PLATFORM: '' })).toBe('web');
+        expect(() => resolvePlatform('', { E2E_PLATFORM: 'ios' })).toThrow('baseFixture option "platform" is "", which is not a platform.');
+    });
+
+    test('an empty E2E_PLATFORM in process.env counts as unset: baseFixture builds the web fixture', () => {
+        const saved = process.env.E2E_PLATFORM;
+        process.env.E2E_PLATFORM = '';
+        try {
+            expect(resolvePlatform(undefined)).toBe('web');
+            // A platform fixture would refuse the web-only option; web accepts it.
+            expect(() => baseFixture(base, REPO, { blockedOrigins: /x/ })).not.toThrow();
+        } finally {
+            if (saved === undefined) delete process.env.E2E_PLATFORM; else process.env.E2E_PLATFORM = saved;
+        }
+    });
+
+    test('baseFixture reads E2E_PLATFORM when the option is absent', () => {
+        const saved = process.env.E2E_PLATFORM;
+        process.env.E2E_PLATFORM = 'nonsense';
+        try {
+            expect(() => baseFixture(base, REPO)).toThrow(/E2E_PLATFORM is "nonsense"/);
+        } finally {
+            if (saved === undefined) delete process.env.E2E_PLATFORM; else process.env.E2E_PLATFORM = saved;
+        }
+    });
+
+    test('unprefixed PLATFORM and CAPABILITIES are never read: a web run is unaffected', () => {
+        expect(resolvePlatform(undefined, { PLATFORM: 'x64', CAPABILITIES: 'x' })).toBe('web');
+        expect(resolvePlatform(undefined, { PLATFORM: 'ios' })).toBe('web');
+        const keys = ['PLATFORM', 'CAPABILITIES', 'E2E_PLATFORM', 'E2E_CAPABILITIES'] as const;
+        const saved = Object.fromEntries(keys.map(k => [k, process.env[k]]));
+        delete process.env.E2E_PLATFORM;
+        delete process.env.E2E_CAPABILITIES;
+        process.env.PLATFORM = 'x64';
+        process.env.CAPABILITIES = 'x';
+        try {
+            expect(resolvePlatform(undefined)).toBe('web');
+            // The web fixture accepts a web-only option; a platform fixture would refuse it.
+            expect(() => baseFixture(base, REPO, { blockedOrigins: /x/ })).not.toThrow();
+        } finally {
+            for (const k of keys) {
+                if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k];
+            }
+        }
+    });
+
+    test('web-only options throw on a platform run, naming each', () => {
+        const session = { capabilities: CAPS, provider: fake.provider };
+        expect(() => baseFixture(base, REPO, { platform: 'ios', session, blockedOrigins: /x/ }))
+            .toThrow('baseFixture: blockedOrigins is web-only and cannot be honoured on platform "ios".');
+        expect(() => baseFixture(base, REPO, { platform: 'android', session, mutationInjection: true, interceptionRetry: false }))
+            .toThrow('baseFixture: mutationInjection, interceptionRetry are web-only and cannot be honoured on platform "android".');
+        expect(() => baseFixture(base, REPO, { platform: 'ios', session, screenshotOnFailure: { fullPage: true } }))
+            .toThrow(/screenshotOnFailure \(\{ fullPage \}\) is web-only/);
+        expect(() => baseFixture(base, REPO, { platform: 'ios', session, mutationInjection: false, screenshotOnFailure: false })).not.toThrow();
+    });
+
+    test('macos / windows build a fixture; the session start is what refuses them (asserted in fixture-platform-run.spec.ts)', () => {
+        expect(() => baseFixture(base, REPO, { platform: 'macos' })).not.toThrow();
+        expect(() => baseFixture(base, REPO, { platform: 'windows' })).not.toThrow();
+    });
+});
+
+test.describe('failure evidence on a dead device', () => {
+    const never = () => new Promise<never>(() => undefined);
+
+    test('each evidence command is given up after the timeout; the teardown is not stalled', async () => {
+        expect(EVIDENCE_TIMEOUT_MS).toBe(10_000);
+        const attached: string[] = [];
+        const testInfo = { attach: async (name: string) => { attached.push(name); } };
+        const driver = { takeScreenshot: never, getPageSource: never } as unknown as WebdriverIO.Browser;
+        const started = Date.now();
+        await attachPlatformEvidence(driver, testInfo as never, true, 100);
+        const elapsed = Date.now() - started;
+        expect(elapsed).toBeGreaterThanOrEqual(190);
+        expect(elapsed).toBeLessThan(2000);
+        expect(attached).toEqual([]);
+    });
+
+    test('a hanging screenshot does not cost the page source', async () => {
+        const attached: string[] = [];
+        const testInfo = { attach: async (name: string) => { attached.push(name); } };
+        const driver = { takeScreenshot: never, getPageSource: async () => '<AppiumAUT/>' } as unknown as WebdriverIO.Browser;
+        await attachPlatformEvidence(driver, testInfo as never, true, 100);
+        expect(attached).toEqual(['page-source']);
+    });
+
+    test('answers within the timeout are attached', async () => {
+        const attached: Array<[string, string]> = [];
+        const testInfo = { attach: async (name: string, o: { contentType: string }) => { attached.push([name, o.contentType]); } };
+        const driver = { takeScreenshot: async () => 'cG5n', getPageSource: async () => '<AppiumAUT/>' } as unknown as WebdriverIO.Browser;
+        await attachPlatformEvidence(driver, testInfo as never, true, 1000);
+        expect(attached).toEqual([['failure-screenshot', 'image/png'], ['page-source', 'text/xml']]);
+    });
+});
+
+test.describe('closing the session at worker teardown', () => {
+    const driver = {} as WebdriverIO.Browser;
+
+    test('a hanging stop is given up after the timeout; the teardown is not stalled', async () => {
+        expect(STOP_TIMEOUT_MS).toBe(EVIDENCE_TIMEOUT_MS);
+        const started = Date.now();
+        await stopSession({ stop: () => new Promise<never>(() => undefined) }, driver, 100);
+        const elapsed = Date.now() - started;
+        expect(elapsed).toBeGreaterThanOrEqual(90);
+        expect(elapsed).toBeLessThan(2000);
+    });
+
+    test('a throwing stop is logged, not rethrown', async () => {
+        await expect(stopSession({ stop: async () => { throw new Error('dead device'); } }, driver, 100)).resolves.toBeUndefined();
+    });
+
+    test('a stop that answers in time is awaited, with the session driver', async () => {
+        const stopped: unknown[] = [];
+        await stopSession({ stop: async (d) => { stopped.push(d); } }, driver, 1000);
+        expect(stopped).toEqual([driver]);
+    });
+});

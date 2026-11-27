@@ -1,7 +1,9 @@
 import { Page, test, errors } from '@playwright/test';
+import type { IInteractions } from '../interfaces/IInteractions';
 import { ClickOptions, DropdownSelectOptions, DropdownSelectType, DragAndDropOptions, ListedElementMatch, ActionTimeoutOptions, TextMatcher } from '../enum/Options';
 import { Utils } from '../utils/ElementUtilities';
 import { Element, WebElement } from '@civitas-cerebrum/element-repository';
+import { requireWebElement } from './requireWebElement';
 import { log } from '../logger/Logger';
 
 /**
@@ -94,7 +96,7 @@ export function classifyClickFailure(error: unknown): ClickFailureClass {
  * Every method takes an `Element` from the repository. Wrap raw Playwright
  * Locators via `new WebElement(locator)` at the call site if you need to bridge.
  */
-export class Interactions {
+export class Interactions implements IInteractions {
     private ELEMENT_TIMEOUT: number;
     private utils: Utils;
 
@@ -111,7 +113,8 @@ export class Interactions {
      * Performs a standard click on the given element.
      * Automatically waits for the element to be attached, visible, stable, and actionable.
      */
-    async click(element: WebElement, options?: ClickOptions): Promise<boolean | void> {
+    async click(element: Element, options?: ClickOptions): Promise<boolean | void> {
+        requireWebElement('Interactions.click', element);
         const useDispatch = options?.force || options?.withoutScrolling;
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
 
@@ -138,11 +141,14 @@ export class Interactions {
 
     /**
      * Dispatches a native 'click' event directly on the element, bypassing
-     * actionability checks. Used for both `force` and `withoutScrolling`.
+     * actionability checks. Used for both `force` and `withoutScrolling`:
+     * element-repository's `click({ withoutScrolling: true })`, which waits
+     * for the element to be attached and dispatches a DOM `click` event. That
+     * attach wait is the only one: a never-attached element fails after
+     * `timeout`, not after a probe plus `timeout`.
      */
     private async dispatchClick(element: WebElement, timeout: number): Promise<void> {
-        await this.softProbe(element, 'attached', timeout);
-        await element.dispatchEvent('click');
+        await element.click({ withoutScrolling: true, timeout });
     }
 
     /**
@@ -251,26 +257,30 @@ export class Interactions {
      * Clicks only if the element is present and visible. Returns true if clicked,
      * false if the element was absent — does not throw.
      */
-    async clickIfPresent(element: WebElement, options?: ActionTimeoutOptions): Promise<boolean> {
+    async clickIfPresent(element: Element, options?: ActionTimeoutOptions): Promise<boolean> {
+        requireWebElement('Interactions.clickIfPresent', element);
         return await this.click(element, { ifPresent: true, timeout: options?.timeout }) as boolean;
     }
 
-    async fill(element: WebElement, text: string): Promise<void> {
+    async fill(element: Element, text: string): Promise<void> {
+        requireWebElement('Interactions.fill', element);
         await this.softProbe(element, 'visible');
         await element.fill(text, { timeout: this.ELEMENT_TIMEOUT });
     }
 
-    async uploadFile(element: WebElement, filePath: string | string[], options?: ActionTimeoutOptions): Promise<void> {
+    async uploadFile(element: Element, filePath: string | string[], options?: ActionTimeoutOptions): Promise<void> {
+        requireWebElement('Interactions.uploadFile', element);
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
         await this.softProbe(element, 'attached', timeout);
         await element.setInputFiles(filePath, { timeout });
     }
 
     async dropFiles(
-        element: WebElement,
+        element: Element,
         filenames: string[],
         options?: { mimeType?: string } & ActionTimeoutOptions,
     ): Promise<void> {
+        requireWebElement('Interactions.dropFiles', element);
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
         await this.softProbe(element, 'attached', timeout);
         await element.dropFiles(filenames, { mimeType: options?.mimeType, timeout });
@@ -281,9 +291,10 @@ export class Interactions {
      * If no options are provided, safely defaults to randomly selecting an enabled, non-empty option.
      */
     async selectDropdown(
-        element: WebElement,
+        element: Element,
         options: DropdownSelectOptions = { type: DropdownSelectType.RANDOM }
     ): Promise<string> {
+        requireWebElement('Interactions.selectDropdown', element);
         const timeout = options.timeout ?? this.ELEMENT_TIMEOUT;
         await this.softProbe(element, 'visible', timeout);
         const type = options.type ?? DropdownSelectType.RANDOM;
@@ -327,12 +338,14 @@ export class Interactions {
         return selected[0];
     }
 
-    async hover(element: WebElement): Promise<void> {
+    async hover(element: Element): Promise<void> {
+        requireWebElement('Interactions.hover', element);
         await this.softProbe(element, 'visible');
         await element.hover({ timeout: this.ELEMENT_TIMEOUT });
     }
 
-    async scrollIntoView(element: WebElement): Promise<void> {
+    async scrollIntoView(element: Element): Promise<void> {
+        requireWebElement('Interactions.scrollIntoView', element);
         await this.softProbe(element, 'attached');
         await element.scrollIntoView({ timeout: this.ELEMENT_TIMEOUT });
     }
@@ -342,7 +355,8 @@ export class Interactions {
      * Absolute-offset drags use the page's mouse API (no Element equivalent
      * exists today); all other paths route through `Element.dragTo`.
      */
-    async dragAndDrop(element: WebElement, options: DragAndDropOptions): Promise<void> {
+    async dragAndDrop(element: Element, options: DragAndDropOptions): Promise<void> {
+        requireWebElement('Interactions.dragAndDrop', element);
         const timeout = options.timeout ?? this.ELEMENT_TIMEOUT;
         // Hard waits: both drag paths read boundingBox / drive page.mouse,
         // which need the elements actually visible and elapsed time bounded.
@@ -350,6 +364,7 @@ export class Interactions {
 
         if (options.target) {
             const dropElement = options.target;
+            requireWebElement('Interactions.dragAndDrop', dropElement);
             await this.utils.waitForState(dropElement, 'visible', timeout);
 
             if (options.xOffset !== undefined && options.yOffset !== undefined) {
@@ -425,34 +440,40 @@ export class Interactions {
         return null;
     }
 
-    async typeSequentially(element: WebElement, text: string, delay: number = 100): Promise<void> {
+    async typeSequentially(element: Element, text: string, delay: number = 100): Promise<void> {
+        requireWebElement('Interactions.typeSequentially', element);
         await this.softProbe(element, 'visible');
         await element.pressSequentially(text, delay, { timeout: this.ELEMENT_TIMEOUT });
     }
 
     /** Right-click (context menu) on the given element. Web-only. */
-    async rightClick(element: WebElement, options?: ActionTimeoutOptions): Promise<void> {
+    async rightClick(element: Element, options?: ActionTimeoutOptions): Promise<void> {
+        requireWebElement('Interactions.rightClick', element);
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
         await this.softProbe(element, 'visible', timeout);
         await element.rightClick({ timeout });
     }
 
-    async doubleClick(element: WebElement): Promise<void> {
+    async doubleClick(element: Element): Promise<void> {
+        requireWebElement('Interactions.doubleClick', element);
         await this.softProbe(element, 'visible');
         await element.doubleClick({ timeout: this.ELEMENT_TIMEOUT });
     }
 
-    async check(element: WebElement): Promise<void> {
+    async check(element: Element): Promise<void> {
+        requireWebElement('Interactions.check', element);
         await this.softProbe(element, 'visible');
         await element.check({ timeout: this.ELEMENT_TIMEOUT });
     }
 
-    async uncheck(element: WebElement): Promise<void> {
+    async uncheck(element: Element): Promise<void> {
+        requireWebElement('Interactions.uncheck', element);
         await this.softProbe(element, 'visible');
         await element.uncheck({ timeout: this.ELEMENT_TIMEOUT });
     }
 
-    async setSliderValue(element: WebElement, value: number, options?: ActionTimeoutOptions): Promise<void> {
+    async setSliderValue(element: Element, value: number, options?: ActionTimeoutOptions): Promise<void> {
+        requireWebElement('Interactions.setSliderValue', element);
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
         await this.softProbe(element, 'visible', timeout);
         await element.fill(String(value), { timeout });
@@ -482,17 +503,20 @@ export class Interactions {
      * require actionability — use it to drive handlers directly (custom events,
      * `input`/`change` on widgets that swallow synthetic typing).
      */
-    async dispatchEvent(element: WebElement, type: string, eventInit?: Record<string, unknown>): Promise<void> {
+    async dispatchEvent(element: Element, type: string, eventInit?: Record<string, unknown>): Promise<void> {
+        requireWebElement('Interactions.dispatchEvent', element);
         await this.softProbe(element, 'attached');
         await element.locator.dispatchEvent(type, eventInit, { timeout: this.ELEMENT_TIMEOUT });
     }
 
-    async clearInput(element: WebElement): Promise<void> {
+    async clearInput(element: Element): Promise<void> {
+        requireWebElement('Interactions.clearInput', element);
         await this.softProbe(element, 'visible');
         await element.clear({ timeout: this.ELEMENT_TIMEOUT });
     }
 
-    async selectMultiple(element: WebElement, values: string[], options?: ActionTimeoutOptions): Promise<string[]> {
+    async selectMultiple(element: Element, values: string[], options?: ActionTimeoutOptions): Promise<string[]> {
+        requireWebElement('Interactions.selectMultiple', element);
         const timeout = options?.timeout ?? this.ELEMENT_TIMEOUT;
         await this.softProbe(element, 'visible', timeout);
         return element.selectOption(values.map(v => ({ value: v })), { timeout });
@@ -507,10 +531,11 @@ export class Interactions {
      * composition (e.g. `.and()`, `.or()`).
      */
     async getListedElement(
-        base: WebElement,
+        base: Element,
         options: ListedElementMatch,
         repo?: { getSelector(elementName: string, pageName: string): string },
     ): Promise<WebElement> {
+        requireWebElement('Interactions.getListedElement', base);
         if (!options.text && !options.attribute && !options.withDescendant) {
             throw new Error('ListedElementOptions requires "text", "attribute", or "withDescendant" to identify the element.');
         }

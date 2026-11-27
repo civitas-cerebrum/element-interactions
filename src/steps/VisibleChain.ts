@@ -1,28 +1,10 @@
 import { ElementAction } from './ElementAction';
 import { IsVisibleOptions, ClickOptions, DropdownSelectOptions, DragAndDropOptions } from '../enum/Options';
 import { createLogger } from '../logger/Logger';
+import { requireWebPlatform } from './platformGuard';
+import type { ScrollStepOptions } from '../interfaces/IGestures';
 
 const log = createLogger('visible');
-
-/**
- * Attach slice the probe gives the repository per ATTEMPT (see
- * {@link VisibleChain.probe}), and the cap on each attempt's visibility wait.
- *
- * Deliberately a fixed duration rather than a fraction of the probe budget.
- * The repository walks a `fallback` chain by attach-waiting every missing node
- * (two waits per non-terminal node, one for the node the walk lands on), so a
- * slice expressed as `budget / k` makes the walk's cost scale with the budget
- * and blow it on any chain longer than `k / 2` nodes — which is how a five-node
- * chain came to leave the node it landed on a 1ms visibility wait and report a
- * plainly visible element hidden. With a fixed slice the walk costs the same
- * `(2N-1) x 250ms` whatever the budget, and the attempt loop simply stops
- * starting attempts once the budget is spent.
- *
- * 250ms is the floor at which a node that is ALREADY attached is seen
- * reliably; shorter deadlines routinely expire before Playwright's first poll,
- * which makes the walk step over a node that is sitting in the DOM.
- */
-const PROBE_SLICE_MS = 250;
 
 /**
  * Dual-behavior chain returned by `steps.on(el, page).visible(options?)` and
@@ -41,7 +23,11 @@ const PROBE_SLICE_MS = 250;
  *
  * **2. Gate (`chain.click()` / `.fill(...)` / matcher tree)** — runs the same
  *    probe, then either executes the action or silently skips it. Replaces
- *    the deprecated `ifVisible(...)` modifier.
+ *    the deprecated `ifVisible(...)` modifier. A web-only terminal (`hover`,
+ *    `rightClick`, `uploadFile`, `selectDropdown`, `setSliderValue`,
+ *    `selectMultiple`) or matcher (`css`) on a device throws
+ *    `PlatformNotSupportedError(step, platform)` first, before the probe, as
+ *    the ungated step does: it is never skipped as "not visible".
  *
  *    ```ts
  *    await steps.on('cookieBanner', 'Page').visible().click();
@@ -80,74 +66,19 @@ export class VisibleChain implements PromiseLike<boolean> {
 
     /**
      * Runs the visibility check (and optional `containsText` filter) without
-     * throwing. Resolves the probe target through the action's `probeTarget()`
-     * so scoped `findBy*` chains probe their child locator (the stamped scoped
-     * name has no repository entry) while repository chains resolve the entry's
-     * FULL selector through the repository — role+name, regex text, fallback
-     * and frame scope — exactly as an action on the same entry would. `timeout`
-     * is the probe's whole budget, so the 15s repository-resolution default is
-     * never imposed on a probe.
-     *
-     * The probe RE-RESOLVES on every attempt instead of resolving once and then
-     * waiting. A repository resolution is a point-in-time answer: the walk
-     * commits to the first `fallback` node that is attached *while the walk is
-     * running* and the caller is then stuck with that node. So an entry whose
-     * primary hydrates a second into the probe used to be answered on the
-     * fallback the walk had already settled on — reporting `false` for an
-     * element that the very action being gated goes on to find, and silently
-     * skipping a click on a visible element. Re-resolving means a late primary
-     * is picked up by a later attempt; the loop just stops starting attempts
-     * once the budget is spent.
-     *
-     * Each attempt is bounded by {@link PROBE_SLICE_MS}, both for the
-     * repository's per-node attach wait and for that attempt's visibility wait.
-     * A chain walk is not interruptible, so an entry with a long `fallback`
-     * chain can overrun the nominal budget by at most the cost of the final
-     * walk — a correct answer slightly late, rather than a wrong answer on time.
+     * throwing: the family's probe (`IVerifications.probeVisible`) through the
+     * action, which re-resolves the entry on every attempt so a primary that
+     * appears late is picked up. `timeout` is the probe's whole budget, so the
+     * repository's resolution default is never imposed on a probe.
      */
     private async probe(): Promise<boolean> {
         const { elementName: el, pageName: pg } = this.action;
         const timeout = this.options.timeout ?? 2000;
         const containsText = this.options.containsText;
-        // `Math.max(1, …)`: a Playwright timeout of 0 means "wait forever", and
-        // a 0ms budget must still buy one attempt rather than no answer at all.
-        const deadline = Date.now() + Math.max(1, timeout);
-
-        for (;;) {
-            const slice = Math.max(1, Math.min(PROBE_SLICE_MS, deadline - Date.now()));
-            const element = await this.action.probeTarget(slice).catch(() => null);
-            if (element) {
-                // Look at the resolved node with no wait at all before waiting
-                // on it. The walk may have spent the entire budget and still
-                // landed on a node that is visible *right now*; a residual
-                // `waitFor({ timeout: 1 })` is not a substitute, because a 1ms
-                // deadline routinely expires before Playwright's first poll and
-                // reports an attached, visible node as hidden.
-                let visible = await element.isVisible().catch(() => false);
-                if (!visible) {
-                    const left = Math.min(deadline - Date.now(), slice);
-                    if (left > 0) {
-                        visible = await element
-                            .waitFor({ state: 'visible', timeout: left })
-                            .then(() => true, () => false);
-                    }
-                }
-                if (visible) {
-                    if (containsText) {
-                        const text = await element.textContent().catch(() => null);
-                        const ok = text !== null && text.includes(containsText);
-                        log('[probe] "%s" @ "%s" (timeout=%dms, containsText="%s") → %s', el, pg, timeout, containsText, ok);
-                        return ok;
-                    }
-                    log('[probe] "%s" @ "%s" (timeout=%dms) → true', el, pg, timeout);
-                    return true;
-                }
-            }
-            if (Date.now() >= deadline) {
-                log('[probe] "%s" @ "%s" (timeout=%dms) → false', el, pg, timeout);
-                return false;
-            }
-        }
+        const ok = await this.action.probeVisible(timeout, containsText);
+        log('[probe] "%s" @ "%s" (timeout=%dms%s) → %s', el, pg, timeout,
+            containsText === undefined ? '' : `, containsText="${containsText}"`, ok);
+        return ok;
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -164,9 +95,9 @@ export class VisibleChain implements PromiseLike<boolean> {
         return this.gateReturning('clickIfPresent', false, () => this.action.clickIfPresent(options));
     }
 
-    /** Hover — gated. */
+    /** Hover — gated. Web only: on a device it throws `PlatformNotSupportedError('hover', platform)` before the probe. */
     async hover(): Promise<void> {
-        await this.gate('hover', () => this.action.hover());
+        await this.webOnlyGate('hover', () => this.action.hover());
     }
 
     /** Fill — gated. */
@@ -174,9 +105,9 @@ export class VisibleChain implements PromiseLike<boolean> {
         await this.gate('fill', () => this.action.fill(text));
     }
 
-    /** Scroll into view — gated. */
-    async scrollIntoView(): Promise<void> {
-        await this.gate('scrollIntoView', () => this.action.scrollIntoView());
+    /** Scroll into view — gated. Same options as {@link ElementAction.scrollIntoView}. */
+    async scrollIntoView(options?: ScrollStepOptions): Promise<void> {
+        await this.gate('scrollIntoView', () => this.action.scrollIntoView(options));
     }
 
     /** Check — gated. */
@@ -194,9 +125,9 @@ export class VisibleChain implements PromiseLike<boolean> {
         await this.gate('doubleClick', () => this.action.doubleClick());
     }
 
-    /** Right-click — gated. */
+    /** Right-click — gated. Web only (refused on a device before the probe). */
     async rightClick(): Promise<void> {
-        await this.gate('rightClick', () => this.action.rightClick());
+        await this.webOnlyGate('rightClick', () => this.action.rightClick());
     }
 
     /** Type sequentially — gated. */
@@ -204,9 +135,9 @@ export class VisibleChain implements PromiseLike<boolean> {
         await this.gate('typeSequentially', () => this.action.typeSequentially(text, delay));
     }
 
-    /** Upload file — gated. */
+    /** Upload file — gated. Web only (refused on a device before the probe). */
     async uploadFile(filePath: string): Promise<void> {
-        await this.gate('uploadFile', () => this.action.uploadFile(filePath));
+        await this.webOnlyGate('uploadFile', () => this.action.uploadFile(filePath));
     }
 
     /** Clear input — gated. */
@@ -214,18 +145,20 @@ export class VisibleChain implements PromiseLike<boolean> {
         await this.gate('clearInput', () => this.action.clearInput());
     }
 
-    /** Select dropdown — gated. Returns the selected value, or empty string when skipped. */
+    /** Select dropdown — gated. Returns the selected value, or empty string when skipped. Web only (refused on a device before the probe). */
     async selectDropdown(options?: DropdownSelectOptions): Promise<string> {
+        this.requireWeb('selectDropdown');
         return this.gateReturning('selectDropdown', '', () => this.action.selectDropdown(options));
     }
 
-    /** Set slider value — gated. */
+    /** Set slider value — gated. Web only (refused on a device before the probe). */
     async setSliderValue(value: number): Promise<void> {
-        await this.gate('setSliderValue', () => this.action.setSliderValue(value));
+        await this.webOnlyGate('setSliderValue', () => this.action.setSliderValue(value));
     }
 
-    /** Select multiple — gated. Returns the selected values, or empty array when skipped. */
+    /** Select multiple — gated. Returns the selected values, or empty array when skipped. Web only (refused on a device before the probe). */
     async selectMultiple(values: string[]): Promise<string[]> {
+        this.requireWeb('selectMultiple');
         return this.gateReturning('selectMultiple', [] as string[], () => this.action.selectMultiple(values));
     }
 
@@ -258,6 +191,23 @@ export class VisibleChain implements PromiseLike<boolean> {
     // ──────────────────────────────────────────────────────────────────────
     // Internal helpers
     // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * The web-only guard of a gated terminal: throws
+     * `PlatformNotSupportedError(name, platform)` off the Playwright family.
+     * Called before the probe, so a device never sends a visibility check for
+     * a step it cannot perform, and a hidden element never turns the refusal
+     * into a silent skip.
+     */
+    private requireWeb(name: string): void {
+        requireWebPlatform(name, this.action.platform);
+    }
+
+    /** {@link gate} for a web-only terminal: refused off the Playwright family before the probe. */
+    private async webOnlyGate(name: string, exec: () => Promise<unknown>): Promise<void> {
+        this.requireWeb(name);
+        await this.gate(name, exec);
+    }
 
     private async gate(name: string, exec: () => Promise<unknown>): Promise<void> {
         const { elementName: el, pageName: pg } = this.action;

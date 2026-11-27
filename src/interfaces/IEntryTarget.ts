@@ -1,0 +1,56 @@
+import type { Element } from '@civitas-cerebrum/element-repository';
+
+/**
+ * A repository entry as a fluent chain (`steps.on(element, page)`) holds it:
+ * the chain's strategy selector and scope are already folded into its
+ * resolvers. The steps layer hands it to a family's entry-level methods
+ * (`IVerifications.pollTarget`, `visibleWithin`, `probeVisible`,
+ * `listPresence`, `entryAbsence`, `IExtractions.captureSnapshot`), so each
+ * family decides how often an entry is resolved and how it is read: the
+ * Playwright family resolves once (its locators are lazy), the Appium family
+ * re-resolves on every poll.
+ *
+ * Every `attachBudget` is the per-`fallback`-node attach wait in ms the
+ * repository spends; omitted, the repository's default. Every `signal` is
+ * passed to the repository lookup (element-repository's
+ * `LookupOptions.signal`): once it is aborted the lookup starts no further
+ * driver call and rejects with a `LookupAbortedError`. It stops that lookup
+ * only; the element it returns does not carry it. A scoped (`findBy*`)
+ * chain, web only, ignores it.
+ */
+export interface EntryTarget {
+    /** The element name (a stamped label for a scoped `findBy*` chain), for messages. */
+    readonly elementName: string;
+    /** The page name, for messages. */
+    readonly pageName: string;
+    /** The chain's element: its strategy selector applied (`.nth()`, `.byText()`, `.visible()`, ...). */
+    resolve(attachBudget?: number, signal?: AbortSignal): Promise<Element>;
+    /** The entry's default resolution: no strategy selector applied. */
+    resolveDefault(attachBudget?: number, signal?: AbortSignal): Promise<Element>;
+    /** The whole collection (the `ALL` strategy), whatever the strategy selector. */
+    resolveAll(attachBudget?: number, signal?: AbortSignal): Promise<Element>;
+    /** The element a visibility probe reads: the strategy selector applied, `.visible()` not. */
+    probe(attachBudget: number, signal?: AbortSignal): Promise<Element>;
+    /**
+     * `true` when {@link resolve} and {@link probe} pick one match by its
+     * text (`.byText()`). Absence of such a chain is asserted on the match
+     * it picks, not on every match of the entry. Omitted: `false`.
+     */
+    readonly selecting?: boolean;
+}
+
+/**
+ * Snapshot of an element's state at a single point in time.
+ *
+ * Passed to predicates in `steps.expect(el, page).satisfy(predicate)` and
+ * `steps.on(el, page).satisfy(predicate)`. All fields are primitives or plain
+ * data — no async methods, no Playwright types.
+ */
+export interface ElementSnapshot {
+    readonly text: string;
+    readonly value: string;
+    readonly attributes: Readonly<Record<string, string>>;
+    readonly visible: boolean;
+    readonly enabled: boolean;
+    readonly count: number;
+}

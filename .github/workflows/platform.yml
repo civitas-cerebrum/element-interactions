@@ -1,0 +1,208 @@
+name: 📱 Platform (Android emulator, iOS simulator)
+
+# Runs the cross-platform spec (tests/cross-platform) on an Android emulator
+# against the test app com.civitas.testapp, and on an iOS simulator against the
+# built-in Settings app, read-only.
+#
+# - Manual only: triggered by `workflow_dispatch` and nothing else. It does not
+#   run on push or pull request until a maintainer changes the trigger.
+# - android-emulator (ubuntu): checks out the public test app repository
+#   (civitas-cerebrum/android-test-app, pinned to a commit), builds its debug
+#   APK with Gradle (JDK 17), installs Appium and the UiAutomator2 driver,
+#   starts an emulator with KVM, installs the APK with `adb install` before the
+#   run, runs the spec, uploads the report and the Appium log. The APK is
+#   installed by the job, never through the capabilities file: the spec's app
+#   guard refuses `appium:app`.
+# - ios-simulator (macOS): installs Appium and the XCUITest driver, boots an
+#   iPhone simulator, prebuilds WebDriverAgent, runs the spec, uploads the
+#   report and the Appium log.
+# - Each job writes its capabilities file from a committed example in
+#   tests/capabilities/ (emulator and simulator values are not private) and
+#   starts the run in the one documented form:
+#     E2E_PLATFORM=<platform> E2E_CAPABILITIES=<file> APPIUM_URL=<server> \
+#       npx playwright test -c playwright.platform.config.ts tests/cross-platform
+#   with `--timeout=600000` added for headroom (emulator / simulator start-up,
+#   driver server install); the config's own 180 s stays the local default.
+# - The written capabilities files are named *.local.json (ignored by version control).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  APPIUM_VERSION: '3.9.1'
+  UIAUTOMATOR2_DRIVER_VERSION: '8.7.3'
+  XCUITEST_DRIVER_VERSION: '12.22.8'
+  APPIUM_URL: 'http://127.0.0.1:4723'
+  # The commit of civitas-cerebrum/android-test-app whose debug APK the
+  # android-emulator job builds and installs.
+  ANDROID_TEST_APP_REF: 'b10b5af2834c2ec717ec076298e364006965e27a'
+
+jobs:
+  android-emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: 🗂️ Checkout repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: 🧩 Install dependencies
+        run: npm ci
+
+      - name: 🗂️ Checkout the Android test app
+        uses: actions/checkout@v4
+        with:
+          repository: civitas-cerebrum/android-test-app
+          ref: ${{ env.ANDROID_TEST_APP_REF }}
+          path: android-test-app
+
+      - name: ☕ Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 🔨 Build the test app APK
+        working-directory: android-test-app
+        run: |
+          ./gradlew assembleDebug --no-daemon
+          test -f app/build/outputs/apk/debug/app-debug.apk || { echo "The test app APK was not built: app/build/outputs/apk/debug/app-debug.apk is missing"; exit 1; }
+
+      - name: ⚡ Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: 📲 Install Appium and the UiAutomator2 driver
+        run: |
+          npm install -g "appium@${APPIUM_VERSION}"
+          appium driver install "uiautomator2@${UIAUTOMATOR2_DRIVER_VERSION}"
+
+      - name: 🧾 Write the capabilities file (emulator, test app)
+        run: |
+          jq '.["appium:deviceName"] = "Android Emulator"
+              | .["appium:udid"] = "emulator-5554"
+              | .["appium:appPackage"] = "com.civitas.testapp"
+              | .["appium:appActivity"] = ".MainActivity"
+              | .["appium:uiautomator2ServerInstallTimeout"] = 120000
+              | .["appium:adbExecTimeout"] = 120000' \
+            tests/capabilities/android.example.json > tests/capabilities/ci-android-emulator.local.json
+          cat tests/capabilities/ci-android-emulator.local.json
+
+      - name: 🚀 Start Appium
+        run: |
+          nohup appium --address 127.0.0.1 --port 4723 > appium-android.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf "${APPIUM_URL}/status" && exit 0; sleep 2; done
+          echo "Appium did not start"; cat appium-android.log; exit 1
+
+      - name: 🧪 Run the cross-platform spec on the emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          # Installs the test app first (`-r`: replace, `-g` is not used so no
+          # runtime permission is granted), then runs the spec.
+          script: |
+            adb install -r android-test-app/app/build/outputs/apk/debug/app-debug.apk
+            E2E_PLATFORM=android E2E_CAPABILITIES=tests/capabilities/ci-android-emulator.local.json APPIUM_URL=http://127.0.0.1:4723 npx playwright test -c playwright.platform.config.ts --timeout=600000 tests/cross-platform
+
+      - name: 📦 Upload report and Appium log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-android-emulator
+          path: |
+            playwright-report/
+            test-results/
+            appium-android.log
+          if-no-files-found: ignore
+
+  ios-simulator:
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: 🗂️ Checkout repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: 🧩 Install dependencies
+        run: npm ci
+
+      - name: 📲 Install Appium and the XCUITest driver
+        run: |
+          npm install -g "appium@${APPIUM_VERSION}"
+          appium driver install "xcuitest@${XCUITEST_DRIVER_VERSION}"
+
+      - name: 📱 Boot an iPhone simulator
+        id: simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j \
+            | jq -r '[.devices | to_entries[] | select(.key | contains("iOS")) | .value[] | select(.name | startswith("iPhone"))][0].udid')
+          NAME=$(xcrun simctl list devices available -j \
+            | jq -r --arg u "$UDID" '[.devices[][] | select(.udid == $u)][0].name')
+          if [ -z "$UDID" ] || [ "$UDID" = "null" ]; then echo "No iPhone simulator available"; xcrun simctl list devices available; exit 1; fi
+          echo "Booting $NAME ($UDID)"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: 🔨 Prebuild WebDriverAgent for the simulator
+        # Builds WDA ahead of the session (the driver's documented `build-wda`
+        # script), so most of the xcodebuild work happens outside the Playwright
+        # timeout. The session still runs xcodebuild, but it rebuilds
+        # incrementally on top of this build instead of from scratch.
+        run: appium driver run xcuitest build-wda
+
+      - name: 🧾 Write the capabilities file (simulator, Settings)
+        env:
+          SIM_UDID: ${{ steps.simulator.outputs.udid }}
+          SIM_NAME: ${{ steps.simulator.outputs.name }}
+        run: |
+          jq --arg udid "$SIM_UDID" --arg name "$SIM_NAME" \
+             '.["appium:deviceName"] = $name
+              | .["appium:udid"] = $udid
+              | .["appium:bundleId"] = "com.apple.Preferences"
+              | .["appium:wdaLaunchTimeout"] = 240000' \
+            tests/capabilities/ios.example.json > tests/capabilities/ci-ios-simulator.local.json
+          cat tests/capabilities/ci-ios-simulator.local.json
+
+      - name: 🚀 Start Appium
+        run: |
+          nohup appium --address 127.0.0.1 --port 4723 > appium-ios.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf "${APPIUM_URL}/status" && exit 0; sleep 2; done
+          echo "Appium did not start"; cat appium-ios.log; exit 1
+
+      - name: 🧪 Run the cross-platform spec on the simulator
+        run: E2E_PLATFORM=ios E2E_CAPABILITIES=tests/capabilities/ci-ios-simulator.local.json APPIUM_URL=http://127.0.0.1:4723 npx playwright test -c playwright.platform.config.ts --timeout=600000 tests/cross-platform
+
+      - name: 📦 Upload report and Appium log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-ios-simulator
+          path: |
+            playwright-report/
+            test-results/
+            appium-ios.log
+          if-no-files-found: ignore

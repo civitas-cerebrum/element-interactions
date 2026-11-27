@@ -1,4 +1,5 @@
-import { WebElement } from '@civitas-cerebrum/element-repository';
+import type { Locator } from '@playwright/test';
+import type { Element } from '@civitas-cerebrum/element-repository';
 
 /**
  * Defines the strategy for selecting an option from a dropdown element.
@@ -141,23 +142,29 @@ export type WindowVerifyOptions =
     | (WindowVerifyModifiers & { equals?: never; contains?: never; matches?: never; present?: never; truthy?: never; greaterThan?: never; lessThan: number });
 
 /**
- * Configuration options for the `count` verification method.
- * At least one constraint is required: exactly, greaterThan, or lessThan.
+ * Configuration options for the `count` verification method: `exactly`
+ * alone, or a range of at most one lower bound (`greaterThan` or
+ * `greaterThanOrEqual`) and at most one upper bound (`lessThan` or
+ * `lessThanOrEqual`). Every given bound must hold. Contradictory options
+ * (`exactly` with a bound, two lower or two upper bounds, a range no count
+ * satisfies) are refused with an error before anything is resolved.
  */
 export type CountVerifyOptions =
-    | { exactly: number; greaterThan?: never; lessThan?: never; greaterThanOrEqual?: never; lessThanOrEqual?: never }
-    | { exactly?: never; greaterThan: number; lessThan?: number; greaterThanOrEqual?: never; lessThanOrEqual?: never }
-    | { exactly?: never; greaterThan?: number; lessThan: number; greaterThanOrEqual?: never; lessThanOrEqual?: never }
-    | { exactly?: never; greaterThan?: never; lessThan?: never; greaterThanOrEqual: number; lessThanOrEqual?: number }
-    | { exactly?: never; greaterThan?: never; lessThan?: never; greaterThanOrEqual?: number; lessThanOrEqual: number };
+    | { exactly: number; greaterThan?: never; greaterThanOrEqual?: never; lessThan?: never; lessThanOrEqual?: never }
+    | { exactly?: never; greaterThan: number; greaterThanOrEqual?: never; lessThan?: number; lessThanOrEqual?: never }
+    | { exactly?: never; greaterThan: number; greaterThanOrEqual?: never; lessThan?: never; lessThanOrEqual: number }
+    | { exactly?: never; greaterThan?: never; greaterThanOrEqual: number; lessThan?: number; lessThanOrEqual?: never }
+    | { exactly?: never; greaterThan?: never; greaterThanOrEqual: number; lessThan?: never; lessThanOrEqual: number }
+    | { exactly?: never; greaterThan?: never; greaterThanOrEqual?: never; lessThan: number; lessThanOrEqual?: never }
+    | { exactly?: never; greaterThan?: never; greaterThanOrEqual?: never; lessThan?: never; lessThanOrEqual: number };
 
 /**
  * Configuration options for the `dragAndDrop` method.
  * You must provide either a `targetLocator` OR both `xOffset` and `yOffset`.
  */
 export interface DragAndDropOptions {
-    /** The destination `WebElement` to drop the dragged element onto. */
-    target?: WebElement;
+    /** The destination element to drop the dragged element onto (same family as the dragged element). */
+    target?: Element;
     /** The horizontal offset from the center of the element (positive moves right). */
     xOffset?: number;
     /** The vertical offset from the center of the element (positive moves down). */
@@ -406,4 +413,118 @@ export interface StepOptions {
      * Default `false` (timeouts throw as of 0.3.7).
      */
     optional?: boolean;
+}
+
+// ── Family-neutral option types used by the platform interfaces ──
+// (re-exported from the Playwright modules under their historical paths)
+
+/**
+ * The page lifecycle state a navigation waits for before resolving. Mirrors the
+ * `waitUntil` values accepted by Playwright's `page.goto` / `page.waitForURL`.
+ *
+ * - `'load'` (default) — the `load` event fired: full load incl. images and
+ *   sub-resources. Robust, but blocks on slow analytics/images and can stall
+ *   on a cold WebKit/Safari first paint.
+ * - `'domcontentloaded'` — the `DOMContentLoaded` event fired: HTML parsed,
+ *   deferred scripts run, but sub-resources may still be loading. The
+ *   WebKit-safe choice for SPA navigations.
+ * - `'networkidle'` — no network connections for at least 500ms. Discouraged
+ *   for assertions; useful after background-fetch flows.
+ * - `'commit'` — the navigation response was received and the document started
+ *   loading. The earliest signal.
+ */
+export type WaitUntilState = 'load' | 'domcontentloaded' | 'networkidle' | 'commit';
+
+/**
+ * The page lifecycle state `Navigation.waitForLoadState` waits for.
+ * Mirrors the states accepted by Playwright's `page.waitForLoadState` — note
+ * this is a strict subset of {@link WaitUntilState}: `'commit'` is NOT a valid
+ * load state (it is a navigation-only signal), so it is excluded here.
+ *
+ * - `'load'` (default) — the `load` event fired (full load incl. sub-resources).
+ * - `'domcontentloaded'` — the `DOMContentLoaded` event fired (HTML parsed).
+ * - `'networkidle'` — no network connections for at least 500ms.
+ */
+export type LoadState = 'load' | 'domcontentloaded' | 'networkidle';
+
+/**
+ * Options accepted by `Navigation.waitForNetworkIdle`.
+ */
+export interface WaitForNetworkIdleOptions {
+    /**
+     * Maximum time to wait for the network to go idle, in milliseconds. When
+     * omitted, Playwright's default timeout applies (configurable via
+     * `page.setDefaultTimeout` or the test config).
+     */
+    timeout?: number;
+    /**
+     * When true, a `TimeoutError` resolves quietly instead of throwing — use
+     * after best-effort settling where lingering long-poll / analytics traffic
+     * should not fail the test. Only the idle timeout is swallowed; real
+     * failures (page/context closed, navigation interrupted) still throw.
+     * Defaults to false (timeout throws).
+     */
+    optional?: boolean;
+}
+
+/**
+ * HTTP methods recognized by `Navigation.expectNoRequest`'s `methods` filter.
+ * Named to avoid confusion with the `HttpMethod` enum exported by `@civitas-cerebrum/wasapi`.
+ */
+export type ExpectRequestMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
+
+/**
+ * Options for `Navigation.expectNoRequest`.
+ */
+export interface ExpectNoRequestOptions {
+    /**
+     * Observation window in milliseconds after `action` resolves during which a
+     * matching request would still trip the assertion. Defaults to 1000ms.
+     */
+    timeout?: number;
+    /**
+     * Restrict the assertion to specific HTTP methods. When omitted, requests
+     * with any method match.
+     */
+    methods?: ExpectRequestMethod[];
+    /**
+     * When true, the query string of any offender URL is replaced with
+     * `?…(redacted)` in the thrown error message. The match itself still uses
+     * the full URL — only the rendered failure output is scrubbed. Use this
+     * when test URLs may carry secrets in query parameters (bearer tokens,
+     * API keys, signed-URL signatures) that you don't want surfacing in
+     * runner output, CI logs, or Playwright traces.
+     *
+     * Defaults to false: the URL is shown verbatim so the offender is named
+     * (the proposal's stated UX). Path, scheme, host, and fragment are
+     * always shown.
+     */
+    redactQuery?: boolean;
+}
+
+/** Shared options every Verifications method accepts. */
+export interface VerifyOptions {
+    /** When `true`, flips the assertion — passes when the underlying condition fails. */
+    negated?: boolean;
+    /** Override the class-level timeout for this single assertion. */
+    timeout?: number;
+    /** Custom message prepended to Playwright's error on failure. */
+    errorMessage?: string;
+}
+
+/**
+ * Internal shape that `Verifications.visuallyMatches` consumes. The
+ * high-level step layer (`steps.verifyVisualMatch`) resolves
+ * {@link VisualMaskTarget} entries to
+ * Playwright Locators before calling in; this interface is therefore
+ * already-resolved.
+ */
+export interface VisualMatchPrimitiveOptions {
+    mask?: Locator[];
+    maskColor?: string;
+    fullPage?: boolean;
+    maxDiffPixelRatio?: number;
+    maxDiffPixels?: number;
+    timeout?: number;
+    errorMessage?: string;
 }

@@ -1,91 +1,11 @@
 import { Page, Response, Route, errors } from '@playwright/test';
+import type { INavigation } from '../interfaces/INavigation';
 import { logger } from '../logger/Logger';
+import type { WaitUntilState, LoadState, WaitForNetworkIdleOptions, ExpectRequestMethod, ExpectNoRequestOptions } from '../enum/Options';
 
 const log = logger('navigate');
 
-/**
- * The page lifecycle state a navigation waits for before resolving. Mirrors the
- * `waitUntil` values accepted by Playwright's `page.goto` / `page.waitForURL`.
- *
- * - `'load'` (default) — the `load` event fired: full load incl. images and
- *   sub-resources. Robust, but blocks on slow analytics/images and can stall
- *   on a cold WebKit/Safari first paint.
- * - `'domcontentloaded'` — the `DOMContentLoaded` event fired: HTML parsed,
- *   deferred scripts run, but sub-resources may still be loading. The
- *   WebKit-safe choice for SPA navigations.
- * - `'networkidle'` — no network connections for at least 500ms. Discouraged
- *   for assertions; useful after background-fetch flows.
- * - `'commit'` — the navigation response was received and the document started
- *   loading. The earliest signal.
- */
-export type WaitUntilState = 'load' | 'domcontentloaded' | 'networkidle' | 'commit';
-
-/**
- * The page lifecycle state {@link Navigation.waitForLoadState} waits for.
- * Mirrors the states accepted by Playwright's `page.waitForLoadState` — note
- * this is a strict subset of {@link WaitUntilState}: `'commit'` is NOT a valid
- * load state (it is a navigation-only signal), so it is excluded here.
- *
- * - `'load'` (default) — the `load` event fired (full load incl. sub-resources).
- * - `'domcontentloaded'` — the `DOMContentLoaded` event fired (HTML parsed).
- * - `'networkidle'` — no network connections for at least 500ms.
- */
-export type LoadState = 'load' | 'domcontentloaded' | 'networkidle';
-
-/**
- * Options accepted by {@link Navigation.waitForNetworkIdle}.
- */
-export interface WaitForNetworkIdleOptions {
-    /**
-     * Maximum time to wait for the network to go idle, in milliseconds. When
-     * omitted, Playwright's default timeout applies (configurable via
-     * `page.setDefaultTimeout` or the test config).
-     */
-    timeout?: number;
-    /**
-     * When true, a `TimeoutError` resolves quietly instead of throwing — use
-     * after best-effort settling where lingering long-poll / analytics traffic
-     * should not fail the test. Only the idle timeout is swallowed; real
-     * failures (page/context closed, navigation interrupted) still throw.
-     * Defaults to false (timeout throws).
-     */
-    optional?: boolean;
-}
-
-/**
- * HTTP methods recognized by {@link Navigation.expectNoRequest}'s `methods` filter.
- * Named to avoid confusion with the `HttpMethod` enum exported by `@civitas-cerebrum/wasapi`.
- */
-export type ExpectRequestMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
-
-/**
- * Options for {@link Navigation.expectNoRequest}.
- */
-export interface ExpectNoRequestOptions {
-    /**
-     * Observation window in milliseconds after `action` resolves during which a
-     * matching request would still trip the assertion. Defaults to 1000ms.
-     */
-    timeout?: number;
-    /**
-     * Restrict the assertion to specific HTTP methods. When omitted, requests
-     * with any method match.
-     */
-    methods?: ExpectRequestMethod[];
-    /**
-     * When true, the query string of any offender URL is replaced with
-     * `?…(redacted)` in the thrown error message. The match itself still uses
-     * the full URL — only the rendered failure output is scrubbed. Use this
-     * when test URLs may carry secrets in query parameters (bearer tokens,
-     * API keys, signed-URL signatures) that you don't want surfacing in
-     * runner output, CI logs, or Playwright traces.
-     *
-     * Defaults to false: the URL is shown verbatim so the offender is named
-     * (the proposal's stated UX). Path, scheme, host, and fragment are
-     * always shown.
-     */
-    redactQuery?: boolean;
-}
+export type { WaitUntilState, LoadState, WaitForNetworkIdleOptions, ExpectRequestMethod, ExpectNoRequestOptions } from '../enum/Options';
 
 /**
  * Replaces the query string of `url` with `?…(redacted)` while preserving the
@@ -110,7 +30,7 @@ function scrubQuery(url: string): string {
  * negative companion `expectNoRequest` — so request observation lives next to
  * the navigation calls that typically trigger requests.
  */
-export class Navigation {
+export class Navigation implements INavigation {
 
     /**
      * Initializes the Navigation class.

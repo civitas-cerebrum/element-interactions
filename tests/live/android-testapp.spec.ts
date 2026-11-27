@@ -1,0 +1,372 @@
+import { PlatformNotSupportedError, PollTimeoutError } from '../../src';
+import { test, expect, platform, requireTestApp } from './android-fixture';
+
+/**
+ * Live Android check of the platform steps against the purpose-built test app
+ * `com.civitas.testapp` (already installed; nothing is installed or removed).
+ * It drives only that app: lifecycle, the app's own dialogs, the keyboard,
+ * orientation (always restored to portrait), contexts, screen swipes, scrolling,
+ * lists, checkboxes and a double tap. Nothing opens another app or system settings.
+ * UiAutomator2's `setOrientation` also locks the screen rotation, so the
+ * orientation tests restore portrait in their `afterEach`.
+ *
+ * Skipped unless the resolved platform is `android`. Run it:
+ *
+ *   E2E_PLATFORM=android E2E_CAPABILITIES=<capabilities-file> APPIUM_URL=<appium-server-url> \
+ *     npx playwright test -c playwright.platform.config.ts tests/live
+ *
+ * The capabilities file is a flat W3C object (see tests/capabilities/README.md)
+ * checked against an ALLOW-LIST before a session is opened
+ * (tests/cross-platform/appGuard.ts): `"appium:appPackage": "com.civitas.testapp"`,
+ * `appium:appActivity` absent or the main activity, `"appium:noReset": true`,
+ * no `appium:app` / `appium:otherApps` (no install), no `fullReset`, no
+ * `appium:options`, no `browserName`, `autoGrantPermissions` absent or `false`.
+ *
+ * Every test starts from a relaunched app on the home grid and opens its
+ * screen from there.
+ *
+ * Not covered here, because the test app gives them nothing to act on:
+ * - `openDeepLink`: the app declares no deep-link handler (its only intent
+ *   filter is the launcher's MAIN / LAUNCHER).
+ * - `setPermission`: the app declares no runtime permission.
+ * - `acceptAlert` / `dismissAlert`: the app raises no system alert; its
+ *   Alerts screen opens the app's own dialog, closed here with its OK button.
+ * - `installApp` / `removeApp`: nothing may be installed or removed.
+ */
+
+test.describe('live Android test app', () => {
+    test.skip(platform !== 'android', 'Live Android check: runs only when E2E_PLATFORM=android (with E2E_CAPABILITIES and APPIUM_URL).');
+    test.describe.configure({ timeout: 300_000 });
+
+    // Runs before the session opens: refuses any file that is not the
+    // installed test app (no other app, no install, no reset). See appGuard.ts.
+    test.beforeAll(requireTestApp);
+
+    test.describe('app lifecycle', () => {
+        test('the relaunch starts on the home grid with the app in the foreground', async ({ steps }) => {
+            await steps.verifyPresence('grid', 'HomePage');
+            await steps.verifyAppInForeground();
+            await steps.verifyCount('cards', 'HomePage', { greaterThan: 0 });
+        });
+
+        test('the first step, a non-polling page source read, already sees the test app, not the launcher', async ({ steps }) => {
+            // No polling step before it: the relaunch itself must have waited
+            // until the app was in the foreground.
+            const source = await steps.getPageSource();
+            expect(source, 'the page source belongs to the test app').toContain('package="com.civitas.testapp"');
+            expect(source, 'the page source holds no launcher window').not.toMatch(/package="[^"]*launcher[^"]*"/i);
+        });
+
+        test('backgroundApp sends the app away and brings it back on the same screen', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            await steps.backgroundApp(2);
+            await steps.verifyAppInForeground();
+            await steps.verifyPresence('searchInput', 'LongListPage');
+        });
+
+        test('terminateApp then activateApp, and terminateApp then launchApp, start on the home grid', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            await steps.terminateApp();
+            await steps.activateApp();
+            await steps.verifyAppInForeground();
+            await steps.verifyPresence('grid', 'HomePage');
+            await steps.verifyAbsence('searchInput', 'LongListPage');
+
+            await steps.terminateApp();
+            await steps.launchApp();
+            await steps.verifyAppInForeground();
+            await steps.verifyPresence('grid', 'HomePage');
+        });
+
+        test('resetApp returns to the home grid', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            await steps.resetApp();
+            await steps.verifyAppInForeground();
+            await steps.verifyPresence('grid', 'HomePage');
+            await steps.verifyAbsence('searchInput', 'LongListPage');
+        });
+    });
+
+    test.describe('the app\'s own dialogs', () => {
+        test('the Info button opens a dialog; OK closes it and the status label reports it', async ({ steps, openScreen }) => {
+            await openScreen('alerts');
+            await steps.verifyText('status', 'AlertsPage', 'Status: none');
+            await steps.click('infoButton', 'AlertsPage');
+            await steps.click('okButton', 'AppDialog');
+            await steps.verifyAbsence('okButton', 'AppDialog');
+            await steps.verifyText('status', 'AlertsPage', 'Status: Info dismissed');
+        });
+
+        test('the Error button opens a dialog; OK closes it and the status label reports it', async ({ steps, openScreen }) => {
+            await openScreen('alerts');
+            await steps.click('errorButton', 'AlertsPage');
+            await steps.click('okButton', 'AppDialog');
+            await steps.verifyTextContains('status', 'AlertsPage', 'Error dismissed');
+        });
+    });
+
+    test.describe('keyboard', () => {
+        test('fill shows the keyboard; hideKeyboard hides it; the field keeps the text', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            await steps.click('searchInput', 'LongListPage');
+            await steps.fill('searchInput', 'LongListPage', 'Gamma');
+            await steps.verifyInputValue('searchInput', 'LongListPage', 'Gamma');
+            await steps.verifyKeyboardShown();
+            await steps.hideKeyboard();
+            await steps.verifyKeyboardShown({ negated: true });
+            await steps.verifyText('countLabel', 'LongListPage', 'Showing 50 of 200 items');
+        });
+
+        test('hideKeyboard hides the login keyboard and the fields keep their text', async ({ steps, openScreen }) => {
+            await openScreen('loginForm');
+            await steps.click('usernameInput', 'LoginFormPage');
+            await steps.fill('usernameInput', 'LoginFormPage', 'admin');
+            await steps.fill('passwordInput', 'LoginFormPage', 'password123');
+            await steps.verifyKeyboardShown();
+            expect(await steps.hideKeyboard()).toBe(true);
+            await steps.verifyKeyboardShown({ negated: true });
+            await steps.verifyInputValue('usernameInput', 'LoginFormPage', 'admin');
+            expect(await steps.hideKeyboard(), 'no keyboard shown: nothing to hide').toBe(false);
+        });
+
+        test('hideKeyboard with a tapElement hides the login keyboard; Android ignores the tap', async ({ steps, openScreen }) => {
+            await openScreen('loginForm');
+            await steps.click('usernameInput', 'LoginFormPage');
+            await steps.fill('usernameInput', 'LoginFormPage', 'admin');
+            await steps.verifyKeyboardShown();
+            expect(await steps.hideKeyboard({ tapElement: { pageName: 'LoginFormPage', elementName: 'title' } })).toBe(true);
+            await steps.verifyKeyboardShown({ negated: true });
+            await steps.verifyInputValue('usernameInput', 'LoginFormPage', 'admin');
+        });
+    });
+
+    test.describe('orientation', () => {
+        // Always back to portrait, whatever the test did.
+        test.afterEach(async ({ steps }) => {
+            await steps.setOrientation('portrait');
+        });
+
+        test('setOrientation landscape is reported by verifyOrientation, then portrait again', async ({ steps }) => {
+            await steps.verifyOrientation('portrait');
+            await steps.setOrientation('landscape');
+            await steps.verifyOrientation('landscape');
+            await steps.setOrientation('portrait');
+            await steps.verifyOrientation('portrait');
+            await steps.verifyPresence('grid', 'HomePage');
+        });
+    });
+
+    test.describe('contexts', () => {
+        test('getContexts lists NATIVE_APP and verifyContext confirms it', async ({ steps }) => {
+            const contexts = await steps.getContexts();
+            expect(contexts).toContain('NATIVE_APP');
+            await steps.verifyContext('NATIVE_APP');
+        });
+    });
+
+    test.describe('screen swipes and scrolling', () => {
+        test('swipeScreen up moves a section up, swipeScreen down moves it back', async ({ steps, openScreen }) => {
+            await openScreen('tall');
+            const topOfSection3 = async (when: string): Promise<number> => {
+                const box = await steps.getBoundingBox('section3', 'TallPage');
+                expect(box, `section3 has a bounding box ${when}`).not.toBeNull();
+                return box?.y ?? Number.NaN;
+            };
+            const before = await topOfSection3('before the swipes');
+
+            // Finger up by 600 px: the page content (and the section) moves up.
+            await steps.swipeScreen('up', { distance: 600 });
+            const after = await topOfSection3('after swiping up');
+            expect(after, 'swiping up moves section3 up').toBeLessThan(before);
+
+            // Finger down by the same distance: the section comes back down.
+            await steps.swipeScreen('down', { distance: 600 });
+            const back = await topOfSection3('after swiping down');
+            expect(back, 'swiping down moves section3 back down').toBeGreaterThan(after);
+        });
+
+        test('scrollUntilFound reaches the last section, then the first one again', async ({ steps, openScreen }) => {
+            await openScreen('tall');
+            await steps.verifyAbsence('section10', 'TallPage');
+            await steps.scrollUntilFound('section10', 'TallPage', { direction: 'down', timeout: 120_000 });
+            await steps.verifyPresence('section10', 'TallPage');
+            await steps.verifyAbsence('section1', 'TallPage');
+            await steps.scrollUntilFound('section1', 'TallPage', { direction: 'up', timeout: 120_000 });
+            await steps.verifyPresence('section1', 'TallPage');
+        });
+    });
+
+    test.describe('gestures', () => {
+        test('doubleClick on the counter\'s increment button raises the counter by two', async ({ steps, openScreen }) => {
+            await openScreen('counter');
+            await steps.verifyText('counterValue', 'CounterPage', '0');
+            await steps.doubleClick('incrementButton', 'CounterPage');
+            await steps.verifyText('counterValue', 'CounterPage', '2');
+        });
+    });
+
+    test.describe('lists', () => {
+        test('getCount and getAll read the rows through their child text views', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            await steps.verifyCount('row', 'LongListPage', { greaterThan: 2 });
+            expect(await steps.getCount('row', 'LongListPage')).toBeGreaterThan(2);
+
+            const titles = await steps.getAll('row', 'LongListPage', { child: { pageName: 'LongListPage', elementName: 'rowTitle' } });
+            expect(titles.slice(0, 3)).toEqual(['Item 1', 'Item 2', 'Item 3']);
+            const categories = await steps.getAll('row', 'LongListPage', { child: { pageName: 'LongListPage', elementName: 'rowCategory' } });
+            expect(categories.slice(0, 4)).toEqual(['Alpha', 'Beta', 'Gamma', 'Delta']);
+        });
+
+        test('verifyListedElement and clickListedElement pick a row by its descendant and act on its child', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            const rowTitle = { pageName: 'LongListPage', elementName: 'rowTitle' };
+            const rowCategory = { pageName: 'LongListPage', elementName: 'rowCategory' };
+
+            await steps.verifyListedElement('row', 'LongListPage', {
+                withDescendant: { child: rowTitle, text: { regex: '^Item 3$' } },
+                child: rowCategory,
+                expectedText: 'Gamma',
+            });
+            await steps.verifyListedElement('row', 'LongListPage', {
+                withDescendant: { child: rowCategory, text: 'Delta' },
+                child: rowTitle,
+                expectedText: 'Item 4',
+            });
+            // The row is not clickable (it has no click action): this checks
+            // that clickListedElement finds the row by its descendant and taps
+            // its child without error, and that the tap changes nothing.
+            await steps.clickListedElement('row', 'LongListPage', {
+                withDescendant: { child: rowTitle, text: { regex: '^Item 2$' } },
+                child: rowTitle,
+            });
+            await steps.verifyText('countLabel', 'LongListPage', 'Showing 200 of 200 items');
+        });
+
+        test('getText, verifyText, getAll and listed-element text read a row container as its child texts joined', async ({ steps, openScreen }) => {
+            // The row's own text is empty: its text is its TextViews' text,
+            // joined with single spaces in document order.
+            await openScreen('longList');
+            await steps.verifyText('row1', 'LongListPage');
+            await steps.verifyText('row1', 'LongListPage', 'Item 1 Alpha');
+            await steps.verifyTextContains('row1', 'LongListPage', 'Alpha');
+            expect(await steps.getText('row1', 'LongListPage')).toBe('Item 1 Alpha');
+            const rows = await steps.getAll('row', 'LongListPage');
+            expect(rows.slice(0, 2)).toEqual(['Item 1 Alpha', 'Item 2 Beta']);
+            await steps.verifyListedElement('row', 'LongListPage', { text: { regex: '^Item 2 Beta$' }, child: { pageName: 'LongListPage', elementName: 'rowCategory' }, expectedText: 'Beta' });
+        });
+    });
+
+    test.describe('a text selection on the long list', () => {
+        /** A verification that timed out having read the element as shown (not one whose every probe failed). */
+        async function expectStillShown(verification: Promise<unknown>): Promise<void> {
+            const error = await verification.then(() => undefined, (e: unknown) => e);
+            expect(error).toBeInstanceOf(PollTimeoutError);
+            expect(error).toMatchObject({ lastValue: true });
+            expect((error as Error).message).toMatch(/absent/);
+        }
+
+        test('byText for a text no row shows is not visible', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            await steps.on('row', 'LongListPage').byText('Item 1').visible.toBeTrue();
+            await steps.on('row', 'LongListPage').byText('No such row').not.visible.toBeTrue();
+        });
+
+        test('verifyAbsence passes for a byText chain whose text no row shows', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            await steps.on('row', 'LongListPage').byText('Item 1').verifyPresence();
+            await steps.on('row', 'LongListPage').byText('No such row').verifyAbsence();
+        });
+
+        test('verifyAbsence fails for a byText chain whose row is shown', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            // A text pass reads every candidate, and the check needs one finished pass to answer. On the real
+            // Android phone one pass over the list's 11 cells measured 3.05 to 3.57 s cold (2.46 to 2.68 s
+            // warm), so 3 s left no pass room to finish. 8 s holds the slowest cold pass with a margin of
+            // more than 2x (the iOS test allows 12 s for its 16 cells).
+            await expectStillShown(steps.on('row', 'LongListPage').byText('Item 1').timeout(8000).verifyAbsence());
+        });
+
+        // The row titles' full resource id is a selector element-repository can narrow: a text lookup on
+        // it is answered by one native query (an XPath on the title's text) and a narrowed miss is a
+        // clean miss, with no full pass over the list. These hold the verdicts on that path.
+        test('on a narrowable selector (full resource id): byText presence and absence are answered by the narrowed query', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            await steps.on('rowTitle', 'LongListPage').byText('Item 2').verifyPresence();
+            await steps.on('rowTitle', 'LongListPage').byText('No such row').verifyAbsence();
+        });
+
+        test('on a narrowable selector (full resource id): verifyAbsence fails for a byText chain whose title is shown', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            // One narrowed lookup measured about 0.6 s on the real phone; 8 s keeps the margin of the full-pass case above.
+            await expectStillShown(steps.on('rowTitle', 'LongListPage').byText('Item 2').timeout(8000).verifyAbsence());
+        });
+
+        test('verifyAbsence on the plain list entry fails while its rows are shown', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            await expectStillShown(steps.on('row', 'LongListPage').timeout(3000).verifyAbsence());
+        });
+    });
+
+    test.describe('checkboxes and switches', () => {
+        /** A `checked` verification that timed out having read the control as unchecked (not one whose read threw). */
+        async function expectUnchecked(verification: Promise<void>): Promise<void> {
+            const error = await verification.then(() => undefined, (e: unknown) => e);
+            expect(error).toBeInstanceOf(PollTimeoutError);
+            expect(error).toMatchObject({ lastValue: false });
+        }
+
+        test('verifyState checked passes on the checkbox and switch that start checked, and fails on an unchecked one', async ({ steps, openScreen }) => {
+            await openScreen('checkboxes');
+            await steps.verifyState('checkedCheckbox', 'CheckboxesPage', 'checked');
+            await steps.verifyState('toggleOn', 'CheckboxesPage', 'checked');
+            await steps.verifyText('summary', 'CheckboxesPage', 'Checked, Toggle on');
+            await expectUnchecked(steps.verifyState('uncheckedCheckbox', 'CheckboxesPage', 'checked', 2000));
+            await expectUnchecked(steps.verifyState('toggleOff', 'CheckboxesPage', 'checked', 2000));
+        });
+
+        test('check checks an unchecked box and leaves a checked one checked (no tap)', async ({ steps, openScreen }) => {
+            await openScreen('checkboxes');
+            await steps.check('uncheckedCheckbox', 'CheckboxesPage');
+            // Already checked: check is a no-op, so the box stays checked.
+            await steps.check('checkedCheckbox', 'CheckboxesPage');
+            await steps.verifyState('uncheckedCheckbox', 'CheckboxesPage', 'checked');
+            await steps.verifyState('checkedCheckbox', 'CheckboxesPage', 'checked');
+            await steps.verifyText('summary', 'CheckboxesPage', 'Unchecked, Checked, Toggle on');
+        });
+
+        test('uncheck unchecks a checked box and switch and leaves an unchecked one unchecked (no tap)', async ({ steps, openScreen }) => {
+            await openScreen('checkboxes');
+            await steps.uncheck('checkedCheckbox', 'CheckboxesPage');
+            await steps.uncheck('toggleOn', 'CheckboxesPage');
+            // Already unchecked: uncheck is a no-op, so the switch stays off.
+            await steps.uncheck('toggleOff', 'CheckboxesPage');
+            await steps.verifyText('summary', 'CheckboxesPage', 'None checked');
+            await expectUnchecked(steps.verifyState('checkedCheckbox', 'CheckboxesPage', 'checked', 2000));
+        });
+
+        test('check on a disabled checkbox fails and leaves it unchecked and disabled', async ({ steps, openScreen }) => {
+            await openScreen('checkboxes');
+            await expect(steps.on('disabledCheckbox', 'CheckboxesPage').timeout(3000).check()).rejects.toThrow(/is disabled/);
+            expect(await steps.getAttribute('disabledCheckbox', 'CheckboxesPage', 'checked')).toBe('false');
+            await steps.verifyState('disabledCheckbox', 'CheckboxesPage', 'disabled');
+        });
+    });
+
+    test.describe('back and refusals', () => {
+        test('pressBack goes back to the category list, then to the home grid', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            await steps.pressBack();
+            await steps.verifyPresence('longListItem', 'CategoryListPage');
+            await steps.verifyAbsence('searchInput', 'LongListPage');
+            await steps.pressBack();
+            await steps.verifyPresence('grid', 'HomePage');
+        });
+
+        test('a web-only step throws PlatformNotSupportedError naming android', async ({ steps }) => {
+            expect(() => steps.getUrl()).toThrow(PlatformNotSupportedError);
+            expect(() => steps.getUrl()).toThrow(expect.objectContaining({ method: 'getUrl', platform: 'android' }));
+            await expect(steps.verifyUrlContains('/')).rejects.toBeInstanceOf(PlatformNotSupportedError);
+            await expect(steps.verifyUrlContains('/')).rejects.toMatchObject({ method: 'verifyUrlContains', platform: 'android' });
+        });
+    });
+});

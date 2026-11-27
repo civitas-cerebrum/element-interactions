@@ -1,12 +1,12 @@
 import { Page } from '@playwright/test';
-import { Interactions } from '../Interaction';
-import { Navigation } from '../Navigation';
-import { Verifications } from '../Verification';
-import { Extractions } from '../Extraction';
-import { BrowserRequest } from '../BrowserRequest';
+import { Interactions } from './PlaywrightInteractions';
+import { Navigation } from './PlaywrightNavigation';
+import { Verifications } from './PlaywrightVerifications';
+import { Extractions } from './PlaywrightExtractions';
+import { BrowserRequest } from './BrowserRequest';
 import { EmailClient, EmailClientConfig } from '@civitas-cerebrum/email-client';
-import { Utils } from '../../utils/ElementUtilities';
-import { logger } from '../../logger/Logger';
+import { Utils } from '../utils/ElementUtilities';
+import { logger } from '../logger/Logger';
 
 /**
  * A facade class that centralizes package capabilities.

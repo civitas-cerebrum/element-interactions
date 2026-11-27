@@ -1,0 +1,29 @@
+{
+  "pages": [
+    {
+      "name": "SettingsRoot",
+      "platform": "ios",
+      "elements": [
+        { "elementName": "generalRow", "selector": { "accessibility id": "com.apple.settings.general" } },
+        { "elementName": "generalRowByPredicate", "selector": { "predicate": "type == \"XCUIElementTypeButton\" AND name == \"com.apple.settings.general\"" } },
+        { "elementName": "privacyRow", "selector": { "accessibility id": "com.apple.settings.privacyAndSecurity" } },
+        { "elementName": "cells", "selector": { "class name": "XCUIElementTypeCell" } }
+      ]
+    },
+    {
+      "name": "GeneralScreen",
+      "platform": "ios",
+      "elements": [
+        { "elementName": "navigationBar", "selector": { "predicate": "type == \"XCUIElementTypeNavigationBar\" AND name == \"General\"" } },
+        { "elementName": "title", "selector": { "class chain": "**/XCUIElementTypeNavigationBar[`name == \"General\"`]/XCUIElementTypeStaticText[`label == \"General\"`]" } },
+        {
+          "elementName": "backButton",
+          "selector": {
+            "accessibility id": "BackButton",
+            "fallback": { "class chain": "**/XCUIElementTypeNavigationBar[`name == \"General\"`]/XCUIElementTypeButton[1]" }
+          }
+        }
+      ]
+    }
+  ]
+}

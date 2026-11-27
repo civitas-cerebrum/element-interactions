@@ -1,7 +1,7 @@
 import path from 'path';
 import { test, expect } from './fixture/StepFixture';
 import { Page } from '@playwright/test';
-import { Interactions } from '../src/interactions/Interaction';
+import { Interactions } from '../src/playwright/PlaywrightInteractions';
 import { WebElement } from '@civitas-cerebrum/element-repository';
 
 // Unit tests for the two methods introduced in the upload/drop-files PR:

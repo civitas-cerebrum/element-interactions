@@ -1,0 +1,109 @@
+{
+  "pages": [
+    {
+      "name": "HomePage",
+      "platform": "ios",
+      "elements": [
+        { "elementName": "grid", "selector": { "accessibility id": "home-grid" } },
+        { "elementName": "elementsCard", "selector": { "accessibility id": "home-card-buttons" } },
+        { "elementName": "alertsCard", "selector": { "accessibility id": "home-card-alerts" } },
+        { "elementName": "interactionsCard", "selector": { "accessibility id": "home-card-sortable" } },
+        { "elementName": "mediaCard", "selector": { "accessibility id": "home-card-gallery" } },
+        { "elementName": "authCard", "selector": { "accessibility id": "home-card-loginForm" } },
+        { "elementName": "edgeCasesCard", "selector": { "accessibility id": "home-card-longList" } }
+      ]
+    },
+    {
+      "name": "CategoryListPage",
+      "platform": "ios",
+      "elements": [
+        { "elementName": "textInputsItem", "selector": { "accessibility id": "category-item-textInputs" } },
+        { "elementName": "checkboxesItem", "selector": { "accessibility id": "category-item-checkboxes" } },
+        { "elementName": "alertsItem", "selector": { "accessibility id": "category-item-alerts" } },
+        { "elementName": "tallPageItem", "selector": { "accessibility id": "category-item-tall" } },
+        { "elementName": "productCarouselItem", "selector": { "accessibility id": "category-item-productCarousel" } },
+        { "elementName": "loginFormItem", "selector": { "accessibility id": "category-item-loginForm" } },
+        { "elementName": "counterItem", "selector": { "accessibility id": "category-item-piniaCounter" } },
+        { "elementName": "longListItem", "selector": { "accessibility id": "category-item-longList" } }
+      ]
+    },
+    {
+      "name": "TextInputsPage",
+      "platform": "ios",
+      "elements": [
+        { "elementName": "textInput", "selector": { "accessibility id": "input-text" } },
+        { "elementName": "emailInput", "selector": { "accessibility id": "input-email" } },
+        { "elementName": "valuesDisplay", "selector": { "accessibility id": "input-values" } }
+      ]
+    },
+    {
+      "name": "CheckboxesPage",
+      "platform": "ios",
+      "elements": [
+        { "elementName": "uncheckedCheckbox", "selector": { "accessibility id": "checkbox-unchecked" } },
+        { "elementName": "checkedCheckbox", "selector": { "accessibility id": "checkbox-checked" } },
+        { "elementName": "toggleOff", "selector": { "accessibility id": "toggle-off" } },
+        { "elementName": "toggleOn", "selector": { "accessibility id": "toggle-on" } },
+        { "elementName": "stateSummary", "selector": { "accessibility id": "checkbox-state-summary" } }
+      ]
+    },
+    {
+      "name": "AlertsPage",
+      "platform": "ios",
+      "elements": [
+        { "elementName": "clickMeButton", "selector": { "accessibility id": "click-me" } },
+        { "elementName": "longPressMeButton", "selector": { "accessibility id": "right-click-me" } },
+        { "elementName": "doubleTapMeButton", "selector": { "accessibility id": "double-click-me" } },
+        { "elementName": "alert", "selector": { "predicate": "type == 'XCUIElementTypeAlert' AND name == 'Alert'" } },
+        { "elementName": "alertMessage", "selector": { "class chain": "**/XCUIElementTypeAlert[`name == \"Alert\"`]/**/XCUIElementTypeStaticText[`label BEGINSWITH \"You \"`]" } }
+      ]
+    },
+    {
+      "name": "TallPage",
+      "platform": "ios",
+      "elements": [
+        { "elementName": "section1", "selector": { "accessibility id": "tall-section-1" } },
+        { "elementName": "section10", "selector": { "accessibility id": "tall-section-10" } }
+      ]
+    },
+    {
+      "name": "ProductCarouselPage",
+      "platform": "ios",
+      "elements": [
+        { "elementName": "carousel", "selector": { "accessibility id": "product-carousel" } },
+        { "elementName": "productName0", "selector": { "accessibility id": "product-name-0" } },
+        { "elementName": "productName2", "selector": { "accessibility id": "product-name-2" } }
+      ]
+    },
+    {
+      "name": "LoginFormPage",
+      "platform": "ios",
+      "elements": [
+        { "elementName": "title", "selector": { "predicate": "type == \"XCUIElementTypeStaticText\" AND label == \"Login\"" } },
+        { "elementName": "usernameInput", "selector": { "accessibility id": "login-username" } },
+        { "elementName": "passwordInput", "selector": { "accessibility id": "login-password" } },
+        { "elementName": "submitButton", "selector": { "accessibility id": "login-submit" } },
+        { "elementName": "successMessage", "selector": { "accessibility id": "login-success" } }
+      ]
+    },
+    {
+      "name": "CounterPage",
+      "platform": "ios",
+      "elements": [
+        { "elementName": "counterValue", "selector": { "accessibility id": "counter-value" } },
+        { "elementName": "incrementButton", "selector": { "accessibility id": "counter-increment" } }
+      ]
+    },
+    {
+      "name": "LongListPage",
+      "platform": "ios",
+      "elements": [
+        { "elementName": "searchInput", "selector": { "accessibility id": "long-list-search" } },
+        { "elementName": "countLabel", "selector": { "accessibility id": "long-list-count" } },
+        { "elementName": "list", "selector": { "accessibility id": "long-list" } },
+        { "elementName": "item1", "selector": { "accessibility id": "long-list-item-1" } },
+        { "elementName": "item", "list": true, "selector": { "class chain": "**/XCUIElementTypeCollectionView[`name == \"long-list\"`]/XCUIElementTypeCell[`name BEGINSWITH \"long-list-item-\"`]" } }
+      ]
+    }
+  ]
+}

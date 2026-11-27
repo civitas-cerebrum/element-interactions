@@ -1,0 +1,11 @@
+{
+  "platformName": "Android",
+  "appium:automationName": "UiAutomator2",
+  "appium:deviceName": "<device-name>",
+  "appium:udid": "<device-udid>",
+  "appium:appPackage": "com.example.app",
+  "appium:appActivity": ".MainActivity",
+  "appium:newCommandTimeout": 300,
+  "appium:autoGrantPermissions": false,
+  "appium:noReset": true
+}
