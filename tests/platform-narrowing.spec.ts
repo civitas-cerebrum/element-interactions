@@ -78,16 +78,17 @@ for (const platform of DEVICE_PLATFORMS) {
 
         test('a narrowed hit whose text read fails (stale) is no answer: verifyAbsence fails', async () => {
             const stale = () => { throw driverError('stale element reference', 'stale element reference: the row was redrawn'); };
-            const { steps } = deviceSteps(platform, items({ text: stale, queryText: 'Green 2' }));
+            const { steps, mock } = deviceSteps(platform, items({ text: stale, queryText: 'Green 2' }));
             const absence = await caught(() => steps.on('items', 'Screen').byText('Green 2').verifyAbsence());
             expect(absence, 'a hit that could not be read never reads as absent').toBeDefined();
             expect(absence?.message).toMatch(/absent/);
             expect(absence?.message).toMatch(/stale element reference/);
             const hidden = await caught(async () => { await steps.on('items', 'Screen').byText('Green 2').not.visible.toBeTrue(); });
             expect(hidden?.message).toMatch(/not to be true/);
+            expect(traffic(mock).fullPasses, 'the narrowed hit is the answer: no full pass reads the list').toBe(0);
         });
 
-        test('documents an element-repository limit: a narrowed miss below appium:snapshotMaxDepth reads as absent', async () => {
+        test('documents an element-repository limit: a narrowed miss deeper than appium:snapshotMaxDepth (Android; XCUITest has its own snapshot depth) reads as absent', async () => {
             // The node is shown and the full pass finds it, but the native
             // query does not see it (on Android: deeper than
             // `appium:snapshotMaxDepth`). element-repository takes the
