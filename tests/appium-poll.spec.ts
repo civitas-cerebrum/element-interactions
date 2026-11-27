@@ -14,9 +14,10 @@ test.describe('pollUntil', () => {
     test('resolves on the first probe when the check passes, without sleeping', async () => {
         const { probe, calls } = sequence(['ok']);
         const started = Date.now();
-        await expect(pollUntil(probe, v => v === 'ok', { timeout: 5000 })).resolves.toBe('ok');
+        // A 2000 ms interval: one sleep would take 2 s, so well under 1 s means none, however loaded the host.
+        await expect(pollUntil(probe, v => v === 'ok', { timeout: 5000, interval: 2000 })).resolves.toBe('ok');
         expect(calls()).toBe(1);
-        expect(Date.now() - started).toBeLessThan(50);
+        expect(Date.now() - started).toBeLessThan(1000);
     });
 
     test('retries until the value changes on the 3rd probe', async () => {

@@ -46,6 +46,10 @@ test('teardown slot: a later teardown fixture runs inside the slot the drain ext
 
 // Nothing is abandoned in these two, so the slot is Playwright's own; the
 // teardown sleeps past the larger timeout and must run out of exactly it.
+// The parent asserts Playwright's exact teardown-timeout wording
+// (`Tearing down "later" exceeded the test timeout of <n>ms.`), so a
+// Playwright that only rewords that message trips these too. That is
+// intended: a reworded message is checked by hand once, then pinned again.
 test('teardown slot pin: a test timeout below the project timeout gets the project timeout', async () => {
     test.setTimeout(400);
     laterMs = 800;

@@ -92,6 +92,42 @@ function pollModuleNamespaces(source: string): string[] {
     return uses ?? [];
 }
 
+/**
+ * Every use of `devicePoll` in `source`'s code: whether a generic argument
+ * list follows the name (nested generics skipped by depth), and the first
+ * call argument, trimmed (`''` when the use is not a call, e.g. a
+ * reference passed on). Import statements are left out.
+ */
+function devicePollCalls(source: string): Array<{ generic: boolean; firstArgument: string }> {
+    // Import statements name it without using it.
+    const text = code(source).replace(/^\s*import\b[^;]*;/gm, '');
+    const out: Array<{ generic: boolean; firstArgument: string }> = [];
+    for (const match of text.matchAll(/\bdevicePoll\b/g)) {
+        let i = match.index + match[0].length;
+        const skipSpace = () => { while (/\s/.test(text[i] ?? '')) i++; };
+        skipSpace();
+        let generic = false;
+        if (text[i] === '<') {
+            generic = true;
+            for (let depth = 0; i < text.length; i++) {
+                if (text[i] === '<') depth++;
+                else if (text[i] === '>' && --depth === 0) { i++; break; }
+            }
+            skipSpace();
+        }
+        if (text[i] !== '(') { out.push({ generic, firstArgument: '' }); continue; }
+        const start = ++i;
+        for (let depth = 0; i < text.length; i++) {
+            const ch = text[i];
+            if ('([{'.includes(ch)) depth++;
+            else if (')]}'.includes(ch)) { if (depth === 0) break; depth--; }
+            else if (ch === ',' && depth === 0) break;
+        }
+        out.push({ generic, firstArgument: text.slice(start, i).trim() });
+    }
+    return out;
+}
+
 const SRC = path.resolve(__dirname, '../src');
 /** The only files whose code may name `pollUntil`: its definition and the device wrapper. */
 const POLL_UNTIL_ALLOWED = ['utils/poll.ts', 'appium/devicePoll.ts'];
@@ -133,11 +169,29 @@ test.describe('every device poll goes through devicePoll, which requires the dri
         // The wrapper calls pollUntil once, with the driver as its scope.
         const wrapper = files.find(f => f.file === 'appium/devicePoll.ts')!.text;
         expect(pollUntilUses(wrapper).filter(l => /pollUntil\s*\(/.test(l))).toEqual(['return pollUntil(probe, check, { ...options, scope: driver });']);
-        // The scan must see the device polls, or it proves nothing.
-        const devicePolls = files.filter(f => f.file.startsWith('appium/') && f.file !== 'appium/devicePoll.ts')
-            .flatMap(f => code(f.text).match(/\bdevicePoll\s*(<[^(]*>)?\s*\(\s*this\.driver\b/g) ?? []);
-        expect(devicePolls.length, 'devicePoll(this.driver, ...) calls found').toBeGreaterThanOrEqual(6);
-        expect(devicePolls.some(c => /devicePoll\s*</.test(c)), 'a generic devicePoll<...>( call is seen').toBe(true);
+        // Every devicePoll call passes this.driver; the scan must see the device polls, or it proves nothing.
+        const calls = files.filter(f => f.file.startsWith('appium/') && f.file !== 'appium/devicePoll.ts')
+            .flatMap(f => devicePollCalls(f.text).map(call => ({ file: f.file, call })));
+        expect(calls.length, 'devicePoll calls found').toBeGreaterThanOrEqual(6);
+        expect(calls.some(c => c.call.generic), 'a generic devicePoll<...>( call is seen').toBe(true);
+        const withoutDriver = calls.filter(c => c.call.firstArgument !== 'this.driver').map(c => `${c.file}: devicePoll(${c.call.firstArgument}, ...`);
+        expect(withoutDriver, 'devicePoll calls whose scope is not this.driver').toEqual([]);
+    });
+
+    test('the devicePoll call scan reads the first argument past any generic', () => {
+        const sample = [
+            'await devicePoll(this.driver, probe, check, {});',
+            'await devicePoll<Map<string, Array<number>>>(this.driver, probe, check, {});',
+            'await devicePoll( other , probe, check, {});',
+            "import { devicePoll } from './devicePoll';",
+            'const poll = devicePoll;',
+        ].join('\n');
+        expect(devicePollCalls(sample)).toEqual([
+            { generic: false, firstArgument: 'this.driver' },
+            { generic: true, firstArgument: 'this.driver' },
+            { generic: false, firstArgument: 'other' },
+            { generic: false, firstArgument: '' },
+        ]);
     });
 
     test('devicePoll records an abandoned probe under the driver it is given, and passes the probe its signal', async () => {
