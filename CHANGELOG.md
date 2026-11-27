@@ -372,10 +372,12 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   `interceptionRetry`, `screenshotOnFailure: { fullPage }`) throw on a platform
   run instead of being ignored.
 - The package description and keywords cover native Android and iOS testing.
-- The README states a limitation of `.byText()` on long iOS lists: one text
+- The README states a limitation of `.byText()` on long lists: one text
   pass reads every candidate serially (measured on the iOS simulator: about
-  3.8 s for 16 cells, about 17 s for 100 by the same figures), what that
-  means with the default timeouts, and the selector-based alternatives.
+  3.8 s for 16 cells, about 17 s for 100 by the same figures; on a real
+  Android phone: 3.05 to 3.57 s cold and 2.46 to 2.68 s warm for 11 cells),
+  what that means with the default timeouts, and the selector-based
+  alternatives.
 
 ### Fixed
 

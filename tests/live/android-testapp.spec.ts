@@ -279,10 +279,11 @@ test.describe('live Android test app', () => {
 
         test('verifyAbsence fails for a byText chain whose row is shown', async ({ steps, openScreen }) => {
             await openScreen('longList');
-            // A text pass reads every candidate. Its cost was measured on the iOS simulator only (about 3.8 s
-            // for 16 cells, so the iOS test allows 12 s); on the real Android device this test passed within
-            // 3 s, so it keeps 3 s and a short run. Raise it if an Android pass is measured slower.
-            await expectStillShown(steps.on('row', 'LongListPage').byText('Item 1').timeout(3000).verifyAbsence());
+            // A text pass reads every candidate, and the check needs one finished pass to answer. On the real
+            // Android phone one pass over the list's 11 cells measured 3.05 to 3.57 s cold (2.46 to 2.68 s
+            // warm), so 3 s left no pass room to finish. 8 s holds the slowest cold pass with a margin of
+            // more than 2x (the iOS test allows 12 s for its 16 cells).
+            await expectStillShown(steps.on('row', 'LongListPage').byText('Item 1').timeout(8000).verifyAbsence());
         });
 
         test('verifyAbsence on the plain list entry fails while its rows are shown', async ({ steps, openScreen }) => {
