@@ -256,6 +256,38 @@ test.describe('live Android test app', () => {
         });
     });
 
+    test.describe('a text selection on the long list', () => {
+        /** A verification that timed out having read the element as shown (not one whose every probe failed). */
+        async function expectStillShown(verification: Promise<unknown>): Promise<void> {
+            const error = await verification.then(() => undefined, (e: unknown) => e);
+            expect(error).toBeInstanceOf(PollTimeoutError);
+            expect(error).toMatchObject({ lastValue: true });
+            expect((error as Error).message).toMatch(/absent/);
+        }
+
+        test('byText for a text no row shows is not visible', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            await steps.on('row', 'LongListPage').byText('Item 1').visible.toBeTrue();
+            await steps.on('row', 'LongListPage').byText('No such row').not.visible.toBeTrue();
+        });
+
+        test('verifyAbsence passes for a byText chain whose text no row shows', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            await steps.on('row', 'LongListPage').byText('Item 1').verifyPresence();
+            await steps.on('row', 'LongListPage').byText('No such row').verifyAbsence();
+        });
+
+        test('verifyAbsence fails for a byText chain whose row is shown', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            await expectStillShown(steps.on('row', 'LongListPage').byText('Item 1').timeout(3000).verifyAbsence());
+        });
+
+        test('verifyAbsence on the plain list entry fails while its rows are shown', async ({ steps, openScreen }) => {
+            await openScreen('longList');
+            await expectStillShown(steps.on('row', 'LongListPage').timeout(3000).verifyAbsence());
+        });
+    });
+
     test.describe('checkboxes and switches', () => {
         /** A `checked` verification that timed out having read the control as unchecked (not one whose read threw). */
         async function expectUnchecked(verification: Promise<void>): Promise<void> {
