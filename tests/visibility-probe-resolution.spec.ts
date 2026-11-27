@@ -507,3 +507,33 @@ test.describe('verifyAbsence resolves the full repository selector', () => {
         log('absence resolution: present entries — passed');
     });
 });
+
+test.describe('verifyAbsence on a byText chain checks only the match the selection picks', () => {
+    const DEALS = `
+        <ul>
+            <li class="deal" style="display:none">Sale</li>
+            <li class="deal">Sale</li>
+        </ul>
+    `;
+    const DEALS_REPOSITORY = {
+        pages: [{
+            name: 'DealsPage',
+            elements: [
+                { elementName: 'deals', selector: { css: '.deal' } },
+                // The plain entry with a text-specific selector: every element with the text.
+                { elementName: 'saleDeals', selector: { css: ".deal:has-text('Sale')" } },
+            ],
+        }],
+    };
+
+    test('a hidden first match passes while a later one with the text is shown; the text-specific entry fails', async ({ page }) => {
+        await page.setContent(DEALS);
+        const steps = new Steps(new ElementRepository(page, DEALS_REPOSITORY, 2000), { timeout: 1000 });
+        // The selection picks the first element containing the text: it is hidden.
+        await steps.on('deals', 'DealsPage').byText('Sale').verifyAbsence();
+        await steps.verifyAbsence('deals', 'DealsPage', { strategy: 'text', text: 'Sale' });
+        // To assert that no element with the text is shown: the plain entry with a text-specific selector.
+        await expect(steps.on('saleDeals', 'DealsPage').timeout(500).verifyAbsence()).rejects.toThrow();
+        await expect(steps.verifyAbsence('saleDeals', 'DealsPage', { timeout: 500 })).rejects.toThrow();
+    });
+});

@@ -29,6 +29,7 @@ function pages(platform: string) {
                 { elementName: 'rows', list: true, selector: { 'accessibility id': 'row' } },
                 { elementName: 'emptyList', list: true, selector: { 'accessibility id': 'nothing' } },
                 { elementName: 'items', selector: { 'accessibility id': 'item' } },
+                { elementName: 'green2', selector: { 'accessibility id': 'green-2' } },
                 { elementName: 'title', selector: { 'accessibility id': 'title' } },
                 { elementName: 'banner', selector: { 'accessibility id': 'banner' } },
                 { elementName: 'toast', selector: { 'accessibility id': 'toast' } },
@@ -388,6 +389,31 @@ for (const platform of DEVICE_PLATFORMS) {
             const tree = itemTree();
             (tree[0]!.children![5] as MockNode).visible = false;
             await deviceSteps(platform, tree, 3000).steps.on('items', 'Screen').byText('Green 2').verifyAbsence();
+        });
+
+        test('verifyAbsence checks only the match the selection picks: a hidden pick passes while another match is shown', async () => {
+            // Two exact matches: the selection picks the first, which is hidden; the second is shown.
+            const twins: MockNode[] = [{ match: '~column', children: [
+                { match: ['~item', '~green-2'], text: 'Green 2', visible: false },
+                { match: ['~item', '~green-2'], text: 'Green 2' },
+            ] }];
+            const { steps } = deviceSteps(platform, twins, 600);
+            await steps.on('items', 'Screen').byText('Green 2').verifyAbsence();
+            // To assert that no element with the text is shown: the plain entry with a text-specific selector.
+            expect((await caught(() => steps.on('green2', 'Screen').verifyAbsence()))?.message).toMatch(/absent/);
+            // An exact match wins over an earlier containing one: the hidden exact match is the pick.
+            const near: MockNode[] = [{ match: '~column', children: [
+                { match: '~item', text: 'Green 2 extra' },
+                { match: '~item', text: 'Green 2', visible: false },
+            ] }];
+            await deviceSteps(platform, near, 600).steps.on('items', 'Screen').byText('Green 2').verifyAbsence();
+            // With no exact match, the first containing match is the pick: shown, so absence fails.
+            const contains: MockNode[] = [{ match: '~column', children: [
+                { match: '~item', text: 'Green 2 extra' },
+                { match: '~item', text: 'Green 2 more', visible: false },
+            ] }];
+            const shown = await caught(() => deviceSteps(platform, contains, 600).steps.on('items', 'Screen').byText('Green 2').verifyAbsence());
+            expect(shown?.message).toMatch(/Last value: true/);
         });
 
         test('a plain entry is still asserted on every match: a byText chain does not widen it', async () => {

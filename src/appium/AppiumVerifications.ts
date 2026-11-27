@@ -147,8 +147,9 @@ export class AppiumVerifications implements IVerifications {
 
     /**
      * Whether the match a selecting chain picks is displayed now. A selection
-     * that matches nothing (or any transient lookup failure) is not
-     * displayed; a fatal driver error is rethrown.
+     * that matches nothing is not displayed, and a transient (non-fatal)
+     * lookup or read error reads as not displayed, matching
+     * {@link anyDisplayed}; a fatal driver error is rethrown.
      */
     private async selectionDisplayed(entry: EntryTarget): Promise<boolean> {
         let element: Element;
