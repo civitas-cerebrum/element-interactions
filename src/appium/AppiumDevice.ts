@@ -2,7 +2,8 @@ import { PlatformNotSupportedError, type DismissKeyboardOptions, type Platform }
 import type { DeviceVerifyOptions, IDevice, Orientation, PermissionState } from '../interfaces/IDevice';
 import { APP_STATE_FOREGROUND, APP_STATE_NAMES, type AppiumDriver, type PlatformStrategy } from './platform/PlatformStrategy';
 import { notImplementedError } from './platform/notImplemented';
-import { describeValue, pollUntil, PollTimeoutError } from '../utils/poll';
+import { describeValue, PollTimeoutError } from '../utils/poll';
+import { devicePoll } from './devicePoll';
 
 /**
  * Thrown when a call needs an app id and there is none: none was passed and
@@ -177,10 +178,11 @@ export class AppiumDevice implements IDevice {
         this.requireImplemented();
         const id = this.resolveAppId('waitForAppInForeground', appId);
         try {
-            await pollUntil(
+            await devicePoll(
+                this.driver,
                 () => this.strategy.queryAppState(this.driver, id),
                 state => state === APP_STATE_FOREGROUND,
-                { timeout, scope: this.driver },
+                { timeout },
             );
         } catch (error) {
             if (!(error instanceof PollTimeoutError)) throw error;
@@ -336,7 +338,8 @@ export class AppiumDevice implements IDevice {
     ): Promise<void> {
         let refusal: PlatformNotSupportedError | MissingAppIdError | undefined;
         const REFUSED = Symbol('refused');
-        await pollUntil<T | typeof REFUSED>(
+        await devicePoll<T | typeof REFUSED>(
+            this.driver,
             async () => {
                 try {
                     return await probe();
@@ -349,7 +352,7 @@ export class AppiumDevice implements IDevice {
                 }
             },
             value => value === REFUSED || accept(value as T),
-            { timeout: options?.timeout ?? this.timeout, message: options?.errorMessage ?? message, scope: this.driver },
+            { timeout: options?.timeout ?? this.timeout, message: options?.errorMessage ?? message },
         );
         if (refusal) throw refusal;
     }

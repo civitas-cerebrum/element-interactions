@@ -7,6 +7,7 @@ import * as path from 'path';
 import { AppiumDevice } from '../src/appium/AppiumDevice';
 import { strategyFor } from '../src/appium/platform';
 import { mockDriver } from './appium/mocks';
+import { devicePoll, type DevicePollOptions } from '../src/appium/devicePoll';
 
 /**
  * Probes a device poll gives up on.
@@ -70,35 +71,87 @@ async function reject(platform: 'android' | 'ios', run: (steps: Steps) => Promis
 
 const summary = (late: Array<{ method: string; start: number }>) => late.map(c => `${c.method}@${c.start}`).join(' ');
 
-/**
- * Every `pollUntil` call (`pollUntil(` or `pollUntil<...>(`) in `source`, as
- * the text from its name to its closing parenthesis.
- */
-function pollUntilCalls(source: string): string[] {
-    const calls: string[] = [];
-    const name = /\bpollUntil\s*(<[^>(]*>)?\s*\(/g;
-    for (let match = name.exec(source); match; match = name.exec(source)) {
-        let depth = 0;
-        let end = match.index + match[0].length - 1;
-        for (; end < source.length; end++) {
-            if (source[end] === '(') depth++;
-            else if (source[end] === ')' && --depth === 0) break;
-        }
-        calls.push(source.slice(match.index, end + 1));
-    }
-    return calls;
+/** `source` without its comments (block and line), so a mention in a comment is not a use. Strings are kept. */
+function code(source: string): string {
+    return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');
 }
 
-test.describe('every device poll records what it abandons under its driver', () => {
-    test('a source scan: every pollUntil call under src/appium passes scope: this.driver', () => {
-        const root = path.resolve(__dirname, '../src/appium');
-        const files = fs.readdirSync(root, { recursive: true, encoding: 'utf-8' }).filter(f => f.endsWith('.ts'));
-        const calls = files.flatMap(file => pollUntilCalls(fs.readFileSync(path.join(root, file), 'utf-8')).map(call => ({ file, call })));
-        // The scan itself must see both forms, or it proves nothing.
-        expect(calls.length, 'pollUntil calls found').toBeGreaterThanOrEqual(6);
-        expect(calls.some(c => /^pollUntil\s*</.test(c.call)), 'a generic pollUntil<...>( call is seen').toBe(true);
-        const missing = calls.filter(c => !/\bscope:\s*this\.driver\b/.test(c.call)).map(c => `${c.file}: ${c.call.slice(0, 80)}`);
-        expect(missing, 'pollUntil calls without scope: this.driver').toEqual([]);
+/**
+ * Every use of the identifier `pollUntil` in `source`'s code, by line: a
+ * call (plain, generic or nested generic), an import (renamed or not), a
+ * re-export, a property access (`poll.pollUntil`, `poll['pollUntil']`) or a
+ * reference passed on. Anything that can reach the function by name names it.
+ */
+function pollUntilUses(source: string): string[] {
+    return code(source).split('\n').filter(line => /\bpollUntil\b/.test(line)).map(line => line.trim());
+}
+
+/** A namespace import or a `require` of the poll module: a way to reach `pollUntil` without naming it in an import. */
+function pollModuleNamespaces(source: string): string[] {
+    const uses = code(source).match(/import\s*\*\s*as\s+\w+\s+from\s*['"][^'"]*utils\/poll['"]|require\(\s*['"][^'"]*utils\/poll['"]\s*\)|import\(\s*['"][^'"]*utils\/poll['"]\s*\)/g);
+    return uses ?? [];
+}
+
+const SRC = path.resolve(__dirname, '../src');
+/** The only files whose code may name `pollUntil`: its definition and the device wrapper. */
+const POLL_UNTIL_ALLOWED = ['utils/poll.ts', 'appium/devicePoll.ts'];
+
+function sources(): Array<{ file: string; text: string }> {
+    return fs.readdirSync(SRC, { recursive: true, encoding: 'utf-8' })
+        .filter(f => f.endsWith('.ts'))
+        .map(f => ({ file: f.split(path.sep).join('/'), text: fs.readFileSync(path.join(SRC, f), 'utf-8') }));
+}
+
+test.describe('every device poll goes through devicePoll, which requires the driver as its scope', () => {
+    test('the scan sees every form of use, and ignores comments', () => {
+        const samples = [
+            "await pollUntil(probe, check, { timeout: 1 });",
+            "await pollUntil<boolean>(probe, check, { timeout: 1 });",
+            "await pollUntil<Map<string, Array<number>>>(probe, check, { timeout: 1 });",
+            "import { pollUntil as wait } from '../utils/poll';",
+            "export { pollUntil as wait } from '../utils/poll';",
+            "await poll.pollUntil(probe, check, { timeout: 1 });",
+            "await poll['pollUntil'](probe, check, { timeout: 1 });",
+            "const wait = pollUntil;",
+        ];
+        for (const sample of samples) expect(pollUntilUses(sample), sample).toHaveLength(1);
+        expect(pollUntilUses('// pollUntil(probe)\n/* pollUntil<T>(x) */\nconst url = "http://example.test"; // see pollUntil')).toEqual([]);
+        expect(pollModuleNamespaces("import * as poll from '../utils/poll';")).toHaveLength(1);
+        expect(pollModuleNamespaces("const poll = require('../utils/poll');")).toHaveLength(1);
+        expect(pollModuleNamespaces("const poll = await import('../utils/poll');")).toHaveLength(1);
+        expect(pollModuleNamespaces("import { softRead } from '../utils/poll';")).toEqual([]);
+    });
+
+    test('a source scan: no file under src names pollUntil except its definition and devicePoll', () => {
+        const files = sources();
+        const offenders = files
+            .filter(f => !POLL_UNTIL_ALLOWED.includes(f.file))
+            .flatMap(f => pollUntilUses(f.text).map(line => `${f.file}: ${line.slice(0, 100)}`));
+        expect(offenders, 'pollUntil used outside utils/poll.ts and appium/devicePoll.ts').toEqual([]);
+        const namespaces = files.flatMap(f => pollModuleNamespaces(f.text).map(use => `${f.file}: ${use}`));
+        expect(namespaces, 'the poll module reached through a namespace').toEqual([]);
+        // The wrapper calls pollUntil once, with the driver as its scope.
+        const wrapper = files.find(f => f.file === 'appium/devicePoll.ts')!.text;
+        expect(pollUntilUses(wrapper).filter(l => /pollUntil\s*\(/.test(l))).toEqual(['return pollUntil(probe, check, { ...options, scope: driver });']);
+        // The scan must see the device polls, or it proves nothing.
+        const devicePolls = files.filter(f => f.file.startsWith('appium/') && f.file !== 'appium/devicePoll.ts')
+            .flatMap(f => code(f.text).match(/\bdevicePoll\s*(<[^(]*>)?\s*\(\s*this\.driver\b/g) ?? []);
+        expect(devicePolls.length, 'devicePoll(this.driver, ...) calls found').toBeGreaterThanOrEqual(6);
+        expect(devicePolls.some(c => /devicePoll\s*</.test(c)), 'a generic devicePoll<...>( call is seen').toBe(true);
+    });
+
+    test('devicePoll records an abandoned probe under the driver it is given, and passes the probe its signal', async () => {
+        const driver = {};
+        let seen: AbortSignal | undefined;
+        await expect(devicePoll(driver, signal => { seen = signal; return new Promise<boolean>(() => undefined); }, v => v, { timeout: 20 }))
+            .rejects.toThrow(/timed out after 20 ms/);
+        expect(seen?.aborted).toBe(true);
+        expect(abandonedProbeCount(driver)).toBe(1);
+        // A scope smuggled into the options never replaces the driver.
+        const other = {};
+        await devicePoll(driver, () => new Promise<boolean>(() => undefined), v => v, { timeout: 20, scope: other } as DevicePollOptions).catch(() => undefined);
+        expect(abandonedProbeCount(other)).toBe(0);
+        expect(abandonedProbeCount(driver)).toBe(2);
     });
 
     for (const platform of ['ios', 'android'] as const) {

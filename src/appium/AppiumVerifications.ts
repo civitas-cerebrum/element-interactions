@@ -4,7 +4,8 @@ import type { IVerifications, VerifiableState } from '../interfaces/IVerificatio
 import type { EntryTarget } from '../interfaces/IEntryTarget';
 import type { CountVerifyOptions, TextVerifyOptions, VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
 import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
-import { describeValue, NO_ANSWER_LEAD, pollUntil, PollTimeoutError, softRead, stopIfAborted, type PollProbe } from '../utils/poll';
+import { describeValue, NO_ANSWER_LEAD, PollTimeoutError, softRead, stopIfAborted, type PollProbe } from '../utils/poll';
+import { devicePoll } from './devicePoll';
 import { webOnly } from './unsupported';
 import { ReResolvingElement, withProbeSignal } from './ReResolvingElement';
 import { DEVICE_POLL_ATTACH_MS, ELEMENT_NO_ANSWER_HINT, entryLabel, probeVisibleOnDevice } from './entry';
@@ -76,7 +77,7 @@ const SHOWN_ON_LAST_POLL = (value: unknown): string | undefined =>
 
 /**
  * Retrying assertions for the Appium family. Every element assertion polls
- * the element's primitives with {@link pollUntil} (100 ms interval) until
+ * the element's primitives with {@link devicePoll} (100 ms interval) until
  * its timeout (`options.timeout`, else the instance timeout) and then throws
  * with the last observed value. `negated` inverts the condition;
  * `errorMessage` leads the failure message. Web-only assertions throw
@@ -113,12 +114,11 @@ export class AppiumVerifications implements IVerifications {
     ): Promise<void> {
         const negated = options?.negated === true;
         const expectation = negated ? `Expected NOT ${describe}` : `Expected ${describe}`;
-        await pollUntil(probe, value => passes(value) !== negated, {
+        await devicePoll(this.driver, probe, value => passes(value) !== negated, {
             timeout: options?.timeout ?? this.timeout,
             message: options?.errorMessage ? `${options.errorMessage} (${expectation})` : expectation,
             lastValueMeaning,
             noAnswerHint: ELEMENT_NO_ANSWER_HINT,
-            scope: this.driver,
         });
     }
 
@@ -160,7 +160,7 @@ export class AppiumVerifications implements IVerifications {
     async listPresence(entry: EntryTarget, timeout: number): Promise<void> {
         let lastCount = 0;
         try {
-            await pollUntil(async signal => {
+            await devicePoll(this.driver, async signal => {
                 const all = await entry.resolveAll(DEVICE_POLL_ATTACH_MS, signal);
                 stopIfAborted(signal, `the matches of ${entryLabel(entry)}`);
                 const matches = await all.all();
@@ -170,7 +170,7 @@ export class AppiumVerifications implements IVerifications {
                     if (await softRead(() => match.isVisible(), false)) return true;
                 }
                 return false;
-            }, visible => visible, { timeout, noAnswerHint: ELEMENT_NO_ANSWER_HINT, scope: this.driver });
+            }, visible => visible, { timeout, noAnswerHint: ELEMENT_NO_ANSWER_HINT });
         } catch (err) {
             if (!(err instanceof PollTimeoutError)) throw err;
             const lead = `verifyPresence: ${entryLabel(entry)} is a list entry ("list": true) — expected at least one visible match within ${timeout}ms`;
@@ -453,10 +453,9 @@ export class AppiumVerifications implements IVerifications {
         const expectation = `Expected count ${negated ? 'not ' : ''}${describeCountOptions(options)}`;
         const lead = verifyOptions?.errorMessage ? `${verifyOptions.errorMessage} (${expectation})` : expectation;
         let last: number | undefined;
-        await pollUntil(async signal => (last = await withProbeSignal(target, signal).count()), n => countMismatch(options, n, negated) === undefined, {
+        await devicePoll(this.driver, async signal => (last = await withProbeSignal(target, signal).count()), n => countMismatch(options, n, negated) === undefined, {
             timeout: verifyOptions?.timeout ?? this.timeout,
             noAnswerHint: ELEMENT_NO_ANSWER_HINT,
-            scope: this.driver,
             // Names the bound the last count broke: "... (Expected count > 1 and < 3); 6 is not < 3".
             message: () => {
                 const why = last === undefined ? undefined : countMismatch(options, last, negated);

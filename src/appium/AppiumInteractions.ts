@@ -11,7 +11,8 @@ import type {
 import type { AppiumDriver } from './platform/PlatformStrategy';
 import { Utils } from '../utils/ElementUtilities';
 import { touchDrag } from './touch';
-import { pollUntil, softRead, stopIfAborted } from '../utils/poll';
+import { softRead, stopIfAborted } from '../utils/poll';
+import { devicePoll } from './devicePoll';
 import { webOnly } from './unsupported';
 import { ELEMENT_NO_ANSWER_HINT } from './entry';
 import { withProbeSignal } from './ReResolvingElement';
@@ -271,11 +272,10 @@ export class AppiumInteractions implements IInteractions {
         };
 
         const deadline = Date.now() + this.timeout;
-        const matched = await pollUntil(pick, found => found !== undefined, {
+        const matched = await devicePoll(this.driver, pick, found => found !== undefined, {
             timeout: this.timeout,
             message: `No listed element matched ${JSON.stringify(options)}`,
             noAnswerHint: ELEMENT_NO_ANSWER_HINT,
-            scope: this.driver,
         }) as Element;
         await this.utils.waitForState(matched, 'visible', remainingUntil(deadline));
         return childSelector === undefined ? matched : matched.locateChild(childSelector);
