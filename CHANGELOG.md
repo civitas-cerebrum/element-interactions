@@ -483,6 +483,13 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   none visible`, since no poll counted any match. The verdict is unchanged (the step still
   fails); `lastValue` is `undefined` and `lastError` is still the
   `ProbeTimeoutError`. Web messages are not affected.
+- **A device poll never runs two of its probes at once.** When a probe ran out
+  of its share of the timeout, the poll could start one more probe beside it
+  if the probe's timer fired a moment before the clock read the deadline, so
+  two lookup passes of the same check ran together and both kept going after
+  the step failed. A probe that runs out of time now ends the poll at once
+  (it was already given all the time left); the verdict and the message are
+  unchanged.
 - **A negated count range on a device is worded as on web**: `Expected count
   not > 5`, no longer `Expected NOT count > 5`.
 
