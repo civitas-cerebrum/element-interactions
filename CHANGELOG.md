@@ -502,9 +502,14 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   evidence and the next relaunch, and again before each relaunch and at
   worker teardown, so each one ends on the app launch it started on. **A
   failing device test may take up to one lookup pass longer.** The wait is
-  capped at 10000 ms; lookups still running then are named in a console
-  warning and a `warning` annotation on the test, and the run carries on. The
-  wait never fails a test nor replaces its error. A later element-repository
+  capped at 10000 ms, and when there is something to wait for the fixture
+  first extends the test's timeout by that cap, so the wait never makes a
+  test run out of time (a timeout of `0` stays as it is). Lookups still
+  running at the cap are named in a console warning and a `warning`
+  annotation on the test, and the run carries on. The wait never fails a test
+  nor replaces its error. Device checks (`verifyOrientation`,
+  `verifyKeyboardShown`, `verifyContext`, `verifyAppInForeground`) are waited
+  for too. A later element-repository
   version that can stop a started lookup lets the check end it at once.
 - **A negated count range on a device is worded as on web**: `Expected count
   not > 5`, no longer `Expected NOT count > 5`.

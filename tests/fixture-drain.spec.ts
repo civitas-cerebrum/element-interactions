@@ -10,7 +10,18 @@ import { log } from '../src/logger/Logger';
  * relaunch, at worker teardown) is asserted in fixture-platform-run.spec.ts.
  */
 
-type Annotations = { annotations: Array<{ type: string; description?: string }> };
+/** A stand-in for Playwright's TestInfo: its annotations, timeouts and every setTimeout call. */
+function fakeInfo(timeout = 30_000, projectTimeout = 30_000) {
+    const info = {
+        annotations: [] as Array<{ type: string; description?: string }>,
+        timeout,
+        project: { timeout: projectTimeout },
+        setTimeouts: [] as number[],
+        setTimeout(ms: number) { info.setTimeouts.push(ms); info.timeout = ms; },
+    };
+    return info;
+}
+type Annotations = ReturnType<typeof fakeInfo>;
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 const driverStandIn = () => ({}) as unknown as WebdriverIO.Browser;
@@ -47,7 +58,7 @@ test('the drain cap holds one measured byText pass with a margin, below the rela
 });
 
 test('nothing abandoned: returns at once, no warning, no annotation', async () => {
-    const info: Annotations = { annotations: [] };
+    const info = fakeInfo();
     const started = Date.now();
     const warnings = await captureWarnings(() => drainAbandonedLookups(driverStandIn(), 'after the test', info));
     expect(Date.now() - started).toBeLessThan(50);
@@ -58,7 +69,7 @@ test('nothing abandoned: returns at once, no warning, no annotation', async () =
 test('an abandoned lookup is waited for until it ends, quietly', async () => {
     const driver = driverStandIn();
     await abandonProbe(driver, 200);
-    const info: Annotations = { annotations: [] };
+    const info = fakeInfo();
     const warnings = await captureWarnings(() => drainAbandonedLookups(driver, 'after the test', info, 5000));
     expect(abandonedProbeCount(driver)).toBe(0);
     expect(warnings.console).toEqual([]);
@@ -68,7 +79,7 @@ test('an abandoned lookup is waited for until it ends, quietly', async () => {
 test('a lookup still running at the cap: a console warning and a test annotation name how many and for how long, then it carries on', async () => {
     const driver = driverStandIn();
     await abandonProbe(driver, Infinity);
-    const info: Annotations = { annotations: [] };
+    const info = fakeInfo();
     const started = Date.now();
     const warnings = await captureWarnings(() => drainAbandonedLookups(driver, 'after the test', info, 150));
     expect(Date.now() - started).toBeLessThan(1000);
@@ -85,7 +96,42 @@ test('a lookup still running at the cap: a console warning and a test annotation
 test('the drain never throws: a failure of its own is only logged', async () => {
     const driver = driverStandIn();
     await abandonProbe(driver, Infinity);
-    const broken = { annotations: { push: () => { throw new Error('annotations are closed'); } } } as unknown as Annotations;
+    const broken = { ...fakeInfo(), annotations: { push: () => { throw new Error('annotations are closed'); } } } as unknown as Annotations;
     const warnings = await captureWarnings(() => drainAbandonedLookups(driver, 'after the test', broken, 20));
     expect(warnings.log.join('\n')).toContain('Could not wait for the abandoned device lookups: annotations are closed');
+});
+
+test.describe('the drain extends the timeout it runs in by its cap, only when it has to wait', () => {
+    test('after the body: the teardown slot (the larger of the project and test timeout) plus the cap', async () => {
+        const driver = driverStandIn();
+        await abandonProbe(driver, 300);
+        const info = fakeInfo(600, 30_000);
+        await drainAbandonedLookups(driver, 'after the test', info, 1000);
+        expect(info.setTimeouts).toEqual([31_000]);
+        const longTest = fakeInfo(60_000, 30_000);
+        await abandonProbe(driver, 300);
+        await drainAbandonedLookups(driver, 'after the test', longTest, 1000);
+        expect(longTest.setTimeouts).toEqual([61_000]);
+    });
+
+    test('before the relaunch: the test timeout plus the cap', async () => {
+        const driver = driverStandIn();
+        await abandonProbe(driver, 300);
+        const info = fakeInfo(600, 30_000);
+        await drainAbandonedLookups(driver, 'before the relaunch', info, 1000, 'setup');
+        expect(info.setTimeouts).toEqual([1600]);
+    });
+
+    test('nothing to wait for, or no timeout at all (0): the timeout is left alone', async () => {
+        const nothing = fakeInfo(600);
+        await drainAbandonedLookups(driverStandIn(), 'after the test', nothing, 1000);
+        expect(nothing.setTimeouts).toEqual([]);
+        for (const [testTimeout, projectTimeout, phase] of [[0, 30_000, 'teardown'], [600, 0, 'teardown'], [0, 30_000, 'setup']] as const) {
+            const driver = driverStandIn();
+            await abandonProbe(driver, 300);
+            const info = fakeInfo(testTimeout, projectTimeout);
+            await drainAbandonedLookups(driver, 'after the test', info, 1000, phase);
+            expect(info.setTimeouts, `test ${testTimeout}, project ${projectTimeout}, ${phase}`).toEqual([]);
+        }
+    });
 });

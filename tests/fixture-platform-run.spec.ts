@@ -57,14 +57,14 @@ const DRAIN_FAILING = 'drain: a failing test keeps its own error, and its lookup
 const UNEXPECTED = [...MAIN_UNEXPECTED, DRAIN_FAILING].sort();
 
 test('the nested run ends unexpectedly exactly where it is built to', () => {
-    expect(bySpec.size).toBe(23);
+    expect(bySpec.size).toBe(24);
     expect([...outcome].filter(([, status]) => status !== 'expected').map(([title]) => title).sort()).toEqual(UNEXPECTED);
     expect([...outcome].filter(([, status]) => status === 'unexpected').map(([title]) => title).sort()).toEqual(UNEXPECTED);
     expect(exitCode).toBe(1);
 });
 
 /** Lifecycle events of the main ios session (the labelled sessions of other files left out). */
-const mainEvents = () => events.filter(e => !/^(hook-throws|stop-throws|macos|foreground|foreground-never|foreground-dead|reset-none|relaunch-retry|setup-evidence|setup-evidence-dead|start-timeout|drain) /.test(e));
+const mainEvents = () => events.filter(e => !/^(hook-throws|stop-throws|macos|foreground|foreground-never|foreground-dead|reset-none|relaunch-retry|setup-evidence|setup-evidence-dead|start-timeout|drain|drain-timeout) /.test(e));
 
 test('one session per worker: started once, stopped once at worker teardown, relaunch before every test', () => {
     const main = mainEvents();
@@ -283,4 +283,12 @@ test('drain: a lookup a check abandoned ends before the next relaunch and before
         'body 2', 'lookup 2 end', 'screenshot',
         'stop',
     ]);
+});
+
+test('drain: the wait for an abandoned lookup never makes a passing test run out of its own timeout', () => {
+    // Project and test timeout 600 ms; the wait takes about 1000 ms: the fixture extended the timeout by its cap.
+    const title = 'drain: the wait never makes a passing test run out of its own timeout';
+    expect(outcome.get(title)).toBe('expected');
+    expect(bySpec.get(title)!.status).toBe('passed');
+    expect(labelled('drain-timeout').filter(e => /^(start|stop|body|lookup end)$/.test(e))).toEqual(['start', 'body', 'lookup end', 'stop']);
 });

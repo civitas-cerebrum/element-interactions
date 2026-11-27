@@ -30,7 +30,7 @@ import { prepareSession, RELAUNCH_TIMEOUT_MS, resolveStartTimeout, START_TIMEOUT
 import type { ServerOptions, SessionOptions, SessionProvider, SessionStartContext } from '../session/types';
 import { strategyFor } from '../appium/platform';
 import { PlatformInteractions } from './PlatformInteractions';
-import { drainAbandonedProbes } from '../utils/poll';
+import { abandonedProbeCount, drainAbandonedProbes } from '../utils/poll';
 
 type StepFixture = {
     /**
@@ -541,7 +541,8 @@ function webOnlyOptionsGiven(options: BaseFixtureOptions | undefined): string[] 
  * A lookup a timed-out check left running (a `.byText()` pass cannot be
  * stopped) is waited for after the body, before that evidence and before the
  * next relaunch, so a failing device test may take up to one lookup pass
- * longer; the wait is capped ({@link ABANDONED_LOOKUP_DRAIN_MS}), warns and
+ * longer; the wait is capped ({@link ABANDONED_LOOKUP_DRAIN_MS}), first
+ * extends the test's timeout by that cap when it has something to wait for, warns and
  * annotates the test when lookups are still running at the cap, and never
  * fails a test nor replaces its error (see {@link drainAbandonedLookups}).
  *
@@ -708,7 +709,7 @@ function platformFixture(
                 if (startError !== undefined) throw startError;
                 if (prepared.reset === 'relaunch') {
                     // Normally drained already after the previous test; this catches one still running past its cap.
-                    await drainAbandonedLookups(driver, 'before the relaunch', testInfo);
+                    await drainAbandonedLookups(driver, 'before the relaunch', testInfo, ABANDONED_LOOKUP_DRAIN_MS, 'setup');
                     await relaunchApp(driver, platform, prepared);
                 }
             } catch (error) {
@@ -971,6 +972,9 @@ export const STOP_TIMEOUT_MS = EVIDENCE_TIMEOUT_MS;
  */
 export const ABANDONED_LOOKUP_DRAIN_MS = 10_000;
 
+/** What {@link drainAbandonedLookups} uses of Playwright's `TestInfo`. */
+export type DrainTestInfo = Pick<TestInfo, 'annotations' | 'timeout' | 'setTimeout'> & { project?: { timeout: number } };
+
 /**
  * Waits, up to `capMs`, for the device lookups a check gave up on to finish
  * (`drainAbandonedProbes` on the session's driver).
@@ -987,16 +991,34 @@ export const ABANDONED_LOOKUP_DRAIN_MS = 10_000;
  * adds a `warning` annotation to the test (when given) naming how many and
  * for how long, then carries on.
  *
+ * The wait runs inside a test's timeout (its setup, or the teardown slot
+ * Playwright gives after the body), so when there is something to wait for
+ * and a test is given, the timeout of the part it runs in is first extended
+ * by `capMs`: the wait never makes a test run out of time. A timeout of `0`
+ * (none) is left alone.
+ *
  * @param when - Where the fixture is, for the warning (e.g. `'after the test'`).
+ * @param phase - `'setup'` (before the body: the test's own timeout) or
+ *   `'teardown'` (after the body: Playwright's teardown slot, the larger of
+ *   the project and the test timeout).
  * @internal Exported for the tests; not part of the package entry point.
  */
 export async function drainAbandonedLookups(
     driver: WebdriverIO.Browser,
     when: string,
-    testInfo?: Pick<TestInfo, 'annotations'>,
+    testInfo?: DrainTestInfo,
     capMs: number = ABANDONED_LOOKUP_DRAIN_MS,
+    phase: 'setup' | 'teardown' = 'teardown',
 ): Promise<void> {
     try {
+        if (testInfo && abandonedProbeCount(driver) > 0) {
+            const projectTimeout = testInfo.project?.timeout ?? 0;
+            const base = phase === 'setup'
+                ? testInfo.timeout
+                // Playwright's teardown slot: the larger of the two, none if either is none.
+                : (testInfo.timeout === 0 || projectTimeout === 0 ? 0 : Math.max(projectTimeout, testInfo.timeout));
+            if (base > 0) testInfo.setTimeout(base + capMs);
+        }
         const result = await drainAbandonedProbes(driver, capMs);
         if (result.stillRunning === 0) return;
         const message = `${result.stillRunning} device lookup(s) abandoned by a timed-out check still running ${when}, `

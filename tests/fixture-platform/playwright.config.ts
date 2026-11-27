@@ -18,4 +18,9 @@ export default defineConfig({
         // Any browser launch fails: the fixtures under test must not start one.
         launchOptions: { executablePath: '/nonexistent/browser' },
     },
+    projects: [
+        { name: 'default', testIgnore: 'drain-timeout.pw.ts' },
+        // A project timeout shorter than one wait for an abandoned lookup.
+        { name: 'short-timeout', testMatch: 'drain-timeout.pw.ts', timeout: 600 },
+    ],
 });
