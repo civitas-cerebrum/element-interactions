@@ -145,9 +145,10 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   first element containing the text; on a device an exact text match, else the
   first containing match), so a hidden first match passes even while a later
   match with the same text is shown. A fatal driver error still fails at once
-  on a device, and on a device only a clean "not found" reads as absent: a
-  selection pass that met a transient driver error (a failed `$$`, a stale
-  text read) is polled again, for `verifyAbsence`, `not.visible` and
+  on a device, and on a device only a clean "not found" reads as absent
+  (element-repository's `TextNotFoundError` with `cleanMiss`): a selection
+  whose final pass met a transient driver error (a failed `$$`, a stale text
+  read) is polled again, for `verifyAbsence`, `not.visible` and
   `visible.toBeFalse()` alike. Other strategy selectors and plain entries keep
   asserting on every match. To assert that no element with the text is shown, use the plain
   entry with an attribute- or text-specific selector in the repository.

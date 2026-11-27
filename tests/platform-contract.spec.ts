@@ -22,7 +22,7 @@ import {
 import type { Platform, IDevice } from '../src/index';
 import { PlaywrightGestures } from '../src/playwright/PlaywrightGestures';
 import { PlaywrightDevice } from '../src/playwright/PlaywrightDevice';
-import { ElementRepository, SelectionStrategy } from '@civitas-cerebrum/element-repository';
+import { ElementRepository, SelectionStrategy, TextNotFoundError } from '@civitas-cerebrum/element-repository';
 import { isCleanTextNotFound } from '../src/appium/AppiumVerifications';
 import { DEVICE_PLATFORMS, driverError, mockUiDriver } from './appium/mocks';
 
@@ -340,34 +340,66 @@ test.describe('PlaywrightGestures', () => {
 
 /**
  * The Appium family tells a clean text-strategy miss from a pass cut short
- * by a driver error by element-repository's message (it has no error class
- * or code for it). These pin that wording against the installed package.
+ * by a driver error by element-repository's `TextNotFoundError` and its
+ * `cleanMiss`. These pin the type and its fields against the installed
+ * package.
  */
 for (const platform of DEVICE_PLATFORMS) {
     test.describe(`element-repository's text not-found on ${platform}`, () => {
         const PAGES = { pages: [{ name: 'Screen', platform, elements: [{ elementName: 'items', selector: { 'accessibility id': 'item' } }] }] };
         const TREE = [{ match: '~item', text: 'Red 1' }, { match: '~item', text: 'Blue 1' }];
 
-        async function notFound(mock: ReturnType<typeof mockUiDriver>): Promise<unknown> {
-            const repo = new ElementRepository(mock.driver, PAGES, { platform, timeout: 1 });
-            return repo.get('items', 'Screen', { strategy: SelectionStrategy.TEXT, value: 'Nope' }).then(() => undefined, (e: unknown) => e);
+        async function notFound(mock: ReturnType<typeof mockUiDriver>, timeout = 1): Promise<TextNotFoundError> {
+            const repo = new ElementRepository(mock.driver, PAGES, { platform, timeout });
+            const error = await repo.get('items', 'Screen', { strategy: SelectionStrategy.TEXT, value: 'Nope' }).then(() => undefined, (e: unknown) => e);
+            expect(error, `element-repository's text not-found is no longer a TextNotFoundError: ${String(error)}`).toBeInstanceOf(TextNotFoundError);
+            return error as TextNotFoundError;
         }
 
-        test('a clean miss is recognised as a clean not-found', async () => {
+        /** The mock's `$$` of the entry's selector fails with a stale element on the n-th call (from 1) when `fail(n)`. */
+        function failingLookups(mock: ReturnType<typeof mockUiDriver>, fail: (n: number) => boolean): void {
+            const driver = mock.driver as unknown as Record<string, (s: string) => Promise<unknown>>;
+            const original = driver.$$;
+            let n = 0;
+            driver.$$ = async (selector: string) => {
+                // element-repository's narrowing query (which the mock rejects) is not counted.
+                if (selector === '~item' && fail(++n)) throw driverError('stale element reference', 'stale element reference: the list was redrawn');
+                return original(selector);
+            };
+        }
+
+        test('a clean miss: cleanMiss, the entry, the text and no driver error', async () => {
             const error = await notFound(mockUiDriver(TREE, { capabilities: { platformName: platform } }));
-            expect(error).toBeInstanceOf(Error);
-            expect(isCleanTextNotFound(error), `element-repository's text not-found wording changed: ${(error as Error).message}`).toBe(true);
+            expect(error).toMatchObject({ name: 'TextNotFoundError', elementName: 'items', pageName: 'Screen', text: 'Nope', cleanMiss: true });
+            expect(error.lastDriverError).toBeUndefined();
+            expect(error.message).toBe(`Element 'items' on 'Screen' with text "Nope" not found.`);
+            expect(isCleanTextNotFound(error)).toBe(true);
         });
 
-        test('a miss after a failed $$ is not a clean not-found', async () => {
+        test('a miss whose final pass failed is not clean, and carries the driver error', async () => {
             const mock = mockUiDriver(TREE, { capabilities: { platformName: platform } });
-            (mock.driver as unknown as Record<string, unknown>).$$ = async () => {
-                throw driverError('stale element reference', 'stale element reference: the list was redrawn');
-            };
+            failingLookups(mock, () => true);
             const error = await notFound(mock);
-            expect(error).toBeInstanceOf(Error);
-            expect((error as Error).message).toMatch(/last driver error: stale element reference/);
-            expect(isCleanTextNotFound(error), `element-repository's text not-found wording changed: ${(error as Error).message}`).toBe(false);
+            expect(error.cleanMiss).toBe(false);
+            expect((error.lastDriverError as Error).name).toBe('stale element reference');
+            expect(error.message).toMatch(/last driver error: stale element reference/);
+            expect(isCleanTextNotFound(error)).toBe(false);
+        });
+
+        test('a miss whose earlier pass failed and whose final pass read every match is clean', async () => {
+            const mock = mockUiDriver(TREE, { capabilities: { platformName: platform } });
+            failingLookups(mock, n => n === 1);
+            const error = await notFound(mock, 400);
+            expect(error.cleanMiss).toBe(true);
+            expect((error.lastDriverError as Error).name).toBe('stale element reference');
+            expect(isCleanTextNotFound(error)).toBe(true);
         });
     });
 }
+
+test('only a TextNotFoundError is a text not-found: the same message on a plain Error is not', () => {
+    expect(isCleanTextNotFound(new Error(`Element 'items' on 'Screen' with text "Nope" not found.`))).toBe(false);
+    expect(isCleanTextNotFound(new TextNotFoundError({ elementName: 'items', pageName: 'Screen', text: 'Nope' }))).toBe(true);
+    expect(isCleanTextNotFound(new TextNotFoundError({ elementName: 'items', pageName: 'Screen', text: 'Nope', cleanMiss: false }))).toBe(false);
+    expect(isCleanTextNotFound(undefined)).toBe(false);
+});

@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { PlatformElement, PlatformNotSupportedError, type Element, type Platform } from '@civitas-cerebrum/element-repository';
+import { PlatformElement, PlatformNotSupportedError, TextNotFoundError, type Element, type Platform } from '@civitas-cerebrum/element-repository';
 import type { IVerifications, VerifiableState } from '../interfaces/IVerifications';
 import type { EntryTarget } from '../interfaces/IEntryTarget';
 import type { CountVerifyOptions, TextVerifyOptions, VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
@@ -18,15 +18,15 @@ function escapeRegex(value: string): string {
 
 /**
  * element-repository's text strategy (`.byText()`) "not found" from a clean
- * lookup: every pass read every match and none had the text. A lookup that
- * met a transient driver error (a failed `$$`, a stale text read) ends its
- * message with `(last driver error: <name>: <message>)` instead, so it does
- * not end with `not found.`.
+ * lookup: a `TextNotFoundError` whose `cleanMiss` is `true`, i.e. the final
+ * pass read every match without a driver error and none had the text. A
+ * lookup whose final pass met a transient driver error (a failed `$$`, a
+ * stale text read) has `cleanMiss` `false`: it did not see every match, so
+ * it is no answer. An earlier pass that failed does not matter (its error is
+ * still in `lastDriverError`): the final pass is the answer.
  *
- * Matched by message: element-repository 0.4.0 throws a plain `Error` here,
- * with no error class or code to tell a clean miss from a pass cut short.
- * The wording is element-repository's own, the same as `getByText`'s:
- * `Element '<name>' on '<page>' with text "<text>" not found.`
+ * Only that error type counts: element-repository builds this message for
+ * no other error, so a plain `Error` with the same wording is not a miss.
  *
  * Known edge: on a `fallback` entry element-repository walks the chain and,
  * when every node fails, throws the PRIMARY node's error. A clean miss on
@@ -34,10 +34,8 @@ function escapeRegex(value: string): string {
  * error therefore reads as a clean miss here; only element-repository can
  * surface the later node's error.
  */
-const CLEAN_TEXT_NOT_FOUND = /^Element '[\s\S]*' on '[\s\S]*' with text "[\s\S]*" not found\.$/;
-
 export function isCleanTextNotFound(err: unknown): boolean {
-    return err instanceof Error && CLEAN_TEXT_NOT_FOUND.test(err.message);
+    return err instanceof TextNotFoundError && err.cleanMiss;
 }
 
 /**
