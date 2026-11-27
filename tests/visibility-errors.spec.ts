@@ -147,3 +147,75 @@ for (const platform of DEVICE_PLATFORMS) {
         });
     });
 }
+
+/**
+ * element-repository's RANDOM and ATTRIBUTE strategies turn ANY failure of
+ * their first wait (a dead session, an `unknown error`) into a plain
+ * `No elements found for '<el>' on '<page>'`. That message is no answer by
+ * itself: a device chain confirms it with a lookup of every match, whose
+ * errors pass through. These hold it against the installed package.
+ */
+for (const platform of DEVICE_PLATFORMS) {
+    test.describe(`a random() / byAttribute() chain whose lookup fails on ${platform}`, () => {
+        const DEAD = () => driverError('invalid session id', 'invalid session id: the session is gone');
+        const FLAKY = () => driverError('unknown error', 'An unknown server-side error occurred while processing the command.');
+        const toasts = (visible = true): MockNode[] => [{ match: '~toast', text: 'Saved', visible, attributes: { name: 'saved' } }];
+
+        /** The probes of a chain: isPresent (step and fluent), not.visible and the ifVisible gate. */
+        const probes = (steps: Steps, strategy: 'random' | 'attribute') => {
+            const on = () => (strategy === 'random' ? steps.on('toast', 'Screen').random() : steps.on('toast', 'Screen').byAttribute('name', 'saved'));
+            const options = strategy === 'random' ? { strategy: 'random' as const } : { strategy: 'attribute' as const, attribute: 'name', value: 'saved' };
+            return {
+                'steps.isPresent': () => steps.isPresent('toast', 'Screen', options),
+                'on().isPresent': () => on().isPresent(),
+                'not.visible': async () => { await on().timeout(400).not.visible.toBeTrue(); },
+                'ifVisible gate': () => on().ifVisible(400).click(),
+            };
+        };
+
+        for (const strategy of ['random', 'attribute'] as const) {
+            test(`${strategy}: a dead session is never a no-match: every probe fails with it`, async () => {
+                const { steps, mock } = deviceSteps(platform, toasts());
+                mock.failWith(DEAD());
+                for (const [name, run] of Object.entries(probes(steps, strategy))) {
+                    const error = await caught(run);
+                    expect(error, `${name} must not answer "not there"`).toBeDefined();
+                    expect(error?.message, name).toMatch(/invalid session id/);
+                }
+                expect(taps(mock)).toBe(0);
+            });
+
+            test(`${strategy}: a transient lookup error is never a no-match: every probe fails with it`, async () => {
+                const { steps, mock } = deviceSteps(platform, toasts());
+                mock.failWith(FLAKY());
+                for (const [name, run] of Object.entries(probes(steps, strategy))) {
+                    const error = await caught(run);
+                    expect(error, `${name} must not answer "not there"`).toBeDefined();
+                    expect(error?.message, name).toMatch(UNKNOWN);
+                }
+                expect(taps(mock)).toBe(0);
+            });
+
+            test(`${strategy}: no match at all is still a no-match: false, passes, skips`, async () => {
+                const { steps, mock } = deviceSteps(platform, []);
+                const run = probes(steps, strategy);
+                expect(await run['steps.isPresent']()).toBe(false);
+                expect(await run['on().isPresent']()).toBe(false);
+                await run['not.visible']();
+                await run['ifVisible gate']();
+                expect(taps(mock)).toBe(0);
+            });
+        }
+
+        test('random: matches that are all hidden are a no-match (nothing visible to pick)', async () => {
+            const { steps, mock } = deviceSteps(platform, toasts(false));
+            const run = probes(steps, 'random');
+            expect(await run['steps.isPresent']()).toBe(false);
+            expect(await run['on().isPresent']()).toBe(false);
+            await run['not.visible']();
+            await run['ifVisible gate']();
+            expect(taps(mock)).toBe(0);
+        });
+    });
+}
+

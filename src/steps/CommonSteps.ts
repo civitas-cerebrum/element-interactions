@@ -1,4 +1,4 @@
-import { isNoMatchAnswer } from '../utils/visibility';
+import { isNoMatchAnswer, resolveConfirmed } from '../utils/visibility';
 import { Page, Response, Locator } from '@playwright/test';
 import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
 import type { Platform } from '@civitas-cerebrum/element-repository';
@@ -434,7 +434,13 @@ export class Steps {
      * Playwright `locator` goes through `requireWebElement` after `requireWeb`.
      */
     private async getElement(elementName: string, pageName: string, options?: StepOptions): Promise<Element> {
-        return await this.repo.get(elementName, pageName, this.toResolutionOptions(options));
+        const resolution = this.toResolutionOptions(options);
+        const get = () => this.repo.get(elementName, pageName, resolution);
+        if (this.platform === 'web') return await get();
+        // On a device a RANDOM / ATTRIBUTE miss is confirmed by a lookup of
+        // every match: its `No elements found` hides why the wait failed.
+        return await resolveConfirmed(resolution?.strategy, get,
+            () => this.repo.get(elementName, pageName, { strategy: SelectionStrategy.ALL }));
     }
 
     /**

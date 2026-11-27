@@ -22,7 +22,7 @@ import {
 import type { Platform, IDevice } from '../src/index';
 import { PlaywrightGestures } from '../src/playwright/PlaywrightGestures';
 import { PlaywrightDevice } from '../src/playwright/PlaywrightDevice';
-import { ElementRepository, SelectionStrategy, TextNotFoundError } from '@civitas-cerebrum/element-repository';
+import { ElementRepository, isFatalDriverError, SelectionStrategy, TextNotFoundError } from '@civitas-cerebrum/element-repository';
 import { isCleanTextNotFound } from '../src/appium/AppiumVerifications';
 import { isNoMatchAnswer } from '../src/utils/visibility';
 import { DEVICE_PLATFORMS, driverError, mockUiDriver } from './appium/mocks';
@@ -425,13 +425,28 @@ for (const platform of DEVICE_PLATFORMS) {
             const answers = {
                 index: await failure(repo => repo.get('items', 'Screen', { strategy: SelectionStrategy.INDEX, index: 4 })),
                 attribute: await failure(repo => repo.get('items', 'Screen', { strategy: SelectionStrategy.ATTRIBUTE, attribute: 'name', value: 'blue' })),
-                random: await failure(repo => repo.get('items', 'Screen', { strategy: SelectionStrategy.RANDOM })),
                 visible: await failure(repo => repo.getVisible('items', 'Screen', true)),
                 text: await failure(repo => repo.get('items', 'Screen', { strategy: SelectionStrategy.TEXT, value: 'Nope' })),
             };
             for (const [name, error] of Object.entries(answers)) {
                 expect(error, `${name}: the lookup must fail`).toBeInstanceOf(Error);
                 expect(isNoMatchAnswer(error), `${name}: element-repository's no-match wording changed: ${(error as Error).message}`).toBe(true);
+            }
+        });
+
+        test('RANDOM and ATTRIBUTE answer "No elements found" for a dead session too: by itself it is never a no-match', async () => {
+            for (const options of [
+                { strategy: SelectionStrategy.RANDOM },
+                { strategy: SelectionStrategy.ATTRIBUTE, attribute: 'name', value: 'red' },
+            ]) {
+                const mock = mockUiDriver(TREE, { capabilities: { platformName: platform } });
+                mock.failWith(driverError('invalid session id', 'invalid session id: the session is gone'));
+                const repo = new ElementRepository(mock.driver, PAGES, { platform, timeout: 1 });
+                const error = await repo.get('items', 'Screen', options).then(() => undefined, (e: unknown) => e);
+                // element-repository hides the dead session behind its "no elements" message.
+                expect((error as Error).message, options.strategy).toBe(`No elements found for 'items' on 'Screen'`);
+                expect(isFatalDriverError(error), options.strategy).toBe(false);
+                expect(isNoMatchAnswer(error), options.strategy).toBe(false);
             }
         });
     });

@@ -541,13 +541,21 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
     <timeout> ms: <error>` instead of answering `false` or skipping the
     action. With `containsText`, a failed text read is retried the same way.
   - `isPresent` and `clickIfPresent` (the step and the fluent form) throw
-    the error instead of answering `false` or skipping the tap.
+    the error, a dead session included, instead of answering `false` or
+    skipping the tap.
   - `not.visible`, `visible.toBeFalse()` and `verifyState('hidden')` retry
     it and fail with it as the last error; a `satisfy()` snapshot whose
     visibility read fails is retried, never `visible: false`; `verifyPresence`
     of a list entry names the error instead of `none visible`.
   - `waitForState('hidden' | 'detached')` keeps waiting through it
     (element-repository's own wait), and fails at its timeout.
+  - A `.random()` or `.byAttribute()` chain (and the `random` / `attribute`
+    step strategies) is not answered by element-repository's `No elements
+    found for ...`, which those strategies throw for any failure of their
+    first wait, a dead session included. The miss is confirmed with a lookup
+    of every match, whose errors pass through: no match is "not there"; for
+    `.random()` matches that are all hidden are "not there" too; otherwise
+    the step fails with the lookup's own error (a poll retries it).
   Web is not affected: web `isPresent` still answers `false` on any error.
 - **A negated count range on a device is worded as on web**: `Expected count
   not > 5`, no longer `Expected NOT count > 5`.

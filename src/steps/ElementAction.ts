@@ -1,4 +1,4 @@
-import { isNoMatchAnswer, readVisible } from '../utils/visibility';
+import { isNoMatchAnswer, readVisible, resolveConfirmed } from '../utils/visibility';
 import { Locator } from '@playwright/test';
 import { ElementRepository, Element, WebElement, ElementResolutionOptions, SelectionStrategy } from '@civitas-cerebrum/element-repository';
 import type { Platform } from '@civitas-cerebrum/element-repository';
@@ -279,7 +279,19 @@ export class ElementAction {
             if (!visible) throw new Error(`No visible match for "${this.elementName}" in "${this.pageName}".`);
             return visible;
         }
-        return await this.repo.get(this.elementName, this.pageName, withLookup(this.resolutionOptions, attachBudget, signal));
+        return await this.lookup(withLookup(this.resolutionOptions, attachBudget, signal), attachBudget, signal);
+    }
+
+    /**
+     * `repo.get` with `options`. On a device a RANDOM / ATTRIBUTE miss is
+     * confirmed by a lookup of every match (`resolveConfirmed`): its
+     * `No elements found` hides why the strategy's wait failed, a dead
+     * session included. Web is unchanged.
+     */
+    private async lookup(options: ElementResolutionOptions, attachBudget?: number, signal?: AbortSignal): Promise<Element> {
+        const get = () => this.repo.get(this.elementName, this.pageName, options);
+        if (this.platform === 'web') return await get();
+        return await resolveConfirmed(options.strategy, get, () => this.resolveAll(attachBudget, signal));
     }
 
     private async resolveAll(attachBudget?: number, signal?: AbortSignal): Promise<Element> {
@@ -384,7 +396,7 @@ export class ElementAction {
             return new WebElement(this.narrowScoped(await this.scopedChild()));
         }
         const budget = Math.max(1, timeout ?? this.visibilityTimeout);
-        return await this.repo.get(this.elementName, this.pageName, withLookup(this.resolutionOptions, budget, signal));
+        return await this.lookup(withLookup(this.resolutionOptions, budget, signal), budget, signal);
     }
 
     /**
