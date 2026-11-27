@@ -140,6 +140,15 @@ export const KEYBOARD_STATE_UNCONFIRMED = 'hideKeyboard: the keyboard state coul
  *   thrown unchanged.
  *
  * `true` and every error of `dismissKeyboard` itself pass unchanged.
+ *
+ * Not `dismissKeyboard({ strict: true })`: its strict mode throws
+ * `KeyboardStateUnknownError` only when `driver.isKeyboardShown()` is
+ * missing or fails, and never asks `mobile: isKeyboardShown`. So it throws
+ * where this confirmation can answer `false` (no such method, and the
+ * device reports no keyboard), and answers `false` where this throws
+ * (`isKeyboardShown()` says no keyboard while the device shows one).
+ * `KeyboardStateUnknownError` is therefore never thrown here, and this
+ * package does not re-export it.
  */
 export async function hideKeyboardConfirmed(driver: AppiumDriver, platform: Platform, options?: DismissKeyboardOptions): Promise<boolean> {
     if (await dismissKeyboard(driver, platform, options)) return true;

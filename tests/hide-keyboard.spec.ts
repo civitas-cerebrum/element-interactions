@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { ElementRepository, IOS_DISMISS_KEYS } from '@civitas-cerebrum/element-repository';
+import { dismissKeyboard, ElementRepository, IOS_DISMISS_KEYS, KeyboardStateUnknownError } from '@civitas-cerebrum/element-repository';
 import { KeyboardStillShownError, Steps, type HideKeyboardOptions } from '../src/index';
 import { AppiumFactory } from '../src/appium';
 import { DEVICE_PLATFORMS, driverError, mockUiDriver, type Call, type MockNode } from './appium/mocks';
@@ -239,6 +239,35 @@ for (const platform of DEVICE_PLATFORMS) {
             const dead = driverError('invalid session id', 'invalid session id: the session is gone');
             (mock.driver as unknown as Record<string, unknown>).isKeyboardShown = async () => { throw dead; };
             expect(await caught(() => steps.hideKeyboard())).toBe(dead);
+        });
+    });
+}
+
+/**
+ * Why `hideKeyboard` keeps its own "no keyboard" confirmation instead of
+ * element-repository's `dismissKeyboard({ strict: true })`: the two differ
+ * where a user can see it. These run both on the same session, so a change
+ * in element-repository's strict mode shows here.
+ */
+for (const platform of DEVICE_PLATFORMS) {
+    test.describe(`hideKeyboard and dismissKeyboard({ strict: true }) on ${platform}`, () => {
+        test('a driver without isKeyboardShown() and no keyboard: strict cannot tell and throws; hideKeyboard asks the device and answers false', async () => {
+            const { steps, mock } = keyboardSteps(platform, () => true, false);
+            delete (mock.driver as unknown as Record<string, unknown>).isKeyboardShown;
+            const strict = await caught(() => dismissKeyboard(mock.driver as never, platform, { strict: true }));
+            expect(strict).toBeInstanceOf(KeyboardStateUnknownError);
+            expect(keyboardCalls(mock.calls), 'strict never asks mobile: isKeyboardShown').toEqual([]);
+            expect(await steps.hideKeyboard()).toBe(false);
+            expect(keyboardCalls(mock.calls)).toEqual([RECHECK]);
+        });
+
+        test('isKeyboardShown() says no keyboard while the device shows one: strict answers false; hideKeyboard throws', async () => {
+            const { steps, mock, keyboard } = keyboardSteps(platform, () => true);
+            (mock.driver as unknown as Record<string, unknown>).isKeyboardShown = async () => { mock.calls.push(['isKeyboardShown']); return false; };
+            expect(await dismissKeyboard(mock.driver as never, platform, { strict: true })).toBe(false);
+            expect(keyboardCalls(mock.calls), 'strict trusts the first check').toEqual([['isKeyboardShown']]);
+            expect(((await caught(() => steps.hideKeyboard())) as Error).message).toMatch(UNCONFIRMED);
+            expect(keyboard.shown).toBe(true);
         });
     });
 }
