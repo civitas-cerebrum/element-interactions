@@ -558,8 +558,12 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
     found for ...`, which those strategies throw for any failure of their
     first wait, a dead session included. The miss is confirmed with a lookup
     of every match, whose errors pass through: no match is "not there"; for
-    `.random()` matches that are all hidden are "not there" too; otherwise
-    the step fails with the lookup's own error (a poll retries it).
+    `.random()` matches that are all hidden are "not there" too; an error of
+    that lookup passes through; otherwise the step fails (`The lookup failed
+    … although N match(es) exist`, element-repository's message as its
+    cause); a poll retries it. element-repository's random pick waits for
+    the first match to be shown; when it is hidden and a later one is shown,
+    the lookup fails with that reason.
   Web is not affected: web `isPresent` still answers `false` on any error.
 - **A negated count range on a device is worded as on web**: `Expected count
   not > 5`, no longer `Expected NOT count > 5`.

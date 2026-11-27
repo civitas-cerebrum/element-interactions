@@ -37,6 +37,9 @@ export function isNoMatchAnswer(err: unknown): boolean {
     if (err.name === 'no such element' || err.name === 'NoSuchElementError') return true;
     // A platform element's read of a lazy element that never appeared:
     // `<read>: <element> not found within N ms: <WebdriverIO's error>`.
+    // WebdriverIO raises its "wasn't found" whenever a lazy `$` got no
+    // element id, so this answer is only as trustworthy as WebdriverIO's
+    // (element-repository treats it the same way).
     if (err.cause !== undefined && READ_NOT_FOUND.test(err.message)) return isNoMatchAnswer(err.cause);
     return NO_MATCH_MESSAGES.some(pattern => pattern.test(err.message));
 }
