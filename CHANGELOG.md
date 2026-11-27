@@ -462,19 +462,23 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   unchanged. A poll in which every probe answered with an error keeps
   `(no value; every probe failed)`. Web messages are not affected.
 - **A device poll in which no probe answered says so.** When every probe ran
-  out of its share of the timeout (one lookup pass longer than the timeout,
-  for example a `.byText()` pass over a long iOS list), the message read like
-  a failed check: `Last value: (no value; every probe failed). Last error:
-  the probe did not answer within N ms`. It now says no check finished, how
-  long the probe was given, and what to change: `Expected element to be
-  absent (not displayed): timed out after 3000 ms. No answer was obtained: no
-  check finished within the timeout. The probe was still running when its
-  3000 ms ran out, so one lookup pass takes longer than the 3000 ms timeout.
-  Allow more time with a longer timeout (`.timeout(ms)`), or use a selector
-  that matches fewer elements (a `byText` selection reads the text of every
-  candidate).` The verdict is unchanged (the step still fails); `lastValue` is
-  `undefined` and `lastError` is still the `ProbeTimeoutError`. Web messages
-  are not affected.
+  out of its share of the timeout (a driver call or a lookup pass longer than
+  the timeout, or a driver that stopped answering), the message read like a
+  failed check: `Last value: (no value; every probe failed). Last error: the
+  probe did not answer within N ms`. It now says no check finished, how long
+  the probe was given, and what may have caused it: `... timed out after
+  3000 ms. No answer was obtained: no check finished within the timeout. The
+  probe was still running when its 3000 ms ran out: one check (a driver call
+  or a lookup pass) takes longer than the 3000 ms timeout, or the driver
+  stopped answering. Allow more time with a longer timeout.` An element check
+  (a `verify*` step, a matcher, `verifyCount`, list presence, a listed-element
+  lookup) adds: `For an element check, one lookup pass may be slower than the
+  timeout: use a longer `.timeout(ms)` or a selector that matches fewer
+  elements (a `byText` selection reads the text of every candidate).` A device
+  check (`verifyOrientation`, `verifyKeyboardShown`, `verifyContext`,
+  `verifyAppInForeground`) does not. The verdict is unchanged (the step still
+  fails); `lastValue` is `undefined` and `lastError` is still the
+  `ProbeTimeoutError`. Web messages are not affected.
 - **A negated count range on a device is worded as on web**: `Expected count
   not > 5`, no longer `Expected NOT count > 5`.
 

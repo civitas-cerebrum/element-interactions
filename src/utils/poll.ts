@@ -17,7 +17,17 @@ export interface PollOptions {
      * answered.
      */
     lastValueMeaning?: (value: unknown) => string | undefined;
+    /**
+     * A sentence the caller adds when no probe answered at all (each one ran
+     * out of its share of the timeout), after the cause-neutral no-answer
+     * text; e.g. what makes this kind of check slow and how to give it room.
+     * Never used when a probe answered, with a value or an error.
+     */
+    noAnswerHint?: string;
 }
+
+/** Leads the timeout message of a poll in which no probe answered at all. */
+export const NO_ANSWER_LEAD = 'No answer was obtained';
 
 /** Default pause between two probes, in ms. */
 export const DEFAULT_POLL_INTERVAL = 100;
@@ -112,8 +122,10 @@ async function boundedProbe<T>(probe: () => Promise<T> | T, budget: number): Pro
  *   last error (the error's `lastError` still holds the
  *   {@link ProbeTimeoutError}). When no probe answered at all (each one ran
  *   out of its share, none answered even with an error), the message says no
- *   check finished within the timeout, how long the probe was given, and how
- *   to give a lookup pass room; it never reads as a failed check.
+ *   check finished within the timeout, how long the probe was given, and
+ *   what may have caused it (a slow driver call or lookup pass, or a driver
+ *   that stopped answering), then the caller's `noAnswerHint`; it never reads
+ *   as a failed check.
  *
  * @returns the accepted value.
  */
@@ -173,12 +185,11 @@ export async function pollUntil<T>(
         // No probe answered at all, not even with an error: every one ran out
         // of its share. That is no answer, never a failed check.
         parts.push(
-            'No answer was obtained: no check finished within the timeout. '
-            + `The probe was still running when its ${longestUnanswered} ms ran out, `
-            + `so one lookup pass takes longer than the ${timeout} ms timeout. `
-            + 'Allow more time with a longer timeout (`.timeout(ms)`), or use a selector that matches fewer elements '
-            + '(a `byText` selection reads the text of every candidate).',
+            `${NO_ANSWER_LEAD}: no check finished within the timeout. `
+            + `The probe was still running when its ${longestUnanswered} ms ran out: one check (a driver call or a lookup pass) `
+            + `takes longer than the ${timeout} ms timeout, or the driver stopped answering. Allow more time with a longer timeout.`,
         );
+        if (options.noAnswerHint) parts.push(options.noAnswerHint);
         throw new PollTimeoutError(parts.join(' '), timeout, lastValue, lastError);
     }
     if (!hasValue) {

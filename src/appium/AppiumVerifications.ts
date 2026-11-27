@@ -4,10 +4,10 @@ import type { IVerifications, VerifiableState } from '../interfaces/IVerificatio
 import type { EntryTarget } from '../interfaces/IEntryTarget';
 import type { CountVerifyOptions, TextVerifyOptions, VerifyOptions, VisualMatchPrimitiveOptions } from '../enum/Options';
 import type { AppiumDriver, PlatformStrategy } from './platform/PlatformStrategy';
-import { describeValue, pollUntil, PollTimeoutError, softRead } from '../utils/poll';
+import { describeValue, NO_ANSWER_LEAD, pollUntil, PollTimeoutError, softRead } from '../utils/poll';
 import { webOnly } from './unsupported';
 import { ReResolvingElement } from './ReResolvingElement';
-import { DEVICE_POLL_ATTACH_MS, entryLabel, probeVisibleOnDevice } from './entry';
+import { DEVICE_POLL_ATTACH_MS, ELEMENT_NO_ANSWER_HINT, entryLabel, probeVisibleOnDevice } from './entry';
 import { countMismatch, describeCountOptions, validateCountOptions } from '../utils/countRange';
 
 type HtmlOptions = VerifyOptions & { outer?: boolean };
@@ -108,6 +108,7 @@ export class AppiumVerifications implements IVerifications {
             timeout: options?.timeout ?? this.timeout,
             message: options?.errorMessage ? `${options.errorMessage} (${expectation})` : expectation,
             lastValueMeaning,
+            noAnswerHint: ELEMENT_NO_ANSWER_HINT,
         });
     }
 
@@ -156,15 +157,15 @@ export class AppiumVerifications implements IVerifications {
                     if (await softRead(() => match.isVisible(), false)) return true;
                 }
                 return false;
-            }, visible => visible, { timeout });
+            }, visible => visible, { timeout, noAnswerHint: ELEMENT_NO_ANSWER_HINT });
         } catch (err) {
             if (!(err instanceof PollTimeoutError)) throw err;
+            const lead = `verifyPresence: ${entryLabel(entry)} is a list entry ("list": true) — expected at least one visible match within ${timeout}ms`;
+            // No poll answered: no match count was observed, so none is reported.
+            const noAnswer = err.message.indexOf(NO_ANSWER_LEAD);
+            if (noAnswer >= 0) throw new Error(`${lead}. ${err.message.slice(noAnswer)}`, { cause: err });
             const cause = err.lastError instanceof Error ? ` Last error: ${err.lastError.message}` : '';
-            throw new Error(
-                `verifyPresence: ${entryLabel(entry)} is a list entry ("list": true) — ` +
-                `expected at least one visible match within ${timeout}ms, found ${lastCount} match(es) and none visible.${cause}`,
-                { cause: err },
-            );
+            throw new Error(`${lead}, found ${lastCount} match(es) and none visible.${cause}`, { cause: err });
         }
     }
 
@@ -435,6 +436,7 @@ export class AppiumVerifications implements IVerifications {
         let last: number | undefined;
         await pollUntil(async () => (last = await target.count()), n => countMismatch(options, n, negated) === undefined, {
             timeout: verifyOptions?.timeout ?? this.timeout,
+            noAnswerHint: ELEMENT_NO_ANSWER_HINT,
             // Names the bound the last count broke: "... (Expected count > 1 and < 3); 6 is not < 3".
             message: () => {
                 const why = last === undefined ? undefined : countMismatch(options, last, negated);

@@ -13,6 +13,7 @@ import { Utils } from '../utils/ElementUtilities';
 import { touchDrag } from './touch';
 import { pollUntil, softRead } from '../utils/poll';
 import { webOnly } from './unsupported';
+import { ELEMENT_NO_ANSWER_HINT } from './entry';
 
 /** Finger travel time of an offset drag, in ms. */
 const DRAG_DURATION_MS = 600;
@@ -266,6 +267,7 @@ export class AppiumInteractions implements IInteractions {
         const matched = await pollUntil(pick, found => found !== undefined, {
             timeout: this.timeout,
             message: `No listed element matched ${JSON.stringify(options)}`,
+            noAnswerHint: ELEMENT_NO_ANSWER_HINT,
         }) as Element;
         await this.utils.waitForState(matched, 'visible', remainingUntil(deadline));
         return childSelector === undefined ? matched : matched.locateChild(childSelector);

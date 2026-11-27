@@ -126,6 +126,27 @@ for (const platform of DEVICE_PLATFORMS) {
             });
         }
 
+        for (const [name, c] of Object.entries(CASES)) {
+            test(`${name} whose read never answers says no check finished, with the element advice`, async () => {
+                const hang = () => new Promise(() => undefined);
+                // `attributes` is a map of readers: every attribute read hangs.
+                const reader = c.getter === 'attributes' ? new Proxy({}, { get: () => hang }) : hang;
+                const el = mockElement({ [c.getter]: reader } as MockElementSpec);
+                const error = await c.run(factory().createVerifications(), el, 150).catch(e => e);
+                expect(error).toBeInstanceOf(PollTimeoutError);
+                expect(error.message).toContain('timed out after 150 ms. No answer was obtained: no check finished within the timeout.');
+                expect(error.message).toMatch(/For an element check, one lookup pass may be slower than the timeout: use a longer `\.timeout\(ms\)` or a selector that matches fewer elements \(a `byText` selection reads the text of every candidate\)\.$/);
+            });
+        }
+
+        test('a count bound whose read never answers says no check finished, with the element advice', async () => {
+            const el = mockElement({ count: () => new Promise<number>(() => undefined) });
+            const error = await factory().createVerifications().count(el, { exactly: 2 }, { timeout: 150 }).catch(e => e);
+            expect(error).toBeInstanceOf(PollTimeoutError);
+            expect(error.message).toMatch(/^Expected count exactly 2: timed out after 150 ms\. No answer was obtained: /);
+            expect(error.message).toMatch(/For an element check, one lookup pass may be slower than the timeout: use a longer `\.timeout\(ms\)` or a selector that matches fewer elements \(a `byText` selection reads the text of every candidate\)\.$/);
+        });
+
         test('order and listOrder poll the texts of all matches', async () => {
             const lists = changing([['b', 'a'], ['a'], ['a', 'b']]);
             const list = { ...mockElement(), all: async () => (await lists.read()).map(t => mockElement({ text: t })) } as unknown as Element;

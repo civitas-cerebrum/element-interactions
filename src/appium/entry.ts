@@ -25,6 +25,15 @@ export const DEVICE_RESOLVE_SLICE_MS = 250;
  */
 export const DEVICE_POLL_ATTACH_MS = 1;
 
+/**
+ * The `noAnswerHint` of every element poll on a device (verifications,
+ * matchers, counts, list presence, listed elements): an element check that
+ * got no answer usually had a lookup pass slower than its timeout.
+ */
+export const ELEMENT_NO_ANSWER_HINT =
+    'For an element check, one lookup pass may be slower than the timeout: use a longer `.timeout(ms)` '
+    + 'or a selector that matches fewer elements (a `byText` selection reads the text of every candidate).';
+
 /** Pause between two attempts of the visibility probe, in ms (the Appium family's poll interval). */
 export const DEVICE_PROBE_INTERVAL_MS = 100;
 

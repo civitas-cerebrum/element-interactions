@@ -312,6 +312,17 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(shown, 'without negated the keyboard must be shown').toBeUndefined();
         });
 
+        test('a device query that never answers: the failure says so, with no element advice', async () => {
+            const { steps, mock } = deviceSteps(platform, 30000);
+            (mock.driver as unknown as Record<string, unknown>).getOrientation = () => new Promise<string>(() => undefined);
+            const error = await caught(() => steps.verifyOrientation('landscape', { timeout: 250 }));
+            expect(error).toBeInstanceOf(PollTimeoutError);
+            expect((error as Error).message).toMatch(
+                /^verifyOrientation: expected orientation "landscape": timed out after 250 ms\. No answer was obtained: no check finished within the timeout\. The probe was still running when its \d+ ms ran out: one check \(a driver call or a lookup pass\) takes longer than the 250 ms timeout, or the driver stopped answering\. Allow more time with a longer timeout\.$/,
+            );
+            expect((error as Error).message).not.toMatch(/selector|byText|element check/);
+        });
+
         test('without options the step timeout applies', async () => {
             const { steps } = deviceSteps(platform, 300);
             const started = Date.now();

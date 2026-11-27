@@ -19,7 +19,7 @@ const STEP_TIMEOUT = 600;
  * (each one ran out of its share of the timeout): no check finished, not
  * "every probe failed", and never a normal absence or visibility failure.
  */
-const NO_ANSWER = /: timed out after \d+ ms\. No answer was obtained: no check finished within the timeout\. The probe was still running when its \d+ ms ran out, so one lookup pass takes longer than the \d+ ms timeout\. Allow more time with a longer timeout \(`\.timeout\(ms\)`\), or use a selector that matches fewer elements \(a `byText` selection reads the text of every candidate\)\.$/;
+const NO_ANSWER = /: timed out after \d+ ms\. No answer was obtained: no check finished within the timeout\. The probe was still running when its \d+ ms ran out: one check \(a driver call or a lookup pass\) takes longer than the \d+ ms timeout, or the driver stopped answering\. Allow more time with a longer timeout\. For an element check, one lookup pass may be slower than the timeout: use a longer `\.timeout\(ms\)` or a selector that matches fewer elements \(a `byText` selection reads the text of every candidate\)\.$/;
 
 /** A reader flipping from `before` to `after` on its `n`-th read (1-based), counting reads. */
 function flipOnRead<T>(n: number, before: T, after: T): { read: () => T; reads: () => number } {

@@ -565,6 +565,15 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(await i.getListedElement(list, { text: 'Order', attribute: { name: 'content-desc', value: { regex: '2$' } } })).toBe(b);
         });
 
+        test('getListedElement whose item reads never answer says no check finished, with the element advice', async () => {
+            const { factory } = setup(150);
+            const i = factory.createInteractions();
+            const list = mockElement({ children: [mockElement({ text: () => new Promise<string>(() => undefined) })] });
+            const error = await i.getListedElement(list, { text: 'pending' }).catch(e => e);
+            expect(error.message).toMatch(/^No listed element matched \{"text":"pending"\}: timed out after 150 ms\. No answer was obtained: /);
+            expect(error.message).toMatch(/For an element check, one lookup pass may be slower than the timeout: use a longer `\.timeout\(ms\)` or a selector that matches fewer elements \(a `byText` selection reads the text of every candidate\)\.$/);
+        });
+
         test('getListedElement tests a regex on the item text as the element reports it, untrimmed (web hasText)', async () => {
             const { factory } = setup(2000);
             const i = factory.createInteractions();

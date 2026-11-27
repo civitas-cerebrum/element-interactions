@@ -110,11 +110,11 @@ test.describe('pollUntil', () => {
         expect(error.lastValue).toBeUndefined();
         expect(error.message).toMatch(new RegExp(
             '^Slow probe: timed out after 300 ms\\. No answer was obtained: no check finished within the timeout\\. '
-            + 'The probe was still running when its \\d+ ms ran out, so one lookup pass takes longer than the 300 ms timeout\\. '
-            + 'Allow more time with a longer timeout \\(`\\.timeout\\(ms\\)`\\), or use a selector that matches fewer elements '
-            + '\\(a `byText` selection reads the text of every candidate\\)\\.$',
+            + 'The probe was still running when its \\d+ ms ran out: one check \\(a driver call or a lookup pass\\) takes longer '
+            + 'than the 300 ms timeout, or the driver stopped answering\\. Allow more time with a longer timeout\\.$',
         ));
-        expect(error.message).not.toMatch(/every probe failed|Last value|Last error/);
+        // Cause-neutral without a hint: no element advice for a poll that is not an element check.
+        expect(error.message).not.toMatch(/every probe failed|Last value|Last error|selector|byText/);
         expect(elapsed).toBeGreaterThanOrEqual(295);
         expect(elapsed).toBeLessThan(300 + 50 + 150);
     });
@@ -140,11 +140,23 @@ test.describe('pollUntil', () => {
         const error = await pollUntil(hanging, v => !v, { timeout: 120, interval: 50, message: 'Expected absent', lastValueMeaning: meaning }).catch(e => e);
         expect(error).toBeInstanceOf(PollTimeoutError);
         expect(error.lastError).toBeInstanceOf(ProbeTimeoutError);
-        expect(error.message).toMatch(/^Expected absent: timed out after 120 ms\. No answer was obtained: no check finished within the timeout\. The probe was still running when its \d+ ms ran out, so one lookup pass takes longer than the 120 ms timeout\. /);
+        expect(error.message).toMatch(/^Expected absent: timed out after 120 ms\. No answer was obtained: no check finished within the timeout\. The probe was still running when its \d+ ms ran out: one check \(a driver call or a lookup pass\) takes longer than the 120 ms timeout, or the driver stopped answering\. Allow more time with a longer timeout\.$/);
         expect(error.message).not.toMatch(/still displayed|every probe failed/);
         // A timeout shorter than the interval: the probe gets one interval, which the message states.
         const zero = await pollUntil(hanging, v => !v, { timeout: 0, interval: 40, message: 'Expected absent' }).catch(e => e);
-        expect(zero.message).toMatch(/^Expected absent: timed out after 0 ms\. No answer was obtained: no check finished within the timeout\. The probe was still running when its 40 ms ran out, so one lookup pass takes longer than the 0 ms timeout\. /);
+        expect(zero.message).toMatch(/^Expected absent: timed out after 0 ms\. No answer was obtained: no check finished within the timeout\. The probe was still running when its 40 ms ran out: one check \(a driver call or a lookup pass\) takes longer than the 0 ms timeout, /);
+    });
+
+    test('noAnswerHint follows the no-answer sentence, and only when no probe answered', async () => {
+        const hint = 'For an element check, try a longer timeout.';
+        const hanging = () => new Promise<boolean>(resolve => setTimeout(() => resolve(true), 2000).unref());
+        const none = await pollUntil(hanging, v => !v, { timeout: 120, interval: 50, message: 'Expected absent', noAnswerHint: hint }).catch(e => e);
+        expect(none.message).toMatch(/, or the driver stopped answering\. Allow more time with a longer timeout\. For an element check, try a longer timeout\.$/);
+        // A probe that answered with an error, or with a value: no hint.
+        const failed = await pollUntil(async () => { throw new Error('no such element'); }, () => true, { timeout: 30, interval: 5, message: 'Expected absent', noAnswerHint: hint }).catch(e => e);
+        expect(failed.message).toBe('Expected absent: timed out after 30 ms. Last value: (no value; every probe failed). Last error: no such element');
+        const answered = await pollUntil(async () => true, v => !v, { timeout: 30, interval: 5, message: 'Expected absent', noAnswerHint: hint }).catch(e => e);
+        expect(answered.message).toBe('Expected absent: timed out after 30 ms. Last value: true.');
     });
 
     test('a probe that does not answer after one that did: the last value leads, the timeout is only a note', async () => {

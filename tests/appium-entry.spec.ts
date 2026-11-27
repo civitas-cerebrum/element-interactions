@@ -149,6 +149,18 @@ for (const platform of DEVICE_PLATFORMS) {
             expect((cause as PollTimeoutError).timeout).toBe(250);
         });
 
+        test('listPresence whose lookup never answers says no check finished, with the element advice', async () => {
+            const { verify } = family(platform);
+            const hanging = { ...scriptedEntry(() => mockElement()).entry, resolveAll: () => new Promise<Element>(() => undefined) } as EntryTarget;
+            const error = await caught(() => verify.listPresence(hanging, 150));
+            expect((error as Error).message).toMatch(
+                /^verifyPresence: 'Screen\.rows' is a list entry \("list": true\) — expected at least one visible match within 150ms\. No answer was obtained: no check finished within the timeout\. /,
+            );
+            expect((error as Error).message).toMatch(/For an element check, one lookup pass may be slower than the timeout: use a longer `\.timeout\(ms\)` or a selector that matches fewer elements \(a `byText` selection reads the text of every candidate\)\.$/);
+            expect((error as Error).message).not.toMatch(/found 0 match|Last error/);
+            expect((error as Error).cause).toBeInstanceOf(PollTimeoutError);
+        });
+
         test('listPresence rethrows a fatal driver error at once', async () => {
             const { verify } = family(platform);
             const dead = driverError('invalid session id');
