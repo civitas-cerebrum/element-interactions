@@ -317,7 +317,11 @@ test.describe('pollUntil runs one probe at a time', () => {
         expect(started, 'probes started').toBe(1);
     });
 
-    test('a poll whose probes answer until one hangs starts nothing while that one runs', async () => {
+    // A guard that documents the behaviour, not a regression test for the fix
+    // above: probes run one after another and the one that hangs had all the
+    // time left, so this held before that fix too. The test above is the one
+    // that fails without it.
+    test('guard: a poll whose probes answer until one hangs starts nothing while that one runs', async () => {
         test.setTimeout(30000);
         let running = 0;
         let maxRunning = 0;
