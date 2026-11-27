@@ -580,6 +580,21 @@ for (const platform of DEVICE_PLATFORMS) {
             await hidden.steps.on('items', 'Screen').verifyAbsence();
         });
 
+        test('a plain entry redrawn while shown: stale reads of every match for a while, then shown: verifyAbsence fails', async () => {
+            const tree = itemTree();
+            let until = 0;
+            for (const item of tree[0]!.children!) {
+                item.visible = () => {
+                    if (Date.now() < until) throw driverError('stale element reference', 'stale element reference: the list was redrawn');
+                    return true;
+                };
+            }
+            const { steps } = deviceSteps(platform, tree);
+            until = Date.now() + FAILING_MS;
+            const absence = await caught(() => steps.on('items', 'Screen').verifyAbsence());
+            expect(absence?.message, 'shown items are never absent').toMatch(/absent/);
+        });
+
         test('a failed $$ on every pass never reads as absent: the driver error is the last error', async () => {
             const { steps, mock } = deviceSteps(platform, itemTree());
             const driver = mock.driver as unknown as Record<string, unknown>;

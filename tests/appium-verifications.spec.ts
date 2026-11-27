@@ -175,8 +175,12 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(error.message).toContain('Last error: no such element');
         });
 
-        test('absence counts a failing lookup as absent', async () => {
-            await factory().createVerifications().absence(mockElement({ visible: async () => { throw new Error('no such element'); } }), { timeout: 100 });
+        test('absence never counts a failing read of a match as absent: it retries and reports the error', async () => {
+            const error = await factory().createVerifications()
+                .absence(mockElement({ visible: async () => { throw new Error('no such element'); } }), { timeout: 100 })
+                .catch(e => e);
+            expect(error).toBeInstanceOf(PollTimeoutError);
+            expect(error.message).toContain('Last error: no such element');
         });
 
         test('absence with a selector string resolves a platform element on the driver (every match)', async () => {

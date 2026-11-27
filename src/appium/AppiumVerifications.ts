@@ -240,17 +240,18 @@ export class AppiumVerifications implements IVerifications {
      * from a set, whose `all()` re-queries its selector), so absence holds only
      * when every match is hidden or gone, as the web family's absence on the
      * first visible match of a set. A lookup that finds nothing is not
-     * displayed. A lookup that fails (a failed `$$`) did not see the matches,
-     * so it is not an answer: its error is thrown, and the poll tries again
-     * and keeps it as its last error. A match the lookup returned whose read
-     * then fails transiently (no such element, stale element: it left the
-     * tree) counts as not displayed. A fatal driver error (dead session,
-     * invalid selector) is rethrown, so it can never pass as "absent".
+     * displayed. A lookup that fails (a failed `$$`) or a read of a match
+     * that fails (a stale handle of a list redrawn while shown) did not see
+     * the matches, so it is not an answer: its error is thrown, and the poll
+     * tries again and keeps it as its last error. A match that really left
+     * the tree is not in the next poll's lookup. A fatal driver error (dead
+     * session, invalid selector) fails the poll at once, so it can never
+     * pass as "absent".
      */
     private async anyDisplayed(target: Element): Promise<boolean> {
         const matches = await target.all();
         for (const match of matches) {
-            if (await softRead(() => match.isVisible(), false)) return true;
+            if (await match.isVisible()) return true;
         }
         return false;
     }
@@ -258,9 +259,8 @@ export class AppiumVerifications implements IVerifications {
     /**
      * Passes once no match of the element is displayed (hidden or not in the
      * UI tree). A string is an Appium selector, resolved as a platform
-     * element. A failed lookup is retried, never read as absent; a match that
-     * fails to read transiently counts as gone; a fatal driver error fails
-     * the assertion.
+     * element. A failed lookup or a failed read of a match is retried, never
+     * read as absent; a fatal driver error fails the assertion.
      */
     async absence(selectorOrTarget: Element | string, options?: VerifyOptions): Promise<void> {
         const target = typeof selectorOrTarget === 'string'

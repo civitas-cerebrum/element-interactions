@@ -148,8 +148,8 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   on a device, and on a device only a clean "not found" reads as absent: a
   selection pass that met a transient driver error (a failed `$$`, a stale
   text read) is polled again, for `verifyAbsence`, `not.visible` and
-  `visible.toBeFalse()` alike, and a plain entry's failed lookup is retried
-  rather than read as absent. Other strategy selectors and plain entries keep asserting on
+  `visible.toBeFalse()` alike, and a plain entry's failed lookup or failed
+  read of a match is retried rather than read as absent. Other strategy selectors and plain entries keep asserting on
   every match. To assert that no element with the text is shown, use the plain
   entry with an attribute- or text-specific selector in the repository.
   **Migration:** to assert that no match of the entry is shown, drop the
