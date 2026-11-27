@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { ElementRepository } from '@civitas-cerebrum/element-repository';
-import { Steps } from '../src/index';
+import { Steps, type ElementSnapshot } from '../src/index';
 import { AppiumFactory } from '../src/appium';
 import { DEVICE_PLATFORMS, driverError, mockUiDriver, type MockNode } from './appium/mocks';
 
@@ -219,3 +219,51 @@ for (const platform of DEVICE_PLATFORMS) {
     });
 }
 
+
+/**
+ * A `satisfy()` snapshot reads every field strictly: only a no-match answer
+ * gives the field's default; any other error fails the snapshot, and the
+ * loop retries it. A stale read never satisfies a predicate on a default.
+ */
+for (const platform of DEVICE_PLATFORMS) {
+    test.describe(`a satisfy() snapshot whose read fails on ${platform}`, () => {
+        const STALE = () => { throw driverError('stale element reference', 'stale element reference: the row was redrawn'); };
+        const attribute = platform === 'android' ? 'checkable' : 'accessible';
+        const satisfies = async (node: Partial<MockNode>, predicate: (s: ElementSnapshot) => boolean, patch?: (mock: ReturnType<typeof mockUiDriver>) => void) => {
+            const { steps, mock } = deviceSteps(platform, [{ match: '~toast', text: 'Saved', ...node }]);
+            patch?.(mock);
+            return caught(async () => { await steps.on('toast', 'Screen').timeout(400).satisfy(predicate); });
+        };
+
+        test('text: a stale read is not an empty text', async () => {
+            expect((await satisfies({ text: STALE }, s => s.text === ''))?.message).toMatch(/stale element reference/);
+        });
+
+        test('value: a stale read is not an empty value', async () => {
+            const node: Partial<MockNode> = platform === 'android' ? { text: STALE } : { attributes: { value: STALE } };
+            expect((await satisfies(node, s => s.value === ''))?.message).toMatch(/stale element reference/);
+        });
+
+        test('enabled: a stale read is not disabled', async () => {
+            expect((await satisfies({ enabled: STALE }, s => !s.enabled))?.message).toMatch(/stale element reference/);
+        });
+
+        test('attributes: a stale read is not a missing attribute', async () => {
+            expect((await satisfies({ attributes: { [attribute]: STALE } }, s => s.attributes[attribute] === undefined))?.message)
+                .toMatch(/stale element reference/);
+        });
+
+        test('count: a failed count is not zero', async () => {
+            const error = await satisfies({}, s => s.count === 0, mock => {
+                const driver = mock.driver as unknown as Record<string, (s: string) => Promise<unknown>>;
+                driver.$$ = async () => { throw driverError('stale element reference', 'stale element reference: the list was redrawn'); };
+            });
+            expect(error?.message).toMatch(/stale element reference/);
+        });
+
+        test('a missing element still reads as the defaults', async () => {
+            const { steps } = deviceSteps(platform, []);
+            await steps.on('missing', 'Screen').timeout(400).satisfy(s => s.count === 0 && s.text === '' && !s.visible && !s.enabled);
+        });
+    });
+}

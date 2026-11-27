@@ -22,7 +22,7 @@ import {
 import type { Platform, IDevice } from '../src/index';
 import { PlaywrightGestures } from '../src/playwright/PlaywrightGestures';
 import { PlaywrightDevice } from '../src/playwright/PlaywrightDevice';
-import { ElementRepository, isFatalDriverError, SelectionStrategy, TextNotFoundError } from '@civitas-cerebrum/element-repository';
+import { ElementRepository, isFatalDriverError, PlatformElement, SelectionStrategy, TextNotFoundError } from '@civitas-cerebrum/element-repository';
 import { isCleanTextNotFound } from '../src/appium/AppiumVerifications';
 import { isNoMatchAnswer } from '../src/utils/visibility';
 import { DEVICE_PLATFORMS, driverError, mockUiDriver } from './appium/mocks';
@@ -460,4 +460,22 @@ test('no-match answers of the driver are recognised; every other error is no ans
     expect(isNoMatchAnswer(driverError('unknown error', 'An unknown server-side error occurred: no such element was mentioned deeper'))).toBe(false);
     expect(isNoMatchAnswer(driverError('stale element reference', 'stale element reference: the row was redrawn'))).toBe(false);
     expect(isNoMatchAnswer('no such element')).toBe(false);
+});
+
+test("a platform read of an element that never appeared is a no-match: element-repository's wrapper of WebdriverIO's \"wasn't found\"", async () => {
+    for (const platform of DEVICE_PLATFORMS) {
+        // A WebdriverIO lazy element that never appeared: every command fails as WebdriverIO fails it.
+        const missing = new Proxy({ selector: '~gone' } as Record<string, unknown>, {
+            get(target, prop) {
+                if (typeof prop !== 'string' || prop in target || prop === 'then') return target[prop as string];
+                return async () => { throw new Error(`Can't call ${prop} on element with selector "~gone" because element wasn't found`); };
+            },
+        });
+        const driver = { $: async () => missing, $$: async () => [], capabilities: { platformName: platform } };
+        const element = new PlatformElement(driver as never, '~gone', undefined, 50, { platform });
+        const error = await element.textContent().then(() => undefined, (e: unknown) => e);
+        expect((error as Error).message, platform).toMatch(/^textContent: .* not found/);
+        expect(isNoMatchAnswer(error), `${platform}: ${(error as Error).message}`).toBe(true);
+        expect(isNoMatchAnswer(new Error('textContent: "~gone" not found within 50 ms: unknown error', { cause: new Error('unknown error') }))).toBe(false);
+    }
 });

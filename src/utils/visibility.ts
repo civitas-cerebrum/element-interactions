@@ -20,6 +20,9 @@ const NO_MATCH_MESSAGES: readonly RegExp[] = [
     /^Element '[\s\S]*' on '[\s\S]*' with attribute \[[\s\S]*\] [\w ]+ "[\s\S]*" not found\.$/,
 ];
 
+/** element-repository's wrapper around WebdriverIO's "wasn't found" on a read (the original is its `cause`). */
+const READ_NOT_FOUND = /^\w+: [\s\S]* not found(?: within \d+ ms)?: /;
+
 /**
  * True for an error that means "no element matches": a clean
  * `TextNotFoundError` (its final pass read every match), a W3C
@@ -32,22 +35,30 @@ export function isNoMatchAnswer(err: unknown): boolean {
     if (err instanceof TextNotFoundError) return err.cleanMiss;
     if (!(err instanceof Error)) return false;
     if (err.name === 'no such element' || err.name === 'NoSuchElementError') return true;
+    // A platform element's read of a lazy element that never appeared:
+    // `<read>: <element> not found within N ms: <WebdriverIO's error>`.
+    if (err.cause !== undefined && READ_NOT_FOUND.test(err.message)) return isNoMatchAnswer(err.cause);
     return NO_MATCH_MESSAGES.some(pattern => pattern.test(err.message));
 }
 
 /**
- * Runs a visibility read: `false` when it fails with a no-match answer
+ * Runs a read: `fallback` when it fails with a no-match answer
  * ({@link isNoMatchAnswer}); every other error is thrown, so a poll retries
- * it and a one-shot gate reports it. Never reads a driver error as "not
- * visible".
+ * it and a one-shot check reports it. Never reads a driver error as the
+ * value of an element that is not there.
  */
-export async function readVisible(read: () => Promise<boolean>): Promise<boolean> {
+export async function readOr<T>(read: () => Promise<T>, fallback: T): Promise<T> {
     try {
         return await read();
     } catch (err) {
-        if (isNoMatchAnswer(err)) return false;
+        if (isNoMatchAnswer(err)) return fallback;
         throw err;
     }
+}
+
+/** A visibility read: `false` only for a no-match answer (see {@link readOr}). Never reads a driver error as "not visible". */
+export async function readVisible(read: () => Promise<boolean>): Promise<boolean> {
+    return readOr(read, false);
 }
 
 /** A "no element matches" that a lookup of every match confirmed (see {@link resolveConfirmed}). */

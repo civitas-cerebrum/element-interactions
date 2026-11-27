@@ -544,9 +544,13 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
     the error, a dead session included, instead of answering `false` or
     skipping the tap.
   - `not.visible`, `visible.toBeFalse()` and `verifyState('hidden')` retry
-    it and fail with it as the last error; a `satisfy()` snapshot whose
-    visibility read fails is retried, never `visible: false`; `verifyPresence`
-    of a list entry names the error instead of `none visible`.
+    it and fail with it as the last error; `verifyPresence` of a list entry
+    names the error instead of `none visible`.
+  - A `satisfy()` snapshot reads no field softly: a read that fails with
+    anything but a no-match (a stale reference, an `unknown error`) fails
+    the snapshot and is retried, so it never gives the field its default
+    (`visible: false`, `enabled: false`, `count: 0`, an empty text or
+    value, a missing attribute) for a predicate to pass on.
   - `waitForState('hidden' | 'detached')` keeps waiting through it
     (element-repository's own wait), and fails at its timeout.
   - A `.random()` or `.byAttribute()` chain (and the `random` / `attribute`
