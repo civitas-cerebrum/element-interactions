@@ -392,6 +392,14 @@ Appium and WebdriverIO. Web behaviour is unchanged except for the items under
   still fails with `with text "..." not found`, not with an unanswered probe.
   `.byAttribute()`, `.nth()`, `.random()` and plain entries keep the
   one-existence-check poll. Web is not affected.
+- **`not.visible` passes on a device for an element no lookup finds.**
+  `steps.on(el, page).byText('No such row').not.visible.toBeTrue()` timed out
+  on a device: every poll read the element's displayed state, the lookup threw
+  `with text "..." not found`, and a poll with no answer never passed. A
+  negated `visible` matcher now reads an element that is not found as not
+  visible, as web's `not.toBeVisible()` does; a fatal driver error still fails
+  at once, and a probe that does not answer is never read as an answer.
+  `visible.toBeTrue()` still fails with the lookup's reason. Web is not affected.
 - **A poll whose last probe does not answer keeps the earlier real error.**
   When a probe failed for a reason (an element not found) and a later one did
   not answer before the deadline, the timeout message named only the

@@ -82,6 +82,11 @@ function itemTree(readMs = 0): MockNode[] {
     return [{ match: '~column', children: ITEM_LABELS.map((text, i) => ({ match: '~item', text: slow(text), attributes: { name: `item-${i + 1}` } })) }];
 }
 
+/** The six items of {@link itemTree}, but no text read ever answers (a driver that stopped responding to them). */
+function hangingItemTree(): MockNode[] {
+    return [{ match: '~column', children: ITEM_LABELS.map(() => ({ match: '~item', text: () => new Promise<string>(() => undefined) })) }];
+}
+
 function deviceSteps(platform: 'android' | 'ios', tree: MockNode[], timeout = STEP_TIMEOUT) {
     const mock = mockUiDriver(tree, { capabilities: { platformName: platform } });
     const repo = new ElementRepository(mock.driver, pages(platform), { platform, timeout });
@@ -318,6 +323,44 @@ for (const platform of DEVICE_PLATFORMS) {
             expect(error?.message).toMatch(/Last error: Element 'items' on 'Screen' with text "Purple" not found/);
             expect(elapsed).toBeGreaterThanOrEqual(390);
             expect(elapsed, 'bounded by the matcher timeout').toBeLessThan(400 + 600);
+        });
+    });
+
+    test.describe(`a byText selection that matches nothing on ${platform}`, () => {
+        const READ_MS = 15;
+
+        test('reads as not visible; visible.toBeTrue() fails with the strategy\'s "not found"', async () => {
+            const { steps } = deviceSteps(platform, itemTree(READ_MS), 3000);
+            await steps.on('items', 'Screen').byText('Green 2').visible.toBeTrue();
+            const { error: hidden, elapsed } = await timed(async () => { await steps.on('items', 'Screen').byText('Purple').not.visible.toBeTrue(); });
+            expect(hidden, 'no item has the text, so the selection is not visible').toBeUndefined();
+            expect(elapsed, 'answered by the first resolution, not at the timeout').toBeLessThan(3000);
+            await steps.on('items', 'Screen').byText('Purple').visible.toBeFalse();
+            const { error } = await timed(async () => { await steps.on('items', 'Screen').byText('Purple').visible.timeout(400).toBeTrue(); });
+            expect(error?.message).toMatch(/Last error: Element 'items' on 'Screen' with text "Purple" not found/);
+        });
+
+        test('a shown match is still visible: not.visible fails', async () => {
+            const { steps } = deviceSteps(platform, itemTree(READ_MS), 3000);
+            const { error } = await timed(async () => { await steps.on('items', 'Screen').byText('Green 2').not.visible.timeout(400).toBeTrue(); });
+            expect(error?.message).toMatch(/not to be true/);
+            expect(error?.message).toMatch(/Last value: true/);
+        });
+
+        test('a selection that never answers is never read as not visible', async () => {
+            // Every text read hangs: no resolution of the selection completes within the timeout.
+            const { steps } = deviceSteps(platform, hangingItemTree(), 600);
+            const hidden = await caught(async () => { await steps.on('items', 'Screen').byText('Purple').not.visible.toBeTrue(); });
+            expect(hidden?.message).toMatch(/not to be true/);
+            expect(hidden?.message).toMatch(/no value; every probe failed/);
+        });
+
+        test('a dead session fails not.visible at once', async () => {
+            const { steps, mock } = deviceSteps(platform, itemTree(), 5000);
+            mock.failWith(driverError('invalid session id', 'invalid session id: the session is gone'));
+            const { error, elapsed } = await timed(async () => { await steps.on('items', 'Screen').byText('Purple').not.visible.toBeTrue(); });
+            expect(error?.message).toMatch(/invalid session id/);
+            expect(elapsed, 'a dead session fails at once, not at the step timeout').toBeLessThan(2000);
         });
     });
 

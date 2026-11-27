@@ -221,8 +221,17 @@ export class AppiumVerifications implements IVerifications {
             case 'checked':
                 return this.expectEventually(() => target.isChecked(), v => v, 'element to be checked', options);
             case 'visible':
+                // Negated, an element no lookup finds (a selection that matches
+                // nothing, a node not in the tree) is not visible, as web's
+                // `not.toBeVisible()`; a fatal driver error still fails, and a
+                // probe that does not answer is never read as an answer.
+                // Not negated, the lookup's own reason stays the last error.
+                if (options.negated) {
+                    return this.expectEventually(() => softRead(() => target.isVisible(), false), v => v, 'element to be visible', options);
+                }
+                return this.expectEventually(() => target.isVisible(), v => v, 'element to be visible', options);
             case 'inViewport':
-                return this.expectEventually(() => target.isVisible(), v => v, `element to be ${state}`, options);
+                return this.expectEventually(() => target.isVisible(), v => v, 'element to be inViewport', options);
             case 'hidden':
                 // One element (a pick of `nth` / TEXT / ATTRIBUTE answers
                 // `all()` with every match of its selector, so not `anyDisplayed`).

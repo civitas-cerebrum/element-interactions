@@ -40,6 +40,14 @@ test.describe('Fluent API — steps.on()', () => {
       expect(text).toContain('Primary');
     });
 
+    test('.byText() for a text no button shows is not visible; visible.toBeTrue() fails', async ({ steps }) => {
+      await steps.navigateTo('/');
+      await steps.click( 'buttonsLink','SidebarNav');
+      await steps.on('variantButtons', 'ButtonsPage').byText('Danger').visible.toBeTrue();
+      await steps.on('variantButtons', 'ButtonsPage').timeout(2000).byText('No such button').not.visible.toBeTrue();
+      await expect(steps.on('variantButtons', 'ButtonsPage').timeout(500).byText('No such button').visible.toBeTrue()).rejects.toThrow();
+    });
+
     test('.byAttribute() selects element by attribute', async ({ steps }) => {
       await steps.navigateTo('/');
       await steps.click( 'buttonsLink','SidebarNav');
